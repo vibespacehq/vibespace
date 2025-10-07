@@ -332,8 +332,9 @@ Desktop App → Local k3s (lightweight workspaces)
 
 - **Go**: 1.21+
 - **Node.js**: 20 LTS
-- **Rust**: 1.70+ (Tauri)
-- **React**: 18+
+- **Rust**: 1.70+ (for Tauri 2.0)
+- **Tauri**: 2.x (latest stable)
+- **React**: 19.x (latest stable)
 - **Kubernetes**: 1.27+ (via k3s)
 - **Knative Serving**: 1.11+
 
