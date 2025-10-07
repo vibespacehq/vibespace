@@ -1,0 +1,27 @@
+server:
+  port: 8090
+  host: localhost
+
+k3s:
+  install_path: /usr/local/bin/k3s
+  config_path: /etc/rancher/k3s
+  kubeconfig: ~/.kube/config
+
+registry:
+  url: localhost:5000
+  insecure: true
+
+buildkit:
+  address: tcp://buildkitd.default.svc.cluster.local:1234
+
+workspace:
+  namespace: workspace
+  default_resources:
+    cpu: "2"
+    memory: "4Gi"
+    storage: "10Gi"
+  dns_domain: local
+
+credential:
+  storage_path: ~/.workspace/credential
+  encryption: aes-256-gcm

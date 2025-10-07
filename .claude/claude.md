@@ -1,0 +1,852 @@
+# Workspace - AI Assistant Context
+
+**Project**: Kubernetes workspace manager with native coding agent integration
+**Status**: MVP Development
+**Stack**: Tauri + React + Go + k3s + Knative
+
+---
+
+## What This Project Does
+
+Workspace is a desktop app that manages isolated development environments (workspaces) running as containers in k3s. Each workspace includes VS Code (code-server) and can be configured with AI coding agents (Claude Code, OpenAI Codex).
+
+**Deployment Modes**:
+- **Local**: Everything runs on your machine (default)
+- **Cloud**: Desktop app local, workspaces run in cloud (AWS/GCP/DigitalOcean)
+- **Hybrid**: Mix of local and cloud workspaces
+
+Think: Docker Desktop meets VS Code Remote meets Vercel, optimized for AI-assisted development.
+
+**Key Features**:
+- 🚀 Local or cloud workspaces
+- 🤖 AI agent integration (Claude Code, OpenAI Codex)
+- 🔒 TLS certificates via Let's Encrypt (cloud mode)
+- 🌐 Custom domain support (`myproject.example.com`)
+- 📦 Template-based (Next.js, Vue, Jupyter, custom)
+- ⚡ Scale-to-zero with Knative
+- 🔐 Secure credential management
+
+---
+
+## Repository Structure
+
+```
+workspace/
+├── app/                    # Tauri desktop application
+│   ├── src-tauri/         # Rust backend (Tauri)
+│   └── src/               # React frontend (TypeScript)
+│       ├── components/    # UI components
+│       ├── hooks/         # React hooks
+│       └── lib/           # Utilities
+├── api/                   # Go API server
+│   ├── cmd/server/        # Entry point
+│   └── pkg/               # Business logic
+│       ├── handler/       # HTTP handlers
+│       ├── workspace/     # Workspace management
+│       ├── template/      # Template building
+│       ├── credential/    # Credential management
+│       ├── k3s/          # Kubernetes client
+│       └── model/         # Data models
+├── images/                # Container image Dockerfiles
+│   ├── base/             # Base image (code-server)
+│   └── templates/        # Template images (Next.js, Vue, etc.)
+├── k8s/                   # Kubernetes manifests
+│   ├── registry.yaml     # Local registry
+│   ├── buildkit.yaml     # BuildKit daemon
+│   └── traefik.yaml      # Ingress controller
+├── script/                # Utility scripts
+│   └── install_k3s.sh    # k3s setup script
+└── docs/                  # Documentation
+```
+
+---
+
+## Key Concepts
+
+### 1. Workspace
+A containerized development environment running in k3s. Contains:
+- code-server (VS Code in browser)
+- Project files (persistent volume)
+- AI agent credentials (from app-managed secrets)
+- Template-specific tools (Node.js, Python, etc.)
+
+**Lifecycle**: Creating → Starting → Running → Stopping → Stopped → Deleted
+
+### 2. Template
+A Docker image definition for a workspace type. Examples:
+- `nextjs`: Node.js + Next.js + pnpm
+- `vue`: Node.js + Vue 3 + Vite
+- `jupyter`: Python + Jupyter Lab
+
+Users can create custom templates via BuildKit.
+
+### 3. Credential
+Encrypted secrets managed by the app (stored in `~/.workspace/credential/`):
+- AI agent API keys (Claude, OpenAI)
+- Git config (name, email)
+- SSH keys (generated or imported)
+
+Injected into workspaces as Kubernetes Secrets.
+
+### 4. Knative Service
+Workspaces run as Knative Services for auto-scaling (scale-to-zero when idle).
+
+---
+
+## Naming Conventions
+
+### Code Style
+- **Go**: Standard Go conventions (singular package names: `workspace`, `template`)
+- **TypeScript**: camelCase for variables, PascalCase for components
+- **Files**: kebab-case for non-component files, PascalCase for React components
+
+### Kubernetes
+- **Namespace**: `workspace` (singular)
+- **Labels**: `workspace.dev/id`, `workspace.dev/template`
+- **Resources**: `workspace-{id}`, `workspace-{id}-pvc`, `workspace-{id}-secrets`
+
+### Domains
+**Local Mode**:
+- Code server: `workspace-{id}.local`
+- App ports: `workspace-{id}-3000.local`, `workspace-{id}-8000.local`
+
+**Cloud Mode**:
+- Default: `workspace-{id}.yourdomain.com`
+- Custom: `myproject.example.com` (with TLS)
+- Automatic DNS configuration via Cloudflare/Route53/etc.
+
+### API
+- **Endpoints**: `/api/v1/workspaces`, `/api/v1/templates`, `/api/v1/credentials`
+- **Methods**: Standard REST (GET, POST, PUT, DELETE)
+
+---
+
+## Design System
+
+**Theme**: Dark-first, GitHub-inspired, terminal aesthetics
+**Colors**: See `SPEC.md` section 4.1.3
+**Fonts**: JetBrains Mono (code), Inter (UI)
+**Icons**: Lucide
+
+**Component Patterns**:
+- Cards for workspaces
+- Modals for creation flows
+- Toast notifications for feedback
+- Status badges (🟢 Running, ⚪ Stopped, etc.)
+
+---
+
+## Development Workflow
+
+### Prerequisites
+- Node.js 20+
+- Go 1.21+
+- Rust 1.70+
+- Docker (for building images)
+- kubectl
+
+### Running Locally
+
+**Desktop App**:
+```bash
+cd app
+npm install
+npm run dev              # Starts Tauri dev server
+```
+
+**API Server**:
+```bash
+cd api
+go run cmd/server/main.go
+```
+
+**Build Images**:
+```bash
+cd images/base
+docker build -t workspace-base:latest .
+```
+
+### Project Commands
+```bash
+# Install k3s cluster
+./script/install_k3s.sh
+
+# Apply manifests
+kubectl apply -f k8s/
+
+# Build all templates
+cd images
+for dir in templates/*; do
+  docker build -t workspace-$(basename $dir):latest $dir
+done
+```
+
+---
+
+## Common Tasks
+
+### Adding a New Workspace Template
+
+1. Create directory: `images/templates/mytemplate/`
+2. Write `Dockerfile` based on `images/base/`
+3. Add template metadata in API: `api/pkg/model/template.go`
+4. Build image: `docker build -t workspace-mytemplate:latest .`
+5. Push to local registry: `docker push localhost:5000/workspace-mytemplate:latest`
+
+### Adding a New API Endpoint
+
+1. Define handler: `api/pkg/handler/myresource.go`
+2. Add service logic: `api/pkg/myresource/service.go`
+3. Register route: `api/cmd/server/main.go`
+4. Add TypeScript types: `app/src/lib/types.ts`
+5. Create React hook: `app/src/hooks/useMyResource.ts`
+
+### Adding a New UI Component
+
+1. Create component: `app/src/components/myfeature/MyComponent.tsx`
+2. Use design tokens from `SPEC.md` section 4.1.3
+3. Follow accessibility guidelines
+4. Add to storybook if applicable
+
+---
+
+## Architecture Decisions
+
+### Why Knative?
+Scale-to-zero saves resources. Workspaces can auto-stop when idle.
+
+### Why BuildKit?
+Kubernetes-native, no Docker daemon dependency, faster builds, better caching.
+
+### Why Tauri?
+Smaller binaries than Electron (~10MB vs ~100MB), better performance, native feel.
+
+### Why Go for API?
+Excellent k8s client library (`client-go`), fast, single binary deployment.
+
+### Why k3s?
+Lightweight k8s (<512MB RAM), perfect for local development, easy to install.
+
+---
+
+## Important Files
+
+- `SPEC.md` - Complete technical specification
+- `app/src-tauri/tauri.conf.json` - Tauri configuration
+- `api/config/config.yaml` - API server configuration
+- `k8s/*.yaml` - Kubernetes manifests
+- `images/base/Dockerfile` - Base image for all workspaces
+
+---
+
+## Testing Strategy
+
+- **Unit**: Go packages, React hooks
+- **Integration**: API + k3s interaction
+- **E2E**: Full workspace lifecycle (create → open → delete)
+
+---
+
+## Security Considerations
+
+1. **Credential Encryption**: AES-256 at rest, OS keychain integration
+2. **Network Isolation**: Workspaces isolated by default (NetworkPolicy)
+3. **No Host Access**: Credentials injected via Kubernetes Secrets, not volume mounts
+4. **Read-only Mounts**: SSH keys mounted read-only when needed
+5. **Non-root Containers**: Workspaces run as UID 1000
+
+---
+
+## Troubleshooting
+
+### k3s won't start
+```bash
+sudo systemctl status k3s
+sudo journalctl -u k3s -f
+```
+
+### Workspace stuck in "Creating"
+```bash
+kubectl get pods -n workspace
+kubectl describe pod workspace-{id} -n workspace
+kubectl logs workspace-{id} -n workspace
+```
+
+### BuildKit build fails
+```bash
+kubectl logs -n default deployment/buildkitd
+```
+
+### Local registry not accessible
+```bash
+curl http://localhost:5000/v2/_catalog
+kubectl get svc -n default registry
+```
+
+---
+
+## Contributing Guidelines
+
+1. Follow existing code structure
+2. Use defined naming conventions
+3. Update `SPEC.md` for architectural changes
+4. Add tests for new features
+5. Ensure dark theme compatibility for UI changes
+
+---
+
+## External Dependencies
+
+**Core** (all modes):
+- **k3s**: Lightweight Kubernetes
+- **Knative Serving**: Serverless workload management
+- **Traefik**: Ingress controller
+- **BuildKit**: Container image builder
+- **code-server**: VS Code in browser
+
+**Cloud Mode Only**:
+- **cert-manager**: TLS certificate management (Let's Encrypt)
+- **WireGuard**: Secure tunnel for remote access
+- **Cloudflare/Route53**: DNS provider integration (optional)
+- **Terraform/Pulumi**: Infrastructure provisioning (optional)
+
+---
+
+## Current Phase
+
+**Phase 1**: Foundation (Weeks 1-2) - IN PROGRESS
+- ✅ Project structure
+- ✅ Specification complete
+- ⏳ Tauri app scaffold
+- ⏳ Go API server
+- ⏳ k3s automation
+- ⏳ Base image
+
+See `SPEC.md` section 10 for full roadmap.
+
+---
+
+## Claude's Workflow (AI Assistant Guidelines)
+
+This project is **open source** and all work must be **git-tracked**. Every feature, bug fix, and improvement goes through proper issue → branch → commits → PR workflow.
+
+### Core Principles
+
+1. **All work is scoped**: Never work without a clear scope
+2. **Git is the source of truth**: Issues, PRs, commits document everything
+3. **One concern per PR**: Don't mix multiple features/fixes
+4. **Communicate via git**: Issues for discussion, PRs for code review
+5. **Never push to main**: Always use feature branches
+
+---
+
+### Workflow Steps
+
+#### 1. Before Starting Any Work
+
+**First, check if there's an issue**:
+```bash
+# Search existing issues
+gh issue list --search "keyword"
+```
+
+**If no issue exists, create one**:
+```bash
+gh issue create --title "Add custom domain support" --body "
+## Description
+Implement custom domain mapping for workspaces in cloud mode.
+
+## Scope
+- DNS provider integration (Cloudflare, Route53)
+- Domain validation (TXT record challenge)
+- Automatic DNS record creation
+- cert-manager certificate provisioning
+- UI for domain management
+
+## Technical Details
+- Backend: api/pkg/network/dns.go
+- Frontend: app/src/components/workspace/DomainSettings.tsx
+- API endpoints: POST /api/v1/workspaces/:id/domains
+- See SPEC.md Section 8.4
+
+## Acceptance Criteria
+- [ ] User can add custom domain in UI
+- [ ] DNS records created automatically
+- [ ] TLS certificate provisioned
+- [ ] Domain accessible over HTTPS
+- [ ] Tests written
+- [ ] Documentation updated
+
+## Estimated Effort
+~2-3 days
+" --label "feature" --assignee "@me"
+```
+
+**Issue created → Note the issue number** (e.g., #42)
+
+---
+
+#### 2. Create Feature Branch
+
+**Branch naming convention**:
+```
+feature/#<issue>-<short-description>
+fix/#<issue>-<short-description>
+docs/#<issue>-<short-description>
+refactor/#<issue>-<short-description>
+```
+
+**Examples**:
+```bash
+# For feature
+git checkout -b feature/#42-custom-domains
+
+# For bug fix
+git checkout -b fix/#15-workspace-creation-error
+
+# For docs
+git checkout -b docs/#7-api-documentation
+
+# For refactor
+git checkout -b refactor/#23-simplify-credential-manager
+```
+
+**Always reference the issue number in branch name**.
+
+---
+
+#### 3. Work in Small, Logical Commits
+
+**Commit message format**:
+```
+<type>(#<issue>): <description>
+
+[optional body]
+
+[optional footer]
+```
+
+**Types**:
+- `feat`: New feature
+- `fix`: Bug fix
+- `docs`: Documentation changes
+- `refactor`: Code refactoring (no behavior change)
+- `test`: Adding tests
+- `chore`: Build, dependencies, tooling
+
+**Examples**:
+```bash
+# Good commits
+git commit -m "feat(#42): add DNS provider interface"
+git commit -m "feat(#42): implement Cloudflare DNS integration"
+git commit -m "feat(#42): add domain validation endpoint"
+git commit -m "test(#42): add DNS provider tests"
+git commit -m "docs(#42): update SPEC.md with domain management"
+
+# Bad commits (don't do this)
+git commit -m "wip"
+git commit -m "fix stuff"
+git commit -m "update"
+```
+
+**Commit frequently** (every logical change):
+- Added a new function? Commit.
+- Fixed a bug? Commit.
+- Updated documentation? Commit.
+- Added tests? Commit.
+
+**Each commit should**:
+- Be atomic (one logical change)
+- Have a clear message
+- Reference the issue number
+- Be buildable (don't break CI)
+
+---
+
+#### 4. Push and Create Pull Request
+
+**Push branch**:
+```bash
+git push origin feature/#42-custom-domains
+```
+
+**Create PR**:
+```bash
+gh pr create --title "feat: Add custom domain support for workspaces (#42)" --body "
+## Summary
+Implements custom domain mapping for workspaces in cloud mode.
+
+## Changes
+- Added DNS provider interface and implementations (Cloudflare, Route53)
+- Domain validation using TXT record challenge
+- Automatic DNS record creation via provider APIs
+- cert-manager integration for TLS certificates
+- UI for domain management in workspace settings
+- API endpoints for domain CRUD operations
+
+## Testing
+- [x] Unit tests for DNS providers
+- [x] Integration tests for domain validation
+- [x] Manual testing with Cloudflare account
+- [x] TLS certificate provisioning verified
+
+## Documentation
+- [x] Updated SPEC.md Section 8.4
+- [x] Added inline code comments
+- [x] Updated API documentation
+
+## Screenshots
+![Domain Management UI](./docs/images/domain-ui.png)
+
+## Closes #42
+
+## Checklist
+- [x] Code follows style guide
+- [x] Tests pass locally
+- [x] Documentation updated
+- [x] No breaking changes
+- [x] PR title includes issue number
+" --draft
+```
+
+**PR title format**: `<type>: <description> (#<issue>)`
+
+**Start as draft PR** if still working. Mark ready when done.
+
+---
+
+#### 5. Respond to Review Feedback
+
+**When changes are requested**:
+```bash
+# Make requested changes
+# ... edit files ...
+
+# Commit changes
+git commit -m "fix(#42): address PR review comments"
+
+# Push
+git push origin feature/#42-custom-domains
+```
+
+**Don't force push** unless absolutely necessary (preserves review context).
+
+---
+
+#### 6. Merge PR
+
+Once approved:
+```bash
+# Merge via GitHub CLI
+gh pr merge 123 --squash --delete-branch
+
+# Or via GitHub UI (preferred)
+# Click "Squash and merge"
+```
+
+**Squash merge** for cleaner history (unless preserving commit history is important).
+
+---
+
+### Scoping Guidelines
+
+#### What Defines Good Scope?
+
+✅ **Good Scope** (clear, bounded, testable):
+```
+Issue: "Add Cloudflare DNS integration"
+- Single DNS provider
+- Clear acceptance criteria
+- Estimatable effort (~4-6 hours)
+- Testable in isolation
+```
+
+❌ **Bad Scope** (vague, unbounded):
+```
+Issue: "Improve networking"
+- Too broad
+- No acceptance criteria
+- Can't estimate
+- Hard to test
+```
+
+#### Breaking Down Large Features
+
+**Before**:
+```
+Issue: "Add cloud deployment mode"  ❌ Too big
+```
+
+**After** (break into smaller issues):
+```
+Issue #50: "Add deployment mode configuration"
+Issue #51: "Implement cloud provider interface"
+Issue #52: "Add DigitalOcean provider"
+Issue #53: "Add WireGuard tunnel setup"
+Issue #54: "Add cloud mode UI toggle"
+Issue #55: "Update docs for cloud deployment"
+```
+
+Each issue is **independently deliverable**.
+
+---
+
+### What Gets Tracked
+
+#### ✅ Always Create Issues/PRs For:
+
+- **New features** (no matter how small)
+- **Bug fixes**
+- **Refactoring** (if significant)
+- **Documentation** (major updates)
+- **Breaking changes**
+- **Architecture changes**
+- **Performance improvements**
+- **Security fixes**
+
+#### ⚠️ Optional (Use Judgment):
+
+- **Typo fixes** (can be direct PR)
+- **Minor doc updates** (can be direct PR)
+- **Dependency updates** (automated)
+- **CI/CD config tweaks** (can be direct PR)
+
+#### ❌ Never Create Issues/PRs For:
+
+- **Exploratory work** (use drafts or comments)
+- **Local experiments** (keep in local branches)
+- **WIP code** (wait until ready)
+
+---
+
+### Git Conventions
+
+#### Branch Lifetime
+
+```
+main branch (protected)
+└── feature/#42-custom-domains (your branch)
+    ├── commit: "feat(#42): add DNS interface"
+    ├── commit: "feat(#42): implement Cloudflare"
+    ├── commit: "test(#42): add DNS tests"
+    └── PR created → reviewed → merged → branch deleted
+```
+
+**Branch lifecycle**: Create → Work → PR → Review → Merge → Delete
+
+#### Commit Hygiene
+
+**Before pushing**, review your commits:
+```bash
+# Check commits
+git log --oneline
+
+# If needed, squash WIP commits
+git rebase -i HEAD~5
+
+# Clean commit history before pushing
+```
+
+#### Pull Request Size
+
+**Target**: 200-400 lines changed per PR
+
+**If larger**:
+- Break into multiple PRs
+- Stack PRs (PR #2 depends on PR #1)
+- Use feature flags for partial delivery
+
+---
+
+### Issue Labels
+
+Use GitHub labels to categorize:
+
+- `feature`: New functionality
+- `bug`: Something isn't working
+- `docs`: Documentation changes
+- `refactor`: Code cleanup
+- `test`: Testing improvements
+- `enhancement`: Improvement to existing feature
+- `priority-high`: Critical, blocking
+- `priority-medium`: Important, not blocking
+- `priority-low`: Nice to have
+- `good-first-issue`: Easy for newcomers
+- `help-wanted`: Community input needed
+- `wontfix`: Will not be addressed
+
+---
+
+### Example Full Workflow
+
+```bash
+# 1. Create issue
+gh issue create --title "Add Jupyter template" --body "..." --label "feature"
+# Issue #67 created
+
+# 2. Create branch
+git checkout -b feature/#67-jupyter-template
+
+# 3. Work in commits
+git commit -m "feat(#67): add base Jupyter Dockerfile"
+git commit -m "feat(#67): configure Jupyter Lab settings"
+git commit -m "feat(#67): add Python data science libraries"
+git commit -m "test(#67): verify Jupyter template builds"
+git commit -m "docs(#67): add Jupyter template to README"
+
+# 4. Push and create PR
+git push origin feature/#67-jupyter-template
+gh pr create --title "feat: Add Jupyter template (#67)" --body "Closes #67" --draft
+
+# 5. Mark PR ready when done
+gh pr ready 67
+
+# 6. Address review feedback (if any)
+git commit -m "fix(#67): update Jupyter version per review"
+git push
+
+# 7. Merge (after approval)
+gh pr merge 67 --squash --delete-branch
+
+# 8. Clean up local
+git checkout main
+git pull
+git branch -d feature/#67-jupyter-template
+```
+
+---
+
+### Testing Before PR
+
+**Always run tests before creating PR**:
+```bash
+# Backend tests
+cd api
+go test ./...
+
+# Frontend tests
+cd app
+npm test
+
+# Build check
+npm run build
+
+# Lint check
+npm run lint
+```
+
+**If tests fail**: Fix them before creating PR.
+
+---
+
+### Communication Best Practices
+
+#### In Issues
+- Be specific about the problem/feature
+- Include reproduction steps (for bugs)
+- Reference related issues/PRs
+- Add screenshots/videos if helpful
+- Tag relevant people with @mention
+
+#### In PRs
+- Explain **why** not just **what**
+- Call out areas needing special attention
+- Add testing instructions
+- Link to issue with "Closes #X"
+- Respond to review comments promptly
+
+#### In Commits
+- Write clear, descriptive messages
+- Explain **why** in commit body (if not obvious)
+- Reference issue number
+- Keep subject line under 72 characters
+
+---
+
+### When to Ask for Help
+
+**Create a discussion** (not issue) if:
+- You're unsure about approach
+- You need architectural guidance
+- You want community input
+- You're blocked on external dependency
+
+```bash
+gh discussion create --title "Best approach for multi-cloud support?" --body "..."
+```
+
+---
+
+### Anti-Patterns (Don't Do This)
+
+❌ **Pushing directly to main**
+```bash
+git push origin main  # NEVER DO THIS
+```
+
+❌ **Large monolithic PRs**
+```
+PR: "Implement entire cloud deployment mode"
+Files changed: 3,847 lines  # Too big
+```
+
+❌ **Vague commit messages**
+```bash
+git commit -m "fix"
+git commit -m "wip"
+git commit -m "updates"
+```
+
+❌ **Working without issue**
+```
+# Starting work without creating/referencing issue
+git checkout -b add-some-feature  # Missing issue reference
+```
+
+❌ **Mixing concerns**
+```
+PR: "Add custom domains and fix bug and update docs"
+# Should be 3 separate PRs
+```
+
+---
+
+### Summary Checklist
+
+Before starting work:
+- [ ] Issue exists (create if needed)
+- [ ] Issue is scoped and clear
+- [ ] Branch created with proper name
+- [ ] Reference issue in branch name
+
+While working:
+- [ ] Commit frequently
+- [ ] Clear commit messages
+- [ ] Reference issue in commits
+- [ ] Tests pass locally
+
+Before creating PR:
+- [ ] All tests pass
+- [ ] Code follows style guide
+- [ ] Documentation updated
+- [ ] Commits are clean
+- [ ] PR description is complete
+
+After PR created:
+- [ ] Responds to review feedback
+- [ ] Keeps PR updated
+- [ ] Merges when approved
+- [ ] Deletes branch after merge
+
+---
+
+## Getting Help
+
+- Read `SPEC.md` for detailed architecture
+- Check `docs/` for guides
+- Review existing code patterns before implementing new features
+- Ask questions about design decisions, not just code
+
+---
+
+**Last Updated**: 2025-10-07
