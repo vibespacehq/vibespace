@@ -48,6 +48,28 @@ jobs:
         working-directory: app/src-tauri
         run: cargo test --verbose
 
+  go-tests:
+    name: Go API Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: api/go.sum
+
+      - name: Run Go tests
+        working-directory: api
+        run: go test -v ./...
+
+      - name: Build API server
+        working-directory: api
+        run: go build -v ./cmd/server
+
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
