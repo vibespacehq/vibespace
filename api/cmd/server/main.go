@@ -4,10 +4,29 @@ import (
 	"log"
 	"os"
 
+	"workspace/pkg/handler"
+	"workspace/pkg/k8s"
+	"workspace/pkg/workspace"
+
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
+	// Initialize Kubernetes client
+	k8sClient, err := k8s.NewClient()
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Kubernetes client: %v", err)
+		log.Printf("API will run in limited mode without Kubernetes integration")
+		// Don't fatal - allow API to run for development
+	}
+
+	// Initialize services
+	workspaceService := workspace.NewService(k8sClient)
+
+	// Initialize handlers
+	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
+	templateHandler := handler.NewTemplateHandler()
+
 	// Initialize Gin router
 	r := gin.Default()
 
@@ -28,45 +47,28 @@ func main() {
 	{
 		// Health check
 		v1.GET("/health", func(c *gin.Context) {
-			c.JSON(200, gin.H{"status": "healthy"})
+			c.JSON(200, gin.H{
+				"status": "healthy",
+				"k8s":    k8sClient != nil,
+			})
 		})
 
 		// Workspaces
 		workspaces := v1.Group("/workspaces")
 		{
-			workspaces.GET("", listWorkspaces)
-			workspaces.POST("", createWorkspace)
-			workspaces.GET("/:id", getWorkspace)
-			workspaces.PUT("/:id", updateWorkspace)
-			workspaces.DELETE("/:id", deleteWorkspace)
-			workspaces.POST("/:id/start", startWorkspace)
-			workspaces.POST("/:id/stop", stopWorkspace)
+			workspaces.GET("", workspaceHandler.List)
+			workspaces.POST("", workspaceHandler.Create)
+			workspaces.GET("/:id", workspaceHandler.Get)
+			workspaces.DELETE("/:id", workspaceHandler.Delete)
+			workspaces.POST("/:id/start", workspaceHandler.Start)
+			workspaces.POST("/:id/stop", workspaceHandler.Stop)
 		}
 
 		// Templates
 		templates := v1.Group("/templates")
 		{
-			templates.GET("", listTemplates)
-			templates.POST("", createTemplate)
-			templates.GET("/:id", getTemplate)
-			templates.DELETE("/:id", deleteTemplate)
-		}
-
-		// Credentials
-		credentials := v1.Group("/credentials")
-		{
-			credentials.GET("", listCredentials)
-			credentials.POST("", createCredential)
-			credentials.GET("/:id", getCredential)
-			credentials.PUT("/:id", updateCredential)
-			credentials.DELETE("/:id", deleteCredential)
-		}
-
-		// Cluster
-		cluster := v1.Group("/cluster")
-		{
-			cluster.GET("/status", getClusterStatus)
-			cluster.POST("/install", installCluster)
+			templates.GET("", templateHandler.List)
+			templates.GET("/:id", templateHandler.Get)
 		}
 	}
 
@@ -80,77 +82,4 @@ func main() {
 	if err := r.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
-}
-
-// Placeholder handlers
-func listWorkspaces(c *gin.Context) {
-	c.JSON(200, gin.H{"workspaces": []interface{}{}})
-}
-
-func createWorkspace(c *gin.Context) {
-	c.JSON(201, gin.H{"message": "Workspace created"})
-}
-
-func getWorkspace(c *gin.Context) {
-	c.JSON(200, gin.H{"id": c.Param("id")})
-}
-
-func updateWorkspace(c *gin.Context) {
-	c.JSON(200, gin.H{"message": "Workspace updated"})
-}
-
-func deleteWorkspace(c *gin.Context) {
-	c.JSON(204, nil)
-}
-
-func startWorkspace(c *gin.Context) {
-	c.JSON(200, gin.H{"message": "Workspace starting"})
-}
-
-func stopWorkspace(c *gin.Context) {
-	c.JSON(200, gin.H{"message": "Workspace stopping"})
-}
-
-func listTemplates(c *gin.Context) {
-	c.JSON(200, gin.H{"templates": []interface{}{}})
-}
-
-func createTemplate(c *gin.Context) {
-	c.JSON(201, gin.H{"message": "Template created"})
-}
-
-func getTemplate(c *gin.Context) {
-	c.JSON(200, gin.H{"id": c.Param("id")})
-}
-
-func deleteTemplate(c *gin.Context) {
-	c.JSON(204, nil)
-}
-
-func listCredentials(c *gin.Context) {
-	c.JSON(200, gin.H{"credentials": []interface{}{}})
-}
-
-func createCredential(c *gin.Context) {
-	c.JSON(201, gin.H{"message": "Credential created"})
-}
-
-func getCredential(c *gin.Context) {
-	c.JSON(200, gin.H{"id": c.Param("id")})
-}
-
-func updateCredential(c *gin.Context) {
-	c.JSON(200, gin.H{"message": "Credential updated"})
-}
-
-func deleteCredential(c *gin.Context) {
-	c.JSON(204, nil)
-}
-
-func getClusterStatus(c *gin.Context) {
-	c.JSON(200, gin.H{"status": "unknown", "installed": false})
-}
-
-func installCluster(c *gin.Context) {
-	c.JSON(202, gin.H{"message": "Installation started"})
 }
