@@ -114,6 +114,7 @@ fn encrypt_data(data: &str) -> Result<String, String> {
     Ok(general_purpose::STANDARD.encode(&result))
 }
 
+#[allow(dead_code)]
 fn decrypt_data(encrypted: &str) -> Result<String, String> {
     let key_bytes = get_encryption_key()?;
     let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
@@ -278,7 +279,7 @@ async fn generate_ssh_key(name: String, key_type: String) -> Result<SshKeyPair, 
         .to_openssh(LineEnding::LF)
         .map_err(|e| format!("Failed to encode private key: {}", e))?;
 
-    let encrypted = encrypt_data(&private_key_str.to_string())?;
+    let encrypted = encrypt_data(private_key_str.as_ref())?;
 
     // Save metadata
     let metadata = serde_json::json!({
@@ -334,7 +335,7 @@ async fn update_hosts_file(entries: Vec<HostEntry>) -> Result<(), String> {
         .map_err(|e| format!("Failed to write temp hosts file: {}", e))?;
 
     let output = Command::new("sudo")
-        .args(&["cp", temp_file, "/etc/hosts"])
+        .args(["cp", temp_file, "/etc/hosts"])
         .output()
         .map_err(|e| format!("Failed to update /etc/hosts: {}", e))?;
 
@@ -364,7 +365,7 @@ fn main() {
             generate_ssh_key,
             update_hosts_file
         ])
-        .setup(|app| {
+        .setup(|_app| {
             // Initialize workspace directory on first run
             if let Err(e) = get_workspace_dir() {
                 eprintln!("Failed to initialize workspace directory: {}", e);
