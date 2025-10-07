@@ -733,9 +733,57 @@ npm run build
 
 # Lint check
 npm run lint
+
+# Dead code check (REQUIRED)
+make deadcode
 ```
 
 **If tests fail**: Fix them before creating PR.
+
+**If dead code is detected**: Remove unused code, exports, or dependencies before creating PR.
+
+---
+
+### Dead Code Detection
+
+This project uses automated dead code detection to prevent code bloat and maintain quality.
+
+**Before every commit**, run:
+```bash
+make deadcode
+```
+
+**What it checks**:
+- Go: Unused functions, types, variables (via `deadcode` and `staticcheck`)
+- TypeScript: Unused exports, components, hooks (via `knip`)
+- Rust: Compiler warnings and clippy lints
+- Dependencies: Unused npm/go/cargo packages
+
+**Common issues and fixes**:
+```bash
+# Unused export in TypeScript
+# ❌ export const unused = 'value'
+# ✅ Remove the export or use it
+
+# Unused import
+# ❌ import { unused } from './module'
+# ✅ Remove the import
+
+# Unused function in Go
+# ❌ func unusedFunction() {}
+# ✅ Remove the function or use it
+
+# If intentionally unused (for future use), add comment:
+// TODO(#123): Will be used for feature X
+export const futureUse = 'value'
+```
+
+**CI/CD**: Dead code checks run automatically on all PRs. PRs failing this check cannot be merged.
+
+**Tools configuration**:
+- TypeScript: `app/knip.config.ts`
+- Go: `api/.staticcheck.conf`
+- Commands: `Makefile` (root)
 
 ---
 
