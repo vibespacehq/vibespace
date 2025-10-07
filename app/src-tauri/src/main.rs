@@ -51,6 +51,33 @@ struct HostEntry {
 // Utility Functions
 // ============================================================================
 
+fn is_valid_ip(ip: &str) -> bool {
+    // Simple IPv4 validation
+    let parts: Vec<&str> = ip.split('.').collect();
+    if parts.len() != 4 {
+        return false;
+    }
+    parts.iter().all(|part| {
+        part.parse::<u8>().is_ok()
+    })
+}
+
+fn is_valid_hostname(hostname: &str) -> bool {
+    // Hostname validation: alphanumeric, hyphens, dots
+    // No path separators or special characters
+    if hostname.is_empty() || hostname.len() > 253 {
+        return false;
+    }
+
+    // Check for path traversal attempts
+    if hostname.contains("..") || hostname.contains('/') || hostname.contains('\\') {
+        return false;
+    }
+
+    // Valid hostname characters: a-z, A-Z, 0-9, hyphen, dot
+    hostname.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.')
+}
+
 fn get_workspace_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Failed to get home directory")?;
     let workspace_dir = home.join(".workspace");
@@ -143,22 +170,22 @@ fn decrypt_data(encrypted: &str) -> Result<String, String> {
 // ============================================================================
 
 #[tauri::command]
-async fn install_k3s() -> Result<String, String> {
+async fn install_k3s(app_handle: tauri::AppHandle) -> Result<String, String> {
     println!("Installing k3s...");
 
-    // Determine script path relative to project root
-    let script_path = std::env::current_dir()
-        .map_err(|e| format!("Failed to get current directory: {}", e))?
-        .join("script")
-        .join("install_k3s.sh");
+    // Get bundled script from Tauri resources
+    let resource_path = app_handle
+        .path()
+        .resolve("install_k3s.sh", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("Failed to resolve resource path: {}", e))?;
 
-    if !script_path.exists() {
-        return Err(format!("k3s installation script not found at {:?}", script_path));
+    if !resource_path.exists() {
+        return Err("k3s installation script not found in app resources".to_string());
     }
 
     // Execute installation script
     let output = Command::new("bash")
-        .arg(script_path)
+        .arg(&resource_path)
         .output()
         .map_err(|e| format!("Failed to execute k3s installation: {}", e))?;
 
@@ -239,6 +266,10 @@ async fn get_credentials() -> Result<Vec<CredentialSummary>, String> {
 async fn delete_credential(id: String) -> Result<(), String> {
     println!("Deleting credential: {}", id);
 
+    // Validate UUID format to prevent path traversal
+    uuid::Uuid::parse_str(&id)
+        .map_err(|_| "Invalid credential ID format".to_string())?;
+
     let cred_dir = get_credential_dir()?;
     let cred_file = cred_dir.join(format!("{}.json", id));
 
@@ -311,6 +342,16 @@ async fn generate_ssh_key(name: String, key_type: String) -> Result<SshKeyPair, 
 async fn update_hosts_file(entries: Vec<HostEntry>) -> Result<(), String> {
     println!("Updating /etc/hosts with {} entries", entries.len());
 
+    // Validate all entries first
+    for entry in &entries {
+        if !is_valid_ip(&entry.ip) {
+            return Err(format!("Invalid IP address: {}", entry.ip));
+        }
+        if !is_valid_hostname(&entry.hostname) {
+            return Err(format!("Invalid hostname: {}", entry.hostname));
+        }
+    }
+
     // Read current hosts file
     let hosts_content = fs::read_to_string("/etc/hosts")
         .map_err(|e| format!("Failed to read /etc/hosts: {}", e))?;
@@ -330,22 +371,25 @@ async fn update_hosts_file(entries: Vec<HostEntry>) -> Result<(), String> {
     let new_content = lines.join("\n");
 
     // Write with sudo (requires user to enter password)
-    let temp_file = "/tmp/workspace_hosts";
-    fs::write(temp_file, &new_content)
+    // Use secure random temp file to prevent race conditions
+    let temp_file = format!("/tmp/workspace_hosts_{}", uuid::Uuid::new_v4());
+    fs::write(&temp_file, &new_content)
         .map_err(|e| format!("Failed to write temp hosts file: {}", e))?;
 
     let output = Command::new("sudo")
-        .args(["cp", temp_file, "/etc/hosts"])
+        .args(["cp", &temp_file, "/etc/hosts"])
         .output()
         .map_err(|e| format!("Failed to update /etc/hosts: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        // Clean up temp file before returning error
+        let _ = fs::remove_file(&temp_file);
         return Err(format!("Failed to update /etc/hosts: {}", stderr));
     }
 
     // Clean up temp file
-    let _ = fs::remove_file(temp_file);
+    let _ = fs::remove_file(&temp_file);
 
     Ok(())
 }
