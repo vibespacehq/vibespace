@@ -5,13 +5,13 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
+use base64::{engine::general_purpose, Engine as _};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use tauri::Manager;
 
 // ============================================================================
 // Types
@@ -111,7 +111,7 @@ fn encrypt_data(data: &str) -> Result<String, String> {
     let mut result = nonce_bytes.to_vec();
     result.extend_from_slice(&ciphertext);
 
-    Ok(base64::encode(&result))
+    Ok(general_purpose::STANDARD.encode(&result))
 }
 
 fn decrypt_data(encrypted: &str) -> Result<String, String> {
@@ -119,7 +119,7 @@ fn decrypt_data(encrypted: &str) -> Result<String, String> {
     let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
     let cipher = Aes256Gcm::new(key);
 
-    let combined = base64::decode(encrypted)
+    let combined = general_purpose::STANDARD.decode(encrypted)
         .map_err(|e| format!("Base64 decode failed: {}", e))?;
 
     if combined.len() < 12 {
