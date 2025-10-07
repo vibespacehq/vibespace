@@ -53,3 +53,8 @@ temp/
 /etc/rancher/
 kubeconfig
 *.kubeconfig
+
+# Dead code detection tools
+.knip-cache/
+.ts-prune-cache/
+.staticcheck/
