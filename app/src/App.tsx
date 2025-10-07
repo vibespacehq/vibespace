@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 function App() {
-  const [workspaces, setWorkspaces] = useState([])
+  const [workspaces] = useState([])
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary">
