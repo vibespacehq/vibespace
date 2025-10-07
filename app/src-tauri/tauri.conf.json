@@ -1,73 +1,37 @@
 {
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Workspace",
+  "version": "0.1.0",
+  "identifier": "com.workspace.dev",
   "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
-    "devPath": "http://localhost:5173",
-    "distDir": "../dist",
-    "withGlobalTauri": false
+    "beforeBuildCommand": "npm run build"
   },
-  "package": {
-    "productName": "Workspace",
-    "version": "0.1.0"
-  },
-  "tauri": {
-    "allowlist": {
-      "all": false,
-      "shell": {
-        "all": false,
-        "open": true
-      },
-      "dialog": {
-        "all": false,
-        "ask": true,
-        "confirm": true,
-        "message": true,
-        "open": true,
-        "save": true
-      },
-      "fs": {
-        "all": false,
-        "readFile": true,
-        "writeFile": true,
-        "readDir": true,
-        "createDir": true,
-        "removeDir": true,
-        "removeFile": true,
-        "exists": true,
-        "scope": ["$HOME/.workspace/**", "$HOME/.ssh/**"]
-      },
-      "path": {
-        "all": true
-      },
-      "process": {
-        "all": false,
-        "exit": true,
-        "relaunch": true
-      }
-    },
-    "bundle": {
-      "active": true,
-      "targets": "all",
-      "identifier": "com.workspace.dev"
-    },
-    "security": {
-      "csp": null
-    },
+  "app": {
     "windows": [
       {
-        "fullscreen": false,
-        "resizable": true,
         "title": "Workspace",
         "width": 1200,
         "height": 800,
         "minWidth": 800,
         "minHeight": 600,
-        "theme": "dark",
+        "resizable": true,
+        "fullscreen": false,
         "decorations": true,
         "alwaysOnTop": false,
         "skipTaskbar": false,
+        "theme": "dark",
         "visible": true
       }
-    ]
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all"
   }
 }
