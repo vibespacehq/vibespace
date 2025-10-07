@@ -355,6 +355,7 @@ async fn update_hosts_file(entries: Vec<HostEntry>) -> Result<(), String> {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             install_k3s,
             save_credential,
