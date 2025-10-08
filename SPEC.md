@@ -647,7 +647,10 @@ server:
 k3s:
   install_path: /usr/local/bin/k3s
   config_path: /etc/rancher/k3s
-  kubeconfig: ~/.kube/config
+  kubeconfig_paths:
+    - ~/.kube/config              # Rancher Desktop, k3d, kubectl default
+    - /etc/rancher/k3s/k3s.yaml  # Native k3s default
+    - ${KUBECONFIG}               # User-defined environment variable
 
 registry:
   url: localhost:5000
@@ -692,21 +695,55 @@ The app **detects** existing Kubernetes installations and guides users to instal
 **Detection Logic**:
 ```typescript
 // app/src/hooks/useKubernetesStatus.ts
+// TODO(#14): Implement this detection logic
 async function detectKubernetes() {
-  // 1. Check kubectl availability
-  const kubectlAvailable = await invoke('check_kubectl');
+  try {
+    // 1. Check kubectl availability
+    const kubectlAvailable = await invoke('check_kubectl');
+    if (!kubectlAvailable) {
+      return {
+        available: false,
+        error: 'kubectl not found in PATH',
+        suggestedAction: 'install_kubernetes'
+      };
+    }
 
-  // 2. Check cluster connectivity
-  const clusterHealthy = await invoke('check_cluster_health');
+    // 2. Find kubeconfig (check multiple locations)
+    const kubeconfigPath = await invoke('find_kubeconfig', {
+      paths: [
+        '~/.kube/config',              // Rancher Desktop, k3d
+        '/etc/rancher/k3s/k3s.yaml',  // Native k3s
+        process.env.KUBECONFIG         // User-defined
+      ]
+    });
 
-  // 3. Detect installation type
-  const installType = await invoke('detect_install_type'); // k3s, rancher, k3d, unknown
+    // 3. Check cluster connectivity
+    const clusterHealthy = await invoke('check_cluster_health', { kubeconfigPath });
+    if (!clusterHealthy) {
+      return {
+        available: false,
+        error: 'Cluster unreachable or not running',
+        suggestedAction: 'start_kubernetes'
+      };
+    }
 
-  return {
-    available: kubectlAvailable && clusterHealthy,
-    type: installType,
-    version: clusterVersion
-  };
+    // 4. Detect installation type and version
+    const installType = await invoke('detect_install_type'); // k3s, rancher, k3d, unknown
+    const version = await invoke('get_cluster_version');
+
+    return {
+      available: true,
+      type: installType,
+      version: version,
+      kubeconfigPath: kubeconfigPath
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error.message,
+      suggestedAction: 'check_installation'
+    };
+  }
 }
 ```
 

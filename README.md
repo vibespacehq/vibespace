@@ -85,6 +85,61 @@ The app will detect your Kubernetes installation on startup. If Kubernetes is no
 5. Click "Create"
 6. Open in embedded VS Code or browser
 
+### Troubleshooting Installation
+
+**Issue**: "Kubernetes not detected" after installing k3s
+
+**Solution**: Ensure k3s is running and kubeconfig is accessible
+```bash
+# Check if k3s is running (Linux)
+sudo systemctl status k3s
+
+# Start k3s if stopped (Linux)
+sudo systemctl start k3s
+
+# macOS (Rancher Desktop): Ensure Kubernetes is enabled in settings
+# macOS (native k3s): Check if k3s process is running
+ps aux | grep k3s
+```
+
+**Issue**: "Permission denied" when accessing kubeconfig
+
+**Solution**: Fix kubeconfig permissions
+```bash
+# For native k3s
+sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+
+# Or copy to user directory
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $USER:$USER ~/.kube/config
+chmod 600 ~/.kube/config
+```
+
+**Issue**: kubectl not found in PATH
+
+**Solution**: Install kubectl or ensure it's in your PATH
+```bash
+# macOS
+brew install kubectl
+
+# Linux
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+# Verify
+kubectl version --client
+```
+
+**Issue**: Rancher Desktop installed but not detected
+
+**Solution**: Ensure Kubernetes is enabled in Rancher Desktop settings
+1. Open Rancher Desktop
+2. Go to Preferences → Kubernetes
+3. Check "Enable Kubernetes"
+4. Wait for cluster to start (green indicator)
+5. Click "Verify Installation" in Workspace app
+
 ## Architecture
 
 ```
@@ -108,6 +163,7 @@ The app will detect your Kubernetes installation on startup. If Kubernetes is no
 
 - [Product Roadmap](ROADMAP.md) - Feature timeline and release strategy
 - [Technical Specification](SPEC.md) - Complete architecture and design
+- [Architecture Decisions](docs/adr/) - Records of key architectural decisions
 - [Contributing Guide](docs/CONTRIBUTING.md) - Development workflow
 - [AI Assistant Context](.claude/CLAUDE.md) - For AI code assistants
 - [API Documentation](api/README.md) - API server guide

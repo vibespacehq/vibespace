@@ -271,6 +271,8 @@ For **MVP** (Phase 1), we're prioritizing:
 ## Important Files
 
 - `SPEC.md` - Complete technical specification
+- `ROADMAP.md` - Product roadmap (5 phases, MVP through enterprise)
+- `docs/adr/` - Architecture Decision Records (key design decisions)
 - `app/src-tauri/tauri.conf.json` - Tauri configuration
 - `api/config/config.yaml` - API server configuration
 - `k8s/*.yaml` - Kubernetes manifests
