@@ -83,13 +83,22 @@ export function InstallationInstructions({ suggestedAction }: InstallationInstru
             </div>
 
             <div className="install-option">
-              <h4>Option 2: Native k3s</h4>
-              <p>For developers who prefer command-line.</p>
+              <h4>Option 2: k3d (k3s in Docker)</h4>
+              <p>Lightweight k3s cluster in Docker containers.</p>
               <div className="code-block">
                 <pre>
-                  <code>brew install k3s</code>
+                  <code>
+{`# Install k3d
+brew install k3d
+
+# Create a cluster
+k3d cluster create mycluster`}
+                  </code>
                 </pre>
-                <button className="copy-btn" onClick={() => copyToClipboard('brew install k3s')}>
+                <button
+                  className="copy-btn"
+                  onClick={() => copyToClipboard('brew install k3d\nk3d cluster create mycluster')}
+                >
                   Copy
                 </button>
               </div>
