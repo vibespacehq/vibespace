@@ -37,27 +37,31 @@ Workspace needs Kubernetes to run. Choose one option:
 3. Enable Kubernetes in settings
 4. Done! ✅
 
-#### Option 2: Native k3s (Advanced)
+#### Option 2: k3d (k3s in Docker)
 
-**For developers who prefer command-line**.
+**Lightweight k3s cluster in Docker containers**.
 
-**macOS**:
+**macOS/Linux/Windows**:
 ```bash
-brew install k3s
+# Install k3d
+brew install k3d  # macOS/Linux with Homebrew
+# or download from https://k3d.io/
+
+# Create a cluster
+k3d cluster create mycluster
 ```
 
-**Linux**:
+#### Option 3: Native k3s (Linux only)
+
+**For Linux users who prefer native installation**.
+
 ```bash
 curl -sfL https://get.k3s.io | sh -s - \
   --write-kubeconfig-mode 644 \
   --disable traefik
 ```
 
-**Windows**:
-- Use Option 1 (Rancher Desktop) OR
-- Install WSL2, then run k3s inside Linux
-
-#### Option 3: Existing Cluster
+#### Option 4: Existing Cluster
 
 If you already have a Kubernetes cluster (k3d, minikube, Docker Desktop), Workspace will detect it.
 
