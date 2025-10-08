@@ -13,11 +13,13 @@ target/
 
 # Tauri
 app/src-tauri/target/
+app/src-tauri/gen/
 
 # Go
 *.test
 *.out
-/api/bin/
+api/bin/
+api/server
 
 # IDEs
 .vscode/
