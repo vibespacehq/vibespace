@@ -9,6 +9,7 @@ export interface KubernetesStatus {
   suggestedAction?: 'install_kubernetes' | 'start_kubernetes' | 'check_installation';
 }
 
+// TODO(Phase 1): Will be used for type-safe install type checking
 export type KubernetesInstallType =
   | 'k3s'
   | 'rancher-desktop'
@@ -18,6 +19,7 @@ export type KubernetesInstallType =
   | 'unknown';
 
 // Workspace Types
+// TODO(Phase 1): Will be used for workspace CRUD operations
 
 export interface Workspace {
   id: string;
@@ -35,6 +37,7 @@ export interface CreateWorkspaceRequest {
 }
 
 // Template Types
+// TODO(Phase 1): Will be used for template selection
 
 export interface Template {
   id: string;
@@ -45,6 +48,7 @@ export interface Template {
 }
 
 // Credential Types
+// TODO(Phase 2): Will be used for credential management UI
 
 export interface Credential {
   id: string;

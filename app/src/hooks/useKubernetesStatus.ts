@@ -41,6 +41,8 @@ export function useKubernetesStatus() {
 }
 
 // Individual detection functions (for advanced use cases)
+// These are exported for future features that need granular control
+// TODO(Phase 2): Will be used by workspace creation wizard and health monitoring
 
 export async function checkKubectl(): Promise<boolean> {
   return await invoke<boolean>('check_kubectl');
