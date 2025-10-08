@@ -1,7 +1,15 @@
 import { useState } from 'react'
+import { KubernetesSetup } from './components/setup/KubernetesSetup'
+import { useKubernetesStatus } from './hooks/useKubernetesStatus'
 
 function App() {
   const [workspaces] = useState([])
+  const { status } = useKubernetesStatus()
+
+  // Show setup wizard if Kubernetes is not available
+  if (!status?.available) {
+    return <KubernetesSetup />
+  }
 
   return (
     <div className="min-h-screen bg-bg-primary text-text-primary">
