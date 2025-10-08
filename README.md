@@ -19,26 +19,62 @@ Workspace is a desktop application that manages isolated development environment
 
 ### Prerequisites
 
-- macOS or Linux (Windows via WSL2)
+**System Requirements**:
+- macOS, Linux, or Windows (via WSL2)
 - 8GB+ RAM
 - 50GB+ disk space
-- Docker (for building images)
+
+**Kubernetes Required**:
+
+Workspace needs Kubernetes to run. Choose one option:
+
+#### Option 1: Rancher Desktop (Recommended) ⭐
+
+**Easiest for beginners** - GUI-based k3s management.
+
+1. Download from [rancherdesktop.io](https://rancherdesktop.io/)
+2. Install and launch Rancher Desktop
+3. Enable Kubernetes in settings
+4. Done! ✅
+
+#### Option 2: Native k3s (Advanced)
+
+**For developers who prefer command-line**.
+
+**macOS**:
+```bash
+brew install k3s
+```
+
+**Linux**:
+```bash
+curl -sfL https://get.k3s.io | sh -s - \
+  --write-kubeconfig-mode 644 \
+  --disable traefik
+```
+
+**Windows**:
+- Use Option 1 (Rancher Desktop) OR
+- Install WSL2, then run k3s inside Linux
+
+#### Option 3: Existing Cluster
+
+If you already have a Kubernetes cluster (k3d, minikube, Docker Desktop), Workspace will detect it.
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/workspace
-cd workspace
+git clone https://github.com/yagizdagabak/workspaces
+cd workspaces
 
-# Install k3s cluster
-./script/install_k3s.sh
-
-# Build and run the desktop app
+# Install dependencies and run the desktop app
 cd app
 npm install
-npm run dev
+npm run tauri:dev
 ```
+
+The app will detect your Kubernetes installation on startup. If Kubernetes is not found, the app will show installation instructions.
 
 ### Usage
 
@@ -70,9 +106,11 @@ npm run dev
 
 ## Documentation
 
+- [Product Roadmap](ROADMAP.md) - Feature timeline and release strategy
 - [Technical Specification](SPEC.md) - Complete architecture and design
 - [Contributing Guide](docs/CONTRIBUTING.md) - Development workflow
-- [AI Assistant Context](.claude/claude.md) - For AI code assistants
+- [AI Assistant Context](.claude/CLAUDE.md) - For AI code assistants
+- [API Documentation](api/README.md) - API server guide
 
 ## Project Structure
 
@@ -110,14 +148,30 @@ docker build -t workspace-base:latest .
 
 ## Roadmap
 
-- [x] **Phase 1**: Foundation (Weeks 1-2)
-- [ ] **Phase 2**: Workspaces (Weeks 2-3)
-- [ ] **Phase 3**: Networking (Weeks 3-4)
-- [ ] **Phase 4**: AI Integration (Week 4)
-- [ ] **Phase 5**: Custom Templates (Week 4-5)
-- [ ] **Phase 6**: Polish & Testing (Week 5)
+**Current Phase**: Phase 1 - MVP (Week 2 of 3)
 
-See [SPEC.md](SPEC.md) for detailed roadmap.
+- [x] **Phase 1**: MVP - Foundation
+  - [x] Tauri app scaffold
+  - [x] Functional tests
+  - [x] Go API server
+  - [ ] Kubernetes detection & setup guide
+  - [ ] Basic workspace management
+- [ ] **Phase 2**: Polish & Integration
+  - [ ] Rancher Desktop integration
+  - [ ] More templates (Vue, Go, Jupyter)
+  - [ ] Knative scale-to-zero
+- [ ] **Phase 3**: Zero-Config Installation
+  - [ ] Bundled Kubernetes runtime
+  - [ ] One-click setup experience
+- [ ] **Phase 4**: Cloud Mode
+  - [ ] AWS/GCP/DigitalOcean support
+  - [ ] TLS & custom domains
+- [ ] **Phase 5**: Enterprise Features
+  - [ ] Template marketplace
+  - [ ] Team collaboration
+  - [ ] SSO/SAML
+
+See [ROADMAP.md](ROADMAP.md) for detailed product roadmap and [SPEC.md](SPEC.md) for technical specifications.
 
 ## Contributing
 
