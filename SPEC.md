@@ -604,7 +604,7 @@ api/
 │   │   ├── cluster.go                 # Cluster handlers
 │   │   └── middleware.go              # CORS, logging, auth
 │   ├── k3s/
-│   │   ├── installer.go               # k3s installation
+│   │   ├── detector.go                # k3s/kubectl detection
 │   │   ├── client.go                  # Kubernetes client
 │   │   └── health.go                  # Cluster health checks
 │   ├── workspace/
@@ -632,10 +632,8 @@ api/
 │       ├── template.go                # Template model
 │       ├── credential.go              # Credential model
 │       └── config.go                  # Configuration
-├── config/
-│   └── config.yaml                    # Default settings
-└── script/
-    └── install_k3s.sh                 # k3s installation script
+└── config/
+    └── config.yaml                    # Default settings
 ```
 
 #### 4.2.2 Configuration
@@ -649,7 +647,10 @@ server:
 k3s:
   install_path: /usr/local/bin/k3s
   config_path: /etc/rancher/k3s
-  kubeconfig: ~/.kube/config
+  kubeconfig_paths:
+    - ~/.kube/config              # Rancher Desktop, k3d, kubectl default
+    - /etc/rancher/k3s/k3s.yaml  # Native k3s default
+    - ${KUBECONFIG}               # User-defined environment variable
 
 registry:
   url: localhost:5000
@@ -673,48 +674,157 @@ credential:
 
 ---
 
-### 4.3 k3s Cluster Setup
+### 4.3 Kubernetes Cluster Setup
 
-#### 4.3.1 Installation Script
+#### 4.3.1 Installation Approach (MVP)
+
+**Phase 1 (MVP)**: Detection + Guided Setup
+
+The app **detects** existing Kubernetes installations and guides users to install if missing. This approach:
+- ✅ Targets developer early adopters
+- ✅ Supports multiple install methods (k3s, Rancher Desktop, k3d)
+- ✅ Ships faster (no bundling complexity)
+- ✅ More secure (no sudo from app)
+
+**Supported Installations**:
+1. **Rancher Desktop** (Recommended) - GUI-based k3s management
+2. **Native k3s** (Advanced) - Command-line installation
+3. **k3d** (Alternative) - k3s in Docker
+4. **Existing clusters** - Any accessible Kubernetes cluster
+
+**Detection Logic**:
+```typescript
+// app/src/hooks/useKubernetesStatus.ts
+// TODO(#14): Implement this detection logic
+async function detectKubernetes() {
+  try {
+    // 1. Check kubectl availability
+    const kubectlAvailable = await invoke('check_kubectl');
+    if (!kubectlAvailable) {
+      return {
+        available: false,
+        error: 'kubectl not found in PATH',
+        suggestedAction: 'install_kubernetes'
+      };
+    }
+
+    // 2. Find kubeconfig (check multiple locations)
+    const kubeconfigPath = await invoke('find_kubeconfig', {
+      paths: [
+        '~/.kube/config',              // Rancher Desktop, k3d
+        '/etc/rancher/k3s/k3s.yaml',  // Native k3s
+        process.env.KUBECONFIG         // User-defined
+      ]
+    });
+
+    // 3. Check cluster connectivity
+    const clusterHealthy = await invoke('check_cluster_health', { kubeconfigPath });
+    if (!clusterHealthy) {
+      return {
+        available: false,
+        error: 'Cluster unreachable or not running',
+        suggestedAction: 'start_kubernetes'
+      };
+    }
+
+    // 4. Detect installation type and version
+    const installType = await invoke('detect_install_type'); // k3s, rancher, k3d, unknown
+    const version = await invoke('get_cluster_version');
+
+    return {
+      available: true,
+      type: installType,
+      version: version,
+      kubeconfigPath: kubeconfigPath
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error.message,
+      suggestedAction: 'check_installation'
+    };
+  }
+}
+```
+
+**Platform-Specific Installation Instructions**:
+
+**macOS**:
+```bash
+# Option 1 (Recommended): Rancher Desktop
+# Download from https://rancherdesktop.io/
+# Enable Kubernetes in settings
+
+# Option 2 (Advanced): Native k3s
+brew install k3s
+```
+
+**Linux**:
+```bash
+# Option 1: Native k3s
+curl -sfL https://get.k3s.io | sh -s - \
+  --write-kubeconfig-mode 644 \
+  --disable traefik
+
+# Option 2: Rancher Desktop
+# Download .deb/.rpm from https://rancherdesktop.io/
+```
+
+**Windows**:
+```powershell
+# Recommended: Rancher Desktop
+# Download installer from https://rancherdesktop.io/
+
+# Alternative: WSL2 + k3s
+# Install WSL2, then run k3s inside Linux
+```
+
+**Future (Phase 3)**: Full bundling with VM/k3s binaries for zero-config installation. See GitHub Issue #15.
+
+#### 4.3.2 Recommended k3s Configuration
+
+When users install k3s manually, these are the recommended settings:
 
 ```bash
-#!/bin/bash
-# script/install_k3s.sh
-
-set -e
-
-echo "Installing k3s..."
+# Minimal k3s setup for Workspace
 curl -sfL https://get.k3s.io | sh -s - \
   --write-kubeconfig-mode 644 \
   --disable traefik \
   --disable servicelb \
   --kube-apiserver-arg=feature-gates=ServerSideApply=true
+```
 
-echo "Waiting for k3s to be ready..."
-until kubectl get nodes 2>/dev/null | grep -q Ready; do
-  sleep 2
-done
+**Why these flags**:
+- `--write-kubeconfig-mode 644`: Readable kubeconfig (no sudo for kubectl)
+- `--disable traefik`: We install our own ingress controller
+- `--disable servicelb`: Use Knative networking instead
+- `ServerSideApply=true`: Required for Knative
 
-echo "Installing Knative Serving..."
+#### 4.3.3 Post-Installation Setup
+
+Once Kubernetes is available (detected by the app), the following components are installed:
+
+```bash
+# Install Knative Serving
 kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.11.0/serving-crds.yaml
 kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1.11.0/serving-core.yaml
 
-echo "Installing Traefik..."
+# Install Traefik (Ingress)
 kubectl apply -f k8s/traefik.yaml
 
-echo "Installing Local Registry..."
+# Install Local Registry
 kubectl apply -f k8s/registry.yaml
 
-echo "Installing BuildKit..."
+# Install BuildKit (Image Building)
 kubectl apply -f k8s/buildkit.yaml
 
-echo "Waiting for all pods to be ready..."
+# Wait for readiness
 kubectl wait --for=condition=ready pod --all --all-namespaces --timeout=5m
-
-echo "k3s cluster ready!"
 ```
 
-#### 4.3.2 Manifests
+**Note**: This setup is automated by the app once Kubernetes is detected.
+
+#### 4.3.4 Manifests
 
 **Registry** (`k8s/registry.yaml`):
 ```yaml
@@ -2426,17 +2536,44 @@ $ workspace template import my-django-template.tar.gz
 
 ### 11.1 First-Time Setup
 
+#### MVP Flow (Phase 1)
+
 ```
 1. User downloads and launches Workspace
 
-2. Welcome screen
-   ├─> "Install k3s" button
-   │   └─> Prompts for sudo password (macOS/Linux)
+2. Kubernetes Detection
+   ├─> App checks for kubectl/k3s
    │
-3. Installation progress
-   ├─> [▓▓▓▓▓░░░░░] Installing k3s...
-   ├─> [▓▓▓▓▓▓▓░░░] Deploying Knative...
-   ├─> [▓▓▓▓▓▓▓▓░░] Setting up Traefik...
+   ├─ If Found (Kubernetes Available):
+   │   ├─> ✅ Kubernetes Ready (Rancher Desktop v1.x.x)
+   │   │   Running k3s v1.28.x
+   │   │
+   │   └─> [Continue to Setup]
+   │
+   └─ If Not Found:
+       ┌─────────────────────────────────────────────┐
+       │ Kubernetes Required                         │
+       │                                             │
+       │ Workspace needs Kubernetes to run.          │
+       │                                             │
+       │ Recommended:                                │
+       │ [Download Rancher Desktop]                  │
+       │                                             │
+       │ Or install manually:                        │
+       │ macOS:   brew install k3s                   │
+       │ Linux:   curl -sfL https://get.k3s.io | sh -│
+       │ Windows: Use Rancher Desktop or WSL2        │
+       │                                             │
+       │ [Copy Command] [Show Instructions]          │
+       │                                             │
+       │ After installation:                         │
+       │ [Verify Installation]                       │
+       └─────────────────────────────────────────────┘
+
+3. Post-Kubernetes Setup (Automated)
+   ├─> [▓▓▓▓▓░░░░░] Deploying Knative...
+   ├─> [▓▓▓▓▓▓▓░░░] Setting up Traefik...
+   ├─> [▓▓▓▓▓▓▓▓░░] Installing local registry...
    └─> [▓▓▓▓▓▓▓▓▓▓] Building base images... (3/3)
    │
 4. Setup complete!
@@ -2444,6 +2581,24 @@ $ workspace template import my-django-template.tar.gz
    │
    └─> [Create your first workspace]
        [Set up credentials (optional)]
+```
+
+#### Future Flow (Phase 3 - Full Bundling)
+
+```
+1. User downloads and launches Workspace
+
+2. One-Click Setup
+   ├─> "Set up Kubernetes cluster" button
+   │   └─> Automatic installation (no sudo prompt from app)
+   │
+3. Installation progress
+   ├─> [▓▓▓▓▓░░░░░] Setting up VM...
+   ├─> [▓▓▓▓▓▓▓░░░] Installing k3s...
+   ├─> [▓▓▓▓▓▓▓▓░░] Deploying Knative...
+   └─> [▓▓▓▓▓▓▓▓▓▓] Building base images...
+   │
+4. Setup complete! (Zero configuration required)
 ```
 
 ### 11.1.1 Setting Up Credentials (Optional)

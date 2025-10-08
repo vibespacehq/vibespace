@@ -227,11 +227,52 @@ Excellent k8s client library (`client-go`), fast, single binary deployment.
 ### Why k3s?
 Lightweight k8s (<512MB RAM), perfect for local development, easy to install.
 
+### Kubernetes Installation Strategy (MVP Decision)
+
+**Decision**: Use **detection + guided setup** instead of bundling Kubernetes runtime.
+
+**Why Detection Instead of Bundling?**
+
+For **MVP** (Phase 1), we're prioritizing:
+1. **Speed to market** - Ship in 3 weeks, not 11 weeks
+2. **Focus on core value** - Workspace management, not cluster installation
+3. **Security** - No sudo execution from app, users control their system
+4. **Flexibility** - Supports k3s, Rancher Desktop, k3d, etc.
+5. **Validation first** - Prove the concept before building polished installer
+
+**How It Works (MVP)**:
+```
+1. App checks for kubectl/k3s on startup
+2. If missing → Show platform-specific installation guide
+   - macOS: "Install Rancher Desktop OR brew install k3s"
+   - Linux: "curl -sfL https://get.k3s.io | sh -"
+   - Windows: "Install Rancher Desktop OR use WSL2"
+3. User installs via their preferred method
+4. Click "Verify" → App detects cluster and enables features
+```
+
+**Target Users (MVP)**: Developer early adopters who can run `brew install k3s`
+
+**Roadmap**:
+- **Phase 1 (MVP)**: Detection + guided setup (Issue #14)
+- **Phase 2**: Rancher Desktop deep integration (Issue #16)
+- **Phase 3**: Full bundling with VM/k3s binaries (Issue #15)
+
+**Why This Is the Right Approach**:
+- Similar to how VS Code, Docker initially shipped, most dev tools work
+- Follows startup best practices: "Ship → Learn → Polish"
+- Bundling is always possible later if users demand it
+- Most developers already have k3s/Docker Desktop/Rancher Desktop
+
+**Future Enhancement**: Full zero-config bundling (VM + k3s + auto-setup) planned for v2.0 after MVP validation.
+
 ---
 
 ## Important Files
 
 - `SPEC.md` - Complete technical specification
+- `ROADMAP.md` - Product roadmap (5 phases, MVP through enterprise)
+- `docs/adr/` - Architecture Decision Records (key design decisions)
 - `app/src-tauri/tauri.conf.json` - Tauri configuration
 - `api/config/config.yaml` - API server configuration
 - `k8s/*.yaml` - Kubernetes manifests
@@ -317,12 +358,13 @@ kubectl get svc -n default registry
 **Phase 1**: Foundation (Weeks 1-2) - IN PROGRESS
 - ✅ Project structure
 - ✅ Specification complete
-- ⏳ Tauri app scaffold
-- ⏳ Go API server
-- ⏳ k3s automation
-- ⏳ Base image
+- ✅ Tauri app scaffold (PR #5, #7 merged)
+- ✅ Functional tests (PR #9 merged)
+- ✅ Go API server (PR #13 merged)
+- ⏳ Kubernetes detection & setup guide (Issue #14)
+- ⏳ Base Docker image
 
-See `SPEC.md` section 10 for full roadmap.
+See `ROADMAP.md` for detailed product roadmap and `SPEC.md` section 10 for technical phases.
 
 ---
 
