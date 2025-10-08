@@ -12,7 +12,6 @@ use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use tauri::Manager;
 
 // ============================================================================
 // Types
@@ -167,37 +166,203 @@ fn decrypt_data(encrypted: &str) -> Result<String, String> {
 }
 
 // ============================================================================
-// Tauri Commands
+// Kubernetes Detection Types
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+struct KubernetesStatus {
+    available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    install_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kubeconfig_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    suggested_action: Option<String>,
+}
+
+// ============================================================================
+// Tauri Commands - Kubernetes Detection
 // ============================================================================
 
 #[tauri::command]
-async fn install_k3s(app_handle: tauri::AppHandle) -> Result<String, String> {
-    println!("Installing k3s...");
+async fn check_kubectl() -> Result<bool, String> {
+    println!("Checking kubectl availability...");
 
-    // Get bundled script from Tauri resources
-    let resource_path = app_handle
-        .path()
-        .resolve("install_k3s.sh", tauri::path::BaseDirectory::Resource)
-        .map_err(|e| format!("Failed to resolve resource path: {}", e))?;
+    let output = Command::new("which")
+        .arg("kubectl")
+        .output();
 
-    if !resource_path.exists() {
-        return Err("k3s installation script not found in app resources".to_string());
-    }
-
-    // Execute installation script
-    let output = Command::new("bash")
-        .arg(&resource_path)
-        .output()
-        .map_err(|e| format!("Failed to execute k3s installation: {}", e))?;
-
-    if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(stdout.to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("k3s installation failed: {}", stderr))
+    match output {
+        Ok(result) => Ok(result.status.success()),
+        Err(_) => Ok(false),
     }
 }
+
+#[tauri::command]
+async fn find_kubeconfig() -> Result<Option<String>, String> {
+    println!("Finding kubeconfig...");
+
+    // Check paths in order of preference
+    let paths = vec![
+        std::env::var("KUBECONFIG").ok(),
+        dirs::home_dir().map(|h| h.join(".kube/config").to_string_lossy().to_string()),
+        Some("/etc/rancher/k3s/k3s.yaml".to_string()),
+    ];
+
+    for path_opt in paths {
+        if let Some(path) = path_opt {
+            if std::path::Path::new(&path).exists() {
+                println!("Found kubeconfig at: {}", path);
+                return Ok(Some(path));
+            }
+        }
+    }
+
+    println!("No kubeconfig found");
+    Ok(None)
+}
+
+#[tauri::command]
+async fn check_cluster_health(kubeconfig_path: Option<String>) -> Result<bool, String> {
+    println!("Checking cluster health...");
+
+    let mut cmd = Command::new("kubectl");
+    cmd.arg("cluster-info");
+
+    if let Some(path) = kubeconfig_path {
+        cmd.env("KUBECONFIG", path);
+    }
+
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to execute kubectl: {}", e))?;
+
+    Ok(output.status.success())
+}
+
+#[tauri::command]
+async fn detect_install_type(kubeconfig_path: Option<String>) -> Result<String, String> {
+    println!("Detecting Kubernetes installation type...");
+
+    let mut cmd = Command::new("kubectl");
+    cmd.args(["version", "--output=json"]);
+
+    if let Some(path) = kubeconfig_path {
+        cmd.env("KUBECONFIG", path);
+    }
+
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to execute kubectl: {}", e))?;
+
+    if !output.status.success() {
+        return Ok("unknown".to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Detect based on version string patterns
+    if stdout.contains("k3s") {
+        Ok("k3s".to_string())
+    } else if stdout.contains("rancher") {
+        Ok("rancher-desktop".to_string())
+    } else if stdout.contains("k3d") {
+        Ok("k3d".to_string())
+    } else if stdout.contains("minikube") {
+        Ok("minikube".to_string())
+    } else if stdout.contains("docker-desktop") {
+        Ok("docker-desktop".to_string())
+    } else {
+        Ok("unknown".to_string())
+    }
+}
+
+#[tauri::command]
+async fn get_cluster_version(kubeconfig_path: Option<String>) -> Result<Option<String>, String> {
+    println!("Getting cluster version...");
+
+    let mut cmd = Command::new("kubectl");
+    cmd.args(["version", "--short", "--client=false"]);
+
+    if let Some(path) = kubeconfig_path {
+        cmd.env("KUBECONFIG", path);
+    }
+
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to execute kubectl: {}", e))?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(Some(stdout.trim().to_string()))
+}
+
+#[tauri::command]
+async fn detect_kubernetes() -> Result<KubernetesStatus, String> {
+    println!("Detecting Kubernetes...");
+
+    // 1. Check kubectl availability
+    let kubectl_available = check_kubectl().await?;
+    if !kubectl_available {
+        return Ok(KubernetesStatus {
+            available: false,
+            install_type: None,
+            version: None,
+            kubeconfig_path: None,
+            error: Some("kubectl not found in PATH".to_string()),
+            suggested_action: Some("install_kubernetes".to_string()),
+        });
+    }
+
+    // 2. Find kubeconfig
+    let kubeconfig = find_kubeconfig().await?;
+    if kubeconfig.is_none() {
+        return Ok(KubernetesStatus {
+            available: false,
+            install_type: None,
+            version: None,
+            kubeconfig_path: None,
+            error: Some("No kubeconfig found".to_string()),
+            suggested_action: Some("install_kubernetes".to_string()),
+        });
+    }
+
+    let kubeconfig_path = kubeconfig.clone();
+
+    // 3. Check cluster health
+    let cluster_healthy = check_cluster_health(kubeconfig.clone()).await?;
+    if !cluster_healthy {
+        return Ok(KubernetesStatus {
+            available: false,
+            install_type: None,
+            version: None,
+            kubeconfig_path,
+            error: Some("Cluster unreachable or not running".to_string()),
+            suggested_action: Some("start_kubernetes".to_string()),
+        });
+    }
+
+    // 4. Detect installation type and version
+    let install_type = detect_install_type(kubeconfig.clone()).await.ok();
+    let version = get_cluster_version(kubeconfig).await.ok().flatten();
+
+    Ok(KubernetesStatus {
+        available: true,
+        install_type,
+        version,
+        kubeconfig_path,
+        error: None,
+        suggested_action: None,
+    })
+}
+
+// ============================================================================
+// Tauri Commands - Credentials
+// ============================================================================
 
 #[tauri::command]
 async fn save_credential(cred_type: String, data: CredentialData) -> Result<String, String> {
@@ -410,7 +575,14 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
-            install_k3s,
+            // Kubernetes detection
+            detect_kubernetes,
+            check_kubectl,
+            find_kubeconfig,
+            check_cluster_health,
+            detect_install_type,
+            get_cluster_version,
+            // Credentials
             save_credential,
             get_credentials,
             delete_credential,
