@@ -213,12 +213,10 @@ async fn find_kubeconfig() -> Result<Option<String>, String> {
         Some("/etc/rancher/k3s/k3s.yaml".to_string()),
     ];
 
-    for path_opt in paths {
-        if let Some(path) = path_opt {
-            if std::path::Path::new(&path).exists() {
-                println!("Found kubeconfig at: {}", path);
-                return Ok(Some(path));
-            }
+    for path in paths.into_iter().flatten() {
+        if std::path::Path::new(&path).exists() {
+            println!("Found kubeconfig at: {}", path);
+            return Ok(Some(path));
         }
     }
 
