@@ -26,6 +26,23 @@ const config: KnipConfig = {
     interface: true,
     type: true,
   },
+  // Exports for future features (Phase 1-2)
+  ignoreExports: [
+    // Individual detection functions - will be used in Phase 2 for workspace health monitoring
+    'checkKubectl',
+    'findKubeconfig',
+    'checkClusterHealth',
+    'detectInstallType',
+    'getClusterVersion',
+    // Types for future CRUD operations
+    'KubernetesInstallType',
+    'Workspace',
+    'CreateWorkspaceRequest',
+    'Template',
+    'Credential',
+    'CredentialData',
+    'SshKeyPair',
+  ],
 }
 
 export default config
