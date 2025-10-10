@@ -205,7 +205,7 @@ export function KubernetesSetup() {
 
         <div className="setup-actions">
           <button onClick={refetch} className="btn-primary">
-            Verify Installation
+            Verify installation
           </button>
         </div>
       </div>

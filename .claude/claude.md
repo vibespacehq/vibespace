@@ -1,6 +1,6 @@
-# Workspace - AI Assistant Context
+# workspaces - AI Assistant Context
 
-**Project**: Kubernetes workspace manager with native coding agent integration
+**Project**: workspaces - containerized dev environments with AI coding agent support
 **Status**: MVP Development
 **Stack**: Tauri + React + Go + k3s + Knative
 
@@ -8,7 +8,7 @@
 
 ## What This Project Does
 
-Workspace is a desktop app that manages isolated development environments (workspaces) running as containers in k3s. Each workspace includes VS Code (code-server) and can be configured with AI coding agents (Claude Code, OpenAI Codex).
+workspaces is a Tauri desktop app that manages isolated dev environments running as containers in k3s. Each workspace includes code-server (VS Code in browser) and supports AI coding agents (Claude Code, OpenAI Codex).
 
 **Deployment Modes**:
 - **Local**: Everything runs on your machine (default)
@@ -123,9 +123,18 @@ Workspaces run as Knative Services for auto-scaling (scale-to-zero when idle).
 
 ## Design System
 
-**Theme**: Dark-first, GitHub-inspired, terminal aesthetics
-**Colors**: See `SPEC.md` section 4.1.3
-**Fonts**: JetBrains Mono (code), Inter (UI)
+**Philosophy**: Nerdy but smooth - terminal-inspired with vibrant accents and modern geometric typography.
+
+**Colors**: Pure black (#000000) + 4 vibrant accents
+- **Teal** (#00ABAB) - Primary actions, links, completed states
+- **Orange** (#FF7D4B) - Recommended badges
+- **Pink** (#F102F3) - Active states, buttons, focus
+- **Yellow** (#F5F50A) - Button hover, highlights
+
+**Fonts**:
+- **Space Grotesk** (UI, display) - Geometric sans-serif, unique, modern
+- **JetBrains Mono** (code blocks, technical content)
+
 **Icons**: Lucide
 
 **Component Patterns**:
@@ -133,6 +142,9 @@ Workspaces run as Knative Services for auto-scaling (scale-to-zero when idle).
 - Modals for creation flows
 - Toast notifications for feedback
 - Status badges (🟢 Running, ⚪ Stopped, etc.)
+- Gradient accents for visual interest (teal→pink, orange→yellow)
+
+See `SPEC.md` section 4.1.3 for complete design tokens.
 
 ---
 
