@@ -1,0 +1,361 @@
+/* Kubernetes Setup Styles - Following SPEC.md Design System (Section 4.1.3) */
+
+:root {
+  /* Dark Theme Colors (Default) */
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --bg-elevated: #1c2128;
+
+  --text-primary: #e6edf3;
+  --text-secondary: #7d8590;
+  --text-tertiary: #484f58;
+
+  --border: #30363d;
+  --border-hover: #484f58;
+
+  --accent-primary: #58a6ff;
+  --accent-hover: #79c0ff;
+  --success: #3fb950;
+  --warning: #d29922;
+  --error: #f85149;
+
+  /* Typography */
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Monaco', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Spacing */
+  --spacing-2: 0.5rem;   /* 8px */
+  --spacing-3: 0.75rem;  /* 12px */
+  --spacing-4: 1rem;     /* 16px */
+  --spacing-6: 1.5rem;   /* 24px */
+  --spacing-8: 2rem;     /* 32px */
+
+  /* Border Radius */
+  --radius-sm: 0.25rem;  /* 4px */
+  --radius-md: 0.5rem;   /* 8px */
+  --radius-lg: 0.75rem;  /* 12px */
+}
+
+/* Setup Container */
+.setup-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: var(--spacing-8);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+}
+
+/* Loading State */
+.setup-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-8);
+  text-align: center;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Success State */
+.setup-success {
+  background: var(--bg-elevated);
+  border: 1px solid var(--success);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-8);
+  text-align: center;
+}
+
+.success-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  background: var(--success);
+  color: var(--bg-primary);
+  font-size: 2rem;
+  font-weight: bold;
+  border-radius: 50%;
+  margin-bottom: var(--spacing-4);
+}
+
+.setup-success h2 {
+  font-size: 1.5rem;
+  margin: 0 0 var(--spacing-6) 0;
+  color: var(--text-primary);
+}
+
+.cluster-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  text-align: left;
+}
+
+.cluster-info p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.cluster-info strong {
+  color: var(--text-primary);
+  margin-right: var(--spacing-2);
+}
+
+.kubeconfig-path {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+/* Required State */
+.setup-required h2 {
+  font-size: 1.5rem;
+  margin: 0 0 var(--spacing-4) 0;
+  color: var(--text-primary);
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  background: rgba(248, 81, 73, 0.1);
+  border: 1px solid var(--error);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-6);
+  color: var(--error);
+  font-size: 0.875rem;
+}
+
+.error-icon {
+  font-size: 1.25rem;
+}
+
+/* Instructions */
+.instructions {
+  margin: var(--spacing-6) 0;
+}
+
+.instructions h3 {
+  font-size: 1.25rem;
+  margin: 0 0 var(--spacing-3) 0;
+  color: var(--text-primary);
+}
+
+.instructions-intro {
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-6);
+}
+
+/* Platform Tabs */
+.platform-tabs {
+  display: flex;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-6);
+  border-bottom: 1px solid var(--border);
+}
+
+.platform-tabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: var(--spacing-3) var(--spacing-4);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.platform-tabs button:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+.platform-tabs button.active {
+  color: var(--accent-primary);
+  border-bottom-color: var(--accent-primary);
+}
+
+/* Platform Content */
+.platform-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+/* Install Option */
+.install-option {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-6);
+}
+
+.install-option.recommended {
+  border-color: var(--success);
+  background: rgba(63, 185, 80, 0.05);
+}
+
+.install-option h4 {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.install-option p {
+  color: var(--text-secondary);
+  margin: 0 0 var(--spacing-4) 0;
+  font-size: 0.875rem;
+}
+
+.install-option ol {
+  margin: 0;
+  padding-left: var(--spacing-6);
+  color: var(--text-secondary);
+}
+
+.install-option li {
+  margin-bottom: var(--spacing-2);
+  font-size: 0.875rem;
+}
+
+.install-option a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.install-option a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.badge {
+  display: inline-block;
+  background: var(--success);
+  color: var(--bg-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+/* Code Block */
+.code-block {
+  position: relative;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  margin: var(--spacing-4) 0;
+}
+
+.code-block h4 {
+  margin: 0 0 var(--spacing-3) 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+.code-block pre {
+  margin: 0;
+  overflow-x: auto;
+}
+
+.code-block code {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.copy-btn {
+  position: absolute;
+  top: var(--spacing-3);
+  right: var(--spacing-3);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.375rem 0.75rem;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.copy-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+/* Help Links */
+.help-links {
+  margin-top: var(--spacing-6);
+  padding-top: var(--spacing-4);
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.help-links a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.help-links a:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* Setup Actions */
+.setup-actions {
+  margin-top: var(--spacing-8);
+  display: flex;
+  justify-content: center;
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--accent-primary);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-3) var(--spacing-6);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--bg-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.btn-primary:active {
+  transform: scale(0.98);
+}
