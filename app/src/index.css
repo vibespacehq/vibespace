@@ -7,8 +7,23 @@
     @apply border-border;
   }
 
+  html, body {
+    background: #000000;
+    color: #ffffff;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
   body {
-    @apply bg-bg-primary text-text-primary;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  #root {
+    background: #000000;
+    min-height: 100vh;
+    width: 100%;
   }
 }

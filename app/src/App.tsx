@@ -12,7 +12,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-primary text-text-primary">
+    <div className="min-h-screen w-full text-text-primary" style={{ background: '#000000' }}>
       <div className="container mx-auto p-8">
         <header className="mb-12">
           <h1 className="text-4xl font-bold mb-2">workspaces</h1>
