@@ -47,7 +47,7 @@
 
 /* Setup Container */
 .setup-container {
-  min-height: 100vh;
+  height: 100vh;
   width: 100%;
   max-width: 100vw;
   background: #000000;
@@ -55,7 +55,7 @@
   color: var(--text-primary);
   display: flex;
   flex-direction: row;
-  overflow-x: hidden;
+  overflow: hidden;
   box-sizing: border-box;
   position: relative;
 }
@@ -91,7 +91,7 @@
 /* Sidebar Progress */
 .setup-sidebar {
   width: 280px;
-  min-height: 100vh;
+  height: 100vh;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   padding: var(--spacing-8);
@@ -99,6 +99,8 @@
   flex-direction: column;
   gap: var(--spacing-12);
   position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .setup-sidebar::before {
@@ -252,11 +254,10 @@
 
 .setup-main {
   flex: 1;
-  padding: var(--spacing-8);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-8);
-  overflow-y: auto;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
   position: relative;
 }
 
@@ -281,9 +282,11 @@
 
 /* Main Content Header */
 .setup-header {
-  padding-bottom: var(--spacing-6);
+  padding: var(--spacing-8) var(--spacing-8) var(--spacing-6);
   border-bottom: 1px solid var(--border);
+  background: #000000;
   position: relative;
+  z-index: 10;
 }
 
 .step-badge {
@@ -372,6 +375,29 @@
 .setup-required {
   width: 100%;
   box-sizing: border-box;
+  overflow-y: scroll;
+  padding: var(--spacing-8);
+}
+
+/* Custom scrollbar styling - always visible, white, thin */
+.setup-loading::-webkit-scrollbar,
+.setup-success::-webkit-scrollbar,
+.setup-required::-webkit-scrollbar {
+  width: 6px;
+}
+
+.setup-loading::-webkit-scrollbar-track,
+.setup-success::-webkit-scrollbar-track,
+.setup-required::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.setup-loading::-webkit-scrollbar-thumb,
+.setup-success::-webkit-scrollbar-thumb,
+.setup-required::-webkit-scrollbar-thumb {
+  background: #ffffff;
+  border-radius: 3px;
+  min-height: 40px;
 }
 
 /* Loading State */
@@ -380,7 +406,6 @@
   flex-direction: column;
   align-items: center;
   gap: var(--spacing-4);
-  padding: var(--spacing-12);
   text-align: center;
 }
 
@@ -410,10 +435,9 @@
   background: var(--bg-elevated);
   border: 1px solid var(--accent-primary);
   border-radius: var(--radius-lg);
-  padding: var(--spacing-8);
+  padding: var(--spacing-6);
   text-align: center;
   position: relative;
-  overflow: hidden;
 }
 
 .setup-success::before {
@@ -543,7 +567,7 @@
 
 /* Instructions */
 .instructions {
-  margin: var(--spacing-8) 0;
+  margin: 0;
 }
 
 .instructions h3 {
