@@ -1,8 +1,8 @@
 [package]
 name = "workspace"
 version = "0.1.0"
-description = "Local Kubernetes workspace manager with AI agent integration"
-authors = ["Workspace Contributors"]
+description = "Desktop app for managing containerized dev environments with AI coding agents"
+authors = ["workspaces contributors"]
 license = "MIT"
 repository = "https://github.com/yagizdagabak/workspaces"
 edition = "2021"
