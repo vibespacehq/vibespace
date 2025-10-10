@@ -815,9 +815,17 @@ make deadcode
 # ❌ func unusedFunction() {}
 # ✅ Remove the function or use it
 
-# If intentionally unused (for future use), add comment:
-// TODO(#123): Will be used for feature X
-export const futureUse = 'value'
+# If intentionally unused (for future use), add JSDoc @public tag:
+/**
+ * Checks if kubectl is available in the system PATH.
+ * Will be used in Phase 2 for workspace health monitoring.
+ *
+ * @public
+ * @see Issue #14
+ */
+export async function checkKubectl(): Promise<boolean> {
+  // implementation
+}
 ```
 
 **CI/CD**: Dead code checks run automatically on all PRs. PRs failing this check cannot be merged.
@@ -826,6 +834,88 @@ export const futureUse = 'value'
 - TypeScript: `app/knip.config.ts`
 - Go: `api/.staticcheck.conf`
 - Commands: `Makefile` (root)
+
+---
+
+### JSDoc Documentation Standards
+
+This project uses **JSDoc comments with `@public` tags** to document exports that are intentionally unused but planned for future phases.
+
+**Why JSDoc instead of inline comments?**
+- Knip v5 recognizes `@public`, `@internal`, and other JSDoc tags
+- Provides better IDE support (hover tooltips, autocomplete)
+- Self-documenting code that explains purpose and usage
+- Prevents accidental deletion of planned exports
+- Makes it clear to future developers and AI assistants what's intentional
+
+**When to use JSDoc `@public` tag**:
+1. **Future features**: Exports planned for upcoming phases
+2. **Public APIs**: Functions/types intended for external use
+3. **Library code**: Utilities meant to be imported elsewhere
+
+**JSDoc template for future exports**:
+```typescript
+/**
+ * Brief one-line description of what this does.
+ * Additional context about when/how it will be used.
+ *
+ * @public
+ * @param paramName - Description of parameter
+ * @returns Description of return value
+ * @see Issue #X or SPEC.md Section Y
+ * @example
+ * ```ts
+ * const result = await myFunction();
+ * console.log(result);
+ * ```
+ */
+export async function myFunction(): Promise<Result> {
+  // implementation
+}
+```
+
+**JSDoc template for future types**:
+```typescript
+/**
+ * Brief description of what this type represents.
+ * Context about its purpose in the system architecture.
+ *
+ * @public
+ * @see SPEC.md Section X for details
+ */
+export interface MyType {
+  id: string;
+  name: string;
+}
+```
+
+**Required JSDoc fields**:
+- Brief description (first line)
+- `@public` tag (so Knip ignores it)
+- `@see` reference to issue or SPEC.md section
+- `@example` for functions (shows intended usage)
+
+**Best practices**:
+- ✅ Write JSDoc **before** implementing the feature
+- ✅ Update JSDoc when implementation changes
+- ✅ Remove JSDoc `@public` tag once code is actually used
+- ✅ Reference specific SPEC.md sections or GitHub issues
+- ✅ Include usage examples for non-trivial functions
+- ❌ Don't add JSDoc to everything (only future/public exports)
+- ❌ Don't write vague descriptions ("Does stuff")
+- ❌ Don't forget to update JSDoc when refactoring
+
+**AI Assistant Guidelines**:
+- When you see `@public` JSDoc, **respect it** and don't suggest removing the export
+- When adding new future exports, **always add JSDoc** with `@public` tag
+- When implementing a feature, **update or remove** the `@public` tag as appropriate
+- When refactoring, **check JSDoc** and update if the signature or purpose changed
+
+**Examples from this codebase**:
+- `app/src/hooks/useKubernetesStatus.ts` - Detection functions for Phase 2
+- `app/src/lib/types.ts` - Workspace, Template, Credential types for Phase 1-2
+
+See `docs/adr/003-jsdoc-for-future-exports.md` for the architectural decision record.
 
 ---
 
