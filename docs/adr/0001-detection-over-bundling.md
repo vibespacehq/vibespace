@@ -8,7 +8,7 @@
 
 ## Context
 
-Workspace requires Kubernetes to run development environments. We had to decide between two approaches for MVP:
+workspaces requires Kubernetes to run development environments. We had to decide between two approaches for MVP:
 
 ### Option 1: Detection + Guided Setup
 - App detects existing Kubernetes installations (k3s, Rancher Desktop, k3d, etc.)
