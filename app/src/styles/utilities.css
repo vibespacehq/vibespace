@@ -1,0 +1,115 @@
+/**
+ * Utility Classes
+ * Reusable UI components used across the application.
+ */
+
+/* Typography */
+.brand-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+  font-family: var(--font-display);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.brand-subtitle {
+  margin: var(--spacing-2) 0 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+/* Buttons */
+.btn-primary {
+  background: var(--accent-tertiary);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-2) var(--spacing-5);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  letter-spacing: 0.02em;
+  box-shadow: 0 2px 12px rgba(241, 2, 243, 0.3);
+}
+
+.btn-primary:hover {
+  background: var(--accent-yellow);
+  color: #000000;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 245, 10, 0.5);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 12px rgba(241, 2, 243, 0.3);
+}
+
+/* Loading spinner */
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent-primary);
+  border-right-color: var(--accent-tertiary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  box-shadow: 0 0 20px rgba(0, 171, 171, 0.3);
+}
+
+/* Status icons */
+.success-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  background: var(--accent-primary);
+  color: #000000;
+  font-size: 1.125rem;
+  font-weight: 700;
+  border-radius: 50%;
+  margin-bottom: var(--spacing-3);
+  box-shadow: 0 0 24px rgba(0, 171, 171, 0.4);
+  animation: pulse-success 2s ease-in-out infinite;
+}
+
+.error-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* Error message */
+.error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  background: rgba(248, 81, 73, 0.08);
+  border-left: 3px solid var(--error);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-3);
+  margin-bottom: var(--spacing-4);
+  color: var(--error);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .brand-title {
+    font-size: 1.5rem;
+  }
+
+  .brand-subtitle {
+    font-size: 0.8125rem;
+  }
+
+  .btn-primary {
+    width: 100%;
+    padding: 0.875rem 1.5rem;
+  }
+}

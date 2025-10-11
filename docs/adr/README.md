@@ -40,6 +40,7 @@ Each ADR follows this structure:
 |-----|-------|--------|------|
 | [0001](0001-detection-over-bundling.md) | Use Detection Over Bundling for Kubernetes (MVP) | Accepted | 2025-01-08 |
 | [0002](0002-jsdoc-for-future-exports.md) | Use JSDoc Tags for Future Exports | Accepted | 2025-10-10 |
+| [0003](0003-frontend-organization.md) | Frontend Component and Style Organization | Accepted | 2025-10-11 |
 
 ## When to Write an ADR
 
@@ -60,7 +61,7 @@ Don't write an ADR for:
 To propose a new ADR:
 
 1. Create a new file: `docs/adr/XXXX-short-title.md`
-2. Use next available number (current: 0003)
+2. Use next available number (current: 0004)
 3. Start with `**Status**: Proposed`
 4. Open PR for discussion
 5. Update status to `Accepted` when merged

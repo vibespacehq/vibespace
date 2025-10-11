@@ -1,7 +1,7 @@
-import { useKubernetesStatus } from '../../hooks/useKubernetesStatus';
+import { useKubernetesStatus } from '../../../hooks/useKubernetesStatus';
 import { InstallationInstructions } from './InstallationInstructions';
 import { ProgressSidebar } from './ProgressSidebar';
-import './KubernetesSetup.css';
+import '../styles/setup.css';
 
 interface KubernetesSetupProps {
   onComplete?: () => void;

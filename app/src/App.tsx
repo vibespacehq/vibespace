@@ -1,12 +1,11 @@
 import { useState } from 'react'
-import { TitleBar } from './components/TitleBar'
-import { AuthenticationSetup } from './components/setup/AuthenticationSetup'
-import { KubernetesSetup } from './components/setup/KubernetesSetup'
-import { ConfigurationSetup } from './components/setup/ConfigurationSetup'
-import { ReadySetup } from './components/setup/ReadySetup'
-import { WorkspaceList } from './components/workspace/WorkspaceList'
-import { useKubernetesStatus } from './hooks/useKubernetesStatus'
-import './components/workspace/WorkspaceList.css'
+import { TitleBar } from './components/shared/TitleBar'
+import { AuthenticationSetup } from './components/setup/components/AuthenticationSetup'
+import { KubernetesSetup } from './components/setup/components/KubernetesSetup'
+import { ConfigurationSetup } from './components/setup/components/ConfigurationSetup'
+import { ReadySetup } from './components/setup/components/ReadySetup'
+import { WorkspaceList } from './components/workspace/components/WorkspaceList'
+import './components/workspace/styles/WorkspaceList.css'
 
 // Mock workspace data for design
 const MOCK_WORKSPACES = [
@@ -36,7 +35,6 @@ const MOCK_WORKSPACES = [
 type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'ready' | 'complete'
 
 function App() {
-  const { status } = useKubernetesStatus()
   const [workspaces] = useState(MOCK_WORKSPACES)
   const [setupStep, setSetupStep] = useState<SetupStep>('auth')
 

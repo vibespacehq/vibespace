@@ -371,36 +371,68 @@ github.com/containerd/containerd            // Registry interaction
 
 #### 4.1.1 Frontend Structure
 
+**Organization**: Feature-based with separate `components/` and `styles/` subdirectories.
+
 ```
 src/
 ├── App.tsx
 ├── components/
-│   ├── workspace/
-│   │   ├── WorkspaceList.tsx          # Grid/list view of workspaces
-│   │   ├── WorkspaceCard.tsx          # Individual workspace item
-│   │   ├── WorkspaceCreate.tsx        # Creation wizard modal
-│   │   ├── WorkspaceSettings.tsx      # Per-workspace config
-│   │   └── WorkspaceEmbed.tsx         # Embedded code-server iframe
+│   ├── shared/                        # Cross-feature shared components
+│   │   ├── TitleBar.tsx
+│   │   └── TitleBar.css
+│   ├── setup/                         # Setup wizard feature
+│   │   ├── components/
+│   │   │   ├── AuthenticationSetup.tsx
+│   │   │   ├── ConfigurationSetup.tsx
+│   │   │   ├── InstallationInstructions.tsx
+│   │   │   ├── KubernetesSetup.tsx
+│   │   │   ├── ProgressSidebar.tsx
+│   │   │   └── ReadySetup.tsx
+│   │   └── styles/
+│   │       ├── setup.css              # Shared feature styles
+│   │       ├── AuthenticationSetup.css
+│   │       ├── ConfigurationSetup.css
+│   │       ├── InstallationInstructions.css
+│   │       ├── ProgressSidebar.css
+│   │       └── ReadySetup.css
+│   ├── workspace/                     # Workspace management feature
+│   │   ├── components/
+│   │   │   ├── WorkspaceList.tsx    # Grid/list view of workspaces
+│   │   │   ├── WorkspaceCard.tsx    # Individual workspace item
+│   │   │   ├── WorkspaceCreate.tsx  # Creation wizard modal
+│   │   │   ├── WorkspaceSettings.tsx # Per-workspace config
+│   │   │   └── WorkspaceEmbed.tsx   # Embedded code-server iframe
+│   │   └── styles/
+│   │       ├── WorkspaceList.css
+│   │       └── (other component styles)
 │   ├── template/
-│   │   ├── TemplateGallery.tsx        # Built-in + custom templates
-│   │   ├── TemplateBuilder.tsx        # Dockerfile editor
-│   │   ├── TemplateCard.tsx           # Template preview card
-│   │   └── BuildLogs.tsx              # Real-time build output (SSE)
+│   │   ├── components/
+│   │   │   ├── TemplateGallery.tsx  # Built-in + custom templates
+│   │   │   ├── TemplateBuilder.tsx  # Dockerfile editor
+│   │   │   ├── TemplateCard.tsx     # Template preview card
+│   │   │   └── BuildLogs.tsx        # Real-time build output (SSE)
+│   │   └── styles/
 │   ├── cluster/
-│   │   ├── ClusterStatus.tsx          # k3s health indicator
-│   │   ├── ClusterSetup.tsx           # First-time installation wizard
-│   │   └── ResourceMonitor.tsx        # CPU/Memory usage
+│   │   ├── components/
+│   │   │   ├── ClusterStatus.tsx    # k3s health indicator
+│   │   │   ├── ClusterSetup.tsx     # First-time installation wizard
+│   │   │   └── ResourceMonitor.tsx  # CPU/Memory usage
+│   │   └── styles/
 │   ├── credentials/
-│   │   ├── CredentialList.tsx         # List all stored credentials
-│   │   ├── CredentialAdd.tsx          # Add credential modal
-│   │   ├── AIAgentForm.tsx            # AI agent credential form
-│   │   ├── GitConfigForm.tsx          # Git config form
-│   │   ├── SSHKeyForm.tsx             # SSH key generation/import
-│   │   └── CredentialCard.tsx         # Individual credential item
+│   │   ├── components/
+│   │   │   ├── CredentialList.tsx   # List all stored credentials
+│   │   │   ├── CredentialAdd.tsx    # Add credential modal
+│   │   │   ├── AIAgentForm.tsx      # AI agent credential form
+│   │   │   ├── GitConfigForm.tsx    # Git config form
+│   │   │   ├── SSHKeyForm.tsx       # SSH key generation/import
+│   │   │   └── CredentialCard.tsx   # Individual credential item
+│   │   └── styles/
 │   └── settings/
-│       ├── CredentialSettings.tsx     # Main credentials management page
-│       ├── DNSSettings.tsx            # Domain configuration
-│       └── GeneralSettings.tsx        # Resource defaults
+│       ├── components/
+│       │   ├── CredentialSettings.tsx # Main credentials management page
+│       │   ├── DNSSettings.tsx      # Domain configuration
+│       │   └── GeneralSettings.tsx  # Resource defaults
+│       └── styles/
 ├── hooks/
 │   ├── useWorkspaces.ts               # React Query workspace CRUD
 │   ├── useTemplates.ts                # Template management
@@ -410,9 +442,36 @@ src/
 ├── lib/
 │   ├── api.ts                         # HTTP client (axios/fetch)
 │   └── types.ts                       # TypeScript definitions
-└── store/
-    └── appStore.ts                    # Zustand global state
+├── store/
+│   └── appStore.ts                    # Zustand global state
+└── styles/                            # Global design system
+    ├── tokens.css                     # CSS variables
+    ├── animations.css                 # Keyframe animations
+    ├── base.css                       # Base styles & resets
+    └── utilities.css                  # Reusable UI utilities
 ```
+
+**Style Hierarchy**:
+1. **Global** (`src/styles/`): Design tokens, animations, base resets, reusable utilities
+2. **Feature-level** (`src/components/[feature]/styles/[feature].css`): Shared layout/containers within a feature
+3. **Component-specific** (`src/components/[feature]/styles/[Component].css`): Styles unique to a single component
+
+**Naming Conventions**:
+- Directories: `lowercase` or `kebab-case`
+- Component files: `PascalCase.tsx`
+- Component-specific styles: `PascalCase.css`
+- Feature-level styles: `kebab-case.css` (e.g., `setup.css`)
+
+**Import Patterns**:
+```typescript
+// Component importing its own styles
+import '../styles/AuthenticationSetup.css';
+
+// Component importing feature-level shared styles
+import '../styles/setup.css';
+```
+
+See `docs/adr/0003-frontend-organization.md` for the architectural decision record.
 
 #### 4.1.2 Key Features
 
