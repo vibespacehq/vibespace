@@ -1,5 +1,6 @@
 import { useKubernetesStatus } from '../../hooks/useKubernetesStatus';
 import { InstallationInstructions } from './InstallationInstructions';
+import { ProgressSidebar } from './ProgressSidebar';
 import './KubernetesSetup.css';
 
 export function KubernetesSetup() {
@@ -8,42 +9,7 @@ export function KubernetesSetup() {
   if (isLoading) {
     return (
       <div className="setup-container">
-        <aside className="setup-sidebar">
-          <div className="sidebar-logo">
-            <h1>workspaces</h1>
-            <p>setup</p>
-          </div>
-          <div className="progress-steps">
-            <div className="progress-step completed">
-              <div className="step-indicator">1</div>
-              <div className="step-content">
-                <h3>Authentication</h3>
-                <p>Sign in complete</p>
-              </div>
-            </div>
-            <div className="progress-step active">
-              <div className="step-indicator">2</div>
-              <div className="step-content">
-                <h3>Infrastructure</h3>
-                <p>Checking environment</p>
-              </div>
-            </div>
-            <div className="progress-step">
-              <div className="step-indicator">3</div>
-              <div className="step-content">
-                <h3>Configuration</h3>
-                <p>workspace settings</p>
-              </div>
-            </div>
-            <div className="progress-step">
-              <div className="step-indicator">4</div>
-              <div className="step-content">
-                <h3>Ready</h3>
-                <p>Launch workspace</p>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <ProgressSidebar currentStep={2} />
         <main className="setup-main">
           <header className="setup-header">
             <div className="step-badge">
@@ -68,42 +34,7 @@ export function KubernetesSetup() {
   if (status?.available) {
     return (
       <div className="setup-container">
-        <aside className="setup-sidebar">
-          <div className="sidebar-logo">
-            <h1>workspaces</h1>
-            <p>setup</p>
-          </div>
-          <div className="progress-steps">
-            <div className="progress-step completed">
-              <div className="step-indicator">1</div>
-              <div className="step-content">
-                <h3>Authentication</h3>
-                <p>Sign in complete</p>
-              </div>
-            </div>
-            <div className="progress-step completed">
-              <div className="step-indicator">2</div>
-              <div className="step-content">
-                <h3>Infrastructure</h3>
-                <p>Environment ready</p>
-              </div>
-            </div>
-            <div className="progress-step active">
-              <div className="step-indicator">3</div>
-              <div className="step-content">
-                <h3>Configuration</h3>
-                <p>workspace settings</p>
-              </div>
-            </div>
-            <div className="progress-step">
-              <div className="step-indicator">4</div>
-              <div className="step-content">
-                <h3>Ready</h3>
-                <p>Launch workspace</p>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <ProgressSidebar currentStep={3} />
         <main className="setup-main">
           <header className="setup-header">
             <div className="step-badge">
@@ -144,42 +75,7 @@ export function KubernetesSetup() {
 
   return (
     <div className="setup-container">
-      <aside className="setup-sidebar">
-        <div className="sidebar-logo">
-          <h1>workspaces</h1>
-          <p>setup</p>
-        </div>
-        <div className="progress-steps">
-          <div className="progress-step completed">
-            <div className="step-indicator">1</div>
-            <div className="step-content">
-              <h3>Authentication</h3>
-              <p>Sign in complete</p>
-            </div>
-          </div>
-          <div className="progress-step active">
-            <div className="step-indicator">2</div>
-            <div className="step-content">
-              <h3>Infrastructure</h3>
-              <p>Setting up environment</p>
-            </div>
-          </div>
-          <div className="progress-step">
-            <div className="step-indicator">3</div>
-            <div className="step-content">
-              <h3>Configuration</h3>
-              <p>workspace settings</p>
-            </div>
-          </div>
-          <div className="progress-step">
-            <div className="step-indicator">4</div>
-            <div className="step-content">
-              <h3>Ready</h3>
-              <p>Launch workspace</p>
-            </div>
-          </div>
-        </div>
-      </aside>
+      <ProgressSidebar currentStep={2} />
       <main className="setup-main">
         <header className="setup-header">
           <div className="step-badge">
