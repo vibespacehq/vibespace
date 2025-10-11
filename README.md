@@ -1,10 +1,10 @@
-# Workspace
+# workspaces
 
-Local Kubernetes workspace manager for AI-assisted development.
+Desktop app for managing containerized development environments in k3s.
 
-## What is Workspace?
+## What is workspaces?
 
-Workspace is a desktop application that manages isolated development environments running locally in k3s. Each workspace includes VS Code (code-server) and can be configured with AI coding agents like Claude Code and OpenAI Codex.
+workspaces is a Tauri desktop app that manages isolated dev environments running in local k3s. Each workspace runs code-server (VS Code in browser) and supports AI coding agents like Claude Code and OpenAI Codex.
 
 ### Key Features
 

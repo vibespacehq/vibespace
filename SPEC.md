@@ -25,7 +25,7 @@
 
 ## 1. Project Overview
 
-**Project Name**: `workspace`
+**Project Name**: `workspaces`
 
 ### 1.1 Naming Conventions
 
@@ -59,7 +59,7 @@ workspace/                  # Root (singular)
 
 ### 1.2 Vision
 
-An open-source desktop application for managing isolated development workspaces running locally in Kubernetes (k3s). Each workspace is a containerized environment with VS Code, configured for AI-assisted development with agents like Claude Code and OpenAI Codex.
+An open-source Tauri desktop app for managing isolated dev environments running in local k3s. Each workspace is a containerized environment with code-server (VS Code in browser), supports AI coding agents like Claude Code and OpenAI Codex.
 
 ### 1.3 Goals
 
@@ -424,46 +424,46 @@ src/
 
 #### 4.1.3 Design System & Theming
 
-**Philosophy**: Developer-first, functional, terminal-inspired aesthetics.
+**Philosophy**: Nerdy but smooth - terminal-inspired with vibrant accents and modern geometric typography.
 
 **Color Palette**:
 ```css
-/* Dark Theme (Default) */
---bg-primary:     #0d1117;      /* Deep dark (GitHub dark)*/
---bg-secondary:   #161b22;      /* Panel background */
---bg-tertiary:    #21262d;      /* Hover states */
---bg-elevated:    #1c2128;      /* Cards, modals */
+/* Pure Black Theme */
+--bg-primary:     #000000;      /* Pure black background */
+--bg-secondary:   #0a0a0a;      /* Slightly elevated panels */
+--bg-tertiary:    #111111;      /* Hover states */
+--bg-elevated:    #0f0f0f;      /* Cards, modals */
 
---text-primary:   #e6edf3;      /* Main text */
---text-secondary: #7d8590;      /* Muted text */
---text-tertiary:  #484f58;      /* Disabled text */
+--text-primary:   #ffffff;      /* Main text (pure white) */
+--text-secondary: #a0a0a0;      /* Muted text */
+--text-tertiary:  #666666;      /* Disabled text */
 
---border:         #30363d;      /* Borders, dividers */
---border-hover:   #484f58;      /* Interactive borders */
+--border:         #1a1a1a;      /* Borders, dividers */
+--border-hover:   #2a2a2a;      /* Interactive borders */
 
---accent-primary: #58a6ff;      /* Links, primary actions */
---accent-hover:   #79c0ff;      /* Hover state */
+/* Vibrant 4-Color Accent Palette */
+--accent-primary:   #00ABAB;    /* Teal - Primary actions, links, completed states */
+--accent-hover:     #00d4d4;    /* Teal hover */
+--accent-secondary: #FF7D4B;    /* Orange - Recommended badges, warnings */
+--accent-tertiary:  #F102F3;    /* Pink - Active states, buttons, focus */
+--accent-yellow:    #F5F50A;    /* Yellow - Button hover, highlights */
+
+/* System States */
 --success:        #3fb950;      /* Running, success states */
 --warning:        #d29922;      /* Warnings */
 --error:          #f85149;      /* Errors, delete actions */
---info:           #58a6ff;      /* Info states */
 
-/* Syntax Highlighting (VS Code inspired) */
---syntax-keyword: #ff7b72;      /* Red */
---syntax-string:  #a5d6ff;      /* Blue */
---syntax-function:#d2a8ff;      /* Purple */
---syntax-variable:#ffa657;      /* Orange */
---syntax-comment: #8b949e;      /* Gray */
-
-/* Light Theme (Optional) */
-/* Follows same pattern with inverted luminosity */
+/* Gradients (for accents and visual interest) */
+/* Primary gradient: linear-gradient(90deg, var(--accent-primary), var(--accent-tertiary)) */
+/* Recommended gradient: linear-gradient(135deg, var(--accent-secondary), var(--accent-yellow)) */
 ```
 
 **Typography**:
 ```css
 /* Font Stack */
---font-mono:   'JetBrains Mono', 'Fira Code', 'Monaco', monospace;
---font-sans:   'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+--font-mono:    'JetBrains Mono', 'Fira Code', 'Monaco', monospace;
+--font-sans:    'Space Grotesk', 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+--font-display: 'Space Grotesk', 'DM Sans', -apple-system, sans-serif;
 
 /* Sizes */
 --text-xs:     0.75rem;   /* 12px */
@@ -476,6 +476,10 @@ src/
 --leading-tight:  1.25;
 --leading-normal: 1.5;
 --leading-loose:  1.75;
+
+/* Typography Notes */
+/* Space Grotesk: Geometric sans-serif for UI and display text - unique, modern, not boring */
+/* JetBrains Mono: Monospace for code blocks and technical content */
 ```
 
 **Spacing** (Tailwind-inspired):

@@ -10,8 +10,8 @@ export function InstallationInstructions({ suggestedAction }: InstallationInstru
   if (suggestedAction === 'start_kubernetes') {
     return (
       <div className="instructions">
-        <h3>Start Kubernetes</h3>
-        <p>Your Kubernetes installation was detected but the cluster is not running.</p>
+        <h3>Start container runtime</h3>
+        <p>Your installation was detected but the cluster is not running.</p>
 
         <div className="code-block">
           <h4>Linux (k3s):</h4>
@@ -35,7 +35,7 @@ export function InstallationInstructions({ suggestedAction }: InstallationInstru
 
   return (
     <div className="instructions">
-      <h3>Install Kubernetes</h3>
+      <h3>Install container runtime</h3>
       <p className="instructions-intro">
         Choose your platform and follow the installation instructions:
       </p>
@@ -68,7 +68,7 @@ export function InstallationInstructions({ suggestedAction }: InstallationInstru
               <h4>
                 Option 1: Rancher Desktop <span className="badge">Recommended</span>
               </h4>
-              <p>✅ Works on macOS - GUI-based with k3s built-in</p>
+              <p>Works on macOS - GUI-based with k3s built-in</p>
               <ol>
                 <li>
                   Download from{' '}
@@ -80,13 +80,13 @@ export function InstallationInstructions({ suggestedAction }: InstallationInstru
                 <li>Go to Preferences → Kubernetes</li>
                 <li>Check "Enable Kubernetes"</li>
                 <li>Wait for cluster to start (green indicator)</li>
-                <li>Done! ✅</li>
+                <li>Done</li>
               </ol>
             </div>
 
             <div className="install-option">
               <h4>Option 2: k3d (k3s in Docker)</h4>
-              <p>✅ Works on macOS - Runs k3s inside Docker containers</p>
+              <p>Works on macOS - Runs k3s inside Docker containers</p>
               <div className="code-block">
                 <h4>Prerequisites: Docker Desktop must be installed</h4>
                 <pre>
@@ -119,13 +119,13 @@ kubectl get nodes`}
 
             <div className="install-option">
               <h4>Option 3: Docker Desktop Kubernetes</h4>
-              <p>✅ Works on macOS - If you already have Docker Desktop</p>
+              <p>Works on macOS - If you already have Docker Desktop</p>
               <ol>
                 <li>Open Docker Desktop</li>
                 <li>Go to Settings → Kubernetes</li>
                 <li>Check "Enable Kubernetes"</li>
                 <li>Click "Apply & Restart"</li>
-                <li>Done! ✅</li>
+                <li>Done</li>
               </ol>
             </div>
           </>
@@ -137,7 +137,7 @@ kubectl get nodes`}
               <h4>
                 Option 1: Native k3s <span className="badge">Recommended</span>
               </h4>
-              <p>✅ Works on Linux - Lightweight and production-ready</p>
+              <p>Works on Linux - Lightweight and production-ready</p>
               <div className="code-block">
                 <pre>
                   <code>
@@ -166,7 +166,7 @@ kubectl get nodes`}
 
             <div className="install-option">
               <h4>Option 2: k3d (k3s in Docker)</h4>
-              <p>✅ Works on Linux - Easy to reset and manage multiple clusters</p>
+              <p>Works on Linux - Easy to reset and manage multiple clusters</p>
               <div className="code-block">
                 <h4>Prerequisites: Docker must be installed</h4>
                 <pre>
@@ -201,7 +201,7 @@ kubectl get nodes`}
 
             <div className="install-option">
               <h4>Option 3: Rancher Desktop</h4>
-              <p>✅ Works on Linux - GUI-based management</p>
+              <p>Works on Linux - GUI-based management</p>
               <ol>
                 <li>
                   Download .deb or .rpm from{' '}
@@ -222,7 +222,7 @@ kubectl get nodes`}
               <h4>
                 Option 1: Rancher Desktop <span className="badge">Recommended</span>
               </h4>
-              <p>✅ Works on Windows - Easiest option with GUI</p>
+              <p>Works on Windows - Easiest option with GUI</p>
               <ol>
                 <li>
                   Download installer from{' '}
@@ -235,25 +235,25 @@ kubectl get nodes`}
                 <li>Go to Preferences → Kubernetes</li>
                 <li>Check "Enable Kubernetes"</li>
                 <li>Wait for cluster to start</li>
-                <li>Done! ✅</li>
+                <li>Done</li>
               </ol>
             </div>
 
             <div className="install-option">
               <h4>Option 2: Docker Desktop Kubernetes</h4>
-              <p>✅ Works on Windows - If you already have Docker Desktop</p>
+              <p>Works on Windows - If you already have Docker Desktop</p>
               <ol>
                 <li>Open Docker Desktop</li>
                 <li>Go to Settings → Kubernetes</li>
                 <li>Check "Enable Kubernetes"</li>
                 <li>Click "Apply & Restart"</li>
-                <li>Done! ✅</li>
+                <li>Done</li>
               </ol>
             </div>
 
             <div className="install-option">
               <h4>Option 3: WSL2 + k3s (Advanced)</h4>
-              <p>✅ Works on Windows - For developers comfortable with Linux</p>
+              <p>Works on Windows - For developers comfortable with Linux</p>
               <div className="code-block">
                 <h4>In PowerShell (as Administrator):</h4>
                 <pre>

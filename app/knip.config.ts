@@ -21,6 +21,7 @@ const config: KnipConfig = {
     'zustand', // Will be used for client state (Phase 2)
     'autoprefixer', // PostCSS plugin for Tailwind (configured in postcss.config.js)
     'postcss', // Required by Tailwind CSS (configured in postcss.config.js)
+    '@fontsource/space-grotesk', // Font imported in CSS (@import in index.css)
   ],
   ignoreExportsUsedInFile: {
     interface: true,

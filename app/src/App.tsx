@@ -12,10 +12,10 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-primary text-text-primary">
+    <div className="min-h-screen w-full text-text-primary" style={{ background: '#000000' }}>
       <div className="container mx-auto p-8">
         <header className="mb-12">
-          <h1 className="text-4xl font-bold mb-2">Workspace</h1>
+          <h1 className="text-4xl font-bold mb-2">workspaces</h1>
           <p className="text-text-secondary">
             Local Kubernetes workspace manager
           </p>
@@ -25,7 +25,7 @@ function App() {
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-semibold">Workspaces</h2>
             <button className="px-4 py-2 bg-accent-primary hover:bg-accent-hover rounded-md transition-fast">
-              New Workspace
+              New workspace
             </button>
           </div>
 
