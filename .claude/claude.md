@@ -215,10 +215,90 @@ done
 
 ### Adding a New UI Component
 
-1. Create component: `app/src/components/myfeature/MyComponent.tsx`
-2. Use design tokens from `SPEC.md` section 4.1.3
-3. Follow accessibility guidelines
-4. Add to storybook if applicable
+**Frontend Organization**: Feature-based with separate `components/` and `styles/` subdirectories.
+
+**Structure**:
+```
+src/components/
+├── shared/           # Cross-feature components (TitleBar, etc.)
+│   ├── Component.tsx
+│   └── Component.css
+├── myfeature/        # New feature
+│   ├── components/   # Feature components
+│   │   └── MyComponent.tsx
+│   └── styles/       # Feature styles
+│       ├── myfeature.css    # Shared feature styles
+│       └── MyComponent.css  # Component-specific styles
+└── ...
+```
+
+**Steps to add a component**:
+
+1. **Create component directory structure**:
+   ```bash
+   mkdir -p src/components/myfeature/components
+   mkdir -p src/components/myfeature/styles
+   ```
+
+2. **Create component file**: `src/components/myfeature/components/MyComponent.tsx`
+   ```typescript
+   import '../styles/myfeature.css';      // Feature-level styles
+   import '../styles/MyComponent.css';     // Component-specific styles
+
+   export function MyComponent() {
+     return <div className="my-component">...</div>;
+   }
+   ```
+
+3. **Create styles**:
+   - Component-specific: `src/components/myfeature/styles/MyComponent.css`
+   - Feature-level shared: `src/components/myfeature/styles/myfeature.css`
+   - Use design tokens from `SPEC.md` section 4.1.3
+
+4. **Naming conventions**:
+   - ✅ Directories: `lowercase` (e.g., `myfeature/`, `components/`, `styles/`)
+   - ✅ Component files: `PascalCase.tsx` (e.g., `MyComponent.tsx`)
+   - ✅ Component styles: `PascalCase.css` (e.g., `MyComponent.css`)
+   - ✅ Feature styles: `kebab-case.css` (e.g., `my-feature.css`)
+
+5. **Import paths**:
+   ```typescript
+   // Component importing its own styles
+   import '../styles/MyComponent.css';
+
+   // Component importing feature-level styles
+   import '../styles/myfeature.css';
+
+   // Component importing from another feature
+   import '../../shared/TitleBar';
+   ```
+
+6. **Style hierarchy**:
+   - **Global** (`src/styles/`): Design tokens, utilities, base resets
+   - **Feature-level** (`src/components/myfeature/styles/myfeature.css`): Shared layouts/containers
+   - **Component-specific** (`src/components/myfeature/styles/MyComponent.css`): Unique to one component
+
+7. **Follow accessibility guidelines**
+
+8. **Add to storybook if applicable**
+
+**Example**:
+```typescript
+// src/components/workspace/components/WorkspaceCard.tsx
+import '../styles/workspace.css';        // Feature-level
+import '../styles/WorkspaceCard.css';    // Component-specific
+
+export function WorkspaceCard({ workspace }) {
+  return (
+    <div className="workspace-card">
+      <h3>{workspace.name}</h3>
+      <span className="workspace-status">{workspace.status}</span>
+    </div>
+  );
+}
+```
+
+See `docs/adr/0003-frontend-organization.md` for rationale and `SPEC.md` section 4.1.1 for complete structure.
 
 ---
 

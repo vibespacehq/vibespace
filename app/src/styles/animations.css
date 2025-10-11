@@ -1,0 +1,49 @@
+/**
+ * Global Animations
+ * Reusable animations used across multiple components.
+ */
+
+/* Scan line effect - used in setup container */
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+/* Pulse effect - used in sidebar gradient */
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+/* Step indicator pulse - used in active step */
+@keyframes pulse-step {
+  0%, 100% {
+    box-shadow: 0 0 16px rgba(241, 2, 243, 0.5);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 24px rgba(241, 2, 243, 0.8);
+    transform: scale(1.05);
+  }
+}
+
+/* Spin animation - used in loading spinners */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Success icon pulse - used in success state */
+@keyframes pulse-success {
+  0%, 100% {
+    box-shadow: 0 0 24px rgba(0, 171, 171, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 32px rgba(0, 171, 171, 0.6);
+    transform: scale(1.02);
+  }
+}

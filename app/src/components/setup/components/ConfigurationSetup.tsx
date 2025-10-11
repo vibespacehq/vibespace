@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ProgressSidebar } from './ProgressSidebar';
-import './KubernetesSetup.css';
+import '../styles/setup.css';
+import '../styles/ConfigurationSetup.css';
 
 interface ConfigurationSetupProps {
   onComplete: () => void;

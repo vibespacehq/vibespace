@@ -1,3 +1,5 @@
+import '../styles/ProgressSidebar.css';
+
 interface Step {
   number: number;
   title: string;

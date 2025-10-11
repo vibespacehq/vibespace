@@ -1,5 +1,6 @@
 import { ProgressSidebar } from './ProgressSidebar';
-import './KubernetesSetup.css';
+import '../styles/setup.css';
+import '../styles/ReadySetup.css';
 
 interface ReadySetupProps {
   onLaunch: () => void;

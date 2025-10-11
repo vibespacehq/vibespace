@@ -1,0 +1,103 @@
+/**
+ * Authentication Setup Component Styles
+ * Sign in screen with authentication methods.
+ */
+
+/* Authentication container */
+.auth-container {
+  max-width: 480px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+/* Authentication main logo */
+.auth-logo {
+  width: 80px;
+  height: 80px;
+  margin-bottom: var(--spacing-4);
+}
+
+.auth-icon {
+  font-size: 4rem;
+  color: var(--accent-primary);
+  margin-bottom: var(--spacing-4);
+  opacity: 0.8;
+}
+
+.auth-container h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-3) 0;
+  color: var(--text-primary);
+}
+
+.auth-description {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin: 0 0 var(--spacing-8) 0;
+}
+
+/* Authentication methods */
+.auth-methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-6);
+}
+
+.auth-method-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-3);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.auth-method-btn:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 171, 171, 0.2);
+}
+
+.auth-method-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auth-icon-small {
+  font-size: 1.25rem;
+}
+
+/* Small spinner for auth buttons */
+.spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+/* Authentication footer */
+.auth-footer {
+  padding-top: var(--spacing-4);
+  border-top: 1px solid var(--border);
+}
+
+.auth-note {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  margin: 0;
+}
