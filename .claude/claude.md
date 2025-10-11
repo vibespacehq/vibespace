@@ -81,7 +81,7 @@ A Docker image definition for a workspace type. Examples:
 Users can create custom templates via BuildKit.
 
 ### 3. Credential
-Encrypted secrets managed by the app (stored in `~/.workspace/credential/`):
+Encrypted secrets managed by the app (stored in `~/.workspaces/credential/`):
 - AI agent API keys (Claude, OpenAI)
 - Git config (name, email)
 - SSH keys (generated or imported)

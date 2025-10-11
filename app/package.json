@@ -1,7 +1,7 @@
 {
-  "name": "workspace",
+  "name": "workspaces",
   "version": "0.1.0",
-  "description": "Local Kubernetes workspace manager",
+  "description": "Local Kubernetes workspaces manager",
   "type": "module",
   "scripts": {
     "dev": "vite",
