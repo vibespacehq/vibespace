@@ -1,7 +1,7 @@
 .PHONY: help deadcode check-unused lint-all install-tools
 
 help:
-	@echo "Workspace - Make Commands"
+	@echo "workspaces - Make Commands"
 	@echo ""
 	@echo "Dead Code Detection:"
 	@echo "  make deadcode        - Check for dead code (Go, TypeScript, Rust)"
