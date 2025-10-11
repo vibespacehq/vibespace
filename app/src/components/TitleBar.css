@@ -1,0 +1,107 @@
+/* Custom Titlebar - Full control, cross-platform */
+.custom-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: #000000;
+  border-bottom: 1px solid #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  z-index: 9999;
+  user-select: none;
+}
+
+/* Draggable region - fills empty space */
+.titlebar-drag-region {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+}
+
+.titlebar-left,
+.titlebar-center,
+.titlebar-right {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  position: relative;
+  z-index: 1;
+}
+
+.titlebar-center {
+  justify-content: center;
+  gap: 10px;
+}
+
+.titlebar-right {
+  justify-content: flex-end;
+}
+
+/* Window Controls */
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.titlebar-button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.titlebar-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.titlebar-button:active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.titlebar-button.close:hover {
+  background: #ff5f57;
+}
+
+.titlebar-button svg {
+  width: 10px;
+  height: 10px;
+}
+
+/* Titlebar Content */
+.titlebar-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.titlebar-divider {
+  width: 1px;
+  height: 14px;
+  background: linear-gradient(180deg, #00ABAB, #F102F3);
+  opacity: 0.7;
+}
+
+.titlebar-title {
+  font-size: 0.8125rem;
+  color: #ffffff;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  font-family: 'Space Grotesk', 'DM Sans', -apple-system, sans-serif;
+}
