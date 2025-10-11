@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-This directory contains Architecture Decision Records (ADRs) for the Workspace project.
+This directory contains Architecture Decision Records (ADRs) for the workspaces project.
 
 ## What are ADRs?
 

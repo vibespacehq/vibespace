@@ -26,7 +26,7 @@ workspaces is a Tauri desktop app that manages isolated dev environments running
 
 **Kubernetes Required**:
 
-Workspace needs Kubernetes to run. Choose one option:
+workspaces needs Kubernetes to run. Choose one option:
 
 #### Option 1: Rancher Desktop (Recommended) ⭐
 
@@ -63,7 +63,7 @@ curl -sfL https://get.k3s.io | sh -s - \
 
 #### Option 4: Existing Cluster
 
-If you already have a Kubernetes cluster (k3d, minikube, Docker Desktop), Workspace will detect it.
+If you already have a Kubernetes cluster (k3d, minikube, Docker Desktop), workspaces will detect it.
 
 ### Installation
 
@@ -82,8 +82,8 @@ The app will detect your Kubernetes installation on startup. If Kubernetes is no
 
 ### Usage
 
-1. Launch Workspace app
-2. Click "New Workspace"
+1. Launch workspaces app
+2. Click "New workspace"
 3. Choose a template (Next.js, Vue, Jupyter)
 4. Configure resources and AI agents
 5. Click "Create"
@@ -142,7 +142,7 @@ kubectl version --client
 2. Go to Preferences → Kubernetes
 3. Check "Enable Kubernetes"
 4. Wait for cluster to start (green indicator)
-5. Click "Verify Installation" in Workspace app
+5. Click "Verify installation" in workspaces app
 
 ## Architecture
 

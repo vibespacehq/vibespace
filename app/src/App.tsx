@@ -17,7 +17,7 @@ function App() {
         <header className="mb-12">
           <h1 className="text-4xl font-bold mb-2">workspaces</h1>
           <p className="text-text-secondary">
-            Local Kubernetes workspace manager
+            Local Kubernetes workspaces manager
           </p>
         </header>
 

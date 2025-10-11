@@ -78,21 +78,21 @@ fn is_valid_hostname(hostname: &str) -> bool {
     hostname.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.')
 }
 
-fn get_workspace_dir() -> Result<PathBuf, String> {
+fn get_workspaces_dir() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("Failed to get home directory")?;
-    let workspace_dir = home.join(".workspace");
+    let workspaces_dir = home.join(".workspaces");
 
-    if !workspace_dir.exists() {
-        fs::create_dir_all(&workspace_dir)
-            .map_err(|e| format!("Failed to create workspace directory: {}", e))?;
+    if !workspaces_dir.exists() {
+        fs::create_dir_all(&workspaces_dir)
+            .map_err(|e| format!("Failed to create workspaces directory: {}", e))?;
     }
 
-    Ok(workspace_dir)
+    Ok(workspaces_dir)
 }
 
 fn get_credential_dir() -> Result<PathBuf, String> {
-    let workspace_dir = get_workspace_dir()?;
-    let cred_dir = workspace_dir.join("credential");
+    let workspaces_dir = get_workspaces_dir()?;
+    let cred_dir = workspaces_dir.join("credential");
 
     if !cred_dir.exists() {
         fs::create_dir_all(&cred_dir)
@@ -103,8 +103,8 @@ fn get_credential_dir() -> Result<PathBuf, String> {
 }
 
 fn get_encryption_key() -> Result<Vec<u8>, String> {
-    let workspace_dir = get_workspace_dir()?;
-    let key_file = workspace_dir.join(".key");
+    let workspaces_dir = get_workspaces_dir()?;
+    let key_file = workspaces_dir.join(".key");
 
     if key_file.exists() {
         fs::read(&key_file)
@@ -522,21 +522,21 @@ async fn update_hosts_file(entries: Vec<HostEntry>) -> Result<(), String> {
 
     let mut lines: Vec<String> = hosts_content.lines().map(|s| s.to_string()).collect();
 
-    // Remove old workspace entries
-    lines.retain(|line| !line.contains("# workspace-managed"));
+    // Remove old workspaces entries
+    lines.retain(|line| !line.contains("# workspaces-managed"));
 
-    // Add new workspace entries
+    // Add new workspaces entries
     lines.push("".to_string());
-    lines.push("# workspace-managed entries".to_string());
+    lines.push("# workspaces-managed entries".to_string());
     for entry in entries {
-        lines.push(format!("{}\t{}\t# workspace-managed", entry.ip, entry.hostname));
+        lines.push(format!("{}\t{}\t# workspaces-managed", entry.ip, entry.hostname));
     }
 
     let new_content = lines.join("\n");
 
     // Write with sudo (requires user to enter password)
     // Use secure random temp file to prevent race conditions
-    let temp_file = format!("/tmp/workspace_hosts_{}", uuid::Uuid::new_v4());
+    let temp_file = format!("/tmp/workspaces_hosts_{}", uuid::Uuid::new_v4());
     fs::write(&temp_file, &new_content)
         .map_err(|e| format!("Failed to write temp hosts file: {}", e))?;
 
@@ -588,9 +588,9 @@ fn main() {
             update_hosts_file
         ])
         .setup(|_app| {
-            // Initialize workspace directory on first run
-            if let Err(e) = get_workspace_dir() {
-                eprintln!("Failed to initialize workspace directory: {}", e);
+            // Initialize workspaces directory on first run
+            if let Err(e) = get_workspaces_dir() {
+                eprintln!("Failed to initialize workspaces directory: {}", e);
             }
 
             Ok(())

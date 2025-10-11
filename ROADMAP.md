@@ -1,4 +1,4 @@
-# Workspace - Product Roadmap
+# workspaces - Product Roadmap
 
 **Vision**: The easiest way to create, manage, and scale development workspaces with AI coding agents.
 
