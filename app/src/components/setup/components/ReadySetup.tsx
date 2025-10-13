@@ -77,7 +77,8 @@ export function ReadySetup({ onLaunch }: ReadySetupProps) {
       });
 
       eventSource.addEventListener('error', (event) => {
-        const data = JSON.parse(event.data);
+        const messageEvent = event as MessageEvent;
+        const data = JSON.parse(messageEvent.data);
         console.error('Setup error:', data);
         setError(data.error || 'Setup failed');
         eventSource.close();

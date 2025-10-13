@@ -26,7 +26,7 @@ func (h *WorkspaceHandler) List(c *gin.Context) {
 	workspaces, err := h.service.List(c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to list workspaces",
+			"error":   "Failed to list workspaces",
 			"details": err.Error(),
 		})
 		return
@@ -44,7 +44,7 @@ func (h *WorkspaceHandler) Get(c *gin.Context) {
 	workspace, err := h.service.Get(c.Request.Context(), id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Workspace not found",
+			"error":   "Workspace not found",
 			"details": err.Error(),
 		})
 		return
@@ -58,7 +58,7 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 	var req model.CreateWorkspaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request",
+			"error":   "Invalid request",
 			"details": err.Error(),
 		})
 		return
@@ -67,7 +67,7 @@ func (h *WorkspaceHandler) Create(c *gin.Context) {
 	workspace, err := h.service.Create(c.Request.Context(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to create workspace",
+			"error":   "Failed to create workspace",
 			"details": err.Error(),
 		})
 		return
@@ -82,7 +82,7 @@ func (h *WorkspaceHandler) Delete(c *gin.Context) {
 
 	if err := h.service.Delete(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to delete workspace",
+			"error":   "Failed to delete workspace",
 			"details": err.Error(),
 		})
 		return
@@ -97,7 +97,7 @@ func (h *WorkspaceHandler) Start(c *gin.Context) {
 
 	if err := h.service.Start(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to start workspace",
+			"error":   "Failed to start workspace",
 			"details": err.Error(),
 		})
 		return
@@ -105,7 +105,7 @@ func (h *WorkspaceHandler) Start(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Workspace starting",
-		"id": id,
+		"id":      id,
 	})
 }
 
@@ -115,7 +115,7 @@ func (h *WorkspaceHandler) Stop(c *gin.Context) {
 
 	if err := h.service.Stop(c.Request.Context(), id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to stop workspace",
+			"error":   "Failed to stop workspace",
 			"details": err.Error(),
 		})
 		return
@@ -123,6 +123,6 @@ func (h *WorkspaceHandler) Stop(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Workspace stopping",
-		"id": id,
+		"id":      id,
 	})
 }

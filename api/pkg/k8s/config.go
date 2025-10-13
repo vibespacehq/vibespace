@@ -82,7 +82,7 @@ func (c *Client) ConfigureKnativeAutoscaling(ctx context.Context, config *Cluste
 			Namespace: "knative-serving",
 		},
 		Data: map[string]string{
-			"enable-scale-to-zero": fmt.Sprintf("%t", config.EnableScaleToZero),
+			"enable-scale-to-zero":       fmt.Sprintf("%t", config.EnableScaleToZero),
 			"scale-to-zero-grace-period": "30s",
 			"stable-window":              "60s",
 			"panic-window-percentage":    "10.0",

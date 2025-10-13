@@ -670,11 +670,15 @@ kubectl get svc -n default registry
 ## External Dependencies
 
 **Core** (all modes):
-- **k3s**: Lightweight Kubernetes
-- **Knative Serving**: Serverless workload management
-- **Traefik**: Ingress controller
-- **BuildKit**: Container image builder
+- **k3s**: Lightweight Kubernetes (1.27+)
+- **Knative Serving**: v1.15.2 (serverless workload management)
+- **Traefik**: v3.5.3 (ingress controller)
+- **Registry**: 2.8.3 (local image storage)
+- **BuildKit**: v0.17.3 (container image builder)
 - **code-server**: VS Code in browser
+
+**Component Version Strategy (MVP)**:
+The pragmatic mix approach balances stability for MVP delivery with modern versions. Versions selected to avoid known issues (Knative v1.19 OTel bugs, BuildKit v0.24+ CPU issues) while maintaining active support. See [ADR 0004](../docs/adr/0004-component-version-selection.md) for detailed rationale.
 
 **Cloud Mode Only**:
 - **cert-manager**: TLS certificate management (Let's Encrypt)
