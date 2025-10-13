@@ -76,7 +76,8 @@ func main() {
 		cluster := v1.Group("/cluster")
 		{
 			cluster.GET("/status", clusterHandler.GetStatus)
-			cluster.POST("/setup", clusterHandler.SetupCluster)
+			cluster.GET("/setup", clusterHandler.SetupCluster)  // GET for EventSource compatibility
+			cluster.POST("/setup", clusterHandler.SetupCluster) // POST for programmatic access
 		}
 	}
 

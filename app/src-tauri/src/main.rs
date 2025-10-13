@@ -12,6 +12,7 @@ use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use tauri::Manager;
 
 // ============================================================================
 // Types
@@ -571,6 +572,109 @@ async fn update_hosts_file(entries: Vec<HostEntry>) -> Result<(), String> {
 }
 
 // ============================================================================
+// API Server Management
+// ============================================================================
+
+fn start_api_server(app_handle: tauri::AppHandle) {
+    use std::thread;
+
+    thread::spawn(move || {
+        println!("Starting API server...");
+
+        // Determine API server binary path
+        let api_server_path = if cfg!(debug_assertions) {
+            // Development mode: run from source using 'go run'
+            let current_dir = std::env::current_dir()
+                .expect("Failed to get current directory");
+            let project_root = current_dir
+                .parent()
+                .expect("Failed to get parent directory")
+                .parent()
+                .expect("Failed to get project root")
+                .to_path_buf();
+
+            let api_dir = project_root.join("api");
+
+            println!("Running API server in dev mode from: {:?}", api_dir);
+
+            let mut cmd = Command::new("go");
+            cmd.arg("run")
+                .arg("cmd/server/main.go")
+                .current_dir(api_dir)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+
+            match cmd.spawn() {
+                Ok(mut child) => {
+                    println!("API server started (PID: {:?})", child.id());
+
+                    // Store the child process so it gets killed when app exits
+                    let _app_handle = app_handle.clone();
+
+                    // Log output
+                    if let Some(stdout) = child.stdout.take() {
+                        use std::io::{BufRead, BufReader};
+                        thread::spawn(move || {
+                            let reader = BufReader::new(stdout);
+                            for line in reader.lines().map_while(Result::ok) {
+                                println!("[API] {}", line);
+                            }
+                        });
+                    }
+
+                    if let Some(stderr) = child.stderr.take() {
+                        use std::io::{BufRead, BufReader};
+                        thread::spawn(move || {
+                            let reader = BufReader::new(stderr);
+                            for line in reader.lines().map_while(Result::ok) {
+                                eprintln!("[API ERROR] {}", line);
+                            }
+                        });
+                    }
+
+                    // Wait for the child process to exit
+                    let _ = child.wait();
+                    println!("API server exited");
+                }
+                Err(e) => {
+                    eprintln!("Failed to start API server: {}", e);
+                }
+            }
+
+            return;
+        } else {
+            // Production mode: run compiled binary
+            let resource_path = app_handle
+                .path()
+                .resource_dir()
+                .expect("Failed to get resource dir");
+
+            #[cfg(target_os = "windows")]
+            let binary_name = "api-server.exe";
+            #[cfg(not(target_os = "windows"))]
+            let binary_name = "api-server";
+
+            resource_path.join(binary_name)
+        };
+
+        // Production mode execution
+        if !cfg!(debug_assertions) {
+            match Command::new(&api_server_path).spawn() {
+                Ok(mut child) => {
+                    println!("API server started (PID: {:?})", child.id());
+                    let _ = child.wait();
+                    println!("API server exited");
+                }
+                Err(e) => {
+                    eprintln!("Failed to start API server: {}", e);
+                    eprintln!("API server path: {:?}", api_server_path);
+                }
+            }
+        }
+    });
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -599,11 +703,14 @@ fn main() {
             generate_ssh_key,
             update_hosts_file
         ])
-        .setup(|_app| {
+        .setup(|app| {
             // Initialize workspaces directory on first run
             if let Err(e) = get_workspaces_dir() {
                 eprintln!("Failed to initialize workspaces directory: {}", e);
             }
+
+            // Start API server
+            start_api_server(app.handle().clone());
 
             Ok(())
         })
