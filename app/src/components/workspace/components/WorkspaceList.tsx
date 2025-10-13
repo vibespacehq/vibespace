@@ -70,7 +70,9 @@ export function WorkspaceList({ workspaces, onCreateNew }: WorkspaceListProps) {
             </div>
             <div className="workspace-card-actions">
               <button className="btn-action btn-open">Open</button>
-              <button className="btn-action btn-more">⋯</button>
+              <button className="btn-action btn-more" aria-label="More actions">
+                <span aria-hidden="true">⋯</span>
+              </button>
             </div>
           </div>
         ))}
