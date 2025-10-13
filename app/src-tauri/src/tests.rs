@@ -107,16 +107,19 @@ fn test_decrypt_too_short() {
 
 #[test]
 fn test_decrypt_corrupted_data() {
-    // Encrypt valid data, then corrupt it
-    let encrypted = encrypt_data("test").expect("Encryption should succeed");
+    // Encrypt valid data with more content to ensure adequate ciphertext length
+    let encrypted = encrypt_data("test data with sufficient length for corruption test")
+        .expect("Encryption should succeed");
     let mut bytes = general_purpose::STANDARD
         .decode(&encrypted)
         .expect("Should decode");
 
-    // Corrupt the ciphertext portion (after nonce)
-    if bytes.len() > 12 {
-        bytes[12] ^= 0xFF; // Flip bits in first ciphertext byte
-    }
+    // Ensure we have enough data to corrupt (nonce + ciphertext + tag)
+    // AES-GCM produces: 12-byte nonce + ciphertext + 16-byte tag
+    assert!(bytes.len() > 28, "Encrypted data should be long enough");
+
+    // Corrupt the ciphertext portion (after nonce, before tag)
+    bytes[15] ^= 0xFF; // Flip bits in middle of ciphertext
 
     let corrupted = general_purpose::STANDARD.encode(&bytes);
     let result = decrypt_data(&corrupted);
