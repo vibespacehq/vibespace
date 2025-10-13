@@ -26,6 +26,7 @@ func main() {
 	// Initialize handlers
 	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
 	templateHandler := handler.NewTemplateHandler()
+	clusterHandler := handler.NewClusterHandler(k8sClient)
 
 	// Initialize Gin router
 	r := gin.Default()
@@ -69,6 +70,13 @@ func main() {
 		{
 			templates.GET("", templateHandler.List)
 			templates.GET("/:id", templateHandler.Get)
+		}
+
+		// Cluster
+		cluster := v1.Group("/cluster")
+		{
+			cluster.GET("/status", clusterHandler.GetStatus)
+			cluster.POST("/setup", clusterHandler.SetupCluster)
 		}
 	}
 
