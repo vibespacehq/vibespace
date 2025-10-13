@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -26,11 +27,11 @@ func NewClusterHandler(k8sClient *k8s.Client) *ClusterHandler {
 
 // ClusterStatusResponse represents the cluster status response
 type ClusterStatusResponse struct {
-	Healthy    bool                    `json:"healthy"`
-	Version    string                  `json:"version,omitempty"`
-	Components *k8s.ClusterComponents  `json:"components"`
-	Config     *k8s.ClusterConfig      `json:"config,omitempty"`
-	Message    string                  `json:"message,omitempty"`
+	Healthy    bool                   `json:"healthy"`
+	Version    string                 `json:"version,omitempty"`
+	Components *k8s.ClusterComponents `json:"components"`
+	Config     *k8s.ClusterConfig     `json:"config,omitempty"`
+	Message    string                 `json:"message,omitempty"`
 }
 
 // GetStatus returns the cluster status including all components
@@ -42,7 +43,7 @@ func (h *ClusterHandler) GetStatus(c *gin.Context) {
 	components, err := h.k8sClient.CheckComponents(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to check cluster components",
+			"error":   "Failed to check cluster components",
 			"details": err.Error(),
 		})
 		return
@@ -116,7 +117,7 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 	}()
 
 	// Stream progress to client
-	c.Stream(func(w http.ResponseWriter) bool {
+	c.Stream(func(w io.Writer) bool {
 		select {
 		case progress, ok := <-progressChan:
 			if !ok {

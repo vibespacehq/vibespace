@@ -61,6 +61,11 @@
   - [ ] Resource usage monitoring
   - [ ] Logs viewer
 - [ ] Template marketplace UI
+- [ ] **Component version upgrades**:
+  - [ ] Evaluate Knative v1.19+ (when OTel transition stabilizes)
+  - [ ] Evaluate BuildKit v0.24+ (when CPU issues resolved)
+  - [ ] Consider Registry 3.0 (when production adoption increases)
+  - See [ADR 0004](../docs/adr/0004-component-version-selection.md) for MVP baseline
 
 ### Infrastructure
 - **Kubernetes**: Same (detection), but **recommend Rancher Desktop** prominently
