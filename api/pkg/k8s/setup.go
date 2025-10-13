@@ -230,7 +230,19 @@ func (c *Client) ApplyManifest(ctx context.Context, manifestData []byte) error {
 		_, err = dr.Create(ctx, &obj, metav1.CreateOptions{})
 		if err != nil {
 			if errors.IsAlreadyExists(err) {
-				// Resource already exists, update it
+				// Resource already exists, get current version and update
+				existing, err := dr.Get(ctx, obj.GetName(), metav1.GetOptions{})
+				if err != nil {
+					return fmt.Errorf("failed to get existing %s %s: %w", gvk.Kind, obj.GetName(), err)
+				}
+
+				// Preserve resourceVersion and other metadata
+				obj.SetResourceVersion(existing.GetResourceVersion())
+				obj.SetUID(existing.GetUID())
+				obj.SetGeneration(existing.GetGeneration())
+				obj.SetCreationTimestamp(existing.GetCreationTimestamp())
+
+				// Update the resource
 				_, err = dr.Update(ctx, &obj, metav1.UpdateOptions{})
 				if err != nil {
 					return fmt.Errorf("failed to update %s %s: %w", gvk.Kind, obj.GetName(), err)
