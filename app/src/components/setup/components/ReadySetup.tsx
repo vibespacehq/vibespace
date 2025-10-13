@@ -46,6 +46,9 @@ export function ReadySetup({ onLaunch }: ReadySetupProps) {
           progress['buildkit'] = { component: 'buildkit', status: 'pending' };
         }
         setSetupProgress(progress);
+
+        // Automatically start installation
+        configureCluster();
       }
     } catch (err) {
       console.error('Failed to check cluster status:', err);
@@ -85,11 +88,27 @@ export function ReadySetup({ onLaunch }: ReadySetupProps) {
         setSetupState('error');
       });
 
-      eventSource.onerror = (err) => {
-        console.error('EventSource error:', err);
-        setError('Connection to API server lost');
+      eventSource.onerror = async (err) => {
+        console.error('EventSource closed or error:', err);
         eventSource.close();
-        setSetupState('error');
+
+        // Check cluster status to determine if setup completed successfully
+        try {
+          const response = await fetch('http://localhost:8090/api/v1/cluster/status');
+          const status: ClusterStatus = await response.json();
+
+          if (status.healthy) {
+            // Setup completed successfully
+            setSetupState('ready');
+          } else {
+            // Setup incomplete, show error
+            setError('Installation incomplete. Please retry.');
+            setSetupState('error');
+          }
+        } catch (fetchErr) {
+          setError('Connection to API server lost');
+          setSetupState('error');
+        }
       };
     } catch (err) {
       console.error('Failed to start setup:', err);
