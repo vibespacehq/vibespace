@@ -23,14 +23,6 @@ const config: KnipConfig = {
     'autoprefixer', // PostCSS plugin for Tailwind (configured in postcss.config.js)
     'postcss', // Required by Tailwind CSS (configured in postcss.config.js)
     '@fontsource/space-grotesk', // Font imported in CSS (@import in index.css)
-    // Testing dependencies
-    'vitest',
-    '@vitest/ui',
-    '@testing-library/react',
-    '@testing-library/jest-dom',
-    '@testing-library/user-event',
-    'jsdom',
-    'happy-dom',
   ],
   ignoreExportsUsedInFile: {
     interface: true,
