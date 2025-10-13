@@ -14,6 +14,7 @@ const config: KnipConfig = {
     'src/**/*.stories.{ts,tsx}',
     'src/**/__tests__/**',
     'src/**/__mocks__/**',
+    'src/test/**', // Test setup files
   ],
   ignoreDependencies: [
     '@tanstack/react-query', // Will be used for API state (Phase 2)

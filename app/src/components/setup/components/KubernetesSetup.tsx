@@ -1,9 +1,13 @@
-import { useKubernetesStatus } from '../../hooks/useKubernetesStatus';
+import { useKubernetesStatus } from '../../../hooks/useKubernetesStatus';
 import { InstallationInstructions } from './InstallationInstructions';
 import { ProgressSidebar } from './ProgressSidebar';
-import './KubernetesSetup.css';
+import '../styles/setup.css';
 
-export function KubernetesSetup() {
+interface KubernetesSetupProps {
+  onComplete?: () => void;
+}
+
+export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const { status, isLoading, refetch } = useKubernetesStatus();
 
   if (isLoading) {
@@ -34,21 +38,21 @@ export function KubernetesSetup() {
   if (status?.available) {
     return (
       <div className="setup-container">
-        <ProgressSidebar currentStep={3} />
+        <ProgressSidebar currentStep={2} />
         <main className="setup-main">
           <header className="setup-header">
             <div className="step-badge">
-              <span className="step-badge-number">3</span>
-              <span>Step 3 of 4</span>
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
             </div>
-            <h1 className="brand-title">Configuration</h1>
-            <p className="brand-subtitle">Set up your workspace preferences</p>
+            <h1 className="brand-title">Infrastructure Ready</h1>
+            <p className="brand-subtitle">Kubernetes cluster detected successfully</p>
             <div className="progress-bar-container">
-              <div className="progress-bar-fill" data-progress="50"></div>
+              <div className="progress-bar-fill" data-progress="25"></div>
             </div>
           </header>
           <div className="setup-success">
-            <div className="success-icon">OK</div>
+            <div className="success-icon">✓</div>
             <h2>Infrastructure ready</h2>
             <div className="cluster-info">
               {status.installType && (
@@ -67,6 +71,13 @@ export function KubernetesSetup() {
                 </p>
               )}
             </div>
+            {onComplete && (
+              <div className="setup-actions">
+                <button onClick={onComplete} className="btn-primary">
+                  Continue
+                </button>
+              </div>
+            )}
           </div>
         </main>
       </div>
@@ -103,6 +114,12 @@ export function KubernetesSetup() {
           <button onClick={refetch} className="btn-primary">
             Verify installation
           </button>
+          {/* Temporary skip button for testing */}
+          {onComplete && (
+            <button onClick={onComplete} className="btn-primary" style={{ marginLeft: '1rem' }}>
+              Skip (Testing)
+            </button>
+          )}
         </div>
       </div>
       </main>

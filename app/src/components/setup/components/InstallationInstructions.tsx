@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import '../styles/InstallationInstructions.css';
 
 interface InstallationInstructionsProps {
   suggestedAction?: 'install_kubernetes' | 'start_kubernetes' | 'check_installation';

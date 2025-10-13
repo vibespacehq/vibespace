@@ -1,0 +1,167 @@
+/**
+ * Progress Sidebar Component Styles
+ * Displays setup wizard progress with step indicators.
+ */
+
+/* Sidebar logo and icon */
+.sidebar-logo {
+  display: contents;
+}
+
+.sidebar-icon {
+  width: 64px;
+  height: 64px;
+  align-self: start;
+}
+
+.sidebar-logo h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin: 0;
+  font-family: var(--font-display);
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-tertiary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.03em;
+}
+
+.sidebar-logo p {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  align-self: start;
+}
+
+/* Progress steps */
+.progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+  position: relative;
+}
+
+.progress-steps::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 28px;
+  bottom: 28px;
+  width: 2px;
+  background: var(--border);
+}
+
+.progress-step {
+  display: flex;
+  gap: var(--spacing-4);
+  align-items: flex-start;
+  position: relative;
+}
+
+/* Step indicator circle */
+.step-indicator {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+  transition: all 0.3s ease;
+}
+
+.progress-step.completed .step-indicator {
+  background: var(--bg-elevated);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  box-shadow: 0 0 12px rgba(0, 171, 171, 0.3);
+}
+
+.progress-step.active .step-indicator {
+  background: var(--accent-tertiary);
+  border-color: var(--accent-tertiary);
+  color: #ffffff;
+  box-shadow: 0 0 16px rgba(241, 2, 243, 0.5);
+  animation: pulse-step 2s ease-in-out infinite;
+}
+
+/* Step content */
+.step-content {
+  flex: 1;
+  padding-top: 2px;
+}
+
+.step-content h3 {
+  margin: 0 0 var(--spacing-2) 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.progress-step.completed .step-content h3 {
+  color: var(--text-secondary);
+}
+
+.progress-step.active .step-content h3 {
+  background: linear-gradient(90deg, var(--accent-tertiary), var(--accent-yellow));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.step-content p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* Responsive adjustments for sidebar steps */
+@media (max-width: 768px) {
+  .progress-steps {
+    flex-direction: row;
+    justify-content: space-between;
+    gap: var(--spacing-4);
+  }
+
+  .progress-steps::before {
+    left: 28px;
+    right: 28px;
+    top: 11px;
+    bottom: auto;
+    width: auto;
+    height: 2px;
+  }
+
+  .progress-step {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    flex: 1;
+  }
+
+  .step-content h3 {
+    font-size: 0.8125rem;
+  }
+
+  .step-content p {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .progress-steps {
+    gap: var(--spacing-2);
+  }
+}
