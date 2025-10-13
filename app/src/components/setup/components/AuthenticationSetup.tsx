@@ -47,6 +47,7 @@ export function AuthenticationSetup({ onComplete }: AuthenticationSetupProps) {
                 className="auth-method-btn"
                 onClick={handleSignIn}
                 disabled={isSigningIn}
+                aria-busy={isSigningIn}
               >
                 {isSigningIn ? (
                   <>
@@ -55,19 +56,27 @@ export function AuthenticationSetup({ onComplete }: AuthenticationSetupProps) {
                   </>
                 ) : (
                   <>
-                    <span className="auth-icon-small">⚡</span>
+                    <span className="auth-icon-small" aria-hidden="true">⚡</span>
                     Sign in with GitHub
                   </>
                 )}
               </button>
 
-              <button className="auth-method-btn" disabled={isSigningIn}>
-                <span className="auth-icon-small">@</span>
+              <button
+                className="auth-method-btn"
+                disabled={isSigningIn}
+                aria-label="Sign in with Google (Coming soon)"
+              >
+                <span className="auth-icon-small" aria-hidden="true">@</span>
                 Sign in with Google
               </button>
 
-              <button className="auth-method-btn" disabled={isSigningIn}>
-                <span className="auth-icon-small">✉</span>
+              <button
+                className="auth-method-btn"
+                disabled={isSigningIn}
+                aria-label="Sign in with Email (Coming soon)"
+              >
+                <span className="auth-icon-small" aria-hidden="true">✉</span>
                 Sign in with Email
               </button>
             </div>

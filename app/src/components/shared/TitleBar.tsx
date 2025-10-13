@@ -2,48 +2,34 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import './TitleBar.css';
 
 export function TitleBar() {
-  console.log('[TitleBar] Component mounted');
-
   const handleMinimize = async (e: React.MouseEvent) => {
-    console.log('[TitleBar] Minimize button clicked', e);
     e.preventDefault();
     e.stopPropagation();
     try {
       const appWindow = getCurrentWindow();
-      console.log('[TitleBar] Got window instance:', appWindow);
-      console.log('[TitleBar] Calling minimize()...');
       await appWindow.minimize();
-      console.log('[TitleBar] Minimize successful');
     } catch (error) {
       console.error('[TitleBar] Minimize error:', error);
     }
   };
 
   const handleMaximize = async (e: React.MouseEvent) => {
-    console.log('[TitleBar] Maximize button clicked', e);
     e.preventDefault();
     e.stopPropagation();
     try {
       const appWindow = getCurrentWindow();
-      console.log('[TitleBar] Got window instance:', appWindow);
-      console.log('[TitleBar] Calling toggleMaximize()...');
       await appWindow.toggleMaximize();
-      console.log('[TitleBar] Maximize successful');
     } catch (error) {
       console.error('[TitleBar] Maximize error:', error);
     }
   };
 
   const handleClose = async (e: React.MouseEvent) => {
-    console.log('[TitleBar] Close button clicked', e);
     e.preventDefault();
     e.stopPropagation();
     try {
       const appWindow = getCurrentWindow();
-      console.log('[TitleBar] Got window instance:', appWindow);
-      console.log('[TitleBar] Calling close()...');
       await appWindow.close();
-      console.log('[TitleBar] Close successful');
     } catch (error) {
       console.error('[TitleBar] Close error:', error);
     }
@@ -87,7 +73,7 @@ export function TitleBar() {
 
       <div className="titlebar-center">
         <img
-          src="/src-tauri/icons/icon.png"
+          src="/icon.png"
           alt="workspaces"
           className="titlebar-icon"
         />
