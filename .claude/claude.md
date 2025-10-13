@@ -215,10 +215,90 @@ done
 
 ### Adding a New UI Component
 
-1. Create component: `app/src/components/myfeature/MyComponent.tsx`
-2. Use design tokens from `SPEC.md` section 4.1.3
-3. Follow accessibility guidelines
-4. Add to storybook if applicable
+**Frontend Organization**: Feature-based with separate `components/` and `styles/` subdirectories.
+
+**Structure**:
+```
+src/components/
+├── shared/           # Cross-feature components (TitleBar, etc.)
+│   ├── Component.tsx
+│   └── Component.css
+├── myfeature/        # New feature
+│   ├── components/   # Feature components
+│   │   └── MyComponent.tsx
+│   └── styles/       # Feature styles
+│       ├── myfeature.css    # Shared feature styles
+│       └── MyComponent.css  # Component-specific styles
+└── ...
+```
+
+**Steps to add a component**:
+
+1. **Create component directory structure**:
+   ```bash
+   mkdir -p src/components/myfeature/components
+   mkdir -p src/components/myfeature/styles
+   ```
+
+2. **Create component file**: `src/components/myfeature/components/MyComponent.tsx`
+   ```typescript
+   import '../styles/myfeature.css';      // Feature-level styles
+   import '../styles/MyComponent.css';     // Component-specific styles
+
+   export function MyComponent() {
+     return <div className="my-component">...</div>;
+   }
+   ```
+
+3. **Create styles**:
+   - Component-specific: `src/components/myfeature/styles/MyComponent.css`
+   - Feature-level shared: `src/components/myfeature/styles/myfeature.css`
+   - Use design tokens from `SPEC.md` section 4.1.3
+
+4. **Naming conventions**:
+   - ✅ Directories: `lowercase` (e.g., `myfeature/`, `components/`, `styles/`)
+   - ✅ Component files: `PascalCase.tsx` (e.g., `MyComponent.tsx`)
+   - ✅ Component styles: `PascalCase.css` (e.g., `MyComponent.css`)
+   - ✅ Feature styles: `kebab-case.css` (e.g., `my-feature.css`)
+
+5. **Import paths**:
+   ```typescript
+   // Component importing its own styles
+   import '../styles/MyComponent.css';
+
+   // Component importing feature-level styles
+   import '../styles/myfeature.css';
+
+   // Component importing from another feature
+   import '../../shared/TitleBar';
+   ```
+
+6. **Style hierarchy**:
+   - **Global** (`src/styles/`): Design tokens, utilities, base resets
+   - **Feature-level** (`src/components/myfeature/styles/myfeature.css`): Shared layouts/containers
+   - **Component-specific** (`src/components/myfeature/styles/MyComponent.css`): Unique to one component
+
+7. **Follow accessibility guidelines**
+
+8. **Add to storybook if applicable**
+
+**Example**:
+```typescript
+// src/components/workspace/components/WorkspaceCard.tsx
+import '../styles/workspace.css';        // Feature-level
+import '../styles/WorkspaceCard.css';    // Component-specific
+
+export function WorkspaceCard({ workspace }) {
+  return (
+    <div className="workspace-card">
+      <h3>{workspace.name}</h3>
+      <span className="workspace-status">{workspace.status}</span>
+    </div>
+  );
+}
+```
+
+See `docs/adr/0003-frontend-organization.md` for rationale and `SPEC.md` section 4.1.1 for complete structure.
 
 ---
 
@@ -294,9 +374,248 @@ For **MVP** (Phase 1), we're prioritizing:
 
 ## Testing Strategy
 
-- **Unit**: Go packages, React hooks
+### Overview
+
+- **Unit**: Go packages, React components, hooks
 - **Integration**: API + k3s interaction
 - **E2E**: Full workspace lifecycle (create → open → delete)
+
+### Frontend Testing (Vitest + React Testing Library)
+
+**Test Framework**: Vitest (Vite-native, fast, modern)
+**Testing Library**: @testing-library/react (user-centric testing)
+**Environment**: jsdom (DOM emulation in Node.js)
+
+**Running Tests**:
+```bash
+cd app
+
+# Run all tests
+npm run test:frontend
+
+# Watch mode (re-run on changes)
+npm run test:frontend:watch
+
+# UI mode (visual test runner)
+npm run test:frontend:ui
+
+# Coverage report
+npm run test:frontend:coverage
+```
+
+**Configuration Files**:
+- `vitest.config.ts` - Test configuration
+- `src/test/setup.ts` - Global test setup (mocks, matchers)
+- `knip.config.ts` - Excludes test files from dead code detection
+
+### Writing Component Tests
+
+**Test File Location**: Co-located with component (same directory)
+
+**Naming Convention**: `ComponentName.test.tsx`
+
+**Example Structure**:
+```typescript
+// src/components/workspace/components/WorkspaceCard.test.tsx
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { WorkspaceCard } from './WorkspaceCard';
+
+describe('WorkspaceCard', () => {
+  it('renders workspace name', () => {
+    render(<WorkspaceCard workspace={mockWorkspace} />);
+    expect(screen.getByText('my-workspace')).toBeInTheDocument();
+  });
+
+  it('calls onOpen when Open button is clicked', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    render(<WorkspaceCard workspace={mockWorkspace} onOpen={onOpen} />);
+
+    await user.click(screen.getByText('Open'));
+    expect(onOpen).toHaveBeenCalledWith('ws-1');
+  });
+});
+```
+
+**What to Test**:
+1. **Rendering**: Component displays correct content
+2. **User Interactions**: Buttons, forms, clicks work as expected
+3. **State Changes**: Loading states, error states, success states
+4. **Accessibility**: ARIA attributes, keyboard navigation
+5. **Conditional Rendering**: Empty states, populated states
+
+**What NOT to Test**:
+- Implementation details (CSS classes, internal state)
+- Third-party libraries (React, Tauri API)
+- Visual appearance (use visual regression tests separately)
+
+### Test Patterns
+
+**User Events**:
+```typescript
+import userEvent from '@testing-library/user-event';
+
+it('handles user interaction', async () => {
+  const user = userEvent.setup();
+  render(<MyComponent />);
+
+  await user.click(screen.getByRole('button'));
+  await user.type(screen.getByRole('textbox'), 'Hello');
+});
+```
+
+**Async Operations**:
+```typescript
+import { waitFor } from '@testing-library/react';
+
+it('loads data asynchronously', async () => {
+  render(<MyComponent />);
+
+  await waitFor(() => {
+    expect(screen.getByText('Loaded')).toBeInTheDocument();
+  });
+});
+```
+
+**Mocking Functions**:
+```typescript
+import { vi } from 'vitest';
+
+it('calls callback with correct arguments', () => {
+  const onSubmit = vi.fn();
+  render(<Form onSubmit={onSubmit} />);
+
+  // ... trigger submit
+
+  expect(onSubmit).toHaveBeenCalledWith({ name: 'John' });
+  expect(onSubmit).toHaveBeenCalledTimes(1);
+});
+```
+
+**Mocking Tauri API**:
+```typescript
+// Already mocked globally in src/test/setup.ts
+import { getCurrentWindow } from '@tauri-apps/api/window';
+
+it('minimizes window', async () => {
+  const mockWindow = getCurrentWindow();
+  render(<TitleBar />);
+
+  await user.click(screen.getByLabelText('Minimize'));
+  expect(mockWindow.minimize).toHaveBeenCalled();
+});
+```
+
+### Accessibility Testing
+
+**Check ARIA attributes**:
+```typescript
+it('has proper accessibility attributes', () => {
+  render(<Button disabled loading />);
+
+  const button = screen.getByRole('button');
+  expect(button).toHaveAttribute('aria-busy', 'true');
+  expect(button).toBeDisabled();
+});
+```
+
+**Check semantic HTML**:
+```typescript
+it('uses semantic roles', () => {
+  render(<Navigation />);
+
+  expect(screen.getByRole('navigation')).toBeInTheDocument();
+  expect(screen.getByRole('list')).toBeInTheDocument();
+});
+```
+
+### Test Organization
+
+**Group related tests**:
+```typescript
+describe('WorkspaceList', () => {
+  describe('Empty State', () => {
+    it('shows empty message', () => { /* ... */ });
+    it('shows create button', () => { /* ... */ });
+  });
+
+  describe('Populated State', () => {
+    it('renders workspace cards', () => { /* ... */ });
+    it('shows workspace count', () => { /* ... */ });
+  });
+});
+```
+
+**Setup and teardown**:
+```typescript
+import { beforeEach, afterEach } from 'vitest';
+
+describe('MyComponent', () => {
+  let mockData: Workspace[];
+
+  beforeEach(() => {
+    mockData = [/* ... */];
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('uses mock data', () => {
+    render(<MyComponent workspaces={mockData} />);
+    // ...
+  });
+});
+```
+
+### Coverage Guidelines
+
+**Target Coverage**: 80%+ for components
+**Priority**:
+1. Critical user flows (authentication, workspace creation)
+2. Shared components (TitleBar, buttons, forms)
+3. Complex state management
+4. Error handling
+
+**Coverage Reports**:
+```bash
+npm run test:frontend:coverage
+open coverage/index.html
+```
+
+### CI/CD Integration
+
+Tests run automatically on:
+- Every push to main
+- Every pull request
+- See `.github/workflows/test.yml`
+
+**Required**: All tests must pass before merging PR.
+
+### Examples from Codebase
+
+- `app/src/components/shared/TitleBar.test.tsx` - Window controls
+- `app/src/components/workspace/components/WorkspaceList.test.tsx` - Empty/populated states
+- `app/src/components/setup/components/AuthenticationSetup.test.tsx` - Loading states
+
+### Backend Testing
+
+**Go Tests**:
+```bash
+cd api
+go test ./...
+go test -v ./pkg/workspace  # Specific package
+go test -cover ./...        # With coverage
+```
+
+**Rust Tests** (Tauri):
+```bash
+cd app/src-tauri
+cargo test
+cargo test --verbose
+```
 
 ---
 

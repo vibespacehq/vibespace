@@ -1,3 +1,5 @@
+import '../styles/ProgressSidebar.css';
+
 interface Step {
   number: number;
   title: string;
@@ -45,7 +47,7 @@ export function ProgressSidebar({ currentStep }: ProgressSidebarProps) {
   return (
     <aside className="setup-sidebar">
       <div className="sidebar-logo">
-        <h1>workspaces</h1>
+        <img src="/src-tauri/icons/icon-transparent.png" alt="workspaces" className="sidebar-icon" />
         <p>setup</p>
       </div>
       <div className="progress-steps">

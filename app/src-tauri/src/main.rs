@@ -123,6 +123,12 @@ fn get_encryption_key() -> Result<Vec<u8>, String> {
 
 fn encrypt_data(data: &str) -> Result<String, String> {
     let key_bytes = get_encryption_key()?;
+
+    // Validate key length before creating cipher
+    if key_bytes.len() != 32 {
+        return Err(format!("Invalid encryption key length: expected 32 bytes, got {}", key_bytes.len()));
+    }
+
     let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
     let cipher = Aes256Gcm::new(key);
 
@@ -144,6 +150,12 @@ fn encrypt_data(data: &str) -> Result<String, String> {
 #[allow(dead_code)]
 fn decrypt_data(encrypted: &str) -> Result<String, String> {
     let key_bytes = get_encryption_key()?;
+
+    // Validate key length before creating cipher
+    if key_bytes.len() != 32 {
+        return Err(format!("Invalid encryption key length: expected 32 bytes, got {}", key_bytes.len()));
+    }
+
     let key = aes_gcm::Key::<Aes256Gcm>::from_slice(&key_bytes);
     let cipher = Aes256Gcm::new(key);
 

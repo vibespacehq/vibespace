@@ -1,61 +1,93 @@
 import { useState } from 'react'
-import { KubernetesSetup } from './components/setup/KubernetesSetup'
-import { useKubernetesStatus } from './hooks/useKubernetesStatus'
+import { TitleBar } from './components/shared/TitleBar'
+import { AuthenticationSetup } from './components/setup/components/AuthenticationSetup'
+import { KubernetesSetup } from './components/setup/components/KubernetesSetup'
+import { ConfigurationSetup } from './components/setup/components/ConfigurationSetup'
+import { ReadySetup } from './components/setup/components/ReadySetup'
+import { WorkspaceList } from './components/workspace/components/WorkspaceList'
+import './components/workspace/styles/WorkspaceList.css'
+
+// Mock workspace data for design
+const MOCK_WORKSPACES = [
+  {
+    id: 'ws-1',
+    name: 'next-blog',
+    template: 'Next.js',
+    status: 'running' as const,
+    createdAt: '2 hours ago',
+  },
+  {
+    id: 'ws-2',
+    name: 'python-ml',
+    template: 'Jupyter',
+    status: 'stopped' as const,
+    createdAt: '1 day ago',
+  },
+  {
+    id: 'ws-3',
+    name: 'vue-dashboard',
+    template: 'Vue',
+    status: 'creating' as const,
+    createdAt: 'Just now',
+  },
+]
+
+type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'ready' | 'complete'
 
 function App() {
-  const [workspaces] = useState([])
-  const { status } = useKubernetesStatus()
+  const [workspaces] = useState(MOCK_WORKSPACES)
+  const [setupStep, setSetupStep] = useState<SetupStep>('auth')
 
-  // Show setup wizard if Kubernetes is not available
-  if (!status?.available) {
-    return <KubernetesSetup />
+  // Setup wizard flow
+  if (setupStep === 'auth') {
+    return (
+      <>
+        <TitleBar />
+        <AuthenticationSetup onComplete={() => setSetupStep('infrastructure')} />
+      </>
+    )
+  }
+
+  if (setupStep === 'infrastructure') {
+    return (
+      <>
+        <TitleBar />
+        <KubernetesSetup
+          onComplete={() => setSetupStep('configuration')}
+        />
+      </>
+    )
+  }
+
+  if (setupStep === 'configuration') {
+    return (
+      <>
+        <TitleBar />
+        <ConfigurationSetup onComplete={() => setSetupStep('ready')} />
+      </>
+    )
+  }
+
+  if (setupStep === 'ready') {
+    return (
+      <>
+        <TitleBar />
+        <ReadySetup onLaunch={() => setSetupStep('complete')} />
+      </>
+    )
+  }
+
+  // Setup complete - show workspace manager
+  const handleCreateNew = () => {
+    console.log('Create new workspace')
+    // TODO: Open create workspace modal
   }
 
   return (
-    <div className="min-h-screen w-full text-text-primary" style={{ background: '#000000' }}>
-      <div className="container mx-auto p-8">
-        <header className="mb-12">
-          <h1 className="text-4xl font-bold mb-2">workspaces</h1>
-          <p className="text-text-secondary">
-            Local Kubernetes workspaces manager
-          </p>
-        </header>
-
-        <main>
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-semibold">Workspaces</h2>
-            <button className="px-4 py-2 bg-accent-primary hover:bg-accent-hover rounded-md transition-fast">
-              New workspace
-            </button>
-          </div>
-
-          <div className="grid gap-4">
-            {workspaces.length === 0 ? (
-              <div className="text-center py-12 bg-bg-secondary rounded-lg">
-                <p className="text-text-secondary mb-4">
-                  No workspaces yet
-                </p>
-                <p className="text-sm text-text-tertiary">
-                  Create your first workspace to get started
-                </p>
-              </div>
-            ) : (
-              workspaces.map((workspace: any) => (
-                <div
-                  key={workspace.id}
-                  className="p-4 bg-bg-elevated rounded-md border border-border"
-                >
-                  <h3 className="font-semibold">{workspace.name}</h3>
-                  <p className="text-sm text-text-secondary">
-                    {workspace.template}
-                  </p>
-                </div>
-              ))
-            )}
-          </div>
-        </main>
-      </div>
-    </div>
+    <>
+      <TitleBar />
+      <WorkspaceList workspaces={workspaces} onCreateNew={handleCreateNew} />
+    </>
   )
 }
 
