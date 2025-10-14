@@ -33,8 +33,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": [
-      "../../script/install_k3s.sh"
-    ]
+    "resources": []
   }
 }
