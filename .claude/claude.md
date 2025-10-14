@@ -73,12 +73,19 @@ A containerized development environment running in k3s. Contains:
 **Lifecycle**: Creating → Starting → Running → Stopping → Stopped → Deleted
 
 ### 2. Template
-A Docker image definition for a workspace type. Examples:
-- `nextjs`: Node.js + Next.js + pnpm
-- `vue`: Node.js + Vue 3 + Vite
-- `jupyter`: Python + Jupyter Lab
+A **complete workspace configuration**, not just a stack definition. A template includes:
+- **Base development stack**: Next.js, Python, Vue, Jupyter, etc.
+- **AI coding agent**: Claude Code, OpenAI Codex, or custom agent (baked into image)
+- **Agent instructions**: CLAUDE.md or agent.md with project-specific context
+- **Git repository** (optional): Connected repo or start fresh
+- **Resource limits**: Default CPU/memory allocation
 
-Users can create custom templates via BuildKit.
+**Example**: A "Next.js + Claude Code" template includes Next.js 14 + TypeScript + Tailwind, Claude Code CLI pre-installed, CLAUDE.md with Next.js best practices, and option to clone a user's GitHub repo.
+
+**Phase 1 (MVP)**: Single agent baked into workspace container
+**Phase 2**: Multiple agents as sidecars (see SPEC.md Section 9.3)
+
+Users configure templates through the UI during workspace creation. Custom templates can be created via BuildKit.
 
 ### 3. Credential
 Encrypted secrets managed by the app (stored in `~/.workspaces/credential/`):
