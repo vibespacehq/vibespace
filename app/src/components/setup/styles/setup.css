@@ -42,7 +42,6 @@
 /* Sidebar */
 .setup-sidebar {
   width: 280px;
-  height: 100vh;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   padding: var(--spacing-8);
@@ -76,11 +75,11 @@
 /* Main content area */
 .setup-main {
   flex: 1;
-  height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
   position: relative;
+  min-height: 0; /* Allow grid items to shrink below content size */
 }
 
 /* Dot grid background pattern */
@@ -182,8 +181,9 @@
 .setup-required {
   width: 100%;
   box-sizing: border-box;
-  overflow-y: scroll;
+  overflow-y: auto;
   padding: var(--spacing-8);
+  padding-bottom: calc(var(--spacing-8) * 2); /* Extra bottom padding to prevent button clipping */
 }
 
 /* Custom scrollbar styling - always visible, white, thin */
@@ -607,6 +607,7 @@
 /* Component installation progress - Loading bars */
 .setup-configure {
   padding: var(--spacing-8);
+  padding-bottom: calc(var(--spacing-8) * 2); /* Extra bottom padding to prevent button clipping */
   overflow-y: auto;
 }
 
