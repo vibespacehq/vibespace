@@ -17,9 +17,17 @@
 - [ ] Kubernetes detection & guided setup (#14)
 - [ ] Base Docker image (code-server)
 - [ ] Workspace CRUD (create, list, delete)
-- [ ] Basic templates (Next.js, Python)
+- [ ] **Workspace templates** with agent integration:
+  - [ ] Template system (base stack + agent + instructions)
+  - [ ] Built-in templates (Next.js, Python)
+  - [ ] Agent selection (Claude Code, OpenAI Codex, etc.)
+  - [ ] Agent instruction files (CLAUDE.md, agent.md)
+  - [ ] Optional Git repository connection
+  - [ ] Single agent per workspace (baked into container)
 - [ ] Credential management (AI agent API keys)
 - [ ] Local workspace access
+
+**Note**: A "template" includes the full workspace configuration: development stack (Next.js, Python, etc.), user's chosen AI coding agent, agent instructions, and optionally a connected Git repository. Users configure all of this through the UI during workspace creation.
 
 ### Infrastructure
 - **Kubernetes**: Detection-based (users install k3s/Rancher Desktop)
@@ -40,11 +48,19 @@
 
 ## Phase 2: Polish & Integration (Weeks 3-4)
 
-**Goal**: Improve UX, add Rancher Desktop integration, more templates.
+**Goal**: Improve UX, add Rancher Desktop integration, multi-agent support, more templates.
 
-**Target Users**: Developers who value ease of use.
+**Target Users**: Developers who value ease of use and want advanced AI workflows.
 
 ### Features
+- [ ] **Multi-Agent Sidecars** 🆕
+  - [ ] Run multiple AI coding agents in parallel per workspace
+  - [ ] Agents run as Kubernetes sidecar containers (resource isolation)
+  - [ ] Terminal-based agent interaction (`agent use <name>`)
+  - [ ] Direct shell access to each agent's environment
+  - [ ] Agent coordination for complex tasks (frontend + backend + testing)
+  - Example: `agent use frontend-agent` switches terminal to frontend agent sidecar
+  - Phase 1 workspaces (single baked-in agent) remain supported
 - [ ] Rancher Desktop deep integration (#16)
   - Auto-detect Rancher Desktop
   - "Open in Rancher Desktop" button

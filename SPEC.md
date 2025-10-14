@@ -2158,6 +2158,27 @@ All workspaces can use:
 
 ## 9. Template System
 
+### 9.0 Template Definition
+
+**What is a Template?**
+
+A template is a **complete workspace configuration**, not just a development stack. When a user creates a workspace from a template, they're selecting:
+
+1. **Base Development Stack**: Next.js, Python, Vue, Jupyter, etc.
+2. **AI Coding Agent**: Claude Code, OpenAI Codex, Cursor, or custom agent
+3. **Agent Instructions**: CLAUDE.md or agent.md file with project-specific context
+4. **Git Repository** (optional): Clone existing repo or start fresh
+5. **Resource Limits**: Default CPU/memory allocation
+
+**Phase 1 (MVP)**: Single agent baked into workspace container
+**Phase 2**: Multiple agents as sidecars (see Section 9.3)
+
+**Example**: A "Next.js + Claude Code" template includes:
+- Next.js 14 + TypeScript + Tailwind (stack)
+- Claude Code CLI pre-installed (agent)
+- CLAUDE.md with Next.js best practices (instructions)
+- Option to clone user's GitHub repo (repository)
+
 ### 9.1 Built-in Templates
 
 #### 9.1.1 Base Image
@@ -2353,6 +2374,18 @@ CMD ["/bin/bash", "-c", "jupyter lab --no-browser &>/dev/null & code-server /wor
   "baseImage": "localhost:5000/workspace-base:latest",
   "dockerfile": "...",
   "defaultPorts": [8000, 5432],
+  "agent": {
+    "type": "claude-code",
+    "version": "latest",
+    "instructionsFile": "CLAUDE.md",
+    "preInstalled": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "",
+    "branch": "main",
+    "optional": true
+  },
   "defaultResources": {
     "cpu": "2",
     "memory": "4Gi",
@@ -2394,9 +2427,101 @@ CMD ["/bin/bash", "-c", "jupyter lab --no-browser &>/dev/null & code-server /wor
    └─> Failure: Show errors, allow retry
 ```
 
-### 9.3 Template Sharing (Future)
+### 9.3 Multi-Agent Architecture (Phase 2)
 
-#### 9.3.1 Export
+#### 9.3.1 Overview
+
+**Phase 1**: Single agent baked into workspace container
+**Phase 2**: Multiple agents running as Kubernetes sidecars
+
+**Why Sidecars?**
+- **Isolation**: Each agent has dedicated resources (CPU, memory)
+- **Parallelism**: Multiple agents work simultaneously on different tasks
+- **Independence**: Agent crashes don't affect workspace or other agents
+- **Flexibility**: Add/remove agents without rebuilding workspace image
+
+#### 9.3.2 Pod Architecture
+
+```yaml
+Pod: workspace-abc123
+├── workspace (main container)
+│   ├── code-server (VS Code in browser)
+│   ├── /workspace (shared volume)
+│   └── agent CLI (for switching between agents)
+│
+├── frontend-agent (sidecar)
+│   ├── Claude Code / OpenAI Codex
+│   ├── Shell server (for terminal access)
+│   └── /workspace (shared volume, read-write)
+│
+├── backend-agent (sidecar)
+│   ├── Claude Code / OpenAI Codex
+│   ├── Shell server (for terminal access)
+│   └── /workspace (shared volume, read-write)
+│
+└── test-agent (sidecar)
+    ├── Claude Code / OpenAI Codex
+    ├── Shell server (for terminal access)
+    └── /workspace (shared volume, read-write)
+```
+
+**All containers share**: `/workspace` volume (PVC)
+
+#### 9.3.3 Terminal-Based Interaction
+
+Users interact with agents via terminal commands in code-server:
+
+```bash
+# List available agents
+$ agent list
+Available agents:
+  ● frontend-agent (ready)
+  ● backend-agent (ready)
+  ○ test-agent (not running)
+
+# Switch to agent's shell
+$ agent use frontend-agent
+Connecting to frontend-agent...
+
+# Now in frontend-agent sidecar shell
+frontend-agent@sidecar:~$ pwd
+/workspace
+
+frontend-agent@sidecar:~$ ls
+components/  pages/  package.json
+
+frontend-agent@sidecar:~$ # Work with the agent
+frontend-agent@sidecar:~$ exit
+Disconnected from frontend-agent
+
+# Back in main workspace shell
+$
+```
+
+**Key Features**:
+- Direct shell access to agent sidecars
+- No custom UI needed - terminal-first approach
+- Agents have full workspace filesystem access
+- Simple switching: `agent use <name>`
+- Each agent has its own environment and tools
+
+#### 9.3.4 Use Cases
+
+**Parallel Development**:
+- Frontend agent: Building UI components
+- Backend agent: Creating API endpoints
+- Test agent: Writing tests
+- All working simultaneously on shared codebase
+
+**Specialized Roles**:
+- Code review agent: Analyzing PRs
+- Documentation agent: Writing docs
+- Refactoring agent: Improving code quality
+- Security agent: Finding vulnerabilities
+
+### 9.4 Template Sharing (Future)
+
+#### 9.4.1 Export
 
 ```bash
 # CLI command (future)
@@ -2409,7 +2534,7 @@ my-django-template.tar.gz
 └── files/         (optional: init scripts, config files)
 ```
 
-#### 9.3.2 Import
+#### 9.4.2 Import
 
 ```bash
 # CLI command
