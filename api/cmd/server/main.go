@@ -78,6 +78,8 @@ func main() {
 			cluster.GET("/status", clusterHandler.GetStatus)
 			cluster.GET("/setup", clusterHandler.SetupCluster)  // GET for EventSource compatibility
 			cluster.POST("/setup", clusterHandler.SetupCluster) // POST for programmatic access
+			cluster.GET("/contexts", clusterHandler.ListContexts)
+			cluster.POST("/contexts/:name/switch", clusterHandler.SwitchContext)
 		}
 	}
 

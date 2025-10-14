@@ -1,16 +1,220 @@
+import { useState, useEffect } from 'react';
 import { useKubernetesStatus } from '../../../hooks/useKubernetesStatus';
 import { InstallationInstructions } from './InstallationInstructions';
 import { ProgressSidebar } from './ProgressSidebar';
+import { ClusterStatus, SetupProgress, ClusterContext } from '../../../lib/types';
 import '../styles/setup.css';
 
 interface KubernetesSetupProps {
   onComplete?: () => void;
 }
 
+type SetupState = 'detecting' | 'not-found' | 'selecting-cluster' | 'found' | 'installing' | 'ready' | 'error';
+
 export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const { status, isLoading, refetch } = useKubernetesStatus();
+  const [setupState, setSetupState] = useState<SetupState>('detecting');
+  const [clusterStatus, setClusterStatus] = useState<ClusterStatus | null>(null);
+  const [setupProgress, setSetupProgress] = useState<Record<string, SetupProgress>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [contexts, setContexts] = useState<ClusterContext[]>([]);
+  const [selectedContext, setSelectedContext] = useState<string | null>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
-  if (isLoading) {
+  // Fetch available contexts when Kubernetes is detected
+  useEffect(() => {
+    if (status?.available && setupState === 'detecting') {
+      fetchContexts();
+    } else if (!isLoading && !status?.available) {
+      setSetupState('not-found');
+    }
+  }, [status, isLoading]);
+
+  const fetchContexts = async () => {
+    try {
+      const response = await fetch('http://localhost:8090/api/v1/cluster/contexts');
+      const data = await response.json();
+
+      setContexts(data.contexts || []);
+
+      // Don't pre-select any context - force user to choose
+      setSelectedContext(null);
+
+      // Always show cluster selection
+      setSetupState('selecting-cluster');
+    } catch (err) {
+      console.error('Failed to fetch contexts:', err);
+      setError('Failed to load cluster contexts');
+      setSetupState('error');
+    }
+  };
+
+  const switchContext = async (contextName: string) => {
+    try {
+      const response = await fetch(`http://localhost:8090/api/v1/cluster/contexts/${contextName}/switch`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to switch context');
+      }
+
+      setSelectedContext(contextName);
+    } catch (err) {
+      console.error('Failed to switch context:', err);
+      setError('Failed to switch cluster context');
+      setSetupState('error');
+    }
+  };
+
+  const proceedWithSelectedCluster = async () => {
+    if (!selectedContext) {
+      return;
+    }
+
+    // Switch to selected context if it's not current
+    const current = contexts.find(ctx => ctx.is_current);
+    if (current?.name !== selectedContext) {
+      await switchContext(selectedContext);
+    }
+
+    // Proceed to component check
+    checkClusterComponents();
+  };
+
+  const checkClusterComponents = async () => {
+    try {
+      const response = await fetch('http://localhost:8090/api/v1/cluster/status');
+      const clusterStat: ClusterStatus = await response.json();
+
+      setClusterStatus(clusterStat);
+
+      if (clusterStat.healthy) {
+        setSetupState('ready');
+      } else {
+        // Components missing, start installation
+        setSetupState('found');
+        const progress: Record<string, SetupProgress> = {};
+        if (!clusterStat.components.knative.installed || !clusterStat.components.knative.healthy) {
+          progress['knative'] = { component: 'knative', status: 'pending' };
+        }
+        if (!clusterStat.components.traefik.installed || !clusterStat.components.traefik.healthy) {
+          progress['traefik'] = { component: 'traefik', status: 'pending' };
+        }
+        if (!clusterStat.components.registry.installed || !clusterStat.components.registry.healthy) {
+          progress['registry'] = { component: 'registry', status: 'pending' };
+        }
+        if (!clusterStat.components.buildkit.installed || !clusterStat.components.buildkit.healthy) {
+          progress['buildkit'] = { component: 'buildkit', status: 'pending' };
+        }
+        setSetupProgress(progress);
+
+        // Auto-start installation
+        installComponents();
+      }
+    } catch (err) {
+      console.error('Failed to check cluster status:', err);
+      setError('Failed to connect to API server');
+      setSetupState('error');
+    }
+  };
+
+  const installComponents = async () => {
+    setSetupState('installing');
+    setError(null);
+
+    try {
+      const eventSource = new EventSource('http://localhost:8090/api/v1/cluster/setup');
+
+      eventSource.addEventListener('progress', (event) => {
+        const progress: SetupProgress = JSON.parse(event.data);
+        setSetupProgress(prev => ({
+          ...prev,
+          [progress.component]: progress
+        }));
+      });
+
+      eventSource.addEventListener('complete', (event) => {
+        console.log('Setup complete:', JSON.parse(event.data));
+        eventSource.close();
+        setSetupState('ready');
+      });
+
+      eventSource.addEventListener('error', (event) => {
+        const messageEvent = event as MessageEvent;
+        const data = JSON.parse(messageEvent.data);
+        console.error('Setup error:', data);
+        setError(data.error || 'Setup failed');
+        eventSource.close();
+        setSetupState('error');
+      });
+
+      eventSource.onerror = async (err) => {
+        console.error('EventSource closed or error:', err);
+        eventSource.close();
+
+        // Check cluster status to determine if setup completed successfully
+        try {
+          const response = await fetch('http://localhost:8090/api/v1/cluster/status');
+          const clusterStat: ClusterStatus = await response.json();
+
+          if (clusterStat.healthy) {
+            setSetupState('ready');
+          } else {
+            setError('Installation incomplete. Please retry.');
+            setSetupState('error');
+          }
+        } catch (fetchErr) {
+          setError('Connection to API server lost');
+          setSetupState('error');
+        }
+      };
+    } catch (err) {
+      console.error('Failed to start setup:', err);
+      setError('Failed to start cluster setup');
+      setSetupState('error');
+    }
+  };
+
+  const getProgressPercentage = () => {
+    const components = Object.values(setupProgress);
+    if (components.length === 0) return 0;
+
+    const done = components.filter(c => c.status === 'done').length;
+    return Math.round((done / components.length) * 100);
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'done':
+        return '✓';
+      case 'installing':
+        return '⚙️';
+      case 'error':
+        return '❌';
+      default:
+        return '⏳';
+    }
+  };
+
+  const getComponentName = (component: string) => {
+    switch (component) {
+      case 'knative':
+        return 'Knative Serving';
+      case 'traefik':
+        return 'Traefik Ingress';
+      case 'registry':
+        return 'Local Registry';
+      case 'buildkit':
+        return 'BuildKit';
+      default:
+        return component;
+    }
+  };
+
+  // Detecting Kubernetes
+  if (setupState === 'detecting' || isLoading) {
     return (
       <div className="setup-container">
         <ProgressSidebar currentStep={2} />
@@ -23,7 +227,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
             <h1 className="brand-title">Infrastructure Detection</h1>
             <p className="brand-subtitle">Scanning your system for container runtime</p>
             <div className="progress-bar-container">
-              <div className="progress-bar-fill" data-progress="25"></div>
+              <div className="progress-bar-fill" data-progress="10"></div>
             </div>
           </header>
           <div className="setup-loading">
@@ -35,7 +239,60 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     );
   }
 
-  if (status?.available) {
+  // Installing components
+  if (setupState === 'installing' || setupState === 'found') {
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Setting up infrastructure</h1>
+            <p className="brand-subtitle">Installing required components</p>
+            <div className="progress-bar-container">
+              <div className="progress-bar-fill" data-progress={10 + getProgressPercentage() * 0.9}></div>
+            </div>
+          </header>
+
+          <div className="setup-configure">
+            <div className="configure-components">
+              {Object.entries(setupProgress).map(([key, progress]) => (
+                <div key={key} className={`component-item status-${progress.status}`}>
+                  <div className="component-item-header">
+                    <div className="component-name">
+                      <span>{getStatusIcon(progress.status)}</span>
+                      <span>{getComponentName(progress.component)}</span>
+                    </div>
+                    <span className="component-status-text">
+                      {progress.status === 'installing' ? 'Installing' : progress.status === 'done' ? 'Complete' : 'Pending'}
+                    </span>
+                  </div>
+                  <div className="component-progress-bar">
+                    <div className="component-progress-fill"></div>
+                  </div>
+                  {progress.message && progress.status === 'installing' && (
+                    <div className="component-message">{progress.message}</div>
+                  )}
+                  {progress.error && (
+                    <div className="component-error">
+                      <span>❌</span>
+                      <span>{progress.error}</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Installation complete - components ready
+  if (setupState === 'ready') {
     return (
       <div className="setup-container">
         <ProgressSidebar currentStep={2} />
@@ -46,29 +303,35 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
               <span>Step 2 of 4</span>
             </div>
             <h1 className="brand-title">Infrastructure Ready</h1>
-            <p className="brand-subtitle">Kubernetes cluster detected successfully</p>
+            <p className="brand-subtitle">All components installed successfully</p>
             <div className="progress-bar-container">
-              <div className="progress-bar-fill" data-progress="25"></div>
+              <div className="progress-bar-fill" data-progress="100"></div>
             </div>
           </header>
           <div className="setup-success">
             <div className="success-icon">✓</div>
             <h2>Infrastructure ready</h2>
             <div className="cluster-info">
-              {status.installType && (
+              {status?.installType && (
                 <p>
                   <strong>Type:</strong> {status.installType}
                 </p>
               )}
-              {status.version && (
+              {status?.version && (
                 <p>
                   <strong>Version:</strong> {status.version}
                 </p>
               )}
-              {status.kubeconfigPath && (
-                <p className="kubeconfig-path">
-                  <strong>Config:</strong> {status.kubeconfigPath}
-                </p>
+              {clusterStatus && (
+                <div className="component-list">
+                  <p><strong>Components:</strong></p>
+                  <ul>
+                    <li>✓ Knative Serving</li>
+                    <li>✓ Traefik Ingress</li>
+                    <li>✓ Local Registry</li>
+                    <li>✓ BuildKit</li>
+                  </ul>
+                </div>
               )}
             </div>
             {onComplete && (
@@ -84,6 +347,149 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     );
   }
 
+  // Cluster selection
+  if (setupState === 'selecting-cluster') {
+    const selectedCtx = contexts.find(ctx => ctx.name === selectedContext);
+    const showWarning = selectedCtx && !selectedCtx.is_local;
+
+    // Filter contexts by search query
+    const filteredContexts = contexts.filter(ctx =>
+      ctx.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ctx.cluster.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ctx.user.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Select Cluster</h1>
+            <p className="brand-subtitle">Choose which Kubernetes cluster to use</p>
+            <div className="progress-bar-container">
+              <div className="progress-bar-fill" data-progress="15"></div>
+            </div>
+          </header>
+
+          <div className="setup-configure">
+            <div className="cluster-selection">
+              <p className="selection-description">
+                Select which cluster you'd like to install workspace components to
+              </p>
+
+              <div className="cluster-dropdown">
+                <button
+                  className={`cluster-dropdown-button ${dropdownOpen ? 'open' : ''} ${!selectedCtx ? 'placeholder' : ''}`}
+                  onClick={() => setDropdownOpen(!dropdownOpen)}
+                >
+                  <div className="cluster-dropdown-current">
+                    {selectedCtx ? (
+                      <>
+                        <span className="cluster-item-name">{selectedCtx.name}</span>
+                        {selectedCtx.is_current && <span className="cluster-badge current">Current</span>}
+                        {selectedCtx.is_local && <span className="cluster-badge local">Local</span>}
+                        {!selectedCtx.is_local && <span className="cluster-badge remote">Remote</span>}
+                      </>
+                    ) : (
+                      <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>Select a cluster...</span>
+                    )}
+                  </div>
+                  <span className="cluster-dropdown-icon">▼</span>
+                </button>
+
+                {dropdownOpen && (
+                  <div className="cluster-dropdown-list">
+                    <div className="cluster-dropdown-search">
+                      <input
+                        type="text"
+                        placeholder="Search clusters..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        autoFocus
+                      />
+                    </div>
+                    {filteredContexts.length > 0 ? (
+                      filteredContexts.map((ctx) => (
+                        <div
+                          key={ctx.name}
+                          className={`cluster-dropdown-item ${selectedContext === ctx.name ? 'selected' : ''} ${!ctx.is_local ? 'remote' : ''}`}
+                          onClick={() => {
+                            setSelectedContext(ctx.name);
+                            setDropdownOpen(false);
+                            setSearchQuery('');
+                          }}
+                        >
+                          <div className="cluster-item-header">
+                            <span className="cluster-item-name">{ctx.name}</span>
+                            {ctx.is_current && <span className="cluster-badge current">Current</span>}
+                            {ctx.is_local && <span className="cluster-badge local">Local</span>}
+                            {!ctx.is_local && <span className="cluster-badge remote">Remote</span>}
+                          </div>
+                          <div className="cluster-item-details">
+                            {ctx.cluster} · {ctx.user}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="cluster-dropdown-empty">No clusters found</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {showWarning && (
+                <div className="cluster-warning">
+                  <span>⚠️</span>
+                  <span>This appears to be a remote cluster. Installing components may affect production workloads.</span>
+                </div>
+              )}
+
+              <div className="setup-actions">
+                <button
+                  onClick={proceedWithSelectedCluster}
+                  className="btn-primary"
+                  disabled={!selectedContext}
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Error state
+  if (setupState === 'error') {
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Setup Error</h1>
+            <p className="error-text">{error}</p>
+          </header>
+          <div className="setup-actions">
+            <button onClick={checkClusterComponents} className="btn-secondary">
+              Retry
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Kubernetes not found
   return (
     <div className="setup-container">
       <ProgressSidebar currentStep={2} />
@@ -96,7 +502,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
           <h1 className="brand-title">Infrastructure Setup</h1>
           <p className="brand-subtitle">Install the container orchestration layer</p>
           <div className="progress-bar-container">
-            <div className="progress-bar-fill" data-progress="25"></div>
+            <div className="progress-bar-fill" data-progress="0"></div>
           </div>
         </header>
         <div className="setup-required">
@@ -114,12 +520,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
           <button onClick={refetch} className="btn-primary">
             Verify installation
           </button>
-          {/* Temporary skip button for testing */}
-          {onComplete && (
-            <button onClick={onComplete} className="btn-primary" style={{ marginLeft: '1rem' }}>
-              Skip (Testing)
-            </button>
-          )}
         </div>
       </div>
       </main>

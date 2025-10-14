@@ -62,12 +62,55 @@ func (c *Client) checkKnative(ctx context.Context) ComponentStatus {
 		return status
 	}
 
-	// Check if deployment is ready
-	if deployment.Status.ReadyReplicas > 0 {
-		status.Healthy = true
-	} else {
+	// Check if controller deployment is ready
+	if deployment.Status.ReadyReplicas == 0 {
 		status.Error = "controller deployment not ready"
+		return status
 	}
+
+	// Check if webhook deployment is running and ready
+	webhookDeployment, err := c.clientset.AppsV1().Deployments("knative-serving").Get(ctx, "webhook", metav1.GetOptions{})
+	if err != nil {
+		status.Error = "webhook deployment not found"
+		return status
+	}
+
+	if webhookDeployment.Status.ReadyReplicas == 0 {
+		status.Error = "webhook deployment not ready"
+		return status
+	}
+
+	// Check if webhook certificates secret exists with required keys
+	secret, err := c.clientset.CoreV1().Secrets("knative-serving").Get(ctx, "webhook-certs", metav1.GetOptions{})
+	if err != nil {
+		status.Error = "webhook certificates not found"
+		return status
+	}
+
+	// Verify required certificate keys exist
+	requiredKeys := []string{"ca-cert.pem", "server-cert.pem", "server-key.pem"}
+	for _, key := range requiredKeys {
+		if _, exists := secret.Data[key]; !exists {
+			status.Error = fmt.Sprintf("webhook certificate missing %s", key)
+			return status
+		}
+	}
+
+	// Check if webhook configurations exist (indicates webhooks are registered)
+	_, err = c.clientset.AdmissionregistrationV1().ValidatingWebhookConfigurations().Get(ctx, "validation.webhook.serving.knative.dev", metav1.GetOptions{})
+	if err != nil {
+		status.Error = "validating webhook not registered"
+		return status
+	}
+
+	_, err = c.clientset.AdmissionregistrationV1().MutatingWebhookConfigurations().Get(ctx, "webhook.serving.knative.dev", metav1.GetOptions{})
+	if err != nil {
+		status.Error = "mutating webhook not registered"
+		return status
+	}
+
+	// All checks passed
+	status.Healthy = true
 
 	// Try to get version from labels
 	if version, ok := deployment.Labels["serving.knative.dev/release"]; ok {
