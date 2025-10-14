@@ -1,0 +1,106 @@
+/* WIP: Styles for CreateWorkspace component (Phase 1) */
+/* This file will be used when CreateWorkspace is integrated */
+
+.create-workspace-form {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.form-group {
+  margin-bottom: 2rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #fff;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #F102F3;
+}
+
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.template-card {
+  position: relative;
+  padding: 1.5rem;
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.template-card:hover {
+  border-color: #F102F3;
+  transform: translateY(-2px);
+}
+
+.template-card.selected {
+  border-color: #F102F3;
+  background: rgba(241, 2, 243, 0.1);
+}
+
+.template-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.template-card h3 {
+  margin: 0.5rem 0;
+  color: #fff;
+  font-size: 1.125rem;
+}
+
+.template-card p {
+  margin: 0.5rem 0 0;
+  color: #888;
+  font-size: 0.875rem;
+}
+
+.template-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  background: #FF7D4B;
+  color: #000;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.workspace-created-info {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background: #1a1a1a;
+  border-radius: 8px;
+}
+
+.workspace-created-info p {
+  margin: 0.5rem 0;
+  color: #fff;
+}
+
+.workspace-created-info strong {
+  color: #00ABAB;
+}

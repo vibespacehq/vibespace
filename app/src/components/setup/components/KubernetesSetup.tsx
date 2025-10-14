@@ -21,6 +21,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null);
 
   // Fetch available contexts when Kubernetes is detected
   useEffect(() => {
@@ -30,6 +31,15 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
       setSetupState('not-found');
     }
   }, [status, isLoading]);
+
+  // Cleanup EventSource on component unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef) {
+        eventSourceRef.close();
+      }
+    };
+  }, [eventSourceRef]);
 
   const fetchContexts = async () => {
     try {
@@ -126,6 +136,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
 
     try {
       const eventSource = new EventSource('http://localhost:8090/api/v1/cluster/setup');
+      setEventSourceRef(eventSource);
 
       eventSource.addEventListener('progress', (event) => {
         const progress: SetupProgress = JSON.parse(event.data);
@@ -138,6 +149,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
       eventSource.addEventListener('complete', (event) => {
         console.log('Setup complete:', JSON.parse(event.data));
         eventSource.close();
+        setEventSourceRef(null);
         setSetupState('ready');
       });
 
@@ -147,12 +159,14 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         console.error('Setup error:', data);
         setError(data.error || 'Setup failed');
         eventSource.close();
+        setEventSourceRef(null);
         setSetupState('error');
       });
 
       eventSource.onerror = async (err) => {
         console.error('EventSource closed or error:', err);
         eventSource.close();
+        setEventSourceRef(null);
 
         // Check cluster status to determine if setup completed successfully
         try {
