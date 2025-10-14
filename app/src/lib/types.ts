@@ -9,6 +9,67 @@ export interface KubernetesStatus {
   suggestedAction?: 'install_kubernetes' | 'start_kubernetes' | 'check_installation';
 }
 
+// Cluster Component Types
+
+/**
+ * Status of a single cluster component (Knative, Traefik, Registry, BuildKit).
+ * Used to display installation status and health in the UI.
+ *
+ * @public
+ * @see Issue #29 for cluster setup implementation
+ */
+export interface ComponentStatus {
+  installed: boolean;
+  version?: string;
+  healthy: boolean;
+  error?: string;
+}
+
+/**
+ * Status of all required cluster components.
+ * Returned by GET /api/v1/cluster/status.
+ *
+ * @public
+ * @see Issue #29 for cluster setup implementation
+ */
+export interface ClusterComponents {
+  knative: ComponentStatus;
+  traefik: ComponentStatus;
+  registry: ComponentStatus;
+  buildkit: ComponentStatus;
+}
+
+/**
+ * Complete cluster status including components and configuration.
+ * Used to determine if cluster setup is needed.
+ *
+ * @public
+ * @see Issue #29 for cluster setup implementation
+ */
+export interface ClusterStatus {
+  healthy: boolean;
+  version?: string;
+  components: ClusterComponents;
+  config?: {
+    knativeDomain?: string;
+  };
+  message?: string;
+}
+
+/**
+ * Progress update during cluster component installation.
+ * Streamed via SSE from POST /api/v1/cluster/setup.
+ *
+ * @public
+ * @see Issue #29 for cluster setup implementation
+ */
+export interface SetupProgress {
+  component: 'knative' | 'traefik' | 'registry' | 'buildkit';
+  status: 'pending' | 'installing' | 'done' | 'error';
+  message?: string;
+  error?: string;
+}
+
 /**
  * Type-safe enumeration of supported Kubernetes installation types.
  * Used to determine which Kubernetes distribution is running on the system.
@@ -23,6 +84,21 @@ export type KubernetesInstallType =
   | 'minikube'
   | 'docker-desktop'
   | 'unknown';
+
+/**
+ * Represents a Kubernetes context from the user's kubeconfig.
+ * Used to allow users to select which cluster to install components to.
+ *
+ * @public
+ * @see Issue #29 for cluster selection implementation
+ */
+export interface ClusterContext {
+  name: string;
+  cluster: string;
+  user: string;
+  is_current: boolean;
+  is_local: boolean;
+}
 
 // Workspace Types
 // TODO(Phase 1): Will be used for workspace CRUD operations

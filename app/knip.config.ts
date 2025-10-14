@@ -15,6 +15,7 @@ const config: KnipConfig = {
     'src/**/__tests__/**',
     'src/**/__mocks__/**',
     'src/test/**', // Test setup files
+    'src/components/setup/components/CreateWorkspace.tsx', // WIP - Phase 1
   ],
   ignoreDependencies: [
     '@tanstack/react-query', // Will be used for API state (Phase 2)
