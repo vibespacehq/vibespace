@@ -139,3 +139,8 @@ func isLocalCluster(contextName string) bool {
 
 	return false
 }
+
+// IsContextRemote checks if a context is for a remote cluster
+func IsContextRemote(contextName string) bool {
+	return !isLocalCluster(contextName)
+}

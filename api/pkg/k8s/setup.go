@@ -3,10 +3,8 @@ package k8s
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -33,28 +31,6 @@ type SetupProgressFunc func(progress SetupProgress)
 // EnsureClusterComponents ensures all required components are installed
 // It's idempotent and safe to call multiple times
 func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupProgressFunc) error {
-	// DEV ONLY: Log progress to file for debugging
-	// TODO: Remove this before production release
-	logFile, err := os.OpenFile("/tmp/cluster-setup.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err == nil {
-		defer logFile.Close()
-		logFile.WriteString(fmt.Sprintf("\n=== Setup started at %s ===\n", time.Now().Format(time.RFC3339)))
-	}
-
-	// Wrap progressFn to log to file
-	wrappedProgressFn := func(progress SetupProgress) {
-		// Call original progress function
-		if progressFn != nil {
-			progressFn(progress)
-		}
-
-		// DEV ONLY: Log to file
-		// TODO: Remove this before production release
-		if logFile != nil {
-			progressJSON, _ := json.Marshal(progress)
-			logFile.WriteString(fmt.Sprintf("[%s] %s\n", time.Now().Format(time.RFC3339), string(progressJSON)))
-		}
-	}
 
 	// Check what's already installed
 	components, err := c.CheckComponents(ctx)
@@ -69,39 +45,63 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 
 	// Install missing components
 	if !components.Knative.Installed || !components.Knative.Healthy {
-		wrappedProgressFn(SetupProgress{Component: "knative", Status: "installing", Message: "Installing Knative Serving..."})
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "knative", Status: "installing", Message: "Installing Knative Serving..."})
+		}
 		if err := c.InstallKnative(ctx); err != nil {
-			wrappedProgressFn(SetupProgress{Component: "knative", Status: "error", Error: err.Error()})
+			if progressFn != nil {
+				progressFn(SetupProgress{Component: "knative", Status: "error", Error: err.Error()})
+			}
 			return fmt.Errorf("failed to install Knative: %w", err)
 		}
-		wrappedProgressFn(SetupProgress{Component: "knative", Status: "done", Message: "Knative Serving installed"})
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "knative", Status: "done", Message: "Knative Serving installed"})
+		}
 	}
 
 	if !components.Traefik.Installed || !components.Traefik.Healthy {
-		wrappedProgressFn(SetupProgress{Component: "traefik", Status: "installing", Message: "Installing Traefik..."})
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "traefik", Status: "installing", Message: "Installing Traefik..."})
+		}
 		if err := c.InstallTraefik(ctx); err != nil {
-			wrappedProgressFn(SetupProgress{Component: "traefik", Status: "error", Error: err.Error()})
+			if progressFn != nil {
+				progressFn(SetupProgress{Component: "traefik", Status: "error", Error: err.Error()})
+			}
 			return fmt.Errorf("failed to install Traefik: %w", err)
 		}
-		wrappedProgressFn(SetupProgress{Component: "traefik", Status: "done", Message: "Traefik installed"})
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "traefik", Status: "done", Message: "Traefik installed"})
+		}
 	}
 
 	if !components.Registry.Installed || !components.Registry.Healthy {
-		wrappedProgressFn(SetupProgress{Component: "registry", Status: "installing", Message: "Installing Local Registry..."})
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "registry", Status: "installing", Message: "Installing Local Registry..."})
+		}
 		if err := c.InstallRegistry(ctx); err != nil {
-			wrappedProgressFn(SetupProgress{Component: "registry", Status: "error", Error: err.Error()})
+			if progressFn != nil {
+				progressFn(SetupProgress{Component: "registry", Status: "error", Error: err.Error()})
+			}
 			return fmt.Errorf("failed to install Registry: %w", err)
 		}
-		wrappedProgressFn(SetupProgress{Component: "registry", Status: "done", Message: "Local Registry installed"})
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "registry", Status: "done", Message: "Local Registry installed"})
+		}
 	}
 
 	if !components.BuildKit.Installed || !components.BuildKit.Healthy {
-		wrappedProgressFn(SetupProgress{Component: "buildkit", Status: "installing", Message: "Installing BuildKit..."})
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "buildkit", Status: "installing", Message: "Installing BuildKit..."})
+		}
 		if err := c.InstallBuildKit(ctx); err != nil {
-			wrappedProgressFn(SetupProgress{Component: "buildkit", Status: "error", Error: err.Error()})
+			if progressFn != nil {
+				progressFn(SetupProgress{Component: "buildkit", Status: "error", Error: err.Error()})
+			}
 			return fmt.Errorf("failed to install BuildKit: %w", err)
 		}
-		wrappedProgressFn(SetupProgress{Component: "buildkit", Status: "done", Message: "BuildKit installed"})
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "buildkit", Status: "done", Message: "BuildKit installed"})
+		}
 	}
 
 	// Ensure workspace namespace exists
@@ -129,7 +129,7 @@ func (c *Client) InstallKnative(ctx context.Context) error {
 
 	// Wait for controller to be ready
 	if err := c.waitForDeployment(ctx, "knative-serving", "controller", 5*time.Minute); err != nil {
-		return fmt.Errorf("Knative controller not ready: %w", err)
+		return fmt.Errorf("knative controller not ready: %w", err)
 	}
 
 	return nil
@@ -143,7 +143,7 @@ func (c *Client) InstallTraefik(ctx context.Context) error {
 
 	// Wait for Traefik to be ready
 	if err := c.waitForDeployment(ctx, "traefik", "traefik", 3*time.Minute); err != nil {
-		return fmt.Errorf("Traefik not ready: %w", err)
+		return fmt.Errorf("traefik not ready: %w", err)
 	}
 
 	return nil
@@ -157,7 +157,7 @@ func (c *Client) InstallRegistry(ctx context.Context) error {
 
 	// Wait for Registry to be ready
 	if err := c.waitForDeployment(ctx, "default", "registry", 3*time.Minute); err != nil {
-		return fmt.Errorf("Registry not ready: %w", err)
+		return fmt.Errorf("registry not ready: %w", err)
 	}
 
 	return nil
@@ -171,7 +171,7 @@ func (c *Client) InstallBuildKit(ctx context.Context) error {
 
 	// Wait for BuildKit to be ready
 	if err := c.waitForDeployment(ctx, "default", "buildkitd", 3*time.Minute); err != nil {
-		return fmt.Errorf("BuildKit not ready: %w", err)
+		return fmt.Errorf("buildKit not ready: %w", err)
 	}
 
 	return nil
@@ -198,7 +198,7 @@ func (c *Client) ApplyManifest(ctx context.Context, manifestData []byte) error {
 		}
 
 		// Skip empty objects
-		if obj.Object == nil || len(obj.Object) == 0 {
+		if len(obj.Object) == 0 {
 			continue
 		}
 

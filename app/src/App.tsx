@@ -3,7 +3,7 @@ import { TitleBar } from './components/shared/TitleBar'
 import { AuthenticationSetup } from './components/setup/components/AuthenticationSetup'
 import { KubernetesSetup } from './components/setup/components/KubernetesSetup'
 import { ConfigurationSetup } from './components/setup/components/ConfigurationSetup'
-import { CreateWorkspace } from './components/setup/components/CreateWorkspace'
+// import { CreateWorkspace } from './components/setup/components/CreateWorkspace'
 import { WorkspaceList } from './components/workspace/components/WorkspaceList'
 import './components/workspace/styles/WorkspaceList.css'
 
@@ -32,12 +32,11 @@ const MOCK_WORKSPACES = [
   },
 ]
 
-type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'create-workspace' | 'complete'
+type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'complete'
 
 function App() {
   const [workspaces] = useState(MOCK_WORKSPACES)
   const [setupStep, setSetupStep] = useState<SetupStep>('auth')
-  const [_createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null)
 
   // Setup wizard flow
   if (setupStep === 'auth') {
@@ -64,19 +63,7 @@ function App() {
     return (
       <>
         <TitleBar />
-        <ConfigurationSetup onComplete={() => setSetupStep('create-workspace')} />
-      </>
-    )
-  }
-
-  if (setupStep === 'create-workspace') {
-    return (
-      <>
-        <TitleBar />
-        <CreateWorkspace onComplete={(workspaceId) => {
-          setCreatedWorkspaceId(workspaceId);
-          setSetupStep('complete');
-        }} />
+        <ConfigurationSetup onComplete={() => setSetupStep('complete')} />
       </>
     )
   }

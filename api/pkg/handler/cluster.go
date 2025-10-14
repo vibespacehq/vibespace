@@ -204,6 +204,11 @@ func (h *ClusterHandler) ListContexts(c *gin.Context) {
 	})
 }
 
+// SwitchContextRequest represents the request body for context switching
+type SwitchContextRequest struct {
+	Confirmed bool `json:"confirmed"`
+}
+
 // SwitchContext switches to a different Kubernetes context
 // POST /api/v1/cluster/contexts/:name/switch
 func (h *ClusterHandler) SwitchContext(c *gin.Context) {
@@ -213,6 +218,31 @@ func (h *ClusterHandler) SwitchContext(c *gin.Context) {
 			"error": "Context name is required",
 		})
 		return
+	}
+
+	// Check if context is remote
+	isRemote := k8s.IsContextRemote(contextName)
+
+	// For remote clusters, require confirmation
+	if isRemote {
+		var req SwitchContextRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid request body",
+				"details": err.Error(),
+			})
+			return
+		}
+
+		if !req.Confirmed {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":              "Confirmation required for remote cluster",
+				"requires_confirmation": true,
+				"is_remote":            true,
+				"context":              contextName,
+			})
+			return
+		}
 	}
 
 	err := k8s.SwitchContext(contextName)
@@ -225,7 +255,8 @@ func (h *ClusterHandler) SwitchContext(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": fmt.Sprintf("Switched to context: %s", contextName),
-		"context": contextName,
+		"message":   fmt.Sprintf("Switched to context: %s", contextName),
+		"context":   contextName,
+		"is_remote": isRemote,
 	})
 }
