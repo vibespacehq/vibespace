@@ -3,8 +3,10 @@ package k8s
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +33,29 @@ type SetupProgressFunc func(progress SetupProgress)
 // EnsureClusterComponents ensures all required components are installed
 // It's idempotent and safe to call multiple times
 func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupProgressFunc) error {
+	// DEV ONLY: Log progress to file for debugging
+	// TODO: Remove this before production release
+	logFile, err := os.OpenFile("/tmp/cluster-setup.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		defer logFile.Close()
+		logFile.WriteString(fmt.Sprintf("\n=== Setup started at %s ===\n", time.Now().Format(time.RFC3339)))
+	}
+
+	// Wrap progressFn to log to file
+	wrappedProgressFn := func(progress SetupProgress) {
+		// Call original progress function
+		if progressFn != nil {
+			progressFn(progress)
+		}
+
+		// DEV ONLY: Log to file
+		// TODO: Remove this before production release
+		if logFile != nil {
+			progressJSON, _ := json.Marshal(progress)
+			logFile.WriteString(fmt.Sprintf("[%s] %s\n", time.Now().Format(time.RFC3339), string(progressJSON)))
+		}
+	}
+
 	// Check what's already installed
 	components, err := c.CheckComponents(ctx)
 	if err != nil {
@@ -44,63 +69,39 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 
 	// Install missing components
 	if !components.Knative.Installed || !components.Knative.Healthy {
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "knative", Status: "installing", Message: "Installing Knative Serving..."})
-		}
+		wrappedProgressFn(SetupProgress{Component: "knative", Status: "installing", Message: "Installing Knative Serving..."})
 		if err := c.InstallKnative(ctx); err != nil {
-			if progressFn != nil {
-				progressFn(SetupProgress{Component: "knative", Status: "error", Error: err.Error()})
-			}
+			wrappedProgressFn(SetupProgress{Component: "knative", Status: "error", Error: err.Error()})
 			return fmt.Errorf("failed to install Knative: %w", err)
 		}
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "knative", Status: "done", Message: "Knative Serving installed"})
-		}
+		wrappedProgressFn(SetupProgress{Component: "knative", Status: "done", Message: "Knative Serving installed"})
 	}
 
 	if !components.Traefik.Installed || !components.Traefik.Healthy {
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "traefik", Status: "installing", Message: "Installing Traefik..."})
-		}
+		wrappedProgressFn(SetupProgress{Component: "traefik", Status: "installing", Message: "Installing Traefik..."})
 		if err := c.InstallTraefik(ctx); err != nil {
-			if progressFn != nil {
-				progressFn(SetupProgress{Component: "traefik", Status: "error", Error: err.Error()})
-			}
+			wrappedProgressFn(SetupProgress{Component: "traefik", Status: "error", Error: err.Error()})
 			return fmt.Errorf("failed to install Traefik: %w", err)
 		}
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "traefik", Status: "done", Message: "Traefik installed"})
-		}
+		wrappedProgressFn(SetupProgress{Component: "traefik", Status: "done", Message: "Traefik installed"})
 	}
 
 	if !components.Registry.Installed || !components.Registry.Healthy {
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "registry", Status: "installing", Message: "Installing Local Registry..."})
-		}
+		wrappedProgressFn(SetupProgress{Component: "registry", Status: "installing", Message: "Installing Local Registry..."})
 		if err := c.InstallRegistry(ctx); err != nil {
-			if progressFn != nil {
-				progressFn(SetupProgress{Component: "registry", Status: "error", Error: err.Error()})
-			}
+			wrappedProgressFn(SetupProgress{Component: "registry", Status: "error", Error: err.Error()})
 			return fmt.Errorf("failed to install Registry: %w", err)
 		}
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "registry", Status: "done", Message: "Local Registry installed"})
-		}
+		wrappedProgressFn(SetupProgress{Component: "registry", Status: "done", Message: "Local Registry installed"})
 	}
 
 	if !components.BuildKit.Installed || !components.BuildKit.Healthy {
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "buildkit", Status: "installing", Message: "Installing BuildKit..."})
-		}
+		wrappedProgressFn(SetupProgress{Component: "buildkit", Status: "installing", Message: "Installing BuildKit..."})
 		if err := c.InstallBuildKit(ctx); err != nil {
-			if progressFn != nil {
-				progressFn(SetupProgress{Component: "buildkit", Status: "error", Error: err.Error()})
-			}
+			wrappedProgressFn(SetupProgress{Component: "buildkit", Status: "error", Error: err.Error()})
 			return fmt.Errorf("failed to install BuildKit: %w", err)
 		}
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "buildkit", Status: "done", Message: "BuildKit installed"})
-		}
+		wrappedProgressFn(SetupProgress{Component: "buildkit", Status: "done", Message: "BuildKit installed"})
 	}
 
 	// Ensure workspace namespace exists

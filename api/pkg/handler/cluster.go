@@ -186,3 +186,46 @@ func (h *ClusterHandler) EnsureComponents(ctx context.Context) error {
 
 	return nil
 }
+
+// ListContexts returns all available Kubernetes contexts
+// GET /api/v1/cluster/contexts
+func (h *ClusterHandler) ListContexts(c *gin.Context) {
+	contexts, err := k8s.ListContexts()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to list contexts",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"contexts": contexts,
+	})
+}
+
+// SwitchContext switches to a different Kubernetes context
+// POST /api/v1/cluster/contexts/:name/switch
+func (h *ClusterHandler) SwitchContext(c *gin.Context) {
+	contextName := c.Param("name")
+	if contextName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Context name is required",
+		})
+		return
+	}
+
+	err := k8s.SwitchContext(contextName)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to switch context",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": fmt.Sprintf("Switched to context: %s", contextName),
+		"context": contextName,
+	})
+}

@@ -85,6 +85,21 @@ export type KubernetesInstallType =
   | 'docker-desktop'
   | 'unknown';
 
+/**
+ * Represents a Kubernetes context from the user's kubeconfig.
+ * Used to allow users to select which cluster to install components to.
+ *
+ * @public
+ * @see Issue #29 for cluster selection implementation
+ */
+export interface ClusterContext {
+  name: string;
+  cluster: string;
+  user: string;
+  is_current: boolean;
+  is_local: boolean;
+}
+
 // Workspace Types
 // TODO(Phase 1): Will be used for workspace CRUD operations
 
