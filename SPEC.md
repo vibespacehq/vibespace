@@ -336,7 +336,14 @@ Desktop App → Local k3s (lightweight workspaces)
 - **Tauri**: 2.x (latest stable)
 - **React**: 19.x (latest stable)
 - **Kubernetes**: 1.27+ (via k3s)
-- **Knative Serving**: 1.11+
+
+**Component Versions (MVP - Phase 1)**:
+- **Knative Serving**: v1.15.2 (stable, avoids v1.19 OTel transition bugs)
+- **Traefik**: v3.5.3 (latest stable ingress controller)
+- **Registry**: 2.8.3 (proven for local use)
+- **BuildKit**: v0.17.3 (stable, avoids v0.24+ CPU issues)
+
+*Version selection rationale documented in [ADR 0004](../docs/adr/0004-component-version-selection.md). Upgrades to newer versions will be evaluated in Phase 2 after MVP validation.*
 
 ### 3.3 Key Dependencies
 

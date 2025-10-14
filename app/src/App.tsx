@@ -3,7 +3,7 @@ import { TitleBar } from './components/shared/TitleBar'
 import { AuthenticationSetup } from './components/setup/components/AuthenticationSetup'
 import { KubernetesSetup } from './components/setup/components/KubernetesSetup'
 import { ConfigurationSetup } from './components/setup/components/ConfigurationSetup'
-import { ReadySetup } from './components/setup/components/ReadySetup'
+// import { CreateWorkspace } from './components/setup/components/CreateWorkspace'
 import { WorkspaceList } from './components/workspace/components/WorkspaceList'
 import './components/workspace/styles/WorkspaceList.css'
 
@@ -32,7 +32,7 @@ const MOCK_WORKSPACES = [
   },
 ]
 
-type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'ready' | 'complete'
+type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'complete'
 
 function App() {
   const [workspaces] = useState(MOCK_WORKSPACES)
@@ -63,16 +63,7 @@ function App() {
     return (
       <>
         <TitleBar />
-        <ConfigurationSetup onComplete={() => setSetupStep('ready')} />
-      </>
-    )
-  }
-
-  if (setupStep === 'ready') {
-    return (
-      <>
-        <TitleBar />
-        <ReadySetup onLaunch={() => setSetupStep('complete')} />
+        <ConfigurationSetup onComplete={() => setSetupStep('complete')} />
       </>
     )
   }

@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buildkitd
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: buildkitd
+  template:
+    metadata:
+      labels:
+        app: buildkitd
+    spec:
+      containers:
+      - name: buildkitd
+        image: moby/buildkit:v0.17.3
+        args:
+        - --addr
+        - unix:///run/buildkit/buildkitd.sock
+        - --addr
+        - tcp://0.0.0.0:1234
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: buildkit-socket
+          mountPath: /run/buildkit
+        ports:
+        - containerPort: 1234
+      volumes:
+      - name: buildkit-socket
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: buildkitd
+  namespace: default
+spec:
+  ports:
+  - port: 1234
+    targetPort: 1234
+  selector:
+    app: buildkitd
