@@ -6,14 +6,18 @@
 const API_BASE_URL = (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL || 'http://localhost:8090';
 
 /**
- * API endpoints for cluster management
+ * API endpoints for cluster and workspace management
  */
 export const API_ENDPOINTS = {
+  // Cluster endpoints
   clusterContexts: `${API_BASE_URL}/api/v1/cluster/contexts`,
   clusterContextSwitch: (contextName: string) =>
     `${API_BASE_URL}/api/v1/cluster/contexts/${contextName}/switch`,
   clusterStatus: `${API_BASE_URL}/api/v1/cluster/status`,
   clusterSetup: `${API_BASE_URL}/api/v1/cluster/setup`,
+
+  // Workspace endpoints
+  workspaces: `${API_BASE_URL}/api/v1/workspaces`,
 } as const;
 
 /**

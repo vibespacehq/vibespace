@@ -2,41 +2,47 @@ import { useState } from 'react'
 import { TitleBar } from './components/shared/TitleBar'
 import { AuthenticationSetup } from './components/setup/components/AuthenticationSetup'
 import { KubernetesSetup } from './components/setup/components/KubernetesSetup'
-import { ConfigurationSetup } from './components/setup/components/ConfigurationSetup'
-// import { CreateWorkspace } from './components/setup/components/CreateWorkspace'
+import { ConfigurationSetup, type WorkspaceConfiguration } from './components/setup/components/ConfigurationSetup'
 import { WorkspaceList } from './components/workspace/components/WorkspaceList'
-import './components/workspace/styles/WorkspaceList.css'
+import { useWorkspaces } from './hooks/useWorkspaces'
 
-// Mock workspace data for design
-const MOCK_WORKSPACES = [
-  {
-    id: 'ws-1',
-    name: 'next-blog',
-    template: 'Next.js',
-    status: 'running' as const,
-    createdAt: '2 hours ago',
-  },
-  {
-    id: 'ws-2',
-    name: 'python-ml',
-    template: 'Jupyter',
-    status: 'stopped' as const,
-    createdAt: '1 day ago',
-  },
-  {
-    id: 'ws-3',
-    name: 'vue-dashboard',
-    template: 'Vue',
-    status: 'creating' as const,
-    createdAt: 'Just now',
-  },
-]
-
-type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'complete'
+type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'creating' | 'complete'
 
 function App() {
-  const [workspaces] = useState(MOCK_WORKSPACES)
   const [setupStep, setSetupStep] = useState<SetupStep>('auth')
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
+  const { createWorkspace } = useWorkspaces()
+
+  /**
+   * Handles workspace creation from configuration setup.
+   * Creates workspace via API and transitions to complete state.
+   */
+  const handleWorkspaceCreation = async (config: WorkspaceConfiguration) => {
+    setSetupStep('creating')
+    setCreatingWorkspace(true)
+
+    try {
+      await createWorkspace({
+        name: config.name,
+        template: config.template,
+        persistent: true,
+        github_repo: config.githubRepo || undefined,
+        agent: config.agent || undefined,
+      })
+
+      setSetupStep('complete')
+    } catch (error) {
+      console.error('Failed to create workspace:', error)
+      alert(`Failed to create workspace: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      setSetupStep('configuration')
+    } finally {
+      setCreatingWorkspace(false)
+    }
+  }
+
+  const handleCreateNew = () => {
+    setSetupStep('configuration')
+  }
 
   // Setup wizard flow
   if (setupStep === 'auth') {
@@ -63,21 +69,38 @@ function App() {
     return (
       <>
         <TitleBar />
-        <ConfigurationSetup onComplete={() => setSetupStep('complete')} />
+        <ConfigurationSetup onComplete={handleWorkspaceCreation} />
+      </>
+    )
+  }
+
+  if (setupStep === 'creating') {
+    return (
+      <>
+        <TitleBar />
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100vh',
+          gap: '1rem',
+          paddingTop: '40px'
+        }}>
+          <div className="spinner" />
+          <p style={{ color: 'var(--text-secondary)' }}>
+            {creatingWorkspace ? 'Creating your workspace...' : 'Preparing...'}
+          </p>
+        </div>
       </>
     )
   }
 
   // Setup complete - show workspace manager
-  const handleCreateNew = () => {
-    console.log('Create new workspace')
-    // TODO: Open create workspace modal
-  }
-
   return (
     <>
       <TitleBar />
-      <WorkspaceList workspaces={workspaces} onCreateNew={handleCreateNew} />
+      <WorkspaceList onCreateNew={handleCreateNew} />
     </>
   )
 }

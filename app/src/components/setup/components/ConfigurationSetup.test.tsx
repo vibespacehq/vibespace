@@ -119,15 +119,40 @@ describe('ConfigurationSetup', () => {
       expect(screen.getByRole('button', { name: /continue/i })).toBeInTheDocument();
     });
 
-    it('calls onComplete when continue is clicked', async () => {
+    it('calls onComplete when continue is clicked with valid name', async () => {
       const user = userEvent.setup();
       const onComplete = vi.fn();
       render(<ConfigurationSetup onComplete={onComplete} />);
+
+      // Enter workspace name (required)
+      const nameInput = screen.getByLabelText('Workspace name');
+      await user.type(nameInput, 'my-workspace');
 
       const continueButton = screen.getByRole('button', { name: /continue/i });
       await user.click(continueButton);
 
       expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(onComplete).toHaveBeenCalledWith({
+        name: 'my-workspace',
+        template: 'nextjs',
+        agent: 'claude',
+        githubRepo: '',
+      });
+    });
+
+    it('shows alert when continue is clicked without workspace name', async () => {
+      const user = userEvent.setup();
+      const onComplete = vi.fn();
+      const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+      render(<ConfigurationSetup onComplete={onComplete} />);
+
+      const continueButton = screen.getByRole('button', { name: /continue/i });
+      await user.click(continueButton);
+
+      expect(alertSpy).toHaveBeenCalledWith('Please enter a workspace name');
+      expect(onComplete).not.toHaveBeenCalled();
+
+      alertSpy.mockRestore();
     });
   });
 

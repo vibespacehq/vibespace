@@ -1,0 +1,253 @@
+/**
+ * WorkspaceCard Component Styles
+ * Individual workspace card with status, actions, and metadata.
+ */
+
+.workspace-card {
+  position: relative;
+  padding: var(--spacing-4);
+  background: rgba(255, 255, 255, 0.03);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.workspace-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-primary);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 171, 171, 0.15);
+}
+
+/* Header */
+.workspace-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+}
+
+.workspace-name-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.workspace-name-section h3 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.workspace-menu-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.workspace-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+/* Status Badge */
+.workspace-status {
+  padding: 0.125rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  width: fit-content;
+}
+
+.workspace-status.status-running {
+  background: rgba(0, 171, 171, 0.2);
+  color: var(--accent-primary);
+  border: 1px solid rgba(0, 171, 171, 0.5);
+}
+
+.workspace-status.status-stopped {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.workspace-status.status-transitioning {
+  background: rgba(241, 2, 243, 0.2);
+  color: var(--accent-tertiary);
+  border: 1px solid rgba(241, 2, 243, 0.5);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.workspace-status.status-error {
+  background: rgba(255, 125, 75, 0.2);
+  color: var(--accent-secondary);
+  border: 1px solid rgba(255, 125, 75, 0.5);
+}
+
+/* Actions Menu */
+.workspace-actions-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.menu-action {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.menu-action:last-child {
+  border-bottom: none;
+}
+
+.menu-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--accent-primary);
+}
+
+.menu-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.menu-action-danger:hover:not(:disabled) {
+  background: rgba(255, 125, 75, 0.1);
+  color: var(--accent-secondary);
+}
+
+/* Body */
+.workspace-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border);
+}
+
+.workspace-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+}
+
+.workspace-meta .meta-label {
+  color: var(--text-tertiary);
+}
+
+.workspace-meta .meta-value {
+  color: var(--text-secondary);
+}
+
+.workspace-badge-persistent {
+  margin-top: var(--spacing-2);
+  padding: 0.125rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: rgba(245, 245, 10, 0.2);
+  color: var(--accent-yellow);
+  border: 1px solid rgba(245, 245, 10, 0.5);
+  width: fit-content;
+}
+
+/* Footer */
+.workspace-card-footer {
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border);
+}
+
+.btn-open-workspace {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  width: 100%;
+  padding: var(--spacing-3);
+  background: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  color: #000000;
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-open-workspace:hover:not(:disabled) {
+  background: var(--accent-yellow);
+  border-color: var(--accent-yellow);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 171, 171, 0.3);
+}
+
+.btn-open-workspace:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .workspace-card {
+    padding: var(--spacing-3);
+  }
+
+  .workspace-name-section h3 {
+    font-size: 0.875rem;
+  }
+
+  .workspace-meta {
+    font-size: 0.75rem;
+  }
+}
