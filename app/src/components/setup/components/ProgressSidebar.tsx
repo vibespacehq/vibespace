@@ -47,7 +47,7 @@ export function ProgressSidebar({ currentStep }: ProgressSidebarProps) {
   return (
     <aside className="setup-sidebar">
       <div className="sidebar-logo">
-        <img src="/src-tauri/icons/icon-transparent.png" alt="workspaces" className="sidebar-icon" />
+        <img src="/icon-transparent.png" alt="workspaces" className="sidebar-icon" />
         <p>setup</p>
       </div>
       <div className="progress-steps">

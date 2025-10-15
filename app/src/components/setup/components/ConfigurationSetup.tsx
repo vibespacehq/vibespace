@@ -10,15 +10,43 @@ interface ConfigurationSetupProps {
 export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
   const [workspaceName, setWorkspaceName] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('nextjs');
+  const [selectedAgent, setSelectedAgent] = useState<string | null>('claude');
+  const [githubRepo, setGithubRepo] = useState('');
 
   const templates = [
-    { id: 'nextjs', name: 'Next.js', description: 'React framework for production' },
-    { id: 'vue', name: 'Vue', description: 'Progressive JavaScript framework' },
-    { id: 'jupyter', name: 'Jupyter', description: 'Interactive Python notebooks' },
-    { id: 'go', name: 'Go', description: 'Fast and efficient backend' },
+    { id: 'nextjs', name: 'Next.js', description: 'React framework for production', logo: '/logos/templates/nextjs.svg' },
+    { id: 'vue', name: 'Vue', description: 'Progressive JavaScript framework', logo: '/logos/templates/vue.svg' },
+    { id: 'jupyter', name: 'Jupyter', description: 'Interactive Python notebooks', logo: '/logos/templates/jupyter.svg' },
+    { id: 'go', name: 'Go', description: 'Fast and efficient backend', logo: '/logos/templates/go.svg' },
+  ];
+
+  const agents = [
+    {
+      id: 'claude',
+      name: 'Claude Code',
+      description: 'Anthropic\'s CLI coding agent',
+      logo: '/logos/agents/claude.svg',
+      configFile: 'CLAUDE.md'
+    },
+    {
+      id: 'codex',
+      name: 'OpenAI Codex',
+      description: 'Terminal coding assistant',
+      logo: '/logos/agents/codex.svg',
+      configFile: '.codex'
+    },
+    {
+      id: 'gemini',
+      name: 'Gemini CLI',
+      description: 'Google\'s AI coding agent',
+      logo: '/logos/agents/gemini.svg',
+      configFile: '.gemini'
+    },
   ];
 
   const handleContinue = () => {
+    // TODO: Pass configuration to parent when API is ready
+    // Configuration: { workspaceName, selectedTemplate, selectedAgent, githubRepo }
     onComplete();
   };
 
@@ -48,6 +76,7 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
               placeholder="my-awesome-project"
               value={workspaceName}
               onChange={(e) => setWorkspaceName(e.target.value)}
+              aria-label="Workspace name"
             />
           </div>
 
@@ -61,12 +90,45 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
                   className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
                   onClick={() => setSelectedTemplate(template.id)}
                 >
-                  <div className="template-icon">◇</div>
+                  <img src={template.logo} alt={template.name} className="template-logo" />
                   <h4 className="template-name">{template.name}</h4>
                   <p className="template-description">{template.description}</p>
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="config-section">
+            <h3 className="config-section-title">AI Coding Agent</h3>
+            <p className="config-section-description">Select an AI agent to assist with development</p>
+            <div className="template-grid">
+              {agents.map((agent) => (
+                <button
+                  key={agent.id}
+                  className={`template-card agent-card ${selectedAgent === agent.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedAgent(agent.id)}
+                >
+                  <img src={agent.logo} alt={agent.name} className="template-logo agent-logo" />
+                  <h4 className="template-name">{agent.name}</h4>
+                  <p className="template-description">{agent.description}</p>
+                  <span className="agent-config-badge">{agent.configFile}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="config-section">
+            <h3 className="config-section-title">GitHub Repository (Optional)</h3>
+            <p className="config-section-description">Clone an existing repository or start fresh</p>
+            <input
+              type="text"
+              className="config-input"
+              placeholder="https://github.com/username/repo or username/repo"
+              value={githubRepo}
+              onChange={(e) => setGithubRepo(e.target.value)}
+              aria-label="GitHub repository URL (optional)"
+            />
+            <p className="config-hint">Leave empty to start with a blank workspace</p>
           </div>
 
           <div className="setup-actions">
