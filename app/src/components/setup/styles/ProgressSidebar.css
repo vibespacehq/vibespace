@@ -12,6 +12,7 @@
   width: 64px;
   height: 64px;
   align-self: start;
+  margin-left: -12px;
 }
 
 .sidebar-logo h1 {
