@@ -17,6 +17,7 @@ describe('KubernetesSetup', () => {
       vi.spyOn(kubernetesHook, 'useKubernetesStatus').mockReturnValue({
         status: { available: true, installType: 'k3d', version: 'v1.27.0' },
         isLoading: false,
+        error: null,
         refetch: vi.fn(),
       });
 
@@ -175,6 +176,7 @@ describe('KubernetesSetup', () => {
       vi.spyOn(kubernetesHook, 'useKubernetesStatus').mockReturnValue({
         status: { available: true, installType: 'k3d', version: 'v1.27.0' },
         isLoading: false,
+        error: null,
         refetch: vi.fn(),
       });
 
@@ -191,6 +193,7 @@ describe('KubernetesSetup', () => {
       vi.spyOn(kubernetesHook, 'useKubernetesStatus').mockReturnValue({
         status: { available: true, installType: 'k3d', version: 'v1.27.0' },
         isLoading: false,
+        error: null,
         refetch: vi.fn(),
       });
 
@@ -209,6 +212,7 @@ describe('KubernetesSetup', () => {
       vi.spyOn(kubernetesHook, 'useKubernetesStatus').mockReturnValue({
         status: { available: true, installType: 'k3d', version: 'v1.27.0' },
         isLoading: false,
+        error: null,
         refetch: vi.fn(),
       });
 
