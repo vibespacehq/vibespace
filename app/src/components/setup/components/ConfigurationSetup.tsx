@@ -3,8 +3,15 @@ import { ProgressSidebar } from './ProgressSidebar';
 import '../styles/setup.css';
 import '../styles/ConfigurationSetup.css';
 
+export interface WorkspaceConfiguration {
+  name: string;
+  template: string;
+  agent: string | null;
+  githubRepo: string;
+}
+
 interface ConfigurationSetupProps {
-  onComplete: () => void;
+  onComplete: (config: WorkspaceConfiguration) => void;
 }
 
 export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
@@ -45,9 +52,17 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
   ];
 
   const handleContinue = () => {
-    // TODO: Pass configuration to parent when API is ready
-    // Configuration: { workspaceName, selectedTemplate, selectedAgent, githubRepo }
-    onComplete();
+    if (!workspaceName.trim()) {
+      alert('Please enter a workspace name');
+      return;
+    }
+
+    onComplete({
+      name: workspaceName.trim(),
+      template: selectedTemplate,
+      agent: selectedAgent,
+      githubRepo: githubRepo.trim(),
+    });
   };
 
   return (
