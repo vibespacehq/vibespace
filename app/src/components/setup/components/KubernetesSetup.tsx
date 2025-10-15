@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { useKubernetesStatus } from '../../../hooks/useKubernetesStatus';
 import { InstallationInstructions } from './InstallationInstructions';
 import { ProgressSidebar } from './ProgressSidebar';
 import { ClusterStatus, SetupProgress, ClusterContext } from '../../../lib/types';
+import { API_ENDPOINTS, apiFetch } from '../../../lib/api-config';
 import '../styles/setup.css';
 import '../styles/KubernetesSetup.css';
 
@@ -22,7 +23,9 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const [contexts, setContexts] = useState<ClusterContext[]>([]);
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSwitchingContext, setIsSwitchingContext] = useState(false);
   const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null);
+  const isMountedRef = useRef(true);
 
   // Fetch available contexts when Kubernetes is detected
   useEffect(() => {
@@ -33,19 +36,23 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     }
   }, [status, isLoading]);
 
-  // Cleanup EventSource on component unmount
+  // Cleanup EventSource on component unmount and prevent memory leaks
   useEffect(() => {
     return () => {
+      isMountedRef.current = false;
       if (eventSourceRef) {
         eventSourceRef.close();
       }
     };
   }, [eventSourceRef]);
 
+  /**
+   * Fetches available Kubernetes contexts from the API.
+   * Displays cluster selection screen once contexts are loaded.
+   */
   const fetchContexts = async () => {
     try {
-      const response = await fetch('http://localhost:8090/api/v1/cluster/contexts');
-      const data = await response.json();
+      const data = await apiFetch<{ contexts: ClusterContext[] }>(API_ENDPOINTS.clusterContexts);
 
       setContexts(data.contexts || []);
 
@@ -55,27 +62,32 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
       // Always show cluster selection
       setSetupState('selecting-cluster');
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to fetch contexts:', err);
-      setError('Failed to load cluster contexts');
+      setError(`Failed to load cluster contexts: ${message}`);
       setSetupState('error');
     }
   };
 
+  /**
+   * Switches the active Kubernetes context.
+   * @param contextName - Name of the context to switch to
+   */
   const switchContext = async (contextName: string) => {
     try {
-      const response = await fetch(`http://localhost:8090/api/v1/cluster/contexts/${contextName}/switch`, {
+      setIsSwitchingContext(true);
+      await apiFetch(API_ENDPOINTS.clusterContextSwitch(contextName), {
         method: 'POST',
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to switch context');
-      }
-
       setSelectedContext(contextName);
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to switch context:', err);
-      setError('Failed to switch cluster context');
+      setError(`Failed to switch cluster context: ${message}`);
       setSetupState('error');
+    } finally {
+      setIsSwitchingContext(false);
     }
   };
 
@@ -94,10 +106,14 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     checkClusterComponents();
   };
 
+  /**
+   * Checks cluster health and installed components.
+   * Auto-initiates installation if components are missing.
+   * @throws {Error} If unable to connect to API server
+   */
   const checkClusterComponents = async () => {
     try {
-      const response = await fetch('http://localhost:8090/api/v1/cluster/status');
-      const clusterStat: ClusterStatus = await response.json();
+      const clusterStat = await apiFetch<ClusterStatus>(API_ENDPOINTS.clusterStatus);
 
       setClusterStatus(clusterStat);
 
@@ -125,21 +141,27 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         installComponents();
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to check cluster status:', err);
-      setError('Failed to connect to API server');
+      setError(`Failed to connect to API server: ${message}`);
       setSetupState('error');
     }
   };
 
+  /**
+   * Installs missing cluster components using Server-Sent Events for progress tracking.
+   * Monitors installation progress and handles completion or errors.
+   */
   const installComponents = async () => {
     setSetupState('installing');
     setError(null);
 
     try {
-      const eventSource = new EventSource('http://localhost:8090/api/v1/cluster/setup');
+      const eventSource = new EventSource(API_ENDPOINTS.clusterSetup);
       setEventSourceRef(eventSource);
 
       eventSource.addEventListener('progress', (event) => {
+        if (!isMountedRef.current) return;
         const progress: SetupProgress = JSON.parse(event.data);
         setSetupProgress(prev => ({
           ...prev,
@@ -148,6 +170,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
       });
 
       eventSource.addEventListener('complete', (event) => {
+        if (!isMountedRef.current) return;
         console.log('Setup complete:', JSON.parse(event.data));
         eventSource.close();
         setEventSourceRef(null);
@@ -155,6 +178,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
       });
 
       eventSource.addEventListener('error', (event) => {
+        if (!isMountedRef.current) return;
         const messageEvent = event as MessageEvent;
         const data = JSON.parse(messageEvent.data);
         console.error('Setup error:', data);
@@ -169,10 +193,11 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         eventSource.close();
         setEventSourceRef(null);
 
+        if (!isMountedRef.current) return;
+
         // Check cluster status to determine if setup completed successfully
         try {
-          const response = await fetch('http://localhost:8090/api/v1/cluster/status');
-          const clusterStat: ClusterStatus = await response.json();
+          const clusterStat = await apiFetch<ClusterStatus>(API_ENDPOINTS.clusterStatus);
 
           if (clusterStat.healthy) {
             setSetupState('ready');
@@ -181,13 +206,15 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
             setSetupState('error');
           }
         } catch (fetchErr) {
-          setError('Connection to API server lost');
+          const message = fetchErr instanceof Error ? fetchErr.message : 'Unknown error';
+          setError(`Connection to API server lost: ${message}`);
           setSetupState('error');
         }
       };
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to start setup:', err);
-      setError('Failed to start cluster setup');
+      setError(`Failed to start cluster setup: ${message}`);
       setSetupState('error');
     }
   };
@@ -412,6 +439,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
                     placeholder="Search clusters..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    aria-label="Search Kubernetes clusters"
                   />
                 </div>
               )}
@@ -423,6 +451,8 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
                       key={ctx.name}
                       className={`cluster-card ${selectedContext === ctx.name ? 'selected' : ''} ${!ctx.is_local ? 'remote' : ''}`}
                       onClick={() => setSelectedContext(ctx.name)}
+                      aria-label={`Select ${ctx.name} cluster${!ctx.is_local ? ' (remote)' : ''}`}
+                      aria-pressed={selectedContext === ctx.name}
                     >
                       <div className="cluster-card-header">
                         <span className="cluster-card-name">{ctx.name}</span>
@@ -463,9 +493,10 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
                 <button
                   onClick={proceedWithSelectedCluster}
                   className="btn-primary"
-                  disabled={!selectedContext}
+                  disabled={!selectedContext || isSwitchingContext}
+                  aria-busy={isSwitchingContext}
                 >
-                  Continue
+                  {isSwitchingContext ? 'Switching...' : 'Continue'}
                 </button>
               </div>
             </div>

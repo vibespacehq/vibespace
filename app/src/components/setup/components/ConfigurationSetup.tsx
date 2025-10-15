@@ -45,8 +45,8 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
   ];
 
   const handleContinue = () => {
-    // TODO: Pass configuration to parent
-    console.log({ workspaceName, selectedTemplate, selectedAgent, githubRepo });
+    // TODO: Pass configuration to parent when API is ready
+    // Configuration: { workspaceName, selectedTemplate, selectedAgent, githubRepo }
     onComplete();
   };
 
@@ -76,6 +76,7 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
               placeholder="my-awesome-project"
               value={workspaceName}
               onChange={(e) => setWorkspaceName(e.target.value)}
+              aria-label="Workspace name"
             />
           </div>
 
@@ -125,6 +126,7 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
               placeholder="https://github.com/username/repo or username/repo"
               value={githubRepo}
               onChange={(e) => setGithubRepo(e.target.value)}
+              aria-label="GitHub repository URL (optional)"
             />
             <p className="config-hint">Leave empty to start with a blank workspace</p>
           </div>
