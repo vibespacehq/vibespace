@@ -36,8 +36,6 @@ export function AuthenticationSetup({ onComplete }: AuthenticationSetupProps) {
 
         <div className="setup-required">
           <div className="auth-container">
-            <img src="/icon.png" alt="workspaces" className="auth-logo" />
-            <h2>Authentication</h2>
             <p className="auth-description">
               Sign in with your account to access workspaces and manage your development environments.
             </p>

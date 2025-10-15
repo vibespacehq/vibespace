@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { AlertCircle } from 'lucide-react';
 import { useKubernetesStatus } from '../../../hooks/useKubernetesStatus';
 import { InstallationInstructions } from './InstallationInstructions';
 import { ProgressSidebar } from './ProgressSidebar';
 import { ClusterStatus, SetupProgress, ClusterContext } from '../../../lib/types';
 import '../styles/setup.css';
+import '../styles/KubernetesSetup.css';
 
 interface KubernetesSetupProps {
   onComplete?: () => void;
@@ -19,7 +21,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const [error, setError] = useState<string | null>(null);
   const [contexts, setContexts] = useState<ClusterContext[]>([]);
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null);
 
@@ -328,23 +329,36 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
             <div className="cluster-info">
               {status?.installType && (
                 <p>
-                  <strong>Type:</strong> {status.installType}
+                  <strong>Type:</strong>
+                  <span>{status.installType}</span>
                 </p>
               )}
               {status?.version && (
                 <p>
-                  <strong>Version:</strong> {status.version}
+                  <strong>Version:</strong>
+                  <span>{status.version}</span>
                 </p>
               )}
               {clusterStatus && (
                 <div className="component-list">
-                  <p><strong>Components:</strong></p>
-                  <ul>
-                    <li>✓ Knative Serving</li>
-                    <li>✓ Traefik Ingress</li>
-                    <li>✓ Local Registry</li>
-                    <li>✓ BuildKit</li>
-                  </ul>
+                  <div className="component-badges">
+                    <div className="component-badge">
+                      <span className="component-badge-icon">✓</span>
+                      <span>Knative Serving</span>
+                    </div>
+                    <div className="component-badge">
+                      <span className="component-badge-icon">✓</span>
+                      <span>Traefik Ingress</span>
+                    </div>
+                    <div className="component-badge">
+                      <span className="component-badge-icon">✓</span>
+                      <span>Local Registry</span>
+                    </div>
+                    <div className="component-badge">
+                      <span className="component-badge-icon">✓</span>
+                      <span>BuildKit</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -390,69 +404,51 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
           </header>
 
           <div className="setup-configure">
-            <div className="cluster-selection">
-              <p className="selection-description">
-                Select which cluster you'd like to install workspace components to
-              </p>
+            <div className="cluster-selection-grid">
+              {contexts.length > 3 && (
+                <div className="cluster-search">
+                  <input
+                    type="text"
+                    placeholder="Search clusters..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              )}
 
-              <div className="cluster-dropdown">
-                <button
-                  className={`cluster-dropdown-button ${dropdownOpen ? 'open' : ''} ${!selectedCtx ? 'placeholder' : ''}`}
-                  onClick={() => setDropdownOpen(!dropdownOpen)}
-                >
-                  <div className="cluster-dropdown-current">
-                    {selectedCtx ? (
-                      <>
-                        <span className="cluster-item-name">{selectedCtx.name}</span>
-                        {selectedCtx.is_current && <span className="cluster-badge current">Current</span>}
-                        {selectedCtx.is_local && <span className="cluster-badge local">Local</span>}
-                        {!selectedCtx.is_local && <span className="cluster-badge remote">Remote</span>}
-                      </>
-                    ) : (
-                      <span style={{ color: 'rgba(255, 255, 255, 0.4)' }}>Select a cluster...</span>
-                    )}
-                  </div>
-                  <span className="cluster-dropdown-icon">▼</span>
-                </button>
-
-                {dropdownOpen && (
-                  <div className="cluster-dropdown-list">
-                    <div className="cluster-dropdown-search">
-                      <input
-                        type="text"
-                        placeholder="Search clusters..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        autoFocus
-                      />
-                    </div>
-                    {filteredContexts.length > 0 ? (
-                      filteredContexts.map((ctx) => (
-                        <div
-                          key={ctx.name}
-                          className={`cluster-dropdown-item ${selectedContext === ctx.name ? 'selected' : ''} ${!ctx.is_local ? 'remote' : ''}`}
-                          onClick={() => {
-                            setSelectedContext(ctx.name);
-                            setDropdownOpen(false);
-                            setSearchQuery('');
-                          }}
-                        >
-                          <div className="cluster-item-header">
-                            <span className="cluster-item-name">{ctx.name}</span>
-                            {ctx.is_current && <span className="cluster-badge current">Current</span>}
-                            {ctx.is_local && <span className="cluster-badge local">Local</span>}
-                            {!ctx.is_local && <span className="cluster-badge remote">Remote</span>}
-                          </div>
-                          <div className="cluster-item-details">
-                            {ctx.cluster} · {ctx.user}
-                          </div>
+              <div className="cluster-grid">
+                {filteredContexts.length > 0 ? (
+                  filteredContexts.map((ctx) => (
+                    <button
+                      key={ctx.name}
+                      className={`cluster-card ${selectedContext === ctx.name ? 'selected' : ''} ${!ctx.is_local ? 'remote' : ''}`}
+                      onClick={() => setSelectedContext(ctx.name)}
+                    >
+                      <div className="cluster-card-header">
+                        <span className="cluster-card-name">{ctx.name}</span>
+                        <div className="cluster-card-badges">
+                          {ctx.is_current && <span className="cluster-badge current">Current</span>}
+                          {ctx.is_local && <span className="cluster-badge local">Local</span>}
+                          {!ctx.is_local && <span className="cluster-badge remote">Remote</span>}
                         </div>
-                      ))
-                    ) : (
-                      <div className="cluster-dropdown-empty">No clusters found</div>
-                    )}
-                  </div>
+                      </div>
+                      <div className="cluster-card-details">
+                        <div className="cluster-card-info">
+                          <span className="cluster-card-label">Cluster:</span>
+                          <span>{ctx.cluster}</span>
+                        </div>
+                        <div className="cluster-card-info">
+                          <span className="cluster-card-label">User:</span>
+                          <span>{ctx.user}</span>
+                        </div>
+                      </div>
+                      {selectedContext === ctx.name && (
+                        <div className="cluster-card-selected-indicator">✓</div>
+                      )}
+                    </button>
+                  ))
+                ) : (
+                  <div className="cluster-empty">No clusters found</div>
                 )}
               </div>
 
@@ -491,12 +487,24 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
               <span>Step 2 of 4</span>
             </div>
             <h1 className="brand-title">Setup Error</h1>
-            <p className="error-text">{error}</p>
+            <p className="brand-subtitle">{error}</p>
+            <div className="progress-bar-container">
+              <div className="progress-bar-fill" data-progress="0"></div>
+            </div>
           </header>
-          <div className="setup-actions">
-            <button onClick={checkClusterComponents} className="btn-secondary">
-              Retry
-            </button>
+          <div className="setup-loading">
+            <div className="error-state-content">
+              <div className="error-icon-container">
+                <AlertCircle size={48} strokeWidth={2} />
+              </div>
+              <h3 className="error-state-title">Something went wrong</h3>
+              <p className="error-state-message">
+                Please check your connection and try again.
+              </p>
+              <button onClick={checkClusterComponents} className="btn-primary">
+                Retry
+              </button>
+            </div>
           </div>
         </main>
       </div>
