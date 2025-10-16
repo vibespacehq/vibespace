@@ -101,7 +101,17 @@ export interface ClusterContext {
 }
 
 // Workspace Types
-// TODO(Phase 1): Will be used for workspace CRUD operations
+
+/**
+ * Resource allocations for a workspace (CPU and memory).
+ * Maps to Kubernetes resource requests/limits.
+ *
+ * @public
+ */
+export interface WorkspaceResources {
+  cpu: string;
+  memory: string;
+}
 
 /**
  * Represents a workspace instance running in the Kubernetes cluster.
@@ -114,9 +124,11 @@ export interface Workspace {
   id: string;
   name: string;
   template: string;
-  status: 'creating' | 'running' | 'stopped' | 'error';
-  createdAt: string;
-  url?: string;
+  status: 'creating' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
+  resources: WorkspaceResources;
+  urls: Record<string, string>;
+  persistent: boolean;
+  created_at: string;
 }
 
 /**
@@ -129,7 +141,10 @@ export interface Workspace {
 export interface CreateWorkspaceRequest {
   name: string;
   template: string;
+  resources?: WorkspaceResources;
   persistent?: boolean;
+  github_repo?: string;
+  agent?: string;
 }
 
 // Template Types

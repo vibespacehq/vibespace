@@ -1,141 +1,212 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WorkspaceList } from './WorkspaceList';
+import * as useWorkspacesHook from '../../../hooks/useWorkspaces';
+import type { Workspace } from '../../../lib/types';
 
-const mockWorkspaces = [
+const mockWorkspaces: Workspace[] = [
   {
     id: 'ws-1',
-    name: 'test-workspace',
-    template: 'Next.js',
-    status: 'running' as const,
-    createdAt: '1 hour ago',
+    name: 'nextjs-app',
+    template: 'nextjs',
+    status: 'running',
+    resources: { cpu: '2', memory: '4Gi' },
+    urls: { 'code-server': 'http://localhost:8080' },
+    persistent: true,
+    created_at: '2025-01-15T10:00:00Z',
   },
   {
     id: 'ws-2',
-    name: 'python-project',
-    template: 'Jupyter',
-    status: 'stopped' as const,
-    createdAt: '2 days ago',
+    name: 'python-ml',
+    template: 'jupyter',
+    status: 'stopped',
+    resources: { cpu: '4', memory: '8Gi' },
+    urls: {},
+    persistent: false,
+    created_at: '2025-01-14T10:00:00Z',
   },
 ];
 
 describe('WorkspaceList', () => {
-  describe('Empty State', () => {
-    it('shows empty state when no workspaces exist', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={[]} onCreateNew={onCreateNew} />);
+  const mockUseWorkspaces = {
+    workspaces: mockWorkspaces,
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+    createWorkspace: vi.fn(),
+    deleteWorkspace: vi.fn(),
+    startWorkspace: vi.fn(),
+    stopWorkspace: vi.fn(),
+  };
 
-      expect(screen.getByText('No workspaces yet')).toBeInTheDocument();
-      expect(screen.getByText('Create your first workspace to get started')).toBeInTheDocument();
+  beforeEach(() => {
+    vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue(mockUseWorkspaces);
+    vi.spyOn(window, 'open').mockImplementation(() => null);
+  });
+
+  describe('Loading State', () => {
+    it('shows loading state when fetching workspaces', () => {
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        isLoading: true,
+        workspaces: [],
+      });
+
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
+
+      expect(screen.getByText('Loading workspaces...')).toBeInTheDocument();
     });
 
-    it('displays create workspace button in empty state', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={[]} onCreateNew={onCreateNew} />);
+    it('shows spinner in loading state', () => {
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        isLoading: true,
+        workspaces: [],
+      });
 
-      expect(screen.getByText('Create workspace')).toBeInTheDocument();
+      const { container } = render(<WorkspaceList onCreateNew={vi.fn()} />);
+      const spinner = container.querySelector('.spinner');
+
+      expect(spinner).toBeInTheDocument();
+    });
+  });
+
+  describe('Error State', () => {
+    it('shows error message when fetch fails', () => {
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        error: 'Failed to connect to API',
+        workspaces: [],
+      });
+
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
+
+      expect(screen.getByText('Failed to connect to API')).toBeInTheDocument();
+    });
+
+    it('shows retry button in error state', () => {
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        error: 'Failed to connect to API',
+        workspaces: [],
+      });
+
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
+
+      expect(screen.getByText('Retry')).toBeInTheDocument();
+    });
+
+    it('calls refetch when retry button is clicked', async () => {
+      const user = userEvent.setup();
+      const refetch = vi.fn();
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        error: 'Failed to connect to API',
+        workspaces: [],
+        refetch,
+      });
+
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
+
+      await user.click(screen.getByText('Retry'));
+
+      expect(refetch).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Empty State', () => {
+    it('shows empty state when no workspaces exist', () => {
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        workspaces: [],
+      });
+
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
+
+      expect(screen.getByText('No workspaces yet')).toBeInTheDocument();
     });
 
     it('calls onCreateNew when create button is clicked in empty state', async () => {
       const user = userEvent.setup();
       const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={[]} onCreateNew={onCreateNew} />);
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        workspaces: [],
+      });
 
-      const createButton = screen.getByText('Create workspace');
-      await user.click(createButton);
+      render(<WorkspaceList onCreateNew={onCreateNew} />);
 
-      expect(onCreateNew).toHaveBeenCalledOnce();
-    });
+      await user.click(screen.getByText('Create workspace'));
 
-    it('shows header with new workspace button in empty state', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={[]} onCreateNew={onCreateNew} />);
-
-      expect(screen.getByText('workspaces')).toBeInTheDocument();
-      expect(screen.getByText('+ New workspace')).toBeInTheDocument();
+      expect(onCreateNew).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('Populated State', () => {
-    it('renders all workspace cards', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={mockWorkspaces} onCreateNew={onCreateNew} />);
+    it('renders workspace cards', () => {
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
 
-      expect(screen.getByText('test-workspace')).toBeInTheDocument();
-      expect(screen.getByText('python-project')).toBeInTheDocument();
+      expect(screen.getByText('nextjs-app')).toBeInTheDocument();
+      expect(screen.getByText('python-ml')).toBeInTheDocument();
     });
 
-    it('displays workspace count in header', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={mockWorkspaces} onCreateNew={onCreateNew} />);
+    it('shows workspace count in header', () => {
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
 
       expect(screen.getByText('2 workspaces')).toBeInTheDocument();
     });
 
-    it('displays singular "workspace" for single workspace', () => {
-      const onCreateNew = vi.fn();
-      const singleWorkspace = [mockWorkspaces[0]];
-      render(<WorkspaceList workspaces={singleWorkspace} onCreateNew={onCreateNew} />);
+    it('shows singular workspace text when only one workspace', () => {
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        workspaces: [mockWorkspaces[0]],
+      });
+
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
 
       expect(screen.getByText('1 workspace')).toBeInTheDocument();
     });
 
-    it('shows status badges for each workspace', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={mockWorkspaces} onCreateNew={onCreateNew} />);
+    it('renders new workspace button in header', () => {
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
 
-      expect(screen.getByText('running')).toBeInTheDocument();
-      expect(screen.getByText('stopped')).toBeInTheDocument();
+      expect(screen.getByText('New workspace')).toBeInTheDocument();
     });
 
-    it('displays template information', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={mockWorkspaces} onCreateNew={onCreateNew} />);
-
-      expect(screen.getByText('Next.js')).toBeInTheDocument();
-      expect(screen.getByText('Jupyter')).toBeInTheDocument();
-    });
-
-    it('displays creation timestamps', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={mockWorkspaces} onCreateNew={onCreateNew} />);
-
-      expect(screen.getByText('1 hour ago')).toBeInTheDocument();
-      expect(screen.getByText('2 days ago')).toBeInTheDocument();
-    });
-
-    it('renders Open and More actions buttons for each workspace', () => {
-      const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={mockWorkspaces} onCreateNew={onCreateNew} />);
-
-      const openButtons = screen.getAllByText('Open');
-      expect(openButtons).toHaveLength(2);
-
-      const moreButtons = screen.getAllByLabelText('More actions');
-      expect(moreButtons).toHaveLength(2);
-    });
-
-    it('calls onCreateNew when new workspace button is clicked', async () => {
+    it('calls onCreateNew when header button is clicked', async () => {
       const user = userEvent.setup();
       const onCreateNew = vi.fn();
-      render(<WorkspaceList workspaces={mockWorkspaces} onCreateNew={onCreateNew} />);
 
-      const newWorkspaceButton = screen.getByText('+ New workspace');
-      await user.click(newWorkspaceButton);
+      render(<WorkspaceList onCreateNew={onCreateNew} />);
 
-      expect(onCreateNew).toHaveBeenCalledOnce();
+      await user.click(screen.getByText('New workspace'));
+
+      expect(onCreateNew).toHaveBeenCalledTimes(1);
     });
 
-    it('applies correct CSS classes to status badges', () => {
-      const onCreateNew = vi.fn();
-      const { container } = render(<WorkspaceList workspaces={mockWorkspaces} onCreateNew={onCreateNew} />);
+    it('opens workspace URL when open is clicked', async () => {
+      const user = userEvent.setup();
+      const windowOpenSpy = vi.spyOn(window, 'open');
 
-      const runningBadge = container.querySelector('.status-running');
-      const stoppedBadge = container.querySelector('.status-stopped');
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
 
-      expect(runningBadge).toBeInTheDocument();
-      expect(stoppedBadge).toBeInTheDocument();
+      const openButtons = screen.getAllByLabelText('Open workspace in browser');
+      await user.click(openButtons[0]);
+
+      expect(windowOpenSpy).toHaveBeenCalledWith('http://localhost:8080', '_blank');
+    });
+
+    it('does not open URL when workspace has no code-server URL', async () => {
+      const user = userEvent.setup();
+      const windowOpenSpy = vi.spyOn(window, 'open');
+
+      render(<WorkspaceList onCreateNew={vi.fn()} />);
+
+      const openButtons = screen.getAllByLabelText('Open workspace in browser');
+      await user.click(openButtons[1]); // python-ml workspace has no URL
+
+      expect(windowOpenSpy).not.toHaveBeenCalled();
     });
   });
 });
