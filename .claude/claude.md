@@ -82,8 +82,8 @@ A **complete workspace configuration**, not just a stack definition. A template 
 
 **Example**: A "Next.js + Claude Code" template includes Next.js 14 + TypeScript + Tailwind, Claude Code CLI pre-installed, CLAUDE.md with Next.js best practices, and option to clone a user's GitHub repo.
 
-**Phase 1 (MVP)**: Single agent baked into workspace container
-**Phase 2**: Multiple agents as sidecars (see SPEC.md Section 9.3)
+**MVP Phase 1**: Single agent baked into workspace container
+**MVP Phase 2**: Multiple agents as sidecars (see SPEC.md Section 9.3)
 
 Users configure templates through the UI during workspace creation. Custom templates can be created via BuildKit.
 
@@ -353,9 +353,9 @@ For **MVP** (Phase 1), we're prioritizing:
 **Target Users (MVP)**: Developer early adopters who can run `brew install k3s`
 
 **Roadmap**:
-- **Phase 1 (MVP)**: Detection + guided setup (Issue #14)
-- **Phase 2**: Rancher Desktop deep integration (Issue #16)
-- **Phase 3**: Full bundling with VM/k3s binaries (Issue #15)
+- **MVP Phase 1**: Detection + guided setup (Issue #14)
+- **MVP Phase 2**: Rancher Desktop deep integration (Issue #16)
+- **Post-MVP**: Full bundling with VM/k3s binaries (Issue #15)
 
 **Why This Is the Right Approach**:
 - Similar to how VS Code, Docker initially shipped, most dev tools work
@@ -369,8 +369,8 @@ For **MVP** (Phase 1), we're prioritizing:
 
 ## Important Files
 
-- `SPEC.md` - Complete technical specification
-- `ROADMAP.md` - Product roadmap (5 phases, MVP through enterprise)
+- `docs/SPEC.md` - Complete technical specification (implementation milestones)
+- `docs/ROADMAP.md` - Product roadmap (3 phases: MVP Phase 1, MVP Phase 2, Post-MVP)
 - `docs/adr/` - Architecture Decision Records (key design decisions)
 - `app/src-tauri/tauri.conf.json` - Tauri configuration
 - `api/config/config.yaml` - API server configuration
@@ -668,7 +668,7 @@ kubectl get svc -n default registry
 
 1. Follow existing code structure
 2. Use defined naming conventions
-3. Update `SPEC.md` for architectural changes
+3. Update `docs/SPEC.md` for architectural changes
 4. Add tests for new features
 5. Ensure dark theme compatibility for UI changes
 
@@ -697,16 +697,29 @@ The pragmatic mix approach balances stability for MVP delivery with modern versi
 
 ## Current Phase
 
-**Phase 1**: Foundation (Weeks 1-2) - IN PROGRESS
-- ✅ Project structure
-- ✅ Specification complete
-- ✅ Tauri app scaffold (PR #5, #7 merged)
-- ✅ Functional tests (PR #9 merged)
-- ✅ Go API server (PR #13 merged)
-- ⏳ Kubernetes detection & setup guide (Issue #14)
-- ⏳ Base Docker image
+**MVP Phase 1: Foundation** - 70% COMPLETE
 
-See `ROADMAP.md` for detailed product roadmap and `SPEC.md` section 10 for technical phases.
+### Completed:
+- ✅ Infrastructure (Tauri app, Go API, k8s manifests)
+- ✅ Kubernetes detection & guided setup with SSE streaming
+- ✅ Cluster component installation (Knative, Traefik, Registry, BuildKit)
+- ✅ Workspace CRUD backend (with placeholder image)
+- ✅ Full frontend UI (setup wizard, workspace list)
+
+### In Progress:
+- ⏳ Docker images with AI agents (base, Next.js, Vue, Jupyter)
+- ⏳ Credential management backend
+- ⏳ Kubernetes Secret generation
+- ⏳ Replace nginx placeholder with real workspace images
+
+**Next**: Complete AI agent integration and credential backend, then move to testing phase.
+
+---
+
+**Understanding Phase Structure**:
+- **docs/ROADMAP.md** = Product release phases (what users get: MVP Phase 1 → MVP Phase 2 → Post-MVP)
+- **docs/SPEC.md Section 10** = Implementation milestones (internal dev tasks: 3 milestones for MVP Phase 1)
+- This distinction helps separate product planning from technical execution
 
 ---
 
@@ -1364,7 +1377,7 @@ After PR created:
 
 ## Getting Help
 
-- Read `SPEC.md` for detailed architecture
+- Read `docs/SPEC.md` for detailed architecture
 - Check `docs/` for guides
 - Review existing code patterns before implementing new features
 - Ask questions about design decisions, not just code

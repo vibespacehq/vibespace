@@ -2552,178 +2552,147 @@ $ workspace template import my-django-template.tar.gz
 
 ---
 
-## 10. Implementation Phases
+## 10. Implementation Milestones
 
-### Phase 1: Foundation (Weeks 1-2)
+**Note:** These are internal development milestones for **MVP Phase 1** (see ROADMAP.md for full product phases). MVP Phase 1 corresponds to ROADMAP "Foundation" - proving core workspace management works locally before adding production features.
 
-**Goal**: Basic infrastructure working
-
-#### Tasks:
-- [x] Project scaffolding
-  - Tauri app skeleton
-  - Go backend skeleton
-  - Basic React UI with routing
-- [x] k3s automation
-  - Installation script
-  - Health check API
-  - Uninstall script
-- [x] Local registry deployment
-  - registry:2 manifest
-  - NodePort service on 30500
-  - /etc/rancher/k3s/registries.yaml config
-- [x] BuildKit deployment
-  - Deployment manifest
-  - Service on port 1234
-  - Go client integration
-- [x] Base image build
-  - Dockerfile with code-server
-  - Push to local registry
-- [x] Basic workspace CRUD (without Knative)
-  - Simple Pod + Service
-  - PVC creation
-  - API endpoints
-
-**Deliverable**: Can create a workspace, access code-server via port-forward
+**Implementation Order** (SPEC.md Section 10) tracks **how** we build, while **Product Phases** (ROADMAP.md) track **what** we release to users.
 
 ---
 
-### Phase 2: Workspaces (Weeks 2-3)
+### Milestone 1: Infrastructure ✅ COMPLETE (Week 1)
 
-**Goal**: Full workspace lifecycle with templates
+**Goal**: Core platform infrastructure operational
 
-#### Tasks:
-- [x] Knative Serving integration
-  - Install Knative manifests
-  - Convert Pods to Knative Services
-  - Scale-to-zero configuration
-- [x] Template system
-  - Build 3 base templates (Next.js, Vue, Jupyter)
-  - Template metadata storage
-  - Template selection in create flow
-- [x] PVC management
-  - Dynamic provisioning
-  - Lifecycle tied to workspace
-  - Optional deletion on workspace removal
-- [x] Workspace status monitoring
-  - Poll Knative Service status
-  - WebSocket updates to frontend
-  - Start/stop operations
+#### Completed:
+- [x] **Project scaffolding**
+  - Tauri 2.x desktop app with React 19 + TypeScript UI
+  - Go 1.21+ API server with Gin framework
+  - Rust backend for Tauri native functionality
+  - Frontend component organization (ADR 0003)
+- [x] **Kubernetes manifests** (api/pkg/k8s/manifests/:2556-2755)
+  - Knative Serving v1.15.2 (CRDs: 6,536 lines, Core: 9,310 lines)
+  - Traefik v3.5.3 ingress controller (94 lines)
+  - Registry 2.8.3 local image storage (55 lines)
+  - BuildKit v0.17.3 container builder (45 lines)
+  - All manifests embedded via `go:embed`
+  - Component versions (ADR 0004)
+- [x] **Cluster detection & setup** (app/src/components/setup/components/KubernetesSetup.tsx:1-582)
+  - Detects k3s, Rancher Desktop, k3d installations
+  - Real-time component installation with SSE streaming (lines 160-189)
+  - Auto-installs Knative, Traefik, Registry, BuildKit if missing
+  - Full frontend → backend integration (API_ENDPOINTS.clusterStatus, clusterSetup)
+- [x] **API server** (api/cmd/server/main.go:1-97)
+  - Workspace CRUD endpoints (GET/POST/DELETE /api/v1/workspaces)
+  - Cluster management endpoints (GET/POST /api/v1/cluster/status, /setup)
+  - Kubernetes context switching (GET/POST /api/v1/cluster/contexts)
+  - SSE streaming for cluster setup progress
+- [x] **Frontend UI**
+  - Setup wizard flow (AuthenticationSetup → KubernetesSetup → ConfigurationSetup)
+  - Workspace list with status polling (app/src/hooks/useWorkspaces.ts:1-238)
+  - Full integration with backend APIs (app/src/lib/api-config.ts:1-54)
 
-**Deliverable**: Can create workspaces from templates, they scale to zero
-
----
-
-### Phase 3: Networking (Weeks 3-4)
-
-**Goal**: Local DNS and multi-port access
-
-#### Tasks:
-- [x] Traefik deployment
-  - Install manifest
-  - NodePort services
-  - Basic IngressRoute
-- [x] Local DNS setup
-  - /etc/hosts manipulation (requires sudo prompt)
-  - Auto-add entries on workspace create
-  - Auto-remove on workspace delete
-- [x] Dynamic IngressRoute creation
-  - Code-server route (port 8080)
-  - App port routes (e.g., 3000, 8000)
-  - Go API to create/delete IngressRoutes
-- [x] Port exposure API
-  - POST /workspaces/:id/expose
-  - Create new IngressRoute + DNS entry
-  - Update workspace URLs
-
-**Deliverable**: Access workspaces via `workspace-{id}.local`
+**Status**: ~70% of MVP Phase 1 complete. Infrastructure and UI foundation solid.
 
 ---
 
-### Phase 4: AI Integration (Week 4)
+### Milestone 2: Core Functionality ⏳ IN PROGRESS (Week 2-3)
 
-**Goal**: Seamless AI agent authentication via in-app credential management
+**Goal**: Complete workspace creation with AI agents and real images
 
-#### Tasks:
-- [x] Credential management UI
-  - Settings panel for adding/editing credentials
-  - Support for AI agents (Claude, OpenAI)
-  - Git config and SSH key management
-  - Secure storage using Tauri secure storage (OS keychain)
-- [x] Credential encryption
-  - AES-256 encryption at rest
-  - Secure retrieval for workspace creation
-- [x] SSH key generation
-  - In-app SSH key pair generation (ED25519, RSA)
-  - Public key display and copy
-  - Private key encrypted storage
-- [x] Kubernetes Secret generation
-  - Create secrets per-workspace from app credentials
-  - Environment variable injection
-  - SSH key volume mounts
-- [x] Extension pre-installation
-  - Claude Code extension in base image
-  - Auto-configure on first launch
-  - GitHub Copilot (if user has subscription)
+#### In Progress:
+- [ ] **Docker images with AI agents**:
+  - [ ] **Base image** (images/base/Dockerfile:1-38)
+    - ✅ code-server 4.20.0 installed
+    - ❌ Add Claude Code CLI installation
+    - ❌ Add CLAUDE.md agent instruction files
+    - ❌ Configure agent auto-start on workspace launch
+  - [ ] **Next.js template** (images/templates/nextjs/Dockerfile:1-35)
+    - ✅ Node.js 20 LTS + pnpm
+    - ✅ VS Code extensions (ESLint, Prettier)
+    - ❌ Add AI agent integration
+    - ❌ Add Next.js-specific CLAUDE.md instructions
+  - [ ] **Vue template** - CREATE NEW
+    - [ ] Vue 3 + Vite
+    - [ ] VS Code Vue extensions
+    - [ ] AI agent integration
+  - [ ] **Jupyter template** - CREATE NEW
+    - [ ] Python 3.11 + Jupyter Lab
+    - [ ] Data science libraries (numpy, pandas, matplotlib)
+    - [ ] AI agent integration
+- [ ] **Credential management backend**:
+  - [ ] API handler (api/pkg/handler/credential.go) - CREATE
+  - [ ] Service logic (api/pkg/credential/service.go) - CREATE
+  - [ ] Tauri secure storage integration
+  - [ ] API endpoints: GET/POST/PUT/DELETE /api/v1/credentials
+- [ ] **Kubernetes Secret generation**:
+  - [ ] Create secrets from app credentials
+  - [ ] Environment variable injection (ANTHROPIC_API_KEY, OPENAI_API_KEY)
+  - [ ] Git config injection (.gitconfig)
+  - [ ] SSH key volume mounts (read-only)
+- [ ] **Replace workspace placeholder** (api/pkg/workspace/service.go:134)
+  - ❌ Currently uses `nginx:alpine` placeholder
+  - [ ] Update to use real workspace images: `localhost:5000/workspace-{template}:latest`
+  - [ ] Dynamic container port based on template (8080 for code-server)
+  - [ ] PVC mounting at /workspace
 
-**Deliverable**: Login once in app, credentials available in all workspaces
+#### Blocked By:
+- Docker images must be built before workspace service can use them
+- Credential backend needed before secrets can be injected
 
----
-
-### Phase 5: Custom Templates (Week 4-5)
-
-**Goal**: Users can build custom templates
-
-#### Tasks:
-- [x] Template builder UI
-  - Monaco editor for Dockerfile
-  - Base image selector
-  - Metadata form (name, icon, description)
-- [x] BuildKit integration
-  - Build API endpoint
-  - SSE log streaming
-  - Progress indicators
-- [x] Template management
-  - List custom templates
-  - Edit existing templates
-  - Delete templates (+ registry cleanup)
-- [x] Error handling
-  - Parse BuildKit errors
-  - Display in UI with line numbers
-  - Retry mechanism
-
-**Deliverable**: Create custom templates via UI, use in workspaces
+**Target**: End of Week 3 - workspaces launch with AI agents, persistent storage, and credentials
 
 ---
 
-### Phase 6: Polish & Testing (Week 5)
+### Milestone 3: Integration & Testing 🔮 PLANNED (Week 3)
 
-**Goal**: Production-ready MVP
+**Goal**: Production-ready MVP for beta release
 
-#### Tasks:
-- [x] Embedded WebView
-  - Multi-tab support in Tauri
-  - Persistent tab state
-  - Context menu (Open in Browser, Reload, etc.)
-- [x] Resource monitoring
-  - Real-time CPU/Memory usage per workspace
-  - Cluster-wide resource dashboard
-  - Alerts for high usage
-- [x] Error handling
-  - User-friendly error messages
-  - Automatic retries for transient errors
-  - "Recover" actions for failed workspaces
-- [x] Documentation
-  - README with quick start
-  - Architecture diagram
-  - API documentation
-  - Troubleshooting guide
-- [x] Testing
-  - Unit tests (Go backend)
-  - Integration tests (API + k3s)
-  - E2E tests (Tauri app)
-  - Manual QA checklist
+#### Planned:
+- [ ] **Testing**:
+  - [ ] Backend unit tests (Go packages)
+  - [ ] Frontend component tests (Vitest + React Testing Library)
+  - [ ] Integration tests (API + k3s interaction)
+  - [ ] E2E tests (full workspace lifecycle: create → open → delete)
+  - [ ] Manual QA checklist
+- [ ] **Error handling**:
+  - [ ] User-friendly error messages
+  - [ ] Automatic retries for transient failures
+  - [ ] "Recover" actions for failed workspaces
+  - [ ] Graceful degradation when cluster unavailable
+- [ ] **Documentation finalization**:
+  - [ ] Update README with accurate feature status
+  - [ ] API documentation (endpoints, request/response formats)
+  - [ ] Troubleshooting guide (common issues, kubectl commands)
+  - [ ] Architecture diagrams
+- [ ] **Build & packaging**:
+  - [ ] Tauri app builds (.dmg for macOS, .exe for Windows, .deb for Linux)
+  - [ ] Docker images pushed to local registry
+  - [ ] Release artifacts uploaded to GitHub Releases
+- [ ] **Beta validation**:
+  - [ ] 10 beta users can create and use workspaces
+  - [ ] AI agents work successfully (Claude Code, OpenAI Codex)
+  - [ ] < 5 minutes from download to first workspace
+  - [ ] Positive feedback on core workspace management
 
-**Deliverable**: Stable MVP ready for beta users
+**Target**: End of Week 3 - Alpha release to 10 beta testers
+
+**Success Criteria (MVP Phase 1)**:
+- ✅ Kubernetes cluster auto-detected or guided setup complete
+- ✅ All infrastructure components installed (Knative, Traefik, Registry, BuildKit)
+- ✅ Users can create workspaces from templates (Next.js, Vue, Jupyter)
+- ✅ AI coding agents pre-configured and working (Claude Code, OpenAI Codex)
+- ✅ Workspaces have persistent storage (PVCs)
+- ✅ Code accessible via port-forward to localhost:8080
+- ✅ < 5 minutes from app launch to first workspace open
+
+---
+
+**What Comes After MVP Phase 1?**
+
+See ROADMAP.md for post-MVP features:
+- **MVP Phase 2** (Weeks 4-8): Knative scale-to-zero, custom template builder, multi-agent sidecars, cloud deployment (AWS/GCP/DigitalOcean), TLS certificates, custom domains
+- **Post-MVP** (Month 3+): Bundled Kubernetes (zero-config), template marketplace, CI/CD integration, monitoring, teams, enterprise features (SSO, audit logs, GitOps)
 
 ---
 

@@ -383,7 +383,7 @@ Brief description of changes
 1. **Automated checks** run (lint, test, build)
 2. **Maintainer review** (1-2 days typically)
 3. **Address feedback** if requested
-4. **Approval** � Squash merge
+4. **Approval** -> Squash merge
 5. **Branch deleted** automatically
 
 ---
@@ -441,23 +441,23 @@ Understanding the codebase:
 
 ```
 workspace/
-   app/              # Tauri desktop app
-      src/         # React frontend
-      src-tauri/   # Rust backend
-   api/              # Go API server
-      cmd/         # Entry points
-      pkg/         # Business logic
-   images/           # Docker images
-      base/        # Base workspace image
-      templates/   # Template images
-   k8s/              # Kubernetes manifests
-   script/           # Utility scripts
-   docs/             # Documentation
+ app/              # Tauri desktop app
+    src/         # React frontend
+    src-tauri/   # Rust backend
+ api/              # Go API server
+    cmd/         # Entry points
+    pkg/         # Business logic
+ images/           # Docker images
+    base/        # Base workspace image
+    templates/   # Template images
+ k8s/              # Kubernetes manifests
+ script/           # Utility scripts
+ docs/             # Documentation
 ```
 
 **Key files**:
-- `SPEC.md` - Technical specification (read this first!)
-- `.claude/claude.md` - AI assistant context
+- `docs/SPEC.md` - Technical specification (read this first!)
+- `.claude/CLAUDE.md` - AI assistant context
 - `api/config/config.yaml` - API configuration
 - `app/tailwind.config.js` - Design tokens
 
@@ -481,7 +481,7 @@ Follow the project standards:
 - Commits: `feat(#42): description`
 - PRs: `feat: Description (#42)`
 
-See `SPEC.md` Section 1.1 for complete conventions.
+See `docs/SPEC.md` Section 1.1 for complete conventions.
 
 ---
 
@@ -489,7 +489,7 @@ See `SPEC.md` Section 1.1 for complete conventions.
 
 ### When to Update Docs
 
-**SPEC.md**: Architecture or design changes
+**docs/SPEC.md**: Architecture or design changes
 **README.md**: Setup, installation, usage changes
 **Inline comments**: Complex logic, non-obvious decisions
 **API docs**: New endpoints, changed responses
@@ -507,15 +507,15 @@ See `SPEC.md` Section 1.1 for complete conventions.
 
 ### Resources
 
-- **SPEC.md**: Complete technical specification
-- **.claude/claude.md**: Development context
+- **docs/SPEC.md**: Complete technical specification
+- **.claude/CLAUDE.md**: Development context
 - **Issues**: Search existing issues for similar problems
 - **Discussions**: For questions, ideas, architecture discussions
 
 ### Communication
 
 **For questions**:
-1. Check SPEC.md first
+1. Check docs/SPEC.md first
 2. Search closed issues
 3. Create a discussion (not issue)
 4. Tag with `question` label
@@ -527,10 +527,11 @@ See `SPEC.md` Section 1.1 for complete conventions.
 4. Add logs/screenshots if helpful
 
 **For features**:
-1. Check roadmap in SPEC.md Section 10
-2. Create discussion first (for large features)
-3. Create issue with clear scope
-4. Reference SPEC.md sections
+1. Check docs/ROADMAP.md for product phases and current priorities
+2. Check docs/SPEC.md Section 10 for implementation milestones
+3. Create discussion first (for large features)
+4. Create issue with clear scope
+5. Reference relevant documentation sections
 
 ---
 
@@ -562,7 +563,7 @@ Contributors are recognized in:
 - GitHub contributors page
 - Release notes (for significant contributions)
 
-Thank you for contributing to Workspace! =�
+Thank you for contributing to Workspace!
 
 ---
 
@@ -603,10 +604,10 @@ gh pr merge 42 --squash             # Merge PR
 ### Links
 
 - **Repository**: https://github.com/yagizdagabak/workspaces
-- **Specification**: [SPEC.md](../SPEC.md)
+- **Specification**: [SPEC.md](SPEC.md)
 - **Issues**: https://github.com/yagizdagabak/workspaces/issues
 - **Discussions**: https://github.com/yagizdagabak/workspaces/discussions
 
 ---
 
-**Last Updated**: 2025-10-07
+**Last Updated**: 2025-10-16

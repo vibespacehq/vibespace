@@ -165,8 +165,8 @@ kubectl version --client
 
 ## Documentation
 
-- [Product Roadmap](ROADMAP.md) - Feature timeline and release strategy
-- [Technical Specification](SPEC.md) - Complete architecture and design
+- [Product Roadmap](docs/ROADMAP.md) - Feature timeline and release strategy
+- [Technical Specification](docs/SPEC.md) - Complete architecture and design
 - [Architecture Decisions](docs/adr/) - Records of key architectural decisions
 - [Contributing Guide](docs/CONTRIBUTING.md) - Development workflow
 - [AI Assistant Context](.claude/CLAUDE.md) - For AI code assistants
@@ -231,7 +231,7 @@ docker build -t workspace-base:latest .
   - [ ] Team collaboration
   - [ ] SSO/SAML
 
-See [ROADMAP.md](ROADMAP.md) for detailed product roadmap and [SPEC.md](SPEC.md) for technical specifications.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for detailed product roadmap and [docs/SPEC.md](docs/SPEC.md) for technical specifications.
 
 ## Contributing
 
