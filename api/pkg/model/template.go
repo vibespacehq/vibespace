@@ -20,6 +20,8 @@ type CreateWorkspaceRequest struct {
 	Persistent bool              `json:"persistent"`
 	Resources  *Resources        `json:"resources,omitempty"`
 	Env        map[string]string `json:"env,omitempty"`
+	GithubRepo string            `json:"github_repo,omitempty"` // Optional GitHub repo to clone
+	Agent      string            `json:"agent,omitempty"`       // AI agent: claude, codex, gemini
 }
 
 // UpdateWorkspaceRequest represents the request to update a workspace

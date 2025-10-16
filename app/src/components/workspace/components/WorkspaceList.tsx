@@ -35,7 +35,10 @@ export function WorkspaceList({ onCreateNew }: WorkspaceListProps) {
       <div className="workspace-list-container">
         <header className="workspace-header">
           <div className="header-content">
-            <h1>workspaces</h1>
+            <div className="header-title">
+              <img src="/icon-transparent.png" alt="workspaces" className="header-icon" />
+              <h1>workspaces</h1>
+            </div>
             <p>Loading workspaces...</p>
           </div>
         </header>
@@ -51,7 +54,10 @@ export function WorkspaceList({ onCreateNew }: WorkspaceListProps) {
       <div className="workspace-list-container">
         <header className="workspace-header">
           <div className="header-content">
-            <h1>workspaces</h1>
+            <div className="header-title">
+              <img src="/icon-transparent.png" alt="workspaces" className="header-icon" />
+              <h1>workspaces</h1>
+            </div>
             <p className="error-text">{error}</p>
           </div>
           <button className="btn-retry" onClick={refetch}>
@@ -67,7 +73,10 @@ export function WorkspaceList({ onCreateNew }: WorkspaceListProps) {
       <div className="workspace-list-container">
         <header className="workspace-header">
           <div className="header-content">
-            <h1>workspaces</h1>
+            <div className="header-title">
+              <img src="/icon-transparent.png" alt="workspaces" className="header-icon" />
+              <h1>workspaces</h1>
+            </div>
             <p>Containerized development environments with AI coding agents</p>
           </div>
           <button className="btn-new-workspace" onClick={onCreateNew}>
@@ -85,7 +94,10 @@ export function WorkspaceList({ onCreateNew }: WorkspaceListProps) {
     <div className="workspace-list-container">
       <header className="workspace-header">
         <div className="header-content">
-          <h1>workspaces</h1>
+          <div className="header-title">
+            <img src="/icon-transparent.png" alt="workspaces" className="header-icon" />
+            <h1>workspaces</h1>
+          </div>
           <p>
             {workspaces.length} {workspaces.length === 1 ? 'workspace' : 'workspaces'}
           </p>
