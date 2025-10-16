@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ExternalLink, Play, Square, Trash2, MoreVertical } from 'lucide-react';
 import type { Workspace } from '../../../lib/types';
 import '../styles/WorkspaceCard.css';
@@ -24,9 +24,32 @@ export function WorkspaceCard({
 }: WorkspaceCardProps) {
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isOperating, setIsOperating] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        menuRef.current &&
+        buttonRef.current &&
+        !menuRef.current.contains(event.target as Node) &&
+        !buttonRef.current.contains(event.target as Node)
+      ) {
+        setIsActionsOpen(false);
+      }
+    };
+
+    if (isActionsOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isActionsOpen]);
 
   const handleStart = async () => {
+    if (isOperating) return;
     setIsOperating(true);
+    setIsActionsOpen(false);
     try {
       await onStart(workspace.id);
     } finally {
@@ -35,7 +58,9 @@ export function WorkspaceCard({
   };
 
   const handleStop = async () => {
+    if (isOperating) return;
     setIsOperating(true);
+    setIsActionsOpen(false);
     try {
       await onStop(workspace.id);
     } finally {
@@ -44,6 +69,8 @@ export function WorkspaceCard({
   };
 
   const handleDelete = async () => {
+    if (isOperating) return;
+    setIsActionsOpen(false);
     if (confirm(`Delete workspace "${workspace.name}"? This action cannot be undone.`)) {
       setIsOperating(true);
       try {
@@ -96,51 +123,55 @@ export function WorkspaceCard({
             {workspace.status}
           </span>
         </div>
-        <button
-          className="workspace-menu-btn"
-          onClick={() => setIsActionsOpen(!isActionsOpen)}
-          aria-label="Workspace actions"
-          aria-expanded={isActionsOpen}
-        >
-          <MoreVertical size={18} />
-        </button>
-      </div>
-
-      {isActionsOpen && (
-        <div className="workspace-actions-menu">
-          {canStart && (
-            <button
-              onClick={handleStart}
-              disabled={isOperating}
-              className="menu-action"
-              aria-label="Start workspace"
-            >
-              <Play size={16} />
-              Start
-            </button>
-          )}
-          {canStop && (
-            <button
-              onClick={handleStop}
-              disabled={isOperating}
-              className="menu-action"
-              aria-label="Stop workspace"
-            >
-              <Square size={16} />
-              Stop
-            </button>
-          )}
+        <div className="workspace-menu-container">
           <button
-            onClick={handleDelete}
+            ref={buttonRef}
+            className="workspace-menu-btn"
+            onClick={() => setIsActionsOpen(!isActionsOpen)}
+            aria-label="Workspace actions"
+            aria-expanded={isActionsOpen}
             disabled={isOperating}
-            className="menu-action menu-action-danger"
-            aria-label="Delete workspace"
           >
-            <Trash2 size={16} />
-            Delete
+            <MoreVertical size={18} />
           </button>
+
+          {isActionsOpen && (
+            <div ref={menuRef} className="workspace-actions-menu">
+              {canStart && (
+                <button
+                  onClick={handleStart}
+                  disabled={isOperating}
+                  className="menu-action"
+                  aria-label="Start workspace"
+                >
+                  <Play size={16} />
+                  Start
+                </button>
+              )}
+              {canStop && (
+                <button
+                  onClick={handleStop}
+                  disabled={isOperating}
+                  className="menu-action"
+                  aria-label="Stop workspace"
+                >
+                  <Square size={16} />
+                  Stop
+                </button>
+              )}
+              <button
+                onClick={handleDelete}
+                disabled={isOperating}
+                className="menu-action menu-action-danger"
+                aria-label="Delete workspace"
+              >
+                <Trash2 size={16} />
+                Delete
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       <div className="workspace-card-body">
         <div className="workspace-meta">

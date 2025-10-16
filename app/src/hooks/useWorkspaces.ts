@@ -44,14 +44,18 @@ export function useWorkspaces(): UseWorkspacesReturn {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   /**
    * Fetches the list of all workspaces from the API.
+   * @param showLoading - Whether to show loading state (true for initial load, false for polling)
    * @throws {Error} If API request fails
    */
-  const fetchWorkspaces = useCallback(async () => {
+  const fetchWorkspaces = useCallback(async (showLoading = false) => {
     try {
-      setIsLoading(true);
+      if (showLoading) {
+        setIsLoading(true);
+      }
       setError(null);
 
       const data = await apiFetch<{ workspaces: Workspace[] }>(
@@ -59,14 +63,20 @@ export function useWorkspaces(): UseWorkspacesReturn {
       );
 
       setWorkspaces(data.workspaces || []);
+
+      if (isInitialLoad) {
+        setIsInitialLoad(false);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to fetch workspaces:', err);
       setError(`Failed to load workspaces: ${message}`);
     } finally {
-      setIsLoading(false);
+      if (showLoading) {
+        setIsLoading(false);
+      }
     }
-  }, []);
+  }, [isInitialLoad]);
 
   /**
    * Creates a new workspace with the specified configuration.
@@ -100,6 +110,20 @@ export function useWorkspaces(): UseWorkspacesReturn {
   );
 
   /**
+   * Updates a workspace's status optimistically (before API response).
+   * @param id - Workspace ID
+   * @param status - New status to set
+   */
+  const updateWorkspaceStatus = useCallback((id: string, status: Workspace['status']) => {
+    console.log(`[useWorkspaces] Optimistically updating workspace ${id} to status: ${status}`);
+    setWorkspaces((prev) => {
+      const updated = prev.map((ws) => (ws.id === id ? { ...ws, status } : ws));
+      console.log('[useWorkspaces] Updated workspaces:', updated);
+      return updated;
+    });
+  }, []);
+
+  /**
    * Deletes a workspace by ID.
    * @param id - Workspace ID to delete
    * @throws {Error} If deletion fails
@@ -107,19 +131,25 @@ export function useWorkspaces(): UseWorkspacesReturn {
   const deleteWorkspace = useCallback(
     async (id: string): Promise<void> => {
       try {
+        // Optimistically update status
+        updateWorkspaceStatus(id, 'stopping');
+
         await apiFetch(`${API_ENDPOINTS.workspaces}/${id}`, {
           method: 'DELETE',
         });
 
-        // Refresh workspace list after deletion
+        // Wait a bit to let user see the "stopping" status, then refresh
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchWorkspaces();
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error('Failed to delete workspace:', err);
+        // Revert status on error
+        await fetchWorkspaces();
         throw new Error(`Failed to delete workspace: ${message}`);
       }
     },
-    [fetchWorkspaces]
+    [fetchWorkspaces, updateWorkspaceStatus]
   );
 
   /**
@@ -130,19 +160,25 @@ export function useWorkspaces(): UseWorkspacesReturn {
   const startWorkspace = useCallback(
     async (id: string): Promise<void> => {
       try {
+        // Optimistically update status
+        updateWorkspaceStatus(id, 'starting');
+
         await apiFetch(`${API_ENDPOINTS.workspaces}/${id}/start`, {
           method: 'POST',
         });
 
-        // Refresh workspace list to get updated status
+        // Wait a bit to let user see the "starting" status, then refresh
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchWorkspaces();
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error('Failed to start workspace:', err);
+        // Revert status on error
+        await fetchWorkspaces();
         throw new Error(`Failed to start workspace: ${message}`);
       }
     },
-    [fetchWorkspaces]
+    [fetchWorkspaces, updateWorkspaceStatus]
   );
 
   /**
@@ -153,24 +189,39 @@ export function useWorkspaces(): UseWorkspacesReturn {
   const stopWorkspace = useCallback(
     async (id: string): Promise<void> => {
       try {
+        // Optimistically update status
+        updateWorkspaceStatus(id, 'stopping');
+
         await apiFetch(`${API_ENDPOINTS.workspaces}/${id}/stop`, {
           method: 'POST',
         });
 
-        // Refresh workspace list to get updated status
+        // Wait a bit to let user see the "stopping" status, then refresh
+        await new Promise(resolve => setTimeout(resolve, 500));
         await fetchWorkspaces();
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error('Failed to stop workspace:', err);
+        // Revert status on error
+        await fetchWorkspaces();
         throw new Error(`Failed to stop workspace: ${message}`);
       }
     },
-    [fetchWorkspaces]
+    [fetchWorkspaces, updateWorkspaceStatus]
   );
 
-  // Fetch workspaces on mount
+  // Fetch workspaces on mount (with loading state)
   useEffect(() => {
-    fetchWorkspaces();
+    fetchWorkspaces(true);
+  }, [fetchWorkspaces]);
+
+  // Poll for status updates every 3 seconds (without loading state)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchWorkspaces(false); // Background refresh, no loading state
+    }, 3000);
+
+    return () => clearInterval(interval);
   }, [fetchWorkspaces]);
 
   return {

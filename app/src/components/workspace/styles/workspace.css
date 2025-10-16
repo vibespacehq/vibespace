@@ -48,6 +48,19 @@
   gap: var(--spacing-2);
 }
 
+.header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.header-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
 .header-content h1 {
   margin: 0;
   font-size: 2rem;

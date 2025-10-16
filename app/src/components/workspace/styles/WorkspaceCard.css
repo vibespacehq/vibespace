@@ -46,6 +46,11 @@
   word-break: break-word;
 }
 
+.workspace-menu-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .workspace-menu-btn {
   background: transparent;
   border: 1px solid var(--border);
@@ -60,10 +65,15 @@
   flex-shrink: 0;
 }
 
-.workspace-menu-btn:hover {
+.workspace-menu-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.05);
   border-color: var(--accent-primary);
   color: var(--accent-primary);
+}
+
+.workspace-menu-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Status Badge */
@@ -104,6 +114,10 @@
 
 /* Actions Menu */
 .workspace-actions-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -112,6 +126,19 @@
   border-radius: var(--radius-sm);
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  animation: menuFadeIn 0.15s ease;
+}
+
+@keyframes menuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .menu-action {
