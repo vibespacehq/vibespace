@@ -24,8 +24,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const [selectedContext, setSelectedContext] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSwitchingContext, setIsSwitchingContext] = useState(false);
-  const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null);
-  const isMountedRef = useRef(true);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   // Fetch available contexts when Kubernetes is detected
   useEffect(() => {
@@ -36,15 +35,14 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     }
   }, [status, isLoading]);
 
-  // Cleanup EventSource on component unmount and prevent memory leaks
+  // Cleanup EventSource on component unmount
   useEffect(() => {
     return () => {
-      isMountedRef.current = false;
-      if (eventSourceRef) {
-        eventSourceRef.close();
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
       }
     };
-  }, [eventSourceRef]);
+  }, []);
 
   /**
    * Fetches available Kubernetes contexts from the API.
@@ -157,56 +155,72 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     setError(null);
 
     try {
+      console.log('Creating EventSource:', API_ENDPOINTS.clusterSetup);
       const eventSource = new EventSource(API_ENDPOINTS.clusterSetup);
-      setEventSourceRef(eventSource);
+      eventSourceRef.current = eventSource;
+
+      console.log('EventSource created, readyState:', eventSource.readyState);
+
+      eventSource.onopen = () => {
+        console.log('EventSource connection opened');
+      };
 
       eventSource.addEventListener('progress', (event) => {
-        if (!isMountedRef.current) return;
+        console.log('Progress event received:', event.data);
         const progress: SetupProgress = JSON.parse(event.data);
-        setSetupProgress(prev => ({
-          ...prev,
-          [progress.component]: progress
-        }));
+        console.log('Parsed progress:', progress);
+        setSetupProgress(prev => {
+          const updated = {
+            ...prev,
+            [progress.component]: progress
+          };
+          console.log('Updated setupProgress:', updated);
+          return updated;
+        });
       });
 
       eventSource.addEventListener('complete', (event) => {
-        if (!isMountedRef.current) return;
+        console.log('Complete event received:', event.data);
         console.log('Setup complete:', JSON.parse(event.data));
         eventSource.close();
-        setEventSourceRef(null);
+        eventSourceRef.current = null;
         setSetupState('ready');
       });
 
       eventSource.addEventListener('error', (event) => {
-        if (!isMountedRef.current) return;
+        console.log('Error event received:', event);
         const messageEvent = event as MessageEvent;
         const data = JSON.parse(messageEvent.data);
         console.error('Setup error:', data);
         setError(data.error || 'Setup failed');
         eventSource.close();
-        setEventSourceRef(null);
+        eventSourceRef.current = null;
         setSetupState('error');
       });
 
       eventSource.onerror = async (err) => {
-        console.error('EventSource closed or error:', err);
+        console.error('EventSource onerror triggered:', err);
+        console.error('EventSource readyState:', eventSource.readyState);
         eventSource.close();
-        setEventSourceRef(null);
-
-        if (!isMountedRef.current) return;
+        eventSourceRef.current = null;
 
         // Check cluster status to determine if setup completed successfully
         try {
+          console.log('Checking cluster status after error...');
           const clusterStat = await apiFetch<ClusterStatus>(API_ENDPOINTS.clusterStatus);
+          console.log('Cluster status:', clusterStat);
 
           if (clusterStat.healthy) {
+            console.log('Cluster is healthy, marking as ready');
             setSetupState('ready');
           } else {
+            console.log('Cluster is not healthy');
             setError('Installation incomplete. Please retry.');
             setSetupState('error');
           }
         } catch (fetchErr) {
           const message = fetchErr instanceof Error ? fetchErr.message : 'Unknown error';
+          console.error('Failed to check cluster status:', fetchErr);
           setError(`Connection to API server lost: ${message}`);
           setSetupState('error');
         }

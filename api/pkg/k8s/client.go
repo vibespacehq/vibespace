@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,10 +19,22 @@ const (
 	WorkspaceNamespace = "workspace"
 )
 
+// PortForward represents an active kubectl port-forward
+type PortForward struct {
+	Service    string
+	Namespace  string
+	LocalPort  int
+	RemotePort int
+	cmd        *exec.Cmd
+	cancel     context.CancelFunc
+}
+
 // Client wraps the Kubernetes client
 type Client struct {
-	clientset *kubernetes.Clientset
-	config    *rest.Config
+	clientset    *kubernetes.Clientset
+	config       *rest.Config
+	portForwards map[string]*PortForward
+	pfMutex      sync.Mutex
 }
 
 // NewClient creates a new Kubernetes client
@@ -36,8 +50,9 @@ func NewClient() (*Client, error) {
 	}
 
 	return &Client{
-		clientset: clientset,
-		config:    config,
+		clientset:    clientset,
+		config:       config,
+		portForwards: make(map[string]*PortForward),
 	}, nil
 }
 
@@ -99,4 +114,91 @@ func (c *Client) EnsureNamespace(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// StartPortForward starts a kubectl port-forward to a service
+// Returns immediately after starting the port-forward process in the background
+func (c *Client) StartPortForward(ctx context.Context, namespace, service string, localPort, remotePort int) error {
+	c.pfMutex.Lock()
+	defer c.pfMutex.Unlock()
+
+	key := fmt.Sprintf("%s/%s", namespace, service)
+
+	// Check if port-forward already exists
+	if pf, exists := c.portForwards[key]; exists {
+		if pf.LocalPort == localPort && pf.RemotePort == remotePort {
+			// Already running with same ports, nothing to do
+			return nil
+		}
+		// Different ports, stop existing and create new
+		c.stopPortForwardLocked(key)
+	}
+
+	// Create context for port-forward
+	pfCtx, cancel := context.WithCancel(context.Background())
+
+	// Build kubectl port-forward command
+	cmd := exec.CommandContext(pfCtx, "kubectl", "port-forward",
+		"-n", namespace,
+		fmt.Sprintf("svc/%s", service),
+		fmt.Sprintf("%d:%d", localPort, remotePort),
+	)
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		cancel()
+		return fmt.Errorf("failed to start port-forward: %w", err)
+	}
+
+	// Store port-forward info
+	c.portForwards[key] = &PortForward{
+		Service:    service,
+		Namespace:  namespace,
+		LocalPort:  localPort,
+		RemotePort: remotePort,
+		cmd:        cmd,
+		cancel:     cancel,
+	}
+
+	return nil
+}
+
+// StopPortForward stops a kubectl port-forward
+func (c *Client) StopPortForward(namespace, service string) error {
+	c.pfMutex.Lock()
+	defer c.pfMutex.Unlock()
+
+	key := fmt.Sprintf("%s/%s", namespace, service)
+	return c.stopPortForwardLocked(key)
+}
+
+// stopPortForwardLocked stops a port-forward (must be called with lock held)
+func (c *Client) stopPortForwardLocked(key string) error {
+	pf, exists := c.portForwards[key]
+	if !exists {
+		return nil // Already stopped
+	}
+
+	// Cancel context to stop kubectl
+	if pf.cancel != nil {
+		pf.cancel()
+	}
+
+	// Wait for process to exit
+	if pf.cmd != nil && pf.cmd.Process != nil {
+		_ = pf.cmd.Wait() // Ignore error, process may already be dead
+	}
+
+	delete(c.portForwards, key)
+	return nil
+}
+
+// StopAllPortForwards stops all active port-forwards
+func (c *Client) StopAllPortForwards() {
+	c.pfMutex.Lock()
+	defer c.pfMutex.Unlock()
+
+	for key := range c.portForwards {
+		_ = c.stopPortForwardLocked(key)
+	}
 }

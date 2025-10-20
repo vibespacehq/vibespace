@@ -21,54 +21,54 @@ func NewTemplateHandler() *TemplateHandler {
 
 // List handles GET /api/v1/templates
 func (h *TemplateHandler) List(c *gin.Context) {
+	// Template metadata reflecting October 2025 stable versions
+	// Images are built during cluster setup and stored in local registry
+	// Each template supports multiple AI agents (claude, codex, gemini)
+	// Actual image name: localhost:5000/workspace-{template}-{agent}:latest
+	supportedAgents := []string{"claude", "codex", "gemini"}
+
 	templates := []model.Template{
 		{
 			ID:          "nextjs",
-			Name:        "Next.js",
-			Description: "React framework with TypeScript",
-			Image:       "workspace-nextjs:latest",
+			Name:        "Next.js 15.5",
+			Description: "Next.js 15.5.5 with React 19, TypeScript 5.9.3, Tailwind CSS 4.1, and Turbopack",
+			Image:       "localhost:5000/workspace-nextjs", // -agent suffix added at runtime
 			Category:    "web",
-			Tools:       []string{"Node.js", "pnpm", "TypeScript"},
+			Tools:       []string{"Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", "TypeScript 5.9.3", "code-server 4.104.3"},
 			Ports: map[string]int{
-				"dev": 3000,
+				"code-server": 8080,
+				"dev":         3000,
 			},
-			CreatedAt: "2025-01-01T00:00:00Z",
+			Agents:    supportedAgents,
+			CreatedAt: "2025-10-16T00:00:00Z",
 		},
 		{
 			ID:          "vue",
-			Name:        "Vue 3",
-			Description: "Progressive JavaScript framework",
-			Image:       "workspace-vue:latest",
+			Name:        "Vue 3.5",
+			Description: "Vue 3.5.22 with Vite 7.1.10, TypeScript 5.9.3, and Composition API",
+			Image:       "localhost:5000/workspace-vue", // -agent suffix added at runtime
 			Category:    "web",
-			Tools:       []string{"Node.js", "Vite", "TypeScript"},
+			Tools:       []string{"Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", "Vite 7.1.10", "TypeScript 5.9.3", "code-server 4.104.3"},
 			Ports: map[string]int{
-				"dev": 5173,
+				"code-server": 8080,
+				"dev":         5173,
 			},
-			CreatedAt: "2025-01-01T00:00:00Z",
+			Agents:    supportedAgents,
+			CreatedAt: "2025-10-16T00:00:00Z",
 		},
 		{
-			ID:          "python",
-			Name:        "Python",
-			Description: "Python development environment",
-			Image:       "workspace-python:latest",
-			Category:    "backend",
-			Tools:       []string{"Python", "pip", "poetry"},
+			ID:          "jupyter",
+			Name:        "Jupyter Lab 4.4",
+			Description: "Python 3.14.0 with Jupyter Lab 4.4.9, NumPy, Pandas, Matplotlib, and data science libraries",
+			Image:       "localhost:5000/workspace-jupyter", // -agent suffix added at runtime
+			Category:    "datascience",
+			Tools:       []string{"Python 3.14.0", "Jupyter Lab 4.4.9", "NumPy", "Pandas", "Matplotlib", "Scikit-learn", "code-server 4.104.3"},
 			Ports: map[string]int{
-				"app": 8000,
+				"code-server": 8080,
+				"jupyter":     8888,
 			},
-			CreatedAt: "2025-01-01T00:00:00Z",
-		},
-		{
-			ID:          "go",
-			Name:        "Go",
-			Description: "Go development environment",
-			Image:       "workspace-go:latest",
-			Category:    "backend",
-			Tools:       []string{"Go", "Air"},
-			Ports: map[string]int{
-				"app": 8080,
-			},
-			CreatedAt: "2025-01-01T00:00:00Z",
+			Agents:    supportedAgents,
+			CreatedAt: "2025-10-16T00:00:00Z",
 		},
 	}
 
@@ -81,19 +81,53 @@ func (h *TemplateHandler) List(c *gin.Context) {
 func (h *TemplateHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 
-	// Hardcoded for now - would fetch from database/registry
+	// Template metadata reflecting October 2025 stable versions
+	// Images are built during cluster setup and stored in local registry
+	// Each template supports multiple AI agents (claude, codex, gemini)
+	supportedAgents := []string{"claude", "codex", "gemini"}
+
 	templates := map[string]model.Template{
 		"nextjs": {
 			ID:          "nextjs",
-			Name:        "Next.js",
-			Description: "React framework with TypeScript",
-			Image:       "workspace-nextjs:latest",
+			Name:        "Next.js 15.5",
+			Description: "Next.js 15.5.5 with React 19, TypeScript 5.9.3, Tailwind CSS 4.1, and Turbopack",
+			Image:       "localhost:5000/workspace-nextjs",
 			Category:    "web",
-			Tools:       []string{"Node.js", "pnpm", "TypeScript"},
+			Tools:       []string{"Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", "TypeScript 5.9.3", "code-server 4.104.3"},
 			Ports: map[string]int{
-				"dev": 3000,
+				"code-server": 8080,
+				"dev":         3000,
 			},
-			CreatedAt: "2025-01-01T00:00:00Z",
+			Agents:    supportedAgents,
+			CreatedAt: "2025-10-16T00:00:00Z",
+		},
+		"vue": {
+			ID:          "vue",
+			Name:        "Vue 3.5",
+			Description: "Vue 3.5.22 with Vite 7.1.10, TypeScript 5.9.3, and Composition API",
+			Image:       "localhost:5000/workspace-vue",
+			Category:    "web",
+			Tools:       []string{"Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", "Vite 7.1.10", "TypeScript 5.9.3", "code-server 4.104.3"},
+			Ports: map[string]int{
+				"code-server": 8080,
+				"dev":         5173,
+			},
+			Agents:    supportedAgents,
+			CreatedAt: "2025-10-16T00:00:00Z",
+		},
+		"jupyter": {
+			ID:          "jupyter",
+			Name:        "Jupyter Lab 4.4",
+			Description: "Python 3.14.0 with Jupyter Lab 4.4.9, NumPy, Pandas, Matplotlib, and data science libraries",
+			Image:       "localhost:5000/workspace-jupyter",
+			Category:    "datascience",
+			Tools:       []string{"Python 3.14.0", "Jupyter Lab 4.4.9", "NumPy", "Pandas", "Matplotlib", "Scikit-learn", "code-server 4.104.3"},
+			Ports: map[string]int{
+				"code-server": 8080,
+				"jupyter":     8888,
+			},
+			Agents:    supportedAgents,
+			CreatedAt: "2025-10-16T00:00:00Z",
 		},
 	}
 

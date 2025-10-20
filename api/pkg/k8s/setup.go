@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"workspace/pkg/template"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -38,12 +40,7 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 		return fmt.Errorf("failed to check components: %w", err)
 	}
 
-	// If everything is ready, we're done
-	if components.AllComponentsReady() {
-		return nil
-	}
-
-	// Install missing components
+	// Install missing components (skip if already installed)
 	if !components.Knative.Installed || !components.Knative.Healthy {
 		if progressFn != nil {
 			progressFn(SetupProgress{Component: "knative", Status: "installing", Message: "Installing Knative Serving..."})
@@ -102,6 +99,12 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 		if progressFn != nil {
 			progressFn(SetupProgress{Component: "buildkit", Status: "done", Message: "BuildKit installed"})
 		}
+	}
+
+	// Build template images after BuildKit is ready
+	// BuildTemplateImages sends its own progress updates for each image
+	if err := c.BuildTemplateImages(ctx, progressFn); err != nil {
+		return fmt.Errorf("failed to build template images: %w", err)
 	}
 
 	// Ensure workspace namespace exists
@@ -299,4 +302,40 @@ func (c *Client) restMapper() (meta.RESTMapper, error) {
 
 	// Create REST mapper
 	return restmapper.NewDiscoveryRESTMapper(apiGroupResources), nil
+}
+
+// BuildTemplateImages builds all template images using BuildKit
+// This is called after BuildKit is installed and ready
+func (c *Client) BuildTemplateImages(ctx context.Context, progressFn SetupProgressFunc) error {
+	// Create builder instance with k8s client for port-forwarding
+	// BuildKit runs inside the cluster, so use cluster-internal registry address
+	builder := template.NewBuilder("registry.default.svc.cluster.local:5000", c)
+
+	// Start port-forwards to BuildKit and Registry
+	if err := builder.EnsurePortForwards(ctx); err != nil {
+		return fmt.Errorf("failed to setup port-forwards: %w", err)
+	}
+	defer builder.StopPortForwards()
+
+	// Convert template.BuildProgress to SetupProgress
+	buildProgressFn := func(progress template.BuildProgress) {
+		if progressFn != nil {
+			progressFn(SetupProgress{
+				Component: progress.Template,
+				Status:    progress.Status,
+				Message:   progress.Message,
+				Error:     progress.Error,
+			})
+		}
+	}
+
+	// Build all base images and template images
+	// This will build 12 images total:
+	// - 3 base images (claude, codex, gemini)
+	// - 9 template images (nextjs×3, vue×3, jupyter×3)
+	if err := builder.BuildAllTemplates(ctx, buildProgressFn); err != nil {
+		return fmt.Errorf("failed to build template images: %w", err)
+	}
+
+	return nil
 }
