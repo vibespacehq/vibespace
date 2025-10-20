@@ -63,38 +63,6 @@ func (b *Builder) waitForBuildKit(ctx context.Context, timeout time.Duration) er
 	}
 }
 
-// waitForRegistry polls Registry endpoint until it's ready
-func (b *Builder) waitForRegistry(ctx context.Context, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	httpClient := &http.Client{
-		Timeout: time.Second,
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-			// Try to hit registry v2 API (use 127.0.0.1 for IPv4)
-			resp, err := httpClient.Get("http://127.0.0.1:5000/v2/")
-			if err == nil {
-				resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					fmt.Println("✓ Registry port-forward ready at 127.0.0.1:5000")
-					return nil
-				}
-			}
-
-			if time.Now().After(deadline) {
-				return fmt.Errorf("timeout waiting for Registry to be ready: %w", err)
-			}
-		}
-	}
-}
-
 // EnsurePortForwards ensures BuildKit is port-forwarded
 // Note: Registry doesn't need port-forward since BuildKit accesses it via cluster DNS
 func (b *Builder) EnsurePortForwards(ctx context.Context) error {
