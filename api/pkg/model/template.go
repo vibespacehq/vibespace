@@ -5,10 +5,11 @@ type Template struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
-	Image       string            `json:"image"`
+	Image       string            `json:"image"` // Base image name (without agent suffix)
 	Category    string            `json:"category"`
 	Tools       []string          `json:"tools"`
 	Ports       map[string]int    `json:"ports"`
+	Agents      []string          `json:"agents"` // Supported AI agents (claude, codex, gemini)
 	Env         map[string]string `json:"env"`
 	CreatedAt   string            `json:"created_at"`
 }
