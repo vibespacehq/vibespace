@@ -128,15 +128,34 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 		})
 	}
 
-	// Determine image to use
-	// TODO: Replace with actual workspace images once built
-	// For now, use nginx:alpine as a lightweight placeholder for testing
-	workspaceImage := "nginx:alpine" // Temporary for CRUD testing
-	containerPort := int32(80)       // nginx default port
+	// Determine image to use from local registry
+	// Image naming: workspace-{template}-{agent}:latest (e.g., workspace-nextjs-claude:latest)
+	// Default to "claude" if no agent specified
+	agent := req.Agent
+	if agent == "" {
+		agent = "claude"
+	}
+	workspaceImage := fmt.Sprintf("localhost:5000/workspace-%s-%s:latest", req.Template, agent)
 
-	// In production, this will be:
-	// workspaceImage := fmt.Sprintf("workspace-%s:latest", req.Template)
-	// containerPort := int32(8080) // code-server default port
+	// Configure ports based on template
+	// All templates expose code-server on port 8080
+	// Jupyter also exposes Jupyter Lab on port 8888
+	ports := []corev1.ContainerPort{
+		{
+			Name:          "code-server",
+			ContainerPort: 8080,
+			Protocol:      corev1.ProtocolTCP,
+		},
+	}
+
+	// Add Jupyter Lab port if this is a Jupyter workspace
+	if req.Template == "jupyter" {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          "jupyter",
+			ContainerPort: 8888,
+			Protocol:      corev1.ProtocolTCP,
+		})
+	}
 
 	// Create pod
 	pod := &corev1.Pod{
@@ -158,15 +177,9 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 			InitContainers: initContainers,
 			Containers: []corev1.Container{
 				{
-					Name:  "code-server",
-					Image: workspaceImage,
-					Ports: []corev1.ContainerPort{
-						{
-							Name:          "http",
-							ContainerPort: containerPort,
-							Protocol:      corev1.ProtocolTCP,
-						},
-					},
+					Name:         "code-server",
+					Image:        workspaceImage,
+					Ports:        ports,
 					Env:          env,
 					VolumeMounts: volumeMounts,
 					// Resources will be added later
@@ -297,6 +310,17 @@ func podToWorkspace(pod *corev1.Pod) *model.Workspace {
 	id := pod.Labels["workspace.dev/id"]
 	template := pod.Labels["workspace.dev/template"]
 
+	// Build URLs based on template
+	// All templates expose code-server on port 8080
+	urls := map[string]string{
+		"code-server": fmt.Sprintf("http://workspace-%s.local", id),
+	}
+
+	// Jupyter template also exposes Jupyter Lab on port 8888
+	if template == "jupyter" {
+		urls["jupyter"] = fmt.Sprintf("http://workspace-%s-8888.local", id)
+	}
+
 	return &model.Workspace{
 		ID:       id,
 		Name:     pod.Labels["app.kubernetes.io/name"],
@@ -307,9 +331,7 @@ func podToWorkspace(pod *corev1.Pod) *model.Workspace {
 			Memory:  "2Gi",
 			Storage: "10Gi",
 		},
-		URLs: map[string]string{
-			"code-server": fmt.Sprintf("http://workspace-%s.local", id),
-		},
+		URLs:       urls,
 		Persistent: true,
 		CreatedAt:  pod.CreationTimestamp.Format(time.RFC3339),
 	}

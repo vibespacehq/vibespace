@@ -2,6 +2,33 @@ import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { KubernetesStatus } from '../lib/types';
 
+// Check if running in Tauri or browser
+const isTauri = '__TAURI__' in window;
+
+/**
+ * Hook to detect and monitor Kubernetes cluster availability.
+ *
+ * Detects if Kubernetes (kubectl, k3s, Rancher Desktop, etc.) is available
+ * on the system. In Tauri mode, uses native OS calls. In browser mode,
+ * mocks availability for development.
+ *
+ * @returns Object containing cluster status, loading state, error state, and refetch function
+ *
+ * @example
+ * ```tsx
+ * function SetupPage() {
+ *   const { status, isLoading, error, refetch } = useKubernetesStatus();
+ *
+ *   if (isLoading) return <Spinner />;
+ *   if (!status?.available) return <InstallInstructions />;
+ *
+ *   return <ClusterInfo version={status.version} type={status.installType} />;
+ * }
+ * ```
+ *
+ * @see {@link KubernetesStatus} for status object structure
+ * @public
+ */
 export function useKubernetesStatus() {
   const [status, setStatus] = useState<KubernetesStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -12,7 +39,21 @@ export function useKubernetesStatus() {
     setError(null);
 
     try {
-      const result = await invoke<KubernetesStatus>('detect_kubernetes');
+      let result: KubernetesStatus;
+
+      if (isTauri) {
+        // Native app mode - use Tauri invoke
+        result = await invoke<KubernetesStatus>('detect_kubernetes');
+      } else {
+        // Browser mode - mock as available for development
+        result = {
+          available: true,
+          installType: 'k3d',
+          version: 'development',
+          suggestedAction: undefined,
+        };
+      }
+
       setStatus(result);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
@@ -58,6 +99,7 @@ export function useKubernetesStatus() {
  * ```
  */
 export async function checkKubectl(): Promise<boolean> {
+  if (!isTauri) return true; // Mock in browser mode
   return await invoke<boolean>('check_kubectl');
 }
 
@@ -76,6 +118,7 @@ export async function checkKubectl(): Promise<boolean> {
  * ```
  */
 export async function findKubeconfig(): Promise<string | null> {
+  if (!isTauri) return '~/.kube/config'; // Mock in browser mode
   return await invoke<string | null>('find_kubeconfig');
 }
 
@@ -95,6 +138,7 @@ export async function findKubeconfig(): Promise<string | null> {
  * ```
  */
 export async function checkClusterHealth(kubeconfigPath?: string): Promise<boolean> {
+  if (!isTauri) return true; // Mock in browser mode
   return await invoke<boolean>('check_cluster_health', { kubeconfigPath });
 }
 
@@ -112,6 +156,7 @@ export async function checkClusterHealth(kubeconfigPath?: string): Promise<boole
  * ```
  */
 export async function detectInstallType(kubeconfigPath?: string): Promise<string> {
+  if (!isTauri) return 'k3d'; // Mock in browser mode
   return await invoke<string>('detect_install_type', { kubeconfigPath });
 }
 
@@ -128,5 +173,6 @@ export async function detectInstallType(kubeconfigPath?: string): Promise<string
  * ```
  */
 export async function getClusterVersion(kubeconfigPath?: string): Promise<string | null> {
+  if (!isTauri) return 'v1.27.3+k3s1'; // Mock in browser mode
   return await invoke<string | null>('get_cluster_version', { kubeconfigPath });
 }
