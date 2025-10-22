@@ -697,7 +697,7 @@ The pragmatic mix approach balances stability for MVP delivery with modern versi
 
 ## Current Phase
 
-**MVP Phase 1: Foundation** - 70% COMPLETE
+**MVP Phase 1: Foundation** - 85% COMPLETE
 
 ### Completed:
 - ✅ Infrastructure (Tauri app, Go API, k8s manifests)
@@ -705,14 +705,15 @@ The pragmatic mix approach balances stability for MVP delivery with modern versi
 - ✅ Cluster component installation (Knative, Traefik, Registry, BuildKit)
 - ✅ Workspace CRUD backend (with placeholder image)
 - ✅ Full frontend UI (setup wizard, workspace list)
+- ✅ Docker images with AI agents (base, Next.js, Vue, Jupyter) - **PR #38**
+- ✅ BuildKit integration with tests, docs, and structured logging
 
 ### In Progress:
-- ⏳ Docker images with AI agents (base, Next.js, Vue, Jupyter)
 - ⏳ Credential management backend
 - ⏳ Kubernetes Secret generation
 - ⏳ Replace nginx placeholder with real workspace images
 
-**Next**: Complete AI agent integration and credential backend, then move to testing phase.
+**Next**: Complete credential backend and workspace image integration, then move to end-to-end testing phase.
 
 ---
 
