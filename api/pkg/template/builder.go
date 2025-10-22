@@ -3,15 +3,61 @@ package template
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/moby/buildkit/client"
 	"golang.org/x/sync/errgroup"
 )
+
+const (
+	// Port numbers for workspace services
+	BuildKitPort   = 1234 // BuildKit daemon port
+	RegistryPort   = 5000 // Local Docker registry port
+	CodeServerPort = 8080 // code-server (VS Code) port
+	JupyterLabPort = 8888 // Jupyter Lab port
+
+	// Default timeout values (can be overridden via environment variables)
+	DefaultBuildKitReadyTimeout = 30 * time.Second
+	DefaultTempDirCleanupAge    = time.Hour
+)
+
+var (
+	// BuildKitReadyTimeout is the max time to wait for BuildKit to become ready
+	// Can be configured via BUILDKIT_READY_TIMEOUT environment variable (e.g., "60s", "1m")
+	BuildKitReadyTimeout = getTimeoutFromEnv("BUILDKIT_READY_TIMEOUT", DefaultBuildKitReadyTimeout)
+
+	// TempDirCleanupAge is the age threshold for cleaning up old temp directories
+	// Can be configured via TEMP_DIR_CLEANUP_AGE environment variable (e.g., "30m", "2h")
+	TempDirCleanupAge = getTimeoutFromEnv("TEMP_DIR_CLEANUP_AGE", DefaultTempDirCleanupAge)
+)
+
+// getTimeoutFromEnv reads a duration from environment variable with fallback
+func getTimeoutFromEnv(envVar string, defaultValue time.Duration) time.Duration {
+	envVal := os.Getenv(envVar)
+	if envVal == "" {
+		return defaultValue
+	}
+
+	duration, err := time.ParseDuration(envVal)
+	if err != nil {
+		slog.Warn("Invalid duration in environment variable, using default",
+			"env_var", envVar,
+			"invalid_value", envVal,
+			"default", defaultValue,
+			"error", err)
+		return defaultValue
+	}
+
+	slog.Info("Using timeout from environment variable",
+		"env_var", envVar,
+		"value", duration)
+	return duration
+}
 
 // K8sClient interface for starting port-forwards
 type K8sClient interface {
@@ -30,10 +76,62 @@ type Builder struct {
 // registryURL: registry to push images to (e.g., "127.0.0.1:5000")
 // k8sClient: Kubernetes client for managing port-forwards
 func NewBuilder(registryURL string, k8sClient K8sClient) *Builder {
-	return &Builder{
+	b := &Builder{
 		registryURL:  registryURL,
-		buildkitAddr: "tcp://127.0.0.1:1234", // Use IPv4 explicitly
+		buildkitAddr: fmt.Sprintf("tcp://127.0.0.1:%d", BuildKitPort), // Use IPv4 explicitly
 		k8sClient:    k8sClient,
+	}
+
+	// Clean up old temp directories on startup
+	b.cleanupOldTempDirs()
+
+	return b
+}
+
+// cleanupOldTempDirs removes old workspace build temp directories
+// This prevents accumulation of sensitive build context files if process crashed
+func (b *Builder) cleanupOldTempDirs() {
+	tmpDir := os.TempDir()
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		slog.Warn("Failed to read temp dir for cleanup",
+			"error", err,
+			"path", tmpDir)
+		return
+	}
+
+	cleaned := 0
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Match pattern: workspace-build-*
+		if !strings.HasPrefix(entry.Name(), "workspace-build-") {
+			continue
+		}
+
+		// Check if directory is older than 1 hour
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		if time.Since(info.ModTime()) > TempDirCleanupAge {
+			oldPath := filepath.Join(tmpDir, entry.Name())
+			if err := os.RemoveAll(oldPath); err == nil {
+				cleaned++
+				slog.Debug("Cleaned up old temp directory",
+					"path", oldPath,
+					"age", time.Since(info.ModTime()).String())
+			}
+		}
+	}
+
+	if cleaned > 0 {
+		slog.Info("Cleaned up old workspace build directories",
+			"count", cleaned,
+			"threshold", TempDirCleanupAge.String())
 	}
 }
 
@@ -49,14 +147,18 @@ func (b *Builder) waitForBuildKit(ctx context.Context, timeout time.Duration) er
 			return ctx.Err()
 		case <-ticker.C:
 			// Try to connect to BuildKit (use 127.0.0.1 for IPv4)
-			conn, err := net.DialTimeout("tcp", "127.0.0.1:1234", time.Second)
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", BuildKitPort), time.Second)
 			if err == nil {
 				conn.Close()
-				fmt.Println("✓ BuildKit port-forward ready at 127.0.0.1:1234")
+				slog.Info("BuildKit port-forward ready",
+					"address", fmt.Sprintf("127.0.0.1:%d", BuildKitPort))
 				return nil
 			}
 
 			if time.Now().After(deadline) {
+				slog.Error("Timeout waiting for BuildKit",
+					"timeout", timeout,
+					"last_error", err)
 				return fmt.Errorf("timeout waiting for BuildKit to be ready: %w", err)
 			}
 		}
@@ -66,22 +168,29 @@ func (b *Builder) waitForBuildKit(ctx context.Context, timeout time.Duration) er
 // EnsurePortForwards ensures BuildKit is port-forwarded
 // Note: Registry doesn't need port-forward since BuildKit accesses it via cluster DNS
 func (b *Builder) EnsurePortForwards(ctx context.Context) error {
-	fmt.Println("Setting up port-forward to BuildKit...")
+	slog.Info("Setting up port-forward to BuildKit",
+		"namespace", "default",
+		"service", "buildkitd",
+		"port", BuildKitPort)
 
-	// Start port-forward for BuildKit (1234:1234)
+	// Start port-forward for BuildKit
 	// This allows API server (on host) to connect to BuildKit (in cluster)
-	if err := b.k8sClient.StartPortForward(ctx, "default", "buildkitd", 1234, 1234); err != nil {
+	if err := b.k8sClient.StartPortForward(ctx, "default", "buildkitd", BuildKitPort, BuildKitPort); err != nil {
+		slog.Error("Failed to port-forward BuildKit",
+			"error", err,
+			"port", BuildKitPort)
 		return fmt.Errorf("failed to port-forward BuildKit: %w", err)
 	}
 
-	fmt.Println("Port-forward started, waiting for BuildKit to be ready...")
+	slog.Info("Port-forward started, waiting for BuildKit to be ready",
+		"timeout", BuildKitReadyTimeout.String())
 
 	// Wait for BuildKit to be ready
-	if err := b.waitForBuildKit(ctx, 30*time.Second); err != nil {
+	if err := b.waitForBuildKit(ctx, BuildKitReadyTimeout); err != nil {
 		return fmt.Errorf("BuildKit not ready: %w", err)
 	}
 
-	fmt.Println("✓ BuildKit port-forward established and verified")
+	slog.Info("BuildKit port-forward established and verified")
 	return nil
 }
 
@@ -161,6 +270,13 @@ func (b *Builder) BuildImage(ctx context.Context, templateID, agent string, prog
 		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
+
+	// Log temp directory for debugging (helps track down leaks)
+	slog.Info("Building image",
+		"image", imageName,
+		"temp_dir", tempDir,
+		"template", templateID,
+		"agent", agent)
 
 	// Write Dockerfile
 	dockerfilePath := filepath.Join(tempDir, "Dockerfile")
@@ -325,10 +441,16 @@ func (b *Builder) BuildAllTemplates(ctx context.Context, progressFn BuildProgres
 	return nil
 }
 
-// ImageExists checks if an image exists in the registry
-// TODO: Implement registry check
-func (b *Builder) ImageExists(ctx context.Context, templateID string) (bool, error) {
-	// TODO: Query registry API to check if image exists
-	// For now, always return false to trigger build
-	return false, nil
-}
+// TODO: Image caching optimization (future enhancement)
+// Currently, images are rebuilt every time. To optimize:
+// 1. Query registry API to check if image:tag exists
+// 2. Use image digests for cache validation
+// 3. Skip build if image already exists
+// Example implementation:
+//   func (b *Builder) ImageExists(ctx context.Context, imageName string) (bool, error) {
+//       resp, err := http.Get(fmt.Sprintf("http://%s/v2/%s/manifests/latest", b.registryURL, imageName))
+//       if err != nil || resp.StatusCode == http.StatusNotFound {
+//           return false, nil
+//       }
+//       return resp.StatusCode == http.StatusOK, nil
+//   }

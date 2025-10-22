@@ -14,6 +14,26 @@ interface KubernetesSetupProps {
 
 type SetupState = 'detecting' | 'not-found' | 'selecting-cluster' | 'found' | 'installing' | 'ready' | 'error';
 
+/**
+ * Infrastructure setup component for Kubernetes cluster detection and component installation.
+ *
+ * Handles the complete cluster setup flow:
+ * 1. Detects Kubernetes installation (k3s, Rancher Desktop, k3d, etc.)
+ * 2. Allows user to select cluster context
+ * 3. Checks for required components (Knative, Traefik, Registry, BuildKit)
+ * 4. Installs missing components with real-time progress via Server-Sent Events
+ * 5. Builds all workspace images (12 images total)
+ *
+ * @param props - Component props
+ * @param props.onComplete - Callback invoked when setup completes successfully
+ *
+ * @example
+ * ```tsx
+ * <KubernetesSetup onComplete={() => navigate('/dashboard')} />
+ * ```
+ *
+ * @public
+ */
 export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const { status, isLoading, refetch } = useKubernetesStatus();
   const [setupState, setSetupState] = useState<SetupState>('detecting');
@@ -39,7 +59,9 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
+        console.log('Cleaning up EventSource');
         eventSourceRef.current.close();
+        eventSourceRef.current = null;
       }
     };
   }, []);

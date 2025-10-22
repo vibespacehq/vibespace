@@ -5,6 +5,30 @@ import type { KubernetesStatus } from '../lib/types';
 // Check if running in Tauri or browser
 const isTauri = '__TAURI__' in window;
 
+/**
+ * Hook to detect and monitor Kubernetes cluster availability.
+ *
+ * Detects if Kubernetes (kubectl, k3s, Rancher Desktop, etc.) is available
+ * on the system. In Tauri mode, uses native OS calls. In browser mode,
+ * mocks availability for development.
+ *
+ * @returns Object containing cluster status, loading state, error state, and refetch function
+ *
+ * @example
+ * ```tsx
+ * function SetupPage() {
+ *   const { status, isLoading, error, refetch } = useKubernetesStatus();
+ *
+ *   if (isLoading) return <Spinner />;
+ *   if (!status?.available) return <InstallInstructions />;
+ *
+ *   return <ClusterInfo version={status.version} type={status.installType} />;
+ * }
+ * ```
+ *
+ * @see {@link KubernetesStatus} for status object structure
+ * @public
+ */
 export function useKubernetesStatus() {
   const [status, setStatus] = useState<KubernetesStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
