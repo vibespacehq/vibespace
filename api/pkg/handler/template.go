@@ -8,18 +8,51 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// TemplateHandler handles template HTTP requests
+// TemplateHandler handles template-related HTTP requests.
+//
+// Templates define pre-configured development environments with specific
+// stacks (Next.js, Vue, Jupyter) and AI agent support. Each template includes
+// the base tools, ports configuration, and supported AI agents (claude, codex, gemini).
+//
+// Images are built during cluster setup using BuildKit and stored in the local
+// registry at localhost:5000. The actual image name follows the pattern:
+// workspace-{template}-{agent}:latest (e.g., workspace-nextjs-claude:latest)
 type TemplateHandler struct {
 	// In a real implementation, this would use a template service
 	// For now, we'll return hardcoded templates
 }
 
-// NewTemplateHandler creates a new template handler
+// NewTemplateHandler creates a new template handler.
 func NewTemplateHandler() *TemplateHandler {
 	return &TemplateHandler{}
 }
 
 // List handles GET /api/v1/templates
+//
+// Returns a list of all available templates with their metadata.
+//
+// Response: 200 OK
+//
+//	{
+//	  "templates": [
+//	    {
+//	      "id": "nextjs",
+//	      "name": "Next.js 15.5",
+//	      "description": "Next.js 15.5.5 with React 19...",
+//	      "image": "localhost:5000/workspace-nextjs",
+//	      "category": "web",
+//	      "tools": ["Node.js 24.x", "npm 11.6.2", ...],
+//	      "ports": {"code-server": 8080, "dev": 3000},
+//	      "agents": ["claude", "codex", "gemini"],
+//	      "created_at": "2025-10-16T00:00:00Z"
+//	    },
+//	    ...
+//	  ]
+//	}
+//
+// Example:
+//
+//	curl http://localhost:8000/api/v1/templates
 func (h *TemplateHandler) List(c *gin.Context) {
 	// Template metadata reflecting October 2025 stable versions
 	// Images are built during cluster setup and stored in local registry
@@ -78,6 +111,35 @@ func (h *TemplateHandler) List(c *gin.Context) {
 }
 
 // Get handles GET /api/v1/templates/:id
+//
+// Returns a single template by ID with full metadata.
+//
+// URL Parameters:
+//   - id: Template identifier (nextjs, vue, jupyter)
+//
+// Response: 200 OK
+//
+//	{
+//	  "id": "nextjs",
+//	  "name": "Next.js 15.5",
+//	  "description": "Next.js 15.5.5 with React 19, TypeScript 5.9.3, Tailwind CSS 4.1, and Turbopack",
+//	  "image": "localhost:5000/workspace-nextjs",
+//	  "category": "web",
+//	  "tools": ["Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", ...],
+//	  "ports": {"code-server": 8080, "dev": 3000},
+//	  "agents": ["claude", "codex", "gemini"],
+//	  "created_at": "2025-10-16T00:00:00Z"
+//	}
+//
+// Response: 404 Not Found
+//
+//	{
+//	  "error": "Template not found"
+//	}
+//
+// Example:
+//
+//	curl http://localhost:8000/api/v1/templates/nextjs
 func (h *TemplateHandler) Get(c *gin.Context) {
 	id := c.Param("id")
 

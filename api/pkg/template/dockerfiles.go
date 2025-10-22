@@ -45,8 +45,34 @@ var JupyterCLAUDEMD []byte
 
 // GetDockerfile returns the Dockerfile content for a template and agent
 func GetDockerfile(templateID, agent string) ([]byte, error) {
+	// Validate inputs upfront
+	validTemplates := map[string]bool{
+		"base":    true,
+		"nextjs":  true,
+		"vue":     true,
+		"jupyter": true,
+	}
+	validAgents := map[string]bool{
+		"claude": true,
+		"codex":  true,
+		"gemini": true,
+	}
+
+	if !validTemplates[templateID] {
+		return nil, fmt.Errorf("invalid template: %s (must be one of: base, nextjs, vue, jupyter)", templateID)
+	}
+
+	// For non-base templates, validate agent
+	if templateID != "base" && !validAgents[agent] {
+		return nil, fmt.Errorf("invalid agent: %s (must be one of: claude, codex, gemini)", agent)
+	}
+
 	// Base images are agent-specific
 	if templateID == "base" {
+		if !validAgents[agent] {
+			return nil, fmt.Errorf("invalid agent: %s (must be one of: claude, codex, gemini)", agent)
+		}
+
 		switch agent {
 		case "claude":
 			return BaseClaudeDockerfile, nil
@@ -54,8 +80,6 @@ func GetDockerfile(templateID, agent string) ([]byte, error) {
 			return BaseCodexDockerfile, nil
 		case "gemini":
 			return BaseGeminiDockerfile, nil
-		default:
-			return nil, fmt.Errorf("unknown agent: %s", agent)
 		}
 	}
 
@@ -67,15 +91,42 @@ func GetDockerfile(templateID, agent string) ([]byte, error) {
 		return VueDockerfile, nil
 	case "jupyter":
 		return JupyterDockerfile, nil
-	default:
-		return nil, fmt.Errorf("unknown template: %s", templateID)
 	}
+
+	// Should never reach here due to validation above
+	return nil, fmt.Errorf("unknown template: %s", templateID)
 }
 
 // GetAgentMD returns the agent instruction file content for a template and agent
 func GetAgentMD(templateID, agent string) ([]byte, error) {
+	// Validate inputs upfront
+	validTemplates := map[string]bool{
+		"base":    true,
+		"nextjs":  true,
+		"vue":     true,
+		"jupyter": true,
+	}
+	validAgents := map[string]bool{
+		"claude": true,
+		"codex":  true,
+		"gemini": true,
+	}
+
+	if !validTemplates[templateID] {
+		return nil, fmt.Errorf("invalid template: %s (must be one of: base, nextjs, vue, jupyter)", templateID)
+	}
+
+	// For non-base templates, validate agent
+	if templateID != "base" && !validAgents[agent] {
+		return nil, fmt.Errorf("invalid agent: %s (must be one of: claude, codex, gemini)", agent)
+	}
+
 	// Base images have agent-specific instruction files
 	if templateID == "base" {
+		if !validAgents[agent] {
+			return nil, fmt.Errorf("invalid agent: %s (must be one of: claude, codex, gemini)", agent)
+		}
+
 		switch agent {
 		case "claude":
 			return BaseClaudeMD, nil
@@ -83,8 +134,6 @@ func GetAgentMD(templateID, agent string) ([]byte, error) {
 			return BaseCodexMD, nil
 		case "gemini":
 			return BaseGeminiMD, nil
-		default:
-			return nil, fmt.Errorf("unknown agent: %s", agent)
 		}
 	}
 
@@ -96,9 +145,10 @@ func GetAgentMD(templateID, agent string) ([]byte, error) {
 		return VueCLAUDEMD, nil
 	case "jupyter":
 		return JupyterCLAUDEMD, nil
-	default:
-		return nil, fmt.Errorf("unknown template: %s", templateID)
 	}
+
+	// Should never reach here due to validation above
+	return nil, fmt.Errorf("unknown template: %s", templateID)
 }
 
 // GetAllTemplateIDs returns all available template IDs (excluding base)
