@@ -267,6 +267,36 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
+// Access makes a workspace accessible by starting a port-forward
+// Returns the local URL where the workspace can be accessed
+func (s *Service) Access(ctx context.Context, id string) (string, error) {
+	podName := fmt.Sprintf("workspace-%s", id)
+
+	// Verify pod exists and is running
+	pod, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("workspace not found: %w", err)
+	}
+
+	if pod.Status.Phase != corev1.PodRunning {
+		return "", fmt.Errorf("workspace is not running (status: %s)", pod.Status.Phase)
+	}
+
+	// Find an available local port (simple approach: use a range starting from 8080)
+	// For MVP, we'll use a fixed port per workspace: 8080 + hash(id)
+	// This ensures the same workspace always gets the same local port
+	localPort := 8080 + hashStringToPort(id)
+
+	// Start port-forward to workspace pod (code-server runs on port 8080)
+	err = s.k8sClient.StartPortForwardToPod(ctx, k8s.WorkspaceNamespace, podName, localPort, 8080)
+	if err != nil {
+		return "", fmt.Errorf("failed to start port-forward: %w", err)
+	}
+
+	// Return localhost URL
+	return fmt.Sprintf("http://127.0.0.1:%d", localPort), nil
+}
+
 // Helper functions
 
 // createPVC creates a PersistentVolumeClaim for workspace storage
@@ -367,4 +397,14 @@ func parseQuantity(storage string) resource.Quantity {
 // stringPtr returns a pointer to a string
 func stringPtr(s string) *string {
 	return &s
+}
+
+// hashStringToPort converts a workspace ID to a consistent port offset (0-999)
+// This ensures the same workspace always gets the same local port
+func hashStringToPort(id string) int {
+	hash := 0
+	for _, c := range id {
+		hash = (hash*31 + int(c)) % 1000
+	}
+	return hash
 }

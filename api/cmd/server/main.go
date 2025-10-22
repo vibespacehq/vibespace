@@ -63,6 +63,7 @@ func main() {
 			workspaces.DELETE("/:id", workspaceHandler.Delete)
 			workspaces.POST("/:id/start", workspaceHandler.Start)
 			workspaces.POST("/:id/stop", workspaceHandler.Stop)
+			workspaces.GET("/:id/access", workspaceHandler.Access)
 		}
 
 		// Templates
