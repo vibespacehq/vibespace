@@ -1834,12 +1834,14 @@ Access via: `workspace-def456.workspaces.svc.cluster.local`
 
 ### 8.1 Local DNS
 
-#### 8.1.1 Strategy
+> **Note**: Local DNS configuration (*.local domains) is implemented in **MVP Phase 2** alongside Traefik IngressRoute integration. MVP Phase 1 uses `kubectl port-forward` with `127.0.0.1:PORT` URLs. See Section 8.2.1 for workspace access strategy.
+
+#### 8.1.1 Strategy (MVP Phase 2)
 
 **Primary**: `/etc/hosts` manipulation (requires sudo once)
 
 ```bash
-# Automatically added by backend
+# Automatically added by backend (Phase 2)
 127.0.0.1  workspace-abc123.local
 127.0.0.1  workspace-abc123-3000.local
 127.0.0.1  workspace-def456.local
@@ -1859,7 +1861,9 @@ address=/workspace.local/127.0.0.1
 - **App Port 2**: `workspace-{id}-8000.local` → port 8000
 - **Custom**: `workspace-{id}-{port}.local` → port {port}
 
-#### 8.1.3 Traefik Routing
+#### 8.1.3 Traefik Routing (MVP Phase 2)
+
+When Knative Services are introduced in Phase 2, workspaces will be accessed via Traefik IngressRoutes with custom *.local domains:
 
 ```yaml
 apiVersion: traefik.containo.us/v1alpha1
@@ -1900,15 +1904,160 @@ spec:
       X-Forwarded-Port: "3000"
 ```
 
-### 8.2 Port Forwarding
+### 8.2 Workspace Access Strategy
 
-#### 8.2.1 Workspace → Host
+#### 8.2.1 Overview: Staged Migration Approach
 
-Automatic via Traefik IngressRoutes (see above).
+Workspace access uses a **staged approach** to balance MVP delivery speed with production-ready architecture:
 
-#### 8.2.2 Dynamic Port Exposure
+| Phase | Workspace Type | Access Method | URLs | Status |
+|-------|---------------|---------------|------|--------|
+| **MVP Phase 1** | Kubernetes Pods | `kubectl port-forward` | `http://127.0.0.1:8080+N` | ✅ **Current** |
+| **MVP Phase 2** | Knative Services | Traefik IngressRoutes | `http://workspace-{id}.local` | 🔮 Planned |
 
-User can expose additional ports at runtime:
+**Why Staged?**
+- **Phase 1 Goal**: Ship MVP fast, validate workspace concept with users
+- **Phase 2 Goal**: Production-grade routing when Knative Services are introduced
+- **Trade-off**: Accept port-forward simplicity now, refactor when migrating to Knative
+
+**Migration Trigger**: When workspaces migrate from plain Pods → Knative Services (Phase 2), `kubectl port-forward` to pods becomes fragile (pod names change with revisions, scale-from-zero recreates pods). At that point, switch to Traefik IngressRoutes which work seamlessly with Knative.
+
+---
+
+#### 8.2.2 MVP Phase 1: Port-Forward to Pods
+
+**Current Implementation** (as of MVP Phase 1):
+
+Workspaces run as plain Kubernetes Pods. The API server starts a `kubectl port-forward` when a user clicks "Open Workspace":
+
+```go
+// API: GET /api/v1/workspaces/:id/access
+// Returns: { "url": "http://127.0.0.1:8081" }
+
+// Backend implementation (api/pkg/workspace/service.go)
+func (s *Service) Access(ctx context.Context, id string) (string, error) {
+    podName := fmt.Sprintf("workspace-%s", id)
+
+    // Assign consistent local port: 8080 + hash(id) mod 1000
+    localPort := 8080 + hashStringToPort(id)
+
+    // Start port-forward to pod's code-server (port 8080)
+    err := s.k8sClient.StartPortForwardToPod(ctx, "workspace", podName, localPort, 8080)
+    if err != nil {
+        return "", fmt.Errorf("failed to start port-forward: %w", err)
+    }
+
+    return fmt.Sprintf("http://127.0.0.1:%d", localPort), nil
+}
+```
+
+**How It Works**:
+1. User clicks "Open" in UI
+2. Frontend calls `GET /api/v1/workspaces/:id/access`
+3. Backend starts `kubectl port-forward pod/workspace-{id} {localPort}:8080`
+4. Returns `http://127.0.0.1:{localPort}`
+5. User opens URL in browser → code-server loads
+
+**Port Assignment**:
+- Each workspace gets a consistent local port: `8080 + hash(workspaceID) % 1000`
+- Range: `8080-9079` (1000 ports)
+- Same workspace always gets same port (idempotent)
+
+**Limitations**:
+- ⚠️ URLs not human-friendly (`http://127.0.0.1:8142` instead of `http://my-project.local`)
+- ⚠️ Port-forward process runs for lifetime of API server
+- ⚠️ Multiple workspaces = multiple port-forward processes
+- ⚠️ No automatic cleanup if API server crashes (manual `kubectl delete pod`)
+
+**Accepted for Phase 1** because:
+- ✅ Simple implementation (no DNS, no IngressRoutes)
+- ✅ Works immediately (no sudo for /etc/hosts)
+- ✅ Fast MVP delivery
+- ✅ Easy to debug (`lsof -i :8080` to find port-forwards)
+
+---
+
+#### 8.2.3 MVP Phase 2: Traefik IngressRoutes + Knative
+
+**Future Implementation** (planned for Phase 2 with Knative Services):
+
+When workspaces migrate to Knative Services, access will use Traefik IngressRoutes with custom *.local domains:
+
+```yaml
+# Created automatically when workspace is created
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: workspace-abc123
+  namespace: workspace
+spec:
+  entryPoints: [web]
+  routes:
+  - match: Host(`workspace-abc123.local`)
+    kind: Rule
+    services:
+    - name: workspace-abc123  # Knative Service name
+      port: 80
+```
+
+```go
+// Phase 2 API: GET /api/v1/workspaces/:id/access
+// Returns: { "url": "http://workspace-abc123.local" }
+
+func (s *Service) Access(ctx context.Context, id string) (string, error) {
+    // Phase 2: Create IngressRoute + /etc/hosts entry
+    workspaceDomain := fmt.Sprintf("workspace-%s.local", id)
+
+    // 1. Create IngressRoute (if not exists)
+    if err := s.createIngressRoute(ctx, id, workspaceDomain); err != nil {
+        return "", err
+    }
+
+    // 2. Add /etc/hosts entry: 127.0.0.1 workspace-abc123.local
+    if err := s.updateHostsFile(workspaceDomain); err != nil {
+        return "", err
+    }
+
+    // 3. Return clean URL
+    return fmt.Sprintf("http://%s", workspaceDomain), nil
+}
+```
+
+**How It Works** (Phase 2):
+1. User clicks "Open" in UI
+2. Backend creates IngressRoute (if needed)
+3. Backend adds `/etc/hosts` entry (requires sudo once)
+4. Returns `http://workspace-abc123.local`
+5. User opens URL → DNS resolves to 127.0.0.1 → Traefik routes to Knative Service → code-server loads
+
+**Benefits** (Phase 2):
+- ✅ Clean URLs (`http://my-project.local`)
+- ✅ Works with Knative scale-from-zero (Traefik waits for pod to start)
+- ✅ Multiple ports supported (`workspace-abc123-3000.local` for app ports)
+- ✅ Production-ready architecture
+- ✅ No long-running port-forward processes
+
+**Migration Path**:
+```
+Phase 1 (Current)                Phase 2 (Knative)
+-----------------                -----------------
+Pod: workspace-{id}       →      Knative Service: workspace-{id}
+kubectl port-forward      →      Traefik IngressRoute
+http://127.0.0.1:8080+N  →      http://workspace-{id}.local
+```
+
+When Phase 2 migration happens:
+1. Update `api/pkg/workspace/service.go::Access()` to create IngressRoutes
+2. Add `/etc/hosts` management (with sudo prompt)
+3. Update frontend to handle `.local` URLs
+4. Remove port-forward cleanup logic
+5. Update tests
+
+---
+
+#### 8.2.4 Dynamic Port Exposure (MVP Phase 2)
+
+In Phase 2, users can expose additional workspace ports at runtime:
 
 ```http
 POST /api/v1/workspaces/abc123/expose
@@ -1921,7 +2070,12 @@ POST /api/v1/workspaces/abc123/expose
 Backend creates:
 1. New IngressRoute for `workspace-abc123-5432.local`
 2. Updates `/etc/hosts`
-3. Returns URL
+3. Returns URL: `http://workspace-abc123-5432.local`
+
+**Use Cases**:
+- Expose dev server (`:3000` for Next.js, `:8000` for Python)
+- Expose database (`:5432` for PostgreSQL)
+- Expose API server (`:8080` for custom backend)
 
 ---
 
