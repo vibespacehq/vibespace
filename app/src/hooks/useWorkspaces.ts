@@ -11,6 +11,7 @@ interface UseWorkspacesReturn {
   deleteWorkspace: (id: string) => Promise<void>;
   startWorkspace: (id: string) => Promise<void>;
   stopWorkspace: (id: string) => Promise<void>;
+  accessWorkspace: (id: string) => Promise<string>;
 }
 
 /**
@@ -210,6 +211,34 @@ export function useWorkspaces(): UseWorkspacesReturn {
     [fetchWorkspaces, updateWorkspaceStatus]
   );
 
+  /**
+   * Gets an accessible URL for a workspace by starting a port-forward.
+   * Must be called before opening a workspace in the browser.
+   *
+   * @param id - Workspace ID to access
+   * @returns A localhost URL where the workspace can be accessed (e.g., "http://127.0.0.1:8081")
+   * @throws {Error} If workspace is not running or port-forward fails
+   */
+  const accessWorkspace = useCallback(
+    async (id: string): Promise<string> => {
+      try {
+        const response = await apiFetch<{ url: string }>(
+          `${API_ENDPOINTS.workspaces}/${id}/access`,
+          {
+            method: 'GET',
+          }
+        );
+
+        return response.url;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Failed to access workspace:', err);
+        throw new Error(`Failed to access workspace: ${message}`);
+      }
+    },
+    []
+  );
+
   // Fetch workspaces on mount (with loading state)
   useEffect(() => {
     fetchWorkspaces(true);
@@ -233,5 +262,6 @@ export function useWorkspaces(): UseWorkspacesReturn {
     deleteWorkspace,
     startWorkspace,
     stopWorkspace,
+    accessWorkspace,
   };
 }

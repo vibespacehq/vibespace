@@ -21,12 +21,17 @@ export function WorkspaceList({ onCreateNew }: WorkspaceListProps) {
     startWorkspace,
     stopWorkspace,
     deleteWorkspace,
+    accessWorkspace,
   } = useWorkspaces();
 
-  const handleOpen = (id: string) => {
-    const workspace = workspaces.find((ws) => ws.id === id);
-    if (workspace?.urls?.['code-server']) {
-      window.open(workspace.urls['code-server'], '_blank');
+  const handleOpen = async (id: string) => {
+    try {
+      // Call access endpoint to get port-forward URL
+      const url = await accessWorkspace(id);
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error('Failed to open workspace:', err);
+      // TODO: Show error toast/notification to user
     }
   };
 
