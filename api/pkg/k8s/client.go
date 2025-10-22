@@ -119,10 +119,21 @@ func (c *Client) EnsureNamespace(ctx context.Context) error {
 // StartPortForward starts a kubectl port-forward to a service
 // Returns immediately after starting the port-forward process in the background
 func (c *Client) StartPortForward(ctx context.Context, namespace, service string, localPort, remotePort int) error {
+	return c.startPortForwardToResource(ctx, namespace, fmt.Sprintf("svc/%s", service), service, localPort, remotePort)
+}
+
+// StartPortForwardToPod starts a kubectl port-forward to a pod
+// Returns immediately after starting the port-forward process in the background
+func (c *Client) StartPortForwardToPod(ctx context.Context, namespace, podName string, localPort, remotePort int) error {
+	return c.startPortForwardToResource(ctx, namespace, fmt.Sprintf("pod/%s", podName), podName, localPort, remotePort)
+}
+
+// startPortForwardToResource is the internal implementation for port-forwarding
+func (c *Client) startPortForwardToResource(ctx context.Context, namespace, resource, keyName string, localPort, remotePort int) error {
 	c.pfMutex.Lock()
 	defer c.pfMutex.Unlock()
 
-	key := fmt.Sprintf("%s/%s", namespace, service)
+	key := fmt.Sprintf("%s/%s", namespace, keyName)
 
 	// Check if port-forward already exists
 	if pf, exists := c.portForwards[key]; exists {
@@ -140,7 +151,7 @@ func (c *Client) StartPortForward(ctx context.Context, namespace, service string
 	// Build kubectl port-forward command
 	cmd := exec.CommandContext(pfCtx, "kubectl", "port-forward",
 		"-n", namespace,
-		fmt.Sprintf("svc/%s", service),
+		resource,
 		fmt.Sprintf("%d:%d", localPort, remotePort),
 	)
 
@@ -152,7 +163,7 @@ func (c *Client) StartPortForward(ctx context.Context, namespace, service string
 
 	// Store port-forward info
 	c.portForwards[key] = &PortForward{
-		Service:    service,
+		Service:    keyName,
 		Namespace:  namespace,
 		LocalPort:  localPort,
 		RemotePort: remotePort,

@@ -126,3 +126,21 @@ func (h *WorkspaceHandler) Stop(c *gin.Context) {
 		"id":      id,
 	})
 }
+
+// Access handles GET /api/v1/workspaces/:id/access
+func (h *WorkspaceHandler) Access(c *gin.Context) {
+	id := c.Param("id")
+
+	url, err := h.service.Access(c.Request.Context(), id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to access workspace",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"url": url,
+	})
+}
