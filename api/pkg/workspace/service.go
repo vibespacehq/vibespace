@@ -135,7 +135,9 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 	if agent == "" {
 		agent = "claude"
 	}
-	workspaceImage := fmt.Sprintf("localhost:5000/workspace-%s-%s:latest", req.Template, agent)
+	// Use NodePort registry (accessible from node's localhost)
+	// Registry is exposed on NodePort 30500, accessible at localhost:30500 from within k3d nodes
+	workspaceImage := fmt.Sprintf("localhost:30500/workspace-%s-%s:latest", req.Template, agent)
 
 	// Configure ports based on template
 	// All templates expose code-server on port 8080

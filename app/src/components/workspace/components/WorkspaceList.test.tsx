@@ -38,6 +38,7 @@ describe('WorkspaceList', () => {
     deleteWorkspace: vi.fn(),
     startWorkspace: vi.fn(),
     stopWorkspace: vi.fn(),
+    accessWorkspace: vi.fn(),
   };
 
   beforeEach(() => {
@@ -187,26 +188,38 @@ describe('WorkspaceList', () => {
 
     it('opens workspace URL when open is clicked', async () => {
       const user = userEvent.setup();
+      const accessWorkspace = vi.fn().mockResolvedValue('http://127.0.0.1:8815');
       const windowOpenSpy = vi.spyOn(window, 'open');
+
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        accessWorkspace,
+      });
 
       render(<WorkspaceList onCreateNew={vi.fn()} />);
 
       const openButtons = screen.getAllByLabelText('Open workspace in browser');
       await user.click(openButtons[0]);
 
-      expect(windowOpenSpy).toHaveBeenCalledWith('http://localhost:8080', '_blank');
+      expect(accessWorkspace).toHaveBeenCalledWith('ws-1');
+      expect(windowOpenSpy).toHaveBeenCalledWith('http://127.0.0.1:8815', '_blank');
     });
 
-    it('does not open URL when workspace has no code-server URL', async () => {
+    it('calls accessWorkspace when open is clicked', async () => {
       const user = userEvent.setup();
-      const windowOpenSpy = vi.spyOn(window, 'open');
+      const accessWorkspace = vi.fn().mockResolvedValue('http://127.0.0.1:8816');
+
+      vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
+        ...mockUseWorkspaces,
+        accessWorkspace,
+      });
 
       render(<WorkspaceList onCreateNew={vi.fn()} />);
 
       const openButtons = screen.getAllByLabelText('Open workspace in browser');
-      await user.click(openButtons[1]); // python-ml workspace has no URL
+      await user.click(openButtons[0]);
 
-      expect(windowOpenSpy).not.toHaveBeenCalled();
+      expect(accessWorkspace).toHaveBeenCalledWith('ws-1');
     });
   });
 });
