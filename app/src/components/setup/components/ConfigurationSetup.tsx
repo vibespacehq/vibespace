@@ -24,7 +24,6 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
     { id: 'nextjs', name: 'Next.js', description: 'React framework for production', logo: '/logos/templates/nextjs.svg' },
     { id: 'vue', name: 'Vue', description: 'Progressive JavaScript framework', logo: '/logos/templates/vue.svg' },
     { id: 'jupyter', name: 'Jupyter', description: 'Interactive Python notebooks', logo: '/logos/templates/jupyter.svg' },
-    { id: 'go', name: 'Go', description: 'Fast and efficient backend', logo: '/logos/templates/go.svg' },
   ];
 
   const agents = [

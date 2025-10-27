@@ -28,6 +28,12 @@
     ],
     "security": {
       "csp": null
+    },
+    "withGlobalTauri": true
+  },
+  "plugins": {
+    "shell": {
+      "open": true
     }
   },
   "bundle": {
