@@ -46,9 +46,10 @@ metadata:
   name: registry
   namespace: default
 spec:
-  type: ClusterIP
+  type: NodePort
   ports:
   - port: 5000
     targetPort: 5000
+    nodePort: 30500
   selector:
     app: registry

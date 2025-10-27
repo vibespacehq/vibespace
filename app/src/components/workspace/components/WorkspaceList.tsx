@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react';
 import { useWorkspaces } from '../../../hooks/useWorkspaces';
 import { WorkspaceCard } from './WorkspaceCard';
 import { WorkspaceEmptyState } from './WorkspaceEmptyState';
+import { open } from '@tauri-apps/plugin-shell';
 import '../styles/workspace.css';
 
 interface WorkspaceListProps {
@@ -21,12 +22,27 @@ export function WorkspaceList({ onCreateNew }: WorkspaceListProps) {
     startWorkspace,
     stopWorkspace,
     deleteWorkspace,
+    accessWorkspace,
   } = useWorkspaces();
 
-  const handleOpen = (id: string) => {
-    const workspace = workspaces.find((ws) => ws.id === id);
-    if (workspace?.urls?.['code-server']) {
-      window.open(workspace.urls['code-server'], '_blank');
+  const handleOpen = async (id: string) => {
+    try {
+      // Call access endpoint to get port-forward URL
+      const url = await accessWorkspace(id);
+
+      // Check if running in Tauri context
+      if (window.__TAURI__) {
+        // Use Tauri shell plugin to open URL in default browser
+        await open(url);
+      } else {
+        // Fallback for browser/dev mode
+        console.log('Opening URL (Tauri not available):', url);
+        window.open(url, '_blank');
+      }
+    } catch (err) {
+      console.error('Failed to open workspace:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Failed to open workspace: ${errorMessage}\n\nPlease ensure the workspace is running and try again.`);
     }
   };
 

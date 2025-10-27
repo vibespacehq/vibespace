@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"workspace/pkg/k8s"
@@ -10,8 +11,17 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const (
+	// Port range for workspace port-forwarding (8080-9079)
+	PortRangeStart = 8080
+	PortRangeEnd   = 9079
+	// Maximum number of ports to try before giving up
+	MaxPortTries = 10
 )
 
 // Service handles workspace operations
@@ -135,7 +145,9 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 	if agent == "" {
 		agent = "claude"
 	}
-	workspaceImage := fmt.Sprintf("localhost:5000/workspace-%s-%s:latest", req.Template, agent)
+	// Use NodePort registry (accessible from node's localhost)
+	// Registry is exposed on NodePort 30500, accessible at localhost:30500 from within k3d nodes
+	workspaceImage := fmt.Sprintf("localhost:30500/workspace-%s-%s:latest", req.Template, agent)
 
 	// Configure ports based on template
 	// All templates expose code-server on port 8080
@@ -213,6 +225,13 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 
 	podName := fmt.Sprintf("workspace-%s", id)
 
+	// Stop any active port-forward for this workspace before deleting
+	// This prevents orphaned kubectl processes and memory leaks
+	if err := s.k8sClient.StopPortForward(k8s.WorkspaceNamespace, podName); err != nil {
+		// Log but don't fail deletion - port-forward may not exist
+		fmt.Printf("Warning: failed to stop port-forward for workspace %s: %v\n", id, err)
+	}
+
 	err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Delete(ctx, podName, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to delete workspace pod: %w", err)
@@ -225,14 +244,14 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 // Phase 1 (MVP): Limited implementation - pod recreation not yet supported
 // Phase 2 (Knative): Will use Knative scale-from-zero (minScale=0 -> minScale=1)
 func (s *Service) Start(ctx context.Context, id string) error {
-	// MVP Implementation: Check if pod exists
+	// MVP Phase 1 Implementation: Check if pod exists
 	// If pod exists, it's already running (no-op)
-	// If pod doesn't exist, we can't recreate it yet (needs metadata storage)
+	// If pod doesn't exist, we can't recreate it (no metadata storage in Phase 1)
 	//
-	// Future Knative Implementation:
+	// MVP Phase 2 (Knative migration):
 	// - Knative Services automatically scale from zero on first request
 	// - Start operation will patch the Knative Service to set minScale=1
-	// - No need to manually recreate pods
+	// - No need to manually recreate pods or store metadata
 
 	podName := fmt.Sprintf("workspace-%s", id)
 	_, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Get(ctx, podName, metav1.GetOptions{})
@@ -241,19 +260,18 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		return nil
 	}
 
-	// TODO: Implement pod recreation from PVC metadata (Phase 1.5)
-	// For now, just return nil (pod doesn't exist = can't start without metadata)
+	// Limitation: Cannot restart a stopped workspace in MVP Phase 1
+	// This will be resolved in MVP Phase 2 with Knative migration
 	return nil
 }
 
 // Stop stops a running workspace
-// Phase 1 (MVP): No-op - not implemented yet
+// Phase 1 (MVP): Deletes the pod while preserving PVC (data remains intact)
 // Phase 2 (Knative): Will use Knative scale-to-zero (minScale=1 -> minScale=0)
 func (s *Service) Stop(ctx context.Context, id string) error {
-	// MVP Implementation: Not implemented
-	// Stopping requires either:
-	// 1. Deleting pod and recreating from stored metadata (complex)
-	// 2. Using Knative scale-to-zero (Phase 2 approach)
+	// MVP Implementation: Delete pod to stop it, PVC remains for data persistence
+	// Note: Without metadata storage, we can't automatically restart stopped workspaces
+	// This will be addressed in Phase 1.5 or Phase 2 with Knative
 	//
 	// Future Knative Implementation:
 	// - Patch Knative Service to set minScale=0 annotation
@@ -262,9 +280,75 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	// - Provides true scale-to-zero without manual pod deletion
 	// - kubectl patch ksvc workspace-{id} -n workspace -p '{"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/min-scale":"0"}}}}}'
 
-	// For now, return success without doing anything
-	// The frontend will show "stopping" status briefly, then pod will remain running
+	podName := fmt.Sprintf("workspace-%s", id)
+
+	// Stop any active port-forward for this workspace
+	if err := s.k8sClient.StopPortForward(k8s.WorkspaceNamespace, podName); err != nil {
+		fmt.Printf("Warning: failed to stop port-forward for workspace %s: %v\n", id, err)
+	}
+
+	// Delete the pod (PVC remains, preserving workspace data)
+	err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Delete(ctx, podName, metav1.DeleteOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Pod already deleted/stopped
+			return nil
+		}
+		return fmt.Errorf("failed to stop workspace: %w", err)
+	}
+
 	return nil
+}
+
+// Access makes a workspace accessible by starting a port-forward
+// Returns the local URL where the workspace can be accessed
+func (s *Service) Access(ctx context.Context, id string) (string, error) {
+	podName := fmt.Sprintf("workspace-%s", id)
+
+	// Verify pod exists and is running
+	pod, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return "", fmt.Errorf("workspace not found: %s", id)
+		}
+		return "", fmt.Errorf("failed to get workspace: %w", err)
+	}
+
+	if pod.Status.Phase != corev1.PodRunning {
+		return "", fmt.Errorf("workspace is not running (status: %s)", pod.Status.Phase)
+	}
+
+	// Find an available local port
+	// Start with deterministic port based on workspace ID: PortRangeStart + hash(id)
+	// If that port is taken, try up to MaxPortTries sequential ports
+	basePort := PortRangeStart + hashStringToPort(id)
+	localPort := 0
+
+	for i := 0; i < MaxPortTries; i++ {
+		candidatePort := basePort + i
+		if candidatePort > PortRangeEnd {
+			// Wrap around to start of range
+			candidatePort = PortRangeStart + (candidatePort - PortRangeEnd - 1)
+		}
+
+		if isPortAvailable(candidatePort) {
+			localPort = candidatePort
+			break
+		}
+	}
+
+	if localPort == 0 {
+		return "", fmt.Errorf("no available ports found in range %d-%d", PortRangeStart, PortRangeEnd)
+	}
+
+	// Start port-forward to workspace pod (code-server runs on port 8080)
+	err = s.k8sClient.StartPortForwardToPod(ctx, k8s.WorkspaceNamespace, podName, localPort, 8080)
+	if err != nil {
+		return "", fmt.Errorf("failed to start port-forward: %w", err)
+	}
+
+	// Return localhost URL
+	return fmt.Sprintf("http://127.0.0.1:%d", localPort), nil
 }
 
 // Helper functions
@@ -367,4 +451,26 @@ func parseQuantity(storage string) resource.Quantity {
 // stringPtr returns a pointer to a string
 func stringPtr(s string) *string {
 	return &s
+}
+
+// hashStringToPort converts a workspace ID to a consistent port offset (0-999)
+// This ensures the same workspace always gets the same local port
+func hashStringToPort(id string) int {
+	hash := 0
+	for _, c := range id {
+		hash = (hash*31 + int(c)) % 1000
+	}
+	return hash
+}
+
+// isPortAvailable checks if a port is available for binding
+// Returns true if the port can be bound to, false otherwise
+func isPortAvailable(port int) bool {
+	// Try to bind to the port - if successful, it's available
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	listener.Close()
+	return true
 }

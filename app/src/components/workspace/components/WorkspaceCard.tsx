@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { ExternalLink, Play, Square, Trash2, MoreVertical } from 'lucide-react';
 import type { Workspace } from '../../../lib/types';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import '../styles/WorkspaceCard.css';
 
 interface WorkspaceCardProps {
@@ -24,6 +25,7 @@ export function WorkspaceCard({
 }: WorkspaceCardProps) {
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isOperating, setIsOperating] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -68,17 +70,29 @@ export function WorkspaceCard({
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     if (isOperating) return;
     setIsActionsOpen(false);
-    if (confirm(`Delete workspace "${workspace.name}"? This action cannot be undone.`)) {
-      setIsOperating(true);
-      try {
-        await onDelete(workspace.id);
-      } finally {
-        setIsOperating(false);
-      }
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    setShowDeleteModal(false);
+    setIsOperating(true);
+    try {
+      await onDelete(workspace.id);
+      // Success - workspace will be removed from list after API call
+    } catch (error) {
+      // Error handling - show user-friendly message
+      const message = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`Failed to delete workspace: ${message}`);
+    } finally {
+      setIsOperating(false);
     }
+  };
+
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
   };
 
   const formatDate = (dateString: string) => {
@@ -102,6 +116,7 @@ export function WorkspaceCard({
       case 'creating':
       case 'starting':
       case 'stopping':
+      case 'deleting':
         return 'status-transitioning';
       case 'error':
         return 'status-error';
@@ -208,6 +223,14 @@ export function WorkspaceCard({
           Open
         </button>
       </div>
+
+      {showDeleteModal && (
+        <DeleteConfirmationModal
+          workspaceName={workspace.name}
+          onConfirm={confirmDelete}
+          onCancel={cancelDelete}
+        />
+      )}
     </div>
   );
 }
