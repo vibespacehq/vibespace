@@ -41,7 +41,8 @@ export function WorkspaceList({ onCreateNew }: WorkspaceListProps) {
       }
     } catch (err) {
       console.error('Failed to open workspace:', err);
-      // TODO: Show error toast/notification to user
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      alert(`Failed to open workspace: ${errorMessage}\n\nPlease ensure the workspace is running and try again.`);
     }
   };
 
