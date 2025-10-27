@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WorkspaceCard } from './WorkspaceCard';
 import type { Workspace } from '../../../lib/types';
@@ -27,6 +27,10 @@ describe('WorkspaceCard', () => {
     onStop: vi.fn(),
     onDelete: vi.fn(),
   };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it('renders workspace information', () => {
     render(<WorkspaceCard workspace={mockWorkspace} {...mockHandlers} />);
@@ -114,33 +118,63 @@ describe('WorkspaceCard', () => {
     expect(mockHandlers.onStop).toHaveBeenCalledWith('ws-1');
   });
 
-  it('shows confirmation dialog before deleting', async () => {
+  it('shows confirmation modal before deleting', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     render(<WorkspaceCard workspace={mockWorkspace} {...mockHandlers} />);
 
     await user.click(screen.getByLabelText('Workspace actions'));
     await user.click(screen.getByLabelText('Delete workspace'));
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      'Delete workspace "test-workspace"? This action cannot be undone.'
-    );
-    expect(mockHandlers.onDelete).not.toHaveBeenCalled();
+    // Modal should appear
+    expect(screen.getByRole('heading', { name: 'Delete Workspace' })).toBeInTheDocument();
+    expect(screen.getByText(/Type the workspace name/)).toBeInTheDocument();
 
-    confirmSpy.mockRestore();
+    // Delete button should be disabled until name is typed
+    const deleteButton = screen.getByRole('button', { name: 'Delete Workspace' });
+    expect(deleteButton).toBeDisabled();
+
+    // onDelete should not be called yet
+    expect(mockHandlers.onDelete).not.toHaveBeenCalled();
   });
 
-  it('calls onDelete when deletion is confirmed', async () => {
+  it('calls onDelete when deletion is confirmed with correct workspace name', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<WorkspaceCard workspace={mockWorkspace} {...mockHandlers} />);
 
     await user.click(screen.getByLabelText('Workspace actions'));
     await user.click(screen.getByLabelText('Delete workspace'));
 
-    expect(mockHandlers.onDelete).toHaveBeenCalledWith('ws-1');
+    // Type the workspace name
+    const input = screen.getByPlaceholderText('test-workspace');
+    await user.type(input, 'test-workspace');
 
-    confirmSpy.mockRestore();
+    // Click delete button
+    const deleteButton = screen.getByRole('button', { name: 'Delete Workspace' });
+    expect(deleteButton).not.toBeDisabled();
+    await user.click(deleteButton);
+
+    expect(mockHandlers.onDelete).toHaveBeenCalledWith('ws-1');
+  });
+
+  it('does not call onDelete when modal is cancelled', async () => {
+    const user = userEvent.setup();
+    render(<WorkspaceCard workspace={mockWorkspace} {...mockHandlers} />);
+
+    await user.click(screen.getByLabelText('Workspace actions'));
+    await user.click(screen.getByLabelText('Delete workspace'));
+
+    // Modal should be visible
+    expect(screen.getByRole('heading', { name: 'Delete Workspace' })).toBeInTheDocument();
+
+    // Click cancel button
+    const cancelButton = screen.getByRole('button', { name: 'Cancel' });
+    await user.click(cancelButton);
+
+    // Modal should close and onDelete should not be called
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Delete Workspace' })).not.toBeInTheDocument();
+    });
+    expect(mockHandlers.onDelete).not.toHaveBeenCalled();
   });
 
   it('shows correct status color for running workspace', () => {
