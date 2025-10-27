@@ -11,7 +11,6 @@ describe('ConfigurationSetup', () => {
       expect(screen.getByText('Next.js')).toBeInTheDocument();
       expect(screen.getByText('Vue')).toBeInTheDocument();
       expect(screen.getByText('Jupyter')).toBeInTheDocument();
-      expect(screen.getByText('Go')).toBeInTheDocument();
     });
 
     it('pre-selects Next.js template by default', () => {

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 
 	"workspace/pkg/model"
@@ -131,7 +132,9 @@ func (h *WorkspaceHandler) Stop(c *gin.Context) {
 func (h *WorkspaceHandler) Access(c *gin.Context) {
 	id := c.Param("id")
 
-	url, err := h.service.Access(c.Request.Context(), id)
+	// Use context.Background() for long-running port-forward
+	// Request context gets canceled after response is sent, which would kill the port-forward
+	url, err := h.service.Access(context.Background(), id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to access workspace",
