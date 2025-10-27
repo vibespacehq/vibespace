@@ -124,7 +124,7 @@ export interface Workspace {
   id: string;
   name: string;
   template: string;
-  status: 'creating' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error';
+  status: 'creating' | 'starting' | 'running' | 'stopping' | 'stopped' | 'deleting' | 'error';
   resources: WorkspaceResources;
   urls: Record<string, string>;
   persistent: boolean;

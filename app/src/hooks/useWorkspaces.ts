@@ -132,16 +132,18 @@ export function useWorkspaces(): UseWorkspacesReturn {
   const deleteWorkspace = useCallback(
     async (id: string): Promise<void> => {
       try {
-        // Optimistically update status
-        updateWorkspaceStatus(id, 'stopping');
+        // Optimistically update status to 'deleting'
+        updateWorkspaceStatus(id, 'deleting');
 
         await apiFetch(`${API_ENDPOINTS.workspaces}/${id}`, {
           method: 'DELETE',
         });
 
-        // Wait a bit to let user see the "stopping" status, then refresh
+        // Wait briefly to let user see the "deleting" status
         await new Promise(resolve => setTimeout(resolve, 500));
-        await fetchWorkspaces();
+
+        // Remove workspace from list after successful deletion
+        setWorkspaces((prev) => prev.filter((ws) => ws.id !== id));
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error('Failed to delete workspace:', err);
@@ -150,7 +152,7 @@ export function useWorkspaces(): UseWorkspacesReturn {
         throw new Error(`Failed to delete workspace: ${message}`);
       }
     },
-    [fetchWorkspaces, updateWorkspaceStatus]
+    [updateWorkspaceStatus, fetchWorkspaces]
   );
 
   /**

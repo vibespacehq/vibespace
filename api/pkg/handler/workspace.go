@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"workspace/pkg/model"
 	"workspace/pkg/workspace"
@@ -132,13 +133,18 @@ func (h *WorkspaceHandler) Stop(c *gin.Context) {
 func (h *WorkspaceHandler) Access(c *gin.Context) {
 	id := c.Param("id")
 
-	// Use context.Background() for long-running port-forward
-	// Request context gets canceled after response is sent, which would kill the port-forward
-	url, err := h.service.Access(context.Background(), id)
+	// Create a context with timeout for starting the port-forward
+	// The port-forward itself runs detached, but setup should have a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	url, err := h.service.Access(ctx, id)
 	if err != nil {
+		// Log full error internally for debugging
+		c.Error(err)
+		// Return sanitized error to client
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to access workspace",
-			"details": err.Error(),
+			"error": "Failed to access workspace. Please ensure it is running.",
 		})
 		return
 	}
