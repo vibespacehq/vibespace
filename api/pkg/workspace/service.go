@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"workspace/pkg/k8s"
@@ -284,10 +285,28 @@ func (s *Service) Access(ctx context.Context, id string) (string, error) {
 		return "", fmt.Errorf("workspace is not running (status: %s)", pod.Status.Phase)
 	}
 
-	// Find an available local port (simple approach: use a range starting from 8080)
-	// For MVP, we'll use a fixed port per workspace: 8080 + hash(id)
-	// This ensures the same workspace always gets the same local port
-	localPort := 8080 + hashStringToPort(id)
+	// Find an available local port
+	// Start with deterministic port based on workspace ID: 8080 + hash(id)
+	// If that port is taken, try up to 10 sequential ports
+	basePort := 8080 + hashStringToPort(id)
+	localPort := 0
+
+	for i := 0; i < 10; i++ {
+		candidatePort := basePort + i
+		if candidatePort > 9079 {
+			// Wrap around to start of range
+			candidatePort = 8080 + (candidatePort - 9080)
+		}
+
+		if isPortAvailable(candidatePort) {
+			localPort = candidatePort
+			break
+		}
+	}
+
+	if localPort == 0 {
+		return "", fmt.Errorf("no available ports found in range 8080-9079")
+	}
 
 	// Start port-forward to workspace pod (code-server runs on port 8080)
 	err = s.k8sClient.StartPortForwardToPod(ctx, k8s.WorkspaceNamespace, podName, localPort, 8080)
@@ -409,4 +428,16 @@ func hashStringToPort(id string) int {
 		hash = (hash*31 + int(c)) % 1000
 	}
 	return hash
+}
+
+// isPortAvailable checks if a port is available for binding
+// Returns true if the port can be bound to, false otherwise
+func isPortAvailable(port int) bool {
+	// Try to bind to the port - if successful, it's available
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	listener.Close()
+	return true
 }
