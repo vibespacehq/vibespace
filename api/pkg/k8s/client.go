@@ -145,8 +145,10 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 		c.stopPortForwardLocked(key)
 	}
 
-	// Create context for port-forward (inherit parent context for proper cleanup)
-	pfCtx, cancel := context.WithCancel(ctx)
+	// Create detached context for port-forward
+	// Important: Use Background() not the parent ctx, otherwise the port-forward
+	// will be cancelled when the HTTP request context times out
+	pfCtx, cancel := context.WithCancel(context.Background())
 
 	// Build kubectl port-forward command
 	cmd := exec.CommandContext(pfCtx, "kubectl", "port-forward",
