@@ -54,6 +54,8 @@ RUN mkdir -p ~/.jupyter && \
 
 # Create init script with version display
 RUN echo '#!/bin/bash\n\
+# Ensure PATH includes user bin for pip-installed executables\n\
+export PATH="/home/coder/.local/bin:$PATH"\n\
 echo "Starting Jupyter Lab..."\n\
 jupyter lab --no-browser &>/dev/null &\n\
 sleep 2\n\
