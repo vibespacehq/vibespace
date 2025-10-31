@@ -32,6 +32,7 @@ if [ ! -f /workspace/.initialized ]; then\n\
   pnpm create next-app@15.5.5 . \\\n\
     --typescript \\\n\
     --tailwind \\\n\
+    --eslint \\\n\
     --app \\\n\
     --no-src-dir \\\n\
     --import-alias "@/*" \\\n\
@@ -44,6 +45,11 @@ if [ ! -f /workspace/.initialized ]; then\n\
   echo "  React: $(pnpm list react --depth=0 | grep -oP \"react@\\K[^\\s]+\")"\n\
   echo "  TypeScript: $(pnpm list typescript --depth=0 | grep -oP \"typescript@\\K[^\\s]+\")"\n\
   echo "  Tailwind: $(pnpm list tailwindcss --depth=0 | grep -oP \"tailwindcss@\\K[^\\s]+\")"\n\
+  # Start dev server in background\n\
+  echo "Starting Next.js dev server..."\n\
+  pnpm dev &>/dev/null &\n\
+  echo "  ✓ Dev server running on port 3000"\n\
+  echo ""\n\
   touch /workspace/.initialized\n\
 fi\n\
 ~/init-agents.sh\n\
