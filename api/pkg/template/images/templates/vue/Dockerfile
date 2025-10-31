@@ -28,13 +28,18 @@ if [ ! -f /workspace/.initialized ]; then\n\
   echo "Initializing Vue 3 workspace..."\n\
   cd /workspace\n\
   # Create Vite + Vue app with latest versions\n\
-  pnpm create vite@7.1.10 . --template vue-ts\n\
+  pnpm create vite@latest . --template vue-ts\n\
   pnpm install\n\
   echo ""\n\
   echo "Installed versions:"\n\
   echo "  Vue: $(pnpm list vue --depth=0 | grep -oP \"vue@\\K[^\\s]+\")"\n\
   echo "  Vite: $(pnpm list vite --depth=0 | grep -oP \"vite@\\K[^\\s]+\")"\n\
   echo "  TypeScript: $(pnpm list typescript --depth=0 | grep -oP \"typescript@\\K[^\\s]+\")"\n\
+  # Start dev server in background\n\
+  echo "Starting Vite dev server..."\n\
+  pnpm dev &>/dev/null &\n\
+  echo "  ✓ Dev server running on port 5173"\n\
+  echo ""\n\
   touch /workspace/.initialized\n\
 fi\n\
 ~/init-agents.sh\n\
