@@ -25,10 +25,15 @@ export function WorkspaceList({ onCreateNew }: WorkspaceListProps) {
     accessWorkspace,
   } = useWorkspaces();
 
-  const handleOpen = async (id: string) => {
+  const handleOpen = async (id: string, urlType: string = 'code-server') => {
     try {
-      // Call access endpoint to get port-forward URL
-      const url = await accessWorkspace(id);
+      // Call access endpoint to get port-forward URLs
+      const urls = await accessWorkspace(id);
+      const url = urls[urlType];
+
+      if (!url) {
+        throw new Error(`${urlType} URL not available for this workspace`);
+      }
 
       // Check if running in Tauri context
       if (window.__TAURI__) {
