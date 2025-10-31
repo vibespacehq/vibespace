@@ -151,7 +151,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 
 	// Configure ports based on template
 	// All templates expose code-server on port 8080
-	// Jupyter also exposes Jupyter Lab on port 8888
+	// Templates also expose their development server ports for preview
 	ports := []corev1.ContainerPort{
 		{
 			Name:          "code-server",
@@ -160,8 +160,21 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 		},
 	}
 
-	// Add Jupyter Lab port if this is a Jupyter workspace
-	if req.Template == "jupyter" {
+	// Add template-specific preview ports
+	switch req.Template {
+	case "nextjs":
+		ports = append(ports, corev1.ContainerPort{
+			Name:          "preview",
+			ContainerPort: 3000,
+			Protocol:      corev1.ProtocolTCP,
+		})
+	case "vue":
+		ports = append(ports, corev1.ContainerPort{
+			Name:          "preview",
+			ContainerPort: 5173,
+			Protocol:      corev1.ProtocolTCP,
+		})
+	case "jupyter":
 		ports = append(ports, corev1.ContainerPort{
 			Name:          "jupyter",
 			ContainerPort: 8888,
@@ -300,28 +313,70 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
-// Access makes a workspace accessible by starting a port-forward
-// Returns the local URL where the workspace can be accessed
-func (s *Service) Access(ctx context.Context, id string) (string, error) {
+// Access makes a workspace accessible by starting port-forwards
+// Returns a map of local URLs where the workspace can be accessed
+func (s *Service) Access(ctx context.Context, id string) (map[string]string, error) {
 	podName := fmt.Sprintf("workspace-%s", id)
 
 	// Verify pod exists and is running
 	pod, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return "", fmt.Errorf("workspace not found: %s", id)
+			return nil, fmt.Errorf("workspace not found: %s", id)
 		}
-		return "", fmt.Errorf("failed to get workspace: %w", err)
+		return nil, fmt.Errorf("failed to get workspace: %w", err)
 	}
 
 	if pod.Status.Phase != corev1.PodRunning {
-		return "", fmt.Errorf("workspace is not running (status: %s)", pod.Status.Phase)
+		return nil, fmt.Errorf("workspace is not running (status: %s)", pod.Status.Phase)
 	}
 
+	// Get template from pod labels
+	template := pod.Labels["workspace.dev/template"]
+
+	urls := make(map[string]string)
+
+	// Forward code-server port (8080)
+	codeServerPort, err := s.findAndForwardPort(ctx, podName, id, 8080, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to forward code-server port: %w", err)
+	}
+	urls["code-server"] = fmt.Sprintf("http://127.0.0.1:%d", codeServerPort)
+
+	// Forward preview port based on template
+	var previewPort int
+	var previewName string
+	switch template {
+	case "nextjs":
+		previewPort = 3000
+		previewName = "preview"
+	case "vue":
+		previewPort = 5173
+		previewName = "preview"
+	case "jupyter":
+		previewPort = 8888
+		previewName = "jupyter"
+	}
+
+	if previewPort > 0 {
+		localPreviewPort, err := s.findAndForwardPort(ctx, podName, id, previewPort, 1)
+		if err != nil {
+			// Log warning but don't fail - code-server is already accessible
+			fmt.Printf("Warning: failed to forward %s port: %v\n", previewName, err)
+		} else {
+			urls[previewName] = fmt.Sprintf("http://127.0.0.1:%d", localPreviewPort)
+		}
+	}
+
+	return urls, nil
+}
+
+// findAndForwardPort finds an available local port and starts a port-forward
+// offset is added to the base port calculation to avoid collisions when forwarding multiple ports
+func (s *Service) findAndForwardPort(ctx context.Context, podName, workspaceID string, remotePort, offset int) (int, error) {
 	// Find an available local port
-	// Start with deterministic port based on workspace ID: PortRangeStart + hash(id)
-	// If that port is taken, try up to MaxPortTries sequential ports
-	basePort := PortRangeStart + hashStringToPort(id)
+	// Start with deterministic port based on workspace ID + offset
+	basePort := PortRangeStart + hashStringToPort(workspaceID) + offset*100
 	localPort := 0
 
 	for i := 0; i < MaxPortTries; i++ {
@@ -338,17 +393,16 @@ func (s *Service) Access(ctx context.Context, id string) (string, error) {
 	}
 
 	if localPort == 0 {
-		return "", fmt.Errorf("no available ports found in range %d-%d", PortRangeStart, PortRangeEnd)
+		return 0, fmt.Errorf("no available ports found in range %d-%d", PortRangeStart, PortRangeEnd)
 	}
 
-	// Start port-forward to workspace pod (code-server runs on port 8080)
-	err = s.k8sClient.StartPortForwardToPod(ctx, k8s.WorkspaceNamespace, podName, localPort, 8080)
+	// Start port-forward
+	err := s.k8sClient.StartPortForwardToPod(ctx, k8s.WorkspaceNamespace, podName, localPort, remotePort)
 	if err != nil {
-		return "", fmt.Errorf("failed to start port-forward: %w", err)
+		return 0, fmt.Errorf("failed to start port-forward: %w", err)
 	}
 
-	// Return localhost URL
-	return fmt.Sprintf("http://127.0.0.1:%d", localPort), nil
+	return localPort, nil
 }
 
 // Helper functions

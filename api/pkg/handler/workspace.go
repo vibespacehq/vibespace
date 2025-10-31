@@ -138,7 +138,7 @@ func (h *WorkspaceHandler) Access(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	url, err := h.service.Access(ctx, id)
+	urls, err := h.service.Access(ctx, id)
 	if err != nil {
 		// Log full error internally for debugging
 		c.Error(err)
@@ -150,6 +150,6 @@ func (h *WorkspaceHandler) Access(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"url": url,
+		"urls": urls,
 	})
 }
