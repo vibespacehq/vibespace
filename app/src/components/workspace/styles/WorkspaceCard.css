@@ -221,6 +221,8 @@
 .workspace-card-footer {
   padding-top: var(--spacing-2);
   border-top: 1px solid var(--border);
+  display: flex;
+  gap: var(--spacing-2);
 }
 
 .btn-open-workspace {
@@ -228,7 +230,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--spacing-2);
-  width: 100%;
+  flex: 1;
   padding: var(--spacing-3);
   background: var(--accent-primary);
   border: 1px solid var(--accent-primary);
@@ -249,6 +251,38 @@
 }
 
 .btn-open-workspace:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-open-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  flex: 1;
+  padding: var(--spacing-3);
+  background: transparent;
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  color: var(--accent-primary);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-open-preview:hover:not(:disabled) {
+  background: rgba(0, 171, 171, 0.1);
+  border-color: var(--accent-yellow);
+  color: var(--accent-yellow);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 171, 171, 0.2);
+}
+
+.btn-open-preview:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;

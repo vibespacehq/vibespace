@@ -6,7 +6,7 @@ import '../styles/WorkspaceCard.css';
 
 interface WorkspaceCardProps {
   workspace: Workspace;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, urlType?: string) => void;
   onStart: (id: string) => Promise<void>;
   onStop: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -129,6 +129,11 @@ export function WorkspaceCard({
   const canStop = workspace.status === 'running';
   const canOpen = workspace.status === 'running' && workspace.urls?.['code-server'];
 
+  // Determine preview URL type and availability based on template
+  const previewUrlType = workspace.template === 'jupyter' ? 'jupyter' : 'preview';
+  const previewLabel = workspace.template === 'jupyter' ? 'Jupyter' : 'Preview';
+  const canOpenPreview = workspace.status === 'running' && workspace.urls?.[previewUrlType];
+
   return (
     <div className="workspace-card">
       <div className="workspace-card-header">
@@ -222,6 +227,17 @@ export function WorkspaceCard({
           <ExternalLink size={16} />
           Open
         </button>
+        {canOpenPreview && (
+          <button
+            className="btn-open-preview"
+            onClick={() => onOpen(workspace.id, previewUrlType)}
+            disabled={isOperating}
+            aria-label={`Open ${previewLabel} in browser`}
+          >
+            <ExternalLink size={16} />
+            {previewLabel}
+          </button>
+        )}
       </div>
 
       {showDeleteModal && (
