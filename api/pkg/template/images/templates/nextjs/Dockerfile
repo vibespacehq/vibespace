@@ -6,7 +6,7 @@ USER root
 # Install pnpm 10.18.3
 RUN npm install -g pnpm@10.18.3
 
-USER coder
+USER workspace
 
 # Install VS Code extensions for Next.js (non-fatal - continue even if some extensions fail)
 RUN (code-server --install-extension dbaeumer.vscode-eslint || true) && \
@@ -17,18 +17,21 @@ RUN (code-server --install-extension dbaeumer.vscode-eslint || true) && \
 
 # Copy Next.js-specific agent instructions
 # Copy to all agent directories (only the relevant one will exist based on base image)
-COPY CLAUDE.md /home/coder/NEXTJS-GUIDE.md
+COPY CLAUDE.md /home/workspace/NEXTJS-GUIDE.md
 RUN mkdir -p ~/.claude ~/.openai ~/.gemini && \
-    cp /home/coder/NEXTJS-GUIDE.md ~/.claude/NEXTJS-GUIDE.md 2>/dev/null || true && \
-    cp /home/coder/NEXTJS-GUIDE.md ~/.openai/NEXTJS-GUIDE.md 2>/dev/null || true && \
-    cp /home/coder/NEXTJS-GUIDE.md ~/.gemini/NEXTJS-GUIDE.md 2>/dev/null || true
+    cp /home/workspace/NEXTJS-GUIDE.md ~/.claude/NEXTJS-GUIDE.md 2>/dev/null || true && \
+    cp /home/workspace/NEXTJS-GUIDE.md ~/.openai/NEXTJS-GUIDE.md 2>/dev/null || true && \
+    cp /home/workspace/NEXTJS-GUIDE.md ~/.gemini/NEXTJS-GUIDE.md 2>/dev/null || true
 
 # Create init script - installs Next.js 15.5.5
 RUN echo '#!/bin/bash\n\
 if [ ! -f /workspace/.initialized ]; then\n\
   echo "Initializing Next.js workspace..."\n\
-  cd /workspace\n\
-  # Create Next.js 15.5 app with latest stable version\n\
+  # Create Next.js app in temp directory (create-next-app has issues with mounted volumes)\n\
+  # Use lowercase directory name to avoid npm naming restrictions\n\
+  TEMP_DIR="/tmp/nextjs-init-$(date +%s)"\n\
+  mkdir -p "$TEMP_DIR"\n\
+  cd "$TEMP_DIR"\n\
   pnpm create next-app@15.5.5 . \\\n\
     --typescript \\\n\
     --tailwind \\\n\
@@ -38,6 +41,11 @@ if [ ! -f /workspace/.initialized ]; then\n\
     --import-alias "@/*" \\\n\
     --turbopack \\\n\
     --use-pnpm\n\
+  # Move all files (including hidden files) to /workspace\n\
+  shopt -s dotglob\n\
+  mv "$TEMP_DIR"/* /workspace/ 2>/dev/null || true\n\
+  cd /workspace\n\
+  rm -rf "$TEMP_DIR"\n\
   pnpm install\n\
   echo ""\n\
   echo "Installed versions:"\n\
@@ -53,9 +61,9 @@ if [ ! -f /workspace/.initialized ]; then\n\
   touch /workspace/.initialized\n\
 fi\n\
 ~/init-agents.sh\n\
-exec code-server /workspace' > /home/coder/init.sh && \
-    chmod +x /home/coder/init.sh
+exec code-server /workspace' > /home/workspace/init.sh && \
+    chmod +x /home/workspace/init.sh
 
 EXPOSE 8080 3000
 
-CMD ["/home/coder/init.sh"]
+CMD ["/home/workspace/init.sh"]
