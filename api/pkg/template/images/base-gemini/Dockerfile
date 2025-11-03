@@ -32,13 +32,13 @@ RUN npm install -g npm@11.6.2
 # Using google-generativeai package (official Google Gemini SDK)
 RUN pip3 install --break-system-packages google-generativeai
 
-# Create non-root user (allow duplicate UID in case 1000 is taken)
-RUN useradd -m -s /bin/bash -u 1000 -o coder && \
-    mkdir -p /home/coder/.local/share/code-server && \
-    mkdir -p /home/coder/.gemini && \
-    chown -R coder:coder /home/coder
+# Create workspace user (UID 1001 to avoid conflict with ubuntu user at 1000)
+RUN useradd -m -s /bin/bash -u 1001 workspace && \
+    mkdir -p /home/workspace/.local/share/code-server && \
+    mkdir -p /home/workspace/.gemini && \
+    chown -R workspace:workspace /home/workspace
 
-USER coder
+USER workspace
 WORKDIR /workspace
 
 # Pre-configure code-server
@@ -48,7 +48,7 @@ RUN mkdir -p ~/.config/code-server && \
     echo "cert: false" >> ~/.config/code-server/config.yaml
 
 # Copy base AGENT.md
-COPY AGENT.md /home/coder/.gemini/AGENT.md
+COPY AGENT.md /home/workspace/.gemini/AGENT.md
 
 # Agent initialization script
 RUN echo '#!/bin/bash\n\
@@ -59,7 +59,7 @@ echo "  Python: $(python3 --version)"\n\
 echo "  code-server: $(code-server --version | head -1)"\n\
 if [ -n "$GOOGLE_API_KEY" ]; then\n\
   echo "  ✓ Google Gemini API available"\n\
-fi' > /home/coder/init-agents.sh && chmod +x /home/coder/init-agents.sh
+fi' > /home/workspace/init-agents.sh && chmod +x /home/workspace/init-agents.sh
 
 EXPOSE 8080
 
