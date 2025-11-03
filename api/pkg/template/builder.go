@@ -314,6 +314,49 @@ func (b *Builder) BuildImage(ctx context.Context, templateID, agent string, prog
 		return fmt.Errorf("failed to write agent instructions: %w", err)
 	}
 
+	// Copy vscode-settings.json for base images
+	if templateID == "base" {
+		// Create config directory in temp build context
+		configDir := filepath.Join(tempDir, "config")
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to create config directory: %v", err),
+				})
+			}
+			return fmt.Errorf("failed to create config directory: %w", err)
+		}
+
+		// Read vscode-settings.json from source
+		vscodeSettingsPath := filepath.Join("pkg/template/images/config/vscode-settings.json")
+		settingsData, err := os.ReadFile(vscodeSettingsPath)
+		if err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to read vscode-settings.json: %v", err),
+				})
+			}
+			return fmt.Errorf("failed to read vscode-settings.json: %w", err)
+		}
+
+		// Write to temp config directory
+		settingsDestPath := filepath.Join(configDir, "vscode-settings.json")
+		if err := os.WriteFile(settingsDestPath, settingsData, 0644); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to write vscode-settings.json: %v", err),
+				})
+			}
+			return fmt.Errorf("failed to write vscode-settings.json: %w", err)
+		}
+	}
+
 	// Connect to BuildKit daemon
 	c, err := client.New(ctx, b.buildkitAddr)
 	if err != nil {
