@@ -44,6 +44,11 @@ RUN mkdir -p ~/.config/code-server && \
     echo "auth: none" >> ~/.config/code-server/config.yaml && \
     echo "cert: false" >> ~/.config/code-server/config.yaml
 
+# Apply custom workspaces theme
+# Theme colors match SPEC.md Section 4.1.3: Pure black (#000000), Teal (#00ABAB), Pink (#F102F3), Yellow (#F5F50A)
+RUN mkdir -p ~/.local/share/code-server/User
+COPY config/vscode-settings.json /home/workspace/.local/share/code-server/User/settings.json
+
 # Copy base CLAUDE.md
 COPY CLAUDE.md /home/workspace/.claude/CLAUDE.md
 
