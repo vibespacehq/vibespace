@@ -156,7 +156,10 @@ RUN mkdir -p ~/.local/share/code-server/User && \
   "terminal.integrated.fontSize": 14,\n\
   "telemetry.telemetryLevel": "off",\n\
   "redhat.telemetry.enabled": false,\n\
-  "workbench.enableExperiments": false\n\
+  "workbench.enableExperiments": false,\n\
+  "workbench.startupEditor": "none",\n\
+  "workbench.welcomePage.walkthroughs.openOnInstall": false,\n\
+  "security.workspace.trust.enabled": false\n\
 }' > ~/.local/share/code-server/User/settings.json
 
 # Copy base AGENT.md
