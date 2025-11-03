@@ -188,7 +188,10 @@ describe('WorkspaceList', () => {
 
     it('opens workspace URL when open is clicked', async () => {
       const user = userEvent.setup();
-      const accessWorkspace = vi.fn().mockResolvedValue('http://127.0.0.1:8815');
+      const accessWorkspace = vi.fn().mockResolvedValue({
+        'code-server': 'http://127.0.0.1:8815',
+        'preview': 'http://127.0.0.1:8916'
+      });
       const windowOpenSpy = vi.spyOn(window, 'open');
 
       vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
@@ -207,7 +210,10 @@ describe('WorkspaceList', () => {
 
     it('calls accessWorkspace when open is clicked', async () => {
       const user = userEvent.setup();
-      const accessWorkspace = vi.fn().mockResolvedValue('http://127.0.0.1:8816');
+      const accessWorkspace = vi.fn().mockResolvedValue({
+        'code-server': 'http://127.0.0.1:8816',
+        'preview': 'http://127.0.0.1:8917'
+      });
 
       vi.spyOn(useWorkspacesHook, 'useWorkspaces').mockReturnValue({
         ...mockUseWorkspaces,
