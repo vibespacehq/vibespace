@@ -133,15 +133,20 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 	c.pfMutex.Lock()
 	defer c.pfMutex.Unlock()
 
-	key := fmt.Sprintf("%s/%s", namespace, keyName)
+	// Include remote port in key to allow multiple port-forwards to same pod
+	key := fmt.Sprintf("%s/%s:%d", namespace, keyName, remotePort)
+
+	fmt.Printf("[DEBUG] Starting port-forward: %s -> %d:%d\n", key, localPort, remotePort)
 
 	// Check if port-forward already exists
 	if pf, exists := c.portForwards[key]; exists {
 		if pf.LocalPort == localPort && pf.RemotePort == remotePort {
 			// Already running with same ports, nothing to do
+			fmt.Printf("[DEBUG] Port-forward already exists: %s -> %d:%d\n", key, localPort, remotePort)
 			return nil
 		}
 		// Different ports, stop existing and create new
+		fmt.Printf("[DEBUG] Stopping existing port-forward with different ports: %s\n", key)
 		c.stopPortForwardLocked(key)
 	}
 
@@ -157,11 +162,16 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 		fmt.Sprintf("%d:%d", localPort, remotePort),
 	)
 
+	fmt.Printf("[DEBUG] Executing: kubectl port-forward -n %s %s %d:%d\n", namespace, resource, localPort, remotePort)
+
 	// Start the command
 	if err := cmd.Start(); err != nil {
 		cancel()
+		fmt.Printf("[ERROR] Failed to start port-forward: %v\n", err)
 		return fmt.Errorf("failed to start port-forward: %w", err)
 	}
+
+	fmt.Printf("[DEBUG] Port-forward started successfully: %s -> %d:%d (PID: %d)\n", key, localPort, remotePort, cmd.Process.Pid)
 
 	// Store port-forward info
 	c.portForwards[key] = &PortForward{
@@ -176,13 +186,28 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 	return nil
 }
 
-// StopPortForward stops a kubectl port-forward
+// StopPortForward stops all kubectl port-forwards for a given service/pod
 func (c *Client) StopPortForward(namespace, service string) error {
 	c.pfMutex.Lock()
 	defer c.pfMutex.Unlock()
 
-	key := fmt.Sprintf("%s/%s", namespace, service)
-	return c.stopPortForwardLocked(key)
+	// Stop all port-forwards matching this namespace/service prefix
+	// Since keys now include remote port (namespace/service:port), we need to find all matches
+	prefix := fmt.Sprintf("%s/%s:", namespace, service)
+
+	keysToDelete := []string{}
+	for key := range c.portForwards {
+		if key == fmt.Sprintf("%s/%s", namespace, service) || // Old format (for backward compatibility)
+		   len(key) >= len(prefix) && key[:len(prefix)] == prefix { // New format with port
+			keysToDelete = append(keysToDelete, key)
+		}
+	}
+
+	for _, key := range keysToDelete {
+		c.stopPortForwardLocked(key)
+	}
+
+	return nil
 }
 
 // stopPortForwardLocked stops a port-forward (must be called with lock held)

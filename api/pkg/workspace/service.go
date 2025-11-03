@@ -92,8 +92,29 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 		}
 	}
 
-	// Build init containers (for git clone if needed)
+	// Build init containers
 	initContainers := []corev1.Container{}
+
+	// Always add init container to fix workspace directory ownership
+	// This ensures the workspace user (UID 1001) can write to /workspace
+	if req.Persistent {
+		initContainers = append(initContainers, corev1.Container{
+			Name:  "fix-permissions",
+			Image: "busybox:latest",
+			Command: []string{"sh", "-c"},
+			Args: []string{
+				"chown -R 1001:1001 /workspace && chmod -R 755 /workspace",
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "workspace-data",
+					MountPath: "/workspace",
+				},
+			},
+		})
+	}
+
+	// Add git clone init container if needed
 	if req.GithubRepo != "" {
 		initContainers = append(initContainers, corev1.Container{
 			Name:  "git-clone",
@@ -199,6 +220,9 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 			},
 		},
 		Spec: corev1.PodSpec{
+			SecurityContext: &corev1.PodSecurityContext{
+				FSGroup: int64Ptr(1001), // Match workspace user GID
+			},
 			InitContainers: initContainers,
 			Containers: []corev1.Container{
 				{
@@ -374,10 +398,14 @@ func (s *Service) Access(ctx context.Context, id string) (map[string]string, err
 // findAndForwardPort finds an available local port and starts a port-forward
 // offset is added to the base port calculation to avoid collisions when forwarding multiple ports
 func (s *Service) findAndForwardPort(ctx context.Context, podName, workspaceID string, remotePort, offset int) (int, error) {
+	fmt.Printf("[DEBUG] findAndForwardPort: pod=%s, remotePort=%d, offset=%d\n", podName, remotePort, offset)
+
 	// Find an available local port
 	// Start with deterministic port based on workspace ID + offset
 	basePort := PortRangeStart + hashStringToPort(workspaceID) + offset*100
 	localPort := 0
+
+	fmt.Printf("[DEBUG] Base port: %d (range: %d-%d)\n", basePort, PortRangeStart, PortRangeEnd)
 
 	for i := 0; i < MaxPortTries; i++ {
 		candidatePort := basePort + i
@@ -388,6 +416,7 @@ func (s *Service) findAndForwardPort(ctx context.Context, podName, workspaceID s
 
 		if isPortAvailable(candidatePort) {
 			localPort = candidatePort
+			fmt.Printf("[DEBUG] Found available port: %d\n", localPort)
 			break
 		}
 	}
@@ -397,11 +426,14 @@ func (s *Service) findAndForwardPort(ctx context.Context, podName, workspaceID s
 	}
 
 	// Start port-forward
+	fmt.Printf("[DEBUG] Starting port-forward: %d -> %d\n", localPort, remotePort)
 	err := s.k8sClient.StartPortForwardToPod(ctx, k8s.WorkspaceNamespace, podName, localPort, remotePort)
 	if err != nil {
+		fmt.Printf("[ERROR] Port-forward failed: %v\n", err)
 		return 0, fmt.Errorf("failed to start port-forward: %w", err)
 	}
 
+	fmt.Printf("[DEBUG] Port-forward successful: %d -> %d\n", localPort, remotePort)
 	return localPort, nil
 }
 
@@ -454,8 +486,13 @@ func podToWorkspace(pod *corev1.Pod) *model.Workspace {
 		"code-server": fmt.Sprintf("http://workspace-%s.local", id),
 	}
 
-	// Jupyter template also exposes Jupyter Lab on port 8888
-	if template == "jupyter" {
+	// Add template-specific URLs
+	switch template {
+	case "nextjs":
+		urls["preview"] = fmt.Sprintf("http://workspace-%s-3000.local", id)
+	case "vue":
+		urls["preview"] = fmt.Sprintf("http://workspace-%s-5173.local", id)
+	case "jupyter":
 		urls["jupyter"] = fmt.Sprintf("http://workspace-%s-8888.local", id)
 	}
 
@@ -505,6 +542,11 @@ func parseQuantity(storage string) resource.Quantity {
 // stringPtr returns a pointer to a string
 func stringPtr(s string) *string {
 	return &s
+}
+
+// int64Ptr returns a pointer to an int64
+func int64Ptr(i int64) *int64 {
+	return &i
 }
 
 // hashStringToPort converts a workspace ID to a consistent port offset (0-999)

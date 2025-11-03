@@ -29,13 +29,13 @@ RUN npm install -g npm@11.6.2
 # Install Claude Code CLI (latest)
 RUN npm install -g @anthropic-ai/claude-code
 
-# Create non-root user (allow duplicate UID in case 1000 is taken)
-RUN useradd -m -s /bin/bash -u 1000 -o coder && \
-    mkdir -p /home/coder/.local/share/code-server && \
-    mkdir -p /home/coder/.claude && \
-    chown -R coder:coder /home/coder
+# Create workspace user (UID 1001 to avoid conflict with ubuntu user at 1000)
+RUN useradd -m -s /bin/bash -u 1001 workspace && \
+    mkdir -p /home/workspace/.local/share/code-server && \
+    mkdir -p /home/workspace/.claude && \
+    chown -R workspace:workspace /home/workspace
 
-USER coder
+USER workspace
 WORKDIR /workspace
 
 # Pre-configure code-server
@@ -45,7 +45,7 @@ RUN mkdir -p ~/.config/code-server && \
     echo "cert: false" >> ~/.config/code-server/config.yaml
 
 # Copy base CLAUDE.md
-COPY CLAUDE.md /home/coder/.claude/CLAUDE.md
+COPY CLAUDE.md /home/workspace/.claude/CLAUDE.md
 
 # Agent initialization script
 RUN echo '#!/bin/bash\n\
@@ -58,7 +58,7 @@ if [ -n "$ANTHROPIC_API_KEY" ]; then\n\
 fi\n\
 if [ -n "$OPENAI_API_KEY" ]; then\n\
   echo "  ✓ OpenAI API available"\n\
-fi' > /home/coder/init-agents.sh && chmod +x /home/coder/init-agents.sh
+fi' > /home/workspace/init-agents.sh && chmod +x /home/workspace/init-agents.sh
 
 EXPOSE 8080
 

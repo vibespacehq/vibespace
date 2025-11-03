@@ -6,7 +6,7 @@ USER root
 # Install pnpm 10.18.3
 RUN npm install -g pnpm@10.18.3
 
-USER coder
+USER workspace
 
 # Install Vue VS Code extensions (non-fatal - continue even if some extensions fail)
 RUN (code-server --install-extension Vue.volar || true) && \
@@ -16,11 +16,11 @@ RUN (code-server --install-extension Vue.volar || true) && \
 
 # Copy Vue-specific agent instructions
 # Copy to all agent directories (only the relevant one will exist based on base image)
-COPY CLAUDE.md /home/coder/VUE-GUIDE.md
+COPY CLAUDE.md /home/workspace/VUE-GUIDE.md
 RUN mkdir -p ~/.claude ~/.openai ~/.gemini && \
-    cp /home/coder/VUE-GUIDE.md ~/.claude/VUE-GUIDE.md 2>/dev/null || true && \
-    cp /home/coder/VUE-GUIDE.md ~/.openai/VUE-GUIDE.md 2>/dev/null || true && \
-    cp /home/coder/VUE-GUIDE.md ~/.gemini/VUE-GUIDE.md 2>/dev/null || true
+    cp /home/workspace/VUE-GUIDE.md ~/.claude/VUE-GUIDE.md 2>/dev/null || true && \
+    cp /home/workspace/VUE-GUIDE.md ~/.openai/VUE-GUIDE.md 2>/dev/null || true && \
+    cp /home/workspace/VUE-GUIDE.md ~/.gemini/VUE-GUIDE.md 2>/dev/null || true
 
 # Create init script - installs Vue 3.5.22 + Vite 7.1.10
 RUN echo '#!/bin/bash\n\
@@ -43,9 +43,9 @@ if [ ! -f /workspace/.initialized ]; then\n\
   touch /workspace/.initialized\n\
 fi\n\
 ~/init-agents.sh\n\
-exec code-server /workspace' > /home/coder/init.sh && \
-    chmod +x /home/coder/init.sh
+exec code-server /workspace' > /home/workspace/init.sh && \
+    chmod +x /home/workspace/init.sh
 
 EXPOSE 8080 5173
 
-CMD ["/home/coder/init.sh"]
+CMD ["/home/workspace/init.sh"]
