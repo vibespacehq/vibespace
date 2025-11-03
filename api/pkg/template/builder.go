@@ -2,6 +2,7 @@ package template
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"log/slog"
 	"net"
@@ -13,6 +14,9 @@ import (
 	"github.com/moby/buildkit/client"
 	"golang.org/x/sync/errgroup"
 )
+
+//go:embed images/config/vscode-settings.json
+var vscodeSettingsData []byte
 
 const (
 	// Port numbers for workspace services
@@ -312,6 +316,47 @@ func (b *Builder) BuildImage(ctx context.Context, templateID, agent string, prog
 			})
 		}
 		return fmt.Errorf("failed to write agent instructions: %w", err)
+	}
+
+	// Copy vscode-settings.json for base images
+	if templateID == "base" {
+		// Create config directory in temp build context
+		configDir := filepath.Join(tempDir, "config")
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to create config directory %s: %v", configDir, err),
+				})
+			}
+			return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
+		}
+
+		// Use embedded vscode-settings.json data (no file path dependency)
+		// This ensures the settings work regardless of working directory or deployment environment
+		if len(vscodeSettingsData) == 0 {
+			return fmt.Errorf("embedded vscode-settings.json is empty (check go:embed directive)")
+		}
+
+		// Write embedded data to temp config directory
+		settingsDestPath := filepath.Join(configDir, "vscode-settings.json")
+		if err := os.WriteFile(settingsDestPath, vscodeSettingsData, 0644); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to write vscode-settings.json to %s: %v", settingsDestPath, err),
+				})
+			}
+			return fmt.Errorf("failed to write vscode-settings.json to %s: %w", settingsDestPath, err)
+		}
+
+		slog.Debug("copied vscode-settings.json to build context",
+			"template", templateID,
+			"agent", agent,
+			"dest", settingsDestPath,
+			"size_bytes", len(vscodeSettingsData))
 	}
 
 	// Connect to BuildKit daemon
