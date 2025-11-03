@@ -164,11 +164,6 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 		return fmt.Errorf("failed to start port-forward: %w", err)
 	}
 
-	// Wait for the process in a goroutine to prevent it from becoming a zombie
-	go func() {
-		_ = cmd.Wait()
-	}()
-
 	// Store port-forward info
 	c.portForwards[key] = &PortForward{
 		Service:    keyName,
