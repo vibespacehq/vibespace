@@ -133,7 +133,8 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 	c.pfMutex.Lock()
 	defer c.pfMutex.Unlock()
 
-	key := fmt.Sprintf("%s/%s", namespace, keyName)
+	// Include remote port in key to allow multiple port-forwards to same pod
+	key := fmt.Sprintf("%s/%s:%d", namespace, keyName, remotePort)
 
 	// Check if port-forward already exists
 	if pf, exists := c.portForwards[key]; exists {
@@ -176,13 +177,28 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 	return nil
 }
 
-// StopPortForward stops a kubectl port-forward
+// StopPortForward stops all kubectl port-forwards for a given service/pod
 func (c *Client) StopPortForward(namespace, service string) error {
 	c.pfMutex.Lock()
 	defer c.pfMutex.Unlock()
 
-	key := fmt.Sprintf("%s/%s", namespace, service)
-	return c.stopPortForwardLocked(key)
+	// Stop all port-forwards matching this namespace/service prefix
+	// Since keys now include remote port (namespace/service:port), we need to find all matches
+	prefix := fmt.Sprintf("%s/%s:", namespace, service)
+
+	keysToDelete := []string{}
+	for key := range c.portForwards {
+		if key == fmt.Sprintf("%s/%s", namespace, service) || // Old format (for backward compatibility)
+		   len(key) >= len(prefix) && key[:len(prefix)] == prefix { // New format with port
+			keysToDelete = append(keysToDelete, key)
+		}
+	}
+
+	for _, key := range keysToDelete {
+		c.stopPortForwardLocked(key)
+	}
+
+	return nil
 }
 
 // stopPortForwardLocked stops a port-forward (must be called with lock held)
