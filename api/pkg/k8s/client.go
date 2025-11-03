@@ -136,17 +136,13 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 	// Include remote port in key to allow multiple port-forwards to same pod
 	key := fmt.Sprintf("%s/%s:%d", namespace, keyName, remotePort)
 
-	fmt.Printf("[DEBUG] Starting port-forward: %s -> %d:%d\n", key, localPort, remotePort)
-
 	// Check if port-forward already exists
 	if pf, exists := c.portForwards[key]; exists {
 		if pf.LocalPort == localPort && pf.RemotePort == remotePort {
 			// Already running with same ports, nothing to do
-			fmt.Printf("[DEBUG] Port-forward already exists: %s -> %d:%d\n", key, localPort, remotePort)
 			return nil
 		}
 		// Different ports, stop existing and create new
-		fmt.Printf("[DEBUG] Stopping existing port-forward with different ports: %s\n", key)
 		c.stopPortForwardLocked(key)
 	}
 
@@ -162,16 +158,11 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 		fmt.Sprintf("%d:%d", localPort, remotePort),
 	)
 
-	fmt.Printf("[DEBUG] Executing: kubectl port-forward -n %s %s %d:%d\n", namespace, resource, localPort, remotePort)
-
 	// Start the command
 	if err := cmd.Start(); err != nil {
 		cancel()
-		fmt.Printf("[ERROR] Failed to start port-forward: %v\n", err)
 		return fmt.Errorf("failed to start port-forward: %w", err)
 	}
-
-	fmt.Printf("[DEBUG] Port-forward started successfully: %s -> %d:%d (PID: %d)\n", key, localPort, remotePort, cmd.Process.Pid)
 
 	// Store port-forward info
 	c.portForwards[key] = &PortForward{

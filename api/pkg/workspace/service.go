@@ -398,14 +398,18 @@ func (s *Service) Access(ctx context.Context, id string) (map[string]string, err
 // findAndForwardPort finds an available local port and starts a port-forward
 // offset is added to the base port calculation to avoid collisions when forwarding multiple ports
 func (s *Service) findAndForwardPort(ctx context.Context, podName, workspaceID string, remotePort, offset int) (int, error) {
-	fmt.Printf("[DEBUG] findAndForwardPort: pod=%s, remotePort=%d, offset=%d\n", podName, remotePort, offset)
-
 	// Find an available local port
 	// Start with deterministic port based on workspace ID + offset
+	// Port range: 8080-9079 (1000 ports)
+	// With offset multiplier of 100, supports ~10 different ports per workspace
 	basePort := PortRangeStart + hashStringToPort(workspaceID) + offset*100
-	localPort := 0
 
-	fmt.Printf("[DEBUG] Base port: %d (range: %d-%d)\n", basePort, PortRangeStart, PortRangeEnd)
+	// Ensure basePort is within valid range
+	if basePort > PortRangeEnd {
+		basePort = PortRangeStart + (basePort % (PortRangeEnd - PortRangeStart + 1))
+	}
+
+	localPort := 0
 
 	for i := 0; i < MaxPortTries; i++ {
 		candidatePort := basePort + i
@@ -416,7 +420,6 @@ func (s *Service) findAndForwardPort(ctx context.Context, podName, workspaceID s
 
 		if isPortAvailable(candidatePort) {
 			localPort = candidatePort
-			fmt.Printf("[DEBUG] Found available port: %d\n", localPort)
 			break
 		}
 	}
@@ -426,14 +429,11 @@ func (s *Service) findAndForwardPort(ctx context.Context, podName, workspaceID s
 	}
 
 	// Start port-forward
-	fmt.Printf("[DEBUG] Starting port-forward: %d -> %d\n", localPort, remotePort)
 	err := s.k8sClient.StartPortForwardToPod(ctx, k8s.WorkspaceNamespace, podName, localPort, remotePort)
 	if err != nil {
-		fmt.Printf("[ERROR] Port-forward failed: %v\n", err)
 		return 0, fmt.Errorf("failed to start port-forward: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] Port-forward successful: %d -> %d\n", localPort, remotePort)
 	return localPort, nil
 }
 
