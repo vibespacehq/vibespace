@@ -2,6 +2,7 @@ package template
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"log/slog"
 	"net"
@@ -13,6 +14,9 @@ import (
 	"github.com/moby/buildkit/client"
 	"golang.org/x/sync/errgroup"
 )
+
+//go:embed images/config/vscode-settings.json
+var vscodeSettingsData []byte
 
 const (
 	// Port numbers for workspace services
@@ -323,38 +327,36 @@ func (b *Builder) BuildImage(ctx context.Context, templateID, agent string, prog
 				progressFn(BuildProgress{
 					Template: displayName,
 					Status:   "error",
-					Error:    fmt.Sprintf("Failed to create config directory: %v", err),
+					Error:    fmt.Sprintf("Failed to create config directory %s: %v", configDir, err),
 				})
 			}
-			return fmt.Errorf("failed to create config directory: %w", err)
+			return fmt.Errorf("failed to create config directory %s: %w", configDir, err)
 		}
 
-		// Read vscode-settings.json from source
-		vscodeSettingsPath := filepath.Join("pkg/template/images/config/vscode-settings.json")
-		settingsData, err := os.ReadFile(vscodeSettingsPath)
-		if err != nil {
-			if progressFn != nil {
-				progressFn(BuildProgress{
-					Template: displayName,
-					Status:   "error",
-					Error:    fmt.Sprintf("Failed to read vscode-settings.json: %v", err),
-				})
-			}
-			return fmt.Errorf("failed to read vscode-settings.json: %w", err)
+		// Use embedded vscode-settings.json data (no file path dependency)
+		// This ensures the settings work regardless of working directory or deployment environment
+		if len(vscodeSettingsData) == 0 {
+			return fmt.Errorf("embedded vscode-settings.json is empty (check go:embed directive)")
 		}
 
-		// Write to temp config directory
+		// Write embedded data to temp config directory
 		settingsDestPath := filepath.Join(configDir, "vscode-settings.json")
-		if err := os.WriteFile(settingsDestPath, settingsData, 0644); err != nil {
+		if err := os.WriteFile(settingsDestPath, vscodeSettingsData, 0644); err != nil {
 			if progressFn != nil {
 				progressFn(BuildProgress{
 					Template: displayName,
 					Status:   "error",
-					Error:    fmt.Sprintf("Failed to write vscode-settings.json: %v", err),
+					Error:    fmt.Sprintf("Failed to write vscode-settings.json to %s: %v", settingsDestPath, err),
 				})
 			}
-			return fmt.Errorf("failed to write vscode-settings.json: %w", err)
+			return fmt.Errorf("failed to write vscode-settings.json to %s: %w", settingsDestPath, err)
 		}
+
+		slog.Debug("copied vscode-settings.json to build context",
+			"template", templateID,
+			"agent", agent,
+			"dest", settingsDestPath,
+			"size_bytes", len(vscodeSettingsData))
 	}
 
 	// Connect to BuildKit daemon
