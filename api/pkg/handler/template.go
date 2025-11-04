@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log/slog"
 	"net/http"
 
 	"workspace/pkg/model"
@@ -54,6 +55,9 @@ func NewTemplateHandler() *TemplateHandler {
 //
 //	curl http://localhost:8000/api/v1/templates
 func (h *TemplateHandler) List(c *gin.Context) {
+	slog.Info("template list request received",
+		"remote_addr", c.ClientIP())
+
 	// Template metadata reflecting October 2025 stable versions
 	// Images are built during cluster setup and stored in local registry
 	// Each template supports multiple AI agents (claude, codex, gemini)
@@ -105,6 +109,10 @@ func (h *TemplateHandler) List(c *gin.Context) {
 		},
 	}
 
+	slog.Info("template list request completed",
+		"count", len(templates),
+		"remote_addr", c.ClientIP())
+
 	c.JSON(http.StatusOK, gin.H{
 		"templates": templates,
 	})
@@ -142,6 +150,10 @@ func (h *TemplateHandler) List(c *gin.Context) {
 //	curl http://localhost:8000/api/v1/templates/nextjs
 func (h *TemplateHandler) Get(c *gin.Context) {
 	id := c.Param("id")
+
+	slog.Info("template get request received",
+		"template_id", id,
+		"remote_addr", c.ClientIP())
 
 	// Template metadata reflecting October 2025 stable versions
 	// Images are built during cluster setup and stored in local registry
@@ -195,11 +207,19 @@ func (h *TemplateHandler) Get(c *gin.Context) {
 
 	template, ok := templates[id]
 	if !ok {
+		slog.Warn("template not found",
+			"template_id", id,
+			"remote_addr", c.ClientIP())
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Template not found",
 		})
 		return
 	}
+
+	slog.Info("template get request completed",
+		"template_id", id,
+		"template_name", template.Name,
+		"remote_addr", c.ClientIP())
 
 	c.JSON(http.StatusOK, template)
 }

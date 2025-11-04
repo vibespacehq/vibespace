@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -39,9 +40,15 @@ type ClusterStatusResponse struct {
 func (h *ClusterHandler) GetStatus(c *gin.Context) {
 	ctx := c.Request.Context()
 
+	slog.Info("cluster status check requested",
+		"remote_addr", c.ClientIP())
+
 	// Check components
 	components, err := h.k8sClient.CheckComponents(ctx)
 	if err != nil {
+		slog.Error("failed to check cluster components",
+			"error", err,
+			"remote_addr", c.ClientIP())
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to check cluster components",
 			"details": err.Error(),
@@ -70,6 +77,15 @@ func (h *ClusterHandler) GetStatus(c *gin.Context) {
 		Message:    components.GetStatusSummary(),
 	}
 
+	slog.Info("cluster status check completed",
+		"healthy", components.AllComponentsReady(),
+		"version", versionStr,
+		"knative_healthy", components.Knative.Healthy,
+		"traefik_healthy", components.Traefik.Healthy,
+		"registry_healthy", components.Registry.Healthy,
+		"buildkit_healthy", components.BuildKit.Healthy,
+		"remote_addr", c.ClientIP())
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -77,6 +93,9 @@ func (h *ClusterHandler) GetStatus(c *gin.Context) {
 // POST /api/v1/cluster/setup
 func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 	ctx := c.Request.Context()
+
+	slog.Info("cluster setup request received",
+		"remote_addr", c.ClientIP())
 
 	// Set SSE headers
 	c.Header("Content-Type", "text/event-stream")
@@ -101,6 +120,8 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 		// Install components
 		err := h.k8sClient.EnsureClusterComponents(ctx, progressFn)
 		if err != nil {
+			slog.Error("cluster setup failed during component installation",
+				"error", err)
 			done <- err
 			return
 		}
@@ -109,10 +130,13 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 		config := k8s.DefaultClusterConfig()
 		err = h.k8sClient.ApplyConfiguration(ctx, config)
 		if err != nil {
+			slog.Error("cluster setup failed during configuration",
+				"error", err)
 			done <- fmt.Errorf("failed to apply configuration: %w", err)
 			return
 		}
 
+		slog.Info("cluster setup completed successfully")
 		done <- nil
 	}()
 
@@ -190,14 +214,24 @@ func (h *ClusterHandler) EnsureComponents(ctx context.Context) error {
 // ListContexts returns all available Kubernetes contexts
 // GET /api/v1/cluster/contexts
 func (h *ClusterHandler) ListContexts(c *gin.Context) {
+	slog.Info("list contexts request received",
+		"remote_addr", c.ClientIP())
+
 	contexts, err := k8s.ListContexts()
 	if err != nil {
+		slog.Error("failed to list contexts",
+			"error", err,
+			"remote_addr", c.ClientIP())
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to list contexts",
 			"details": err.Error(),
 		})
 		return
 	}
+
+	slog.Info("list contexts request completed",
+		"count", len(contexts),
+		"remote_addr", c.ClientIP())
 
 	c.JSON(http.StatusOK, gin.H{
 		"contexts": contexts,
@@ -214,6 +248,8 @@ type SwitchContextRequest struct {
 func (h *ClusterHandler) SwitchContext(c *gin.Context) {
 	contextName := c.Param("name")
 	if contextName == "" {
+		slog.Warn("switch context request missing context name",
+			"remote_addr", c.ClientIP())
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "Context name is required",
 		})
@@ -223,10 +259,19 @@ func (h *ClusterHandler) SwitchContext(c *gin.Context) {
 	// Check if context is remote
 	isRemote := k8s.IsContextRemote(contextName)
 
+	slog.Info("switch context request received",
+		"context", contextName,
+		"is_remote", isRemote,
+		"remote_addr", c.ClientIP())
+
 	// For remote clusters, require confirmation
 	if isRemote {
 		var req SwitchContextRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
+			slog.Warn("invalid switch context request body",
+				"context", contextName,
+				"error", err,
+				"remote_addr", c.ClientIP())
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "Invalid request body",
 				"details": err.Error(),
@@ -235,6 +280,9 @@ func (h *ClusterHandler) SwitchContext(c *gin.Context) {
 		}
 
 		if !req.Confirmed {
+			slog.Warn("switch context to remote cluster requires confirmation",
+				"context", contextName,
+				"remote_addr", c.ClientIP())
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":              "Confirmation required for remote cluster",
 				"requires_confirmation": true,
@@ -247,12 +295,22 @@ func (h *ClusterHandler) SwitchContext(c *gin.Context) {
 
 	err := k8s.SwitchContext(contextName)
 	if err != nil {
+		slog.Error("failed to switch context",
+			"context", contextName,
+			"is_remote", isRemote,
+			"error", err,
+			"remote_addr", c.ClientIP())
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "Failed to switch context",
 			"details": err.Error(),
 		})
 		return
 	}
+
+	slog.Info("context switched successfully",
+		"context", contextName,
+		"is_remote", isRemote,
+		"remote_addr", c.ClientIP())
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":   fmt.Sprintf("Switched to context: %s", contextName),

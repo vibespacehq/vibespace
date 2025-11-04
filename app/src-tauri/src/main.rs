@@ -627,7 +627,7 @@ fn start_api_server(app_handle: tauri::AppHandle) {
                         thread::spawn(move || {
                             let reader = BufReader::new(stderr);
                             for line in reader.lines().map_while(Result::ok) {
-                                eprintln!("[API ERROR] {}", line);
+                                eprintln!("[API] {}", line);
                             }
                         });
                     }

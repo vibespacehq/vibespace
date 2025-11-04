@@ -3,6 +3,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -25,6 +26,8 @@ type ClusterComponents struct {
 
 // CheckComponents checks the status of all required cluster components
 func (c *Client) CheckComponents(ctx context.Context) (*ClusterComponents, error) {
+	slog.Info("checking cluster components")
+
 	components := &ClusterComponents{}
 
 	// Check Knative
@@ -39,17 +42,27 @@ func (c *Client) CheckComponents(ctx context.Context) (*ClusterComponents, error
 	// Check BuildKit
 	components.BuildKit = c.checkBuildKit(ctx)
 
+	slog.Info("cluster component check completed",
+		"all_ready", components.AllComponentsReady(),
+		"knative_healthy", components.Knative.Healthy,
+		"traefik_healthy", components.Traefik.Healthy,
+		"registry_healthy", components.Registry.Healthy,
+		"buildkit_healthy", components.BuildKit.Healthy)
+
 	return components, nil
 }
 
 // checkKnative checks if Knative Serving is installed and healthy
 func (c *Client) checkKnative(ctx context.Context) ComponentStatus {
+	slog.Debug("checking knative component")
+
 	status := ComponentStatus{Installed: false, Healthy: false}
 
 	// Check if knative-serving namespace exists
 	_, err := c.clientset.CoreV1().Namespaces().Get(ctx, "knative-serving", metav1.GetOptions{})
 	if err != nil {
 		status.Error = "knative-serving namespace not found"
+		slog.Debug("knative check failed", "reason", status.Error)
 		return status
 	}
 
@@ -59,12 +72,14 @@ func (c *Client) checkKnative(ctx context.Context) ComponentStatus {
 	deployment, err := c.clientset.AppsV1().Deployments("knative-serving").Get(ctx, "controller", metav1.GetOptions{})
 	if err != nil {
 		status.Error = "controller deployment not found"
+		slog.Debug("knative check failed", "reason", status.Error)
 		return status
 	}
 
 	// Check if controller deployment is ready
 	if deployment.Status.ReadyReplicas == 0 {
 		status.Error = "controller deployment not ready"
+		slog.Debug("knative check failed", "reason", status.Error)
 		return status
 	}
 
@@ -117,17 +132,22 @@ func (c *Client) checkKnative(ctx context.Context) ComponentStatus {
 		status.Version = version
 	}
 
+	slog.Debug("knative component healthy", "version", status.Version)
+
 	return status
 }
 
 // checkTraefik checks if Traefik is installed and healthy
 func (c *Client) checkTraefik(ctx context.Context) ComponentStatus {
+	slog.Debug("checking traefik component")
+
 	status := ComponentStatus{Installed: false, Healthy: false}
 
 	// Check if traefik namespace exists
 	_, err := c.clientset.CoreV1().Namespaces().Get(ctx, "traefik", metav1.GetOptions{})
 	if err != nil {
 		status.Error = "traefik namespace not found"
+		slog.Debug("traefik check failed", "reason", status.Error)
 		return status
 	}
 
@@ -137,6 +157,7 @@ func (c *Client) checkTraefik(ctx context.Context) ComponentStatus {
 	deployment, err := c.clientset.AppsV1().Deployments("traefik").Get(ctx, "traefik", metav1.GetOptions{})
 	if err != nil {
 		status.Error = "traefik deployment not found"
+		slog.Debug("traefik check failed", "reason", status.Error)
 		return status
 	}
 
@@ -145,6 +166,7 @@ func (c *Client) checkTraefik(ctx context.Context) ComponentStatus {
 		status.Healthy = true
 	} else {
 		status.Error = "traefik deployment not ready"
+		slog.Debug("traefik check failed", "reason", status.Error)
 	}
 
 	// Get version from image tag
@@ -153,17 +175,24 @@ func (c *Client) checkTraefik(ctx context.Context) ComponentStatus {
 		status.Version = image
 	}
 
+	if status.Healthy {
+		slog.Debug("traefik component healthy", "version", status.Version)
+	}
+
 	return status
 }
 
 // checkRegistry checks if the local registry is installed and healthy
 func (c *Client) checkRegistry(ctx context.Context) ComponentStatus {
+	slog.Debug("checking registry component")
+
 	status := ComponentStatus{Installed: false, Healthy: false}
 
 	// Check if registry deployment exists in default namespace
 	deployment, err := c.clientset.AppsV1().Deployments("default").Get(ctx, "registry", metav1.GetOptions{})
 	if err != nil {
 		status.Error = "registry deployment not found"
+		slog.Debug("registry check failed", "reason", status.Error)
 		return status
 	}
 
@@ -174,6 +203,7 @@ func (c *Client) checkRegistry(ctx context.Context) ComponentStatus {
 		status.Healthy = true
 	} else {
 		status.Error = "registry deployment not ready"
+		slog.Debug("registry check failed", "reason", status.Error)
 	}
 
 	// Get version from image tag
@@ -182,17 +212,24 @@ func (c *Client) checkRegistry(ctx context.Context) ComponentStatus {
 		status.Version = image
 	}
 
+	if status.Healthy {
+		slog.Debug("registry component healthy", "version", status.Version)
+	}
+
 	return status
 }
 
 // checkBuildKit checks if BuildKit is installed and healthy
 func (c *Client) checkBuildKit(ctx context.Context) ComponentStatus {
+	slog.Debug("checking buildkit component")
+
 	status := ComponentStatus{Installed: false, Healthy: false}
 
 	// Check if buildkitd deployment exists in default namespace
 	deployment, err := c.clientset.AppsV1().Deployments("default").Get(ctx, "buildkitd", metav1.GetOptions{})
 	if err != nil {
 		status.Error = "buildkitd deployment not found"
+		slog.Debug("buildkit check failed", "reason", status.Error)
 		return status
 	}
 
@@ -203,12 +240,17 @@ func (c *Client) checkBuildKit(ctx context.Context) ComponentStatus {
 		status.Healthy = true
 	} else {
 		status.Error = "buildkitd deployment not ready"
+		slog.Debug("buildkit check failed", "reason", status.Error)
 	}
 
 	// Get version from image tag
 	if len(deployment.Spec.Template.Spec.Containers) > 0 {
 		image := deployment.Spec.Template.Spec.Containers[0].Image
 		status.Version = image
+	}
+
+	if status.Healthy {
+		slog.Debug("buildkit component healthy", "version", status.Version)
 	}
 
 	return status

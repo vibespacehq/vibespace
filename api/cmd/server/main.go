@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 
 	"workspace/pkg/handler"
@@ -12,12 +12,17 @@ import (
 )
 
 func main() {
+	slog.Info("initializing workspaces api server",
+		"port", getPort())
+
 	// Initialize Kubernetes client
 	k8sClient, err := k8s.NewClient()
 	if err != nil {
-		log.Printf("Warning: Failed to initialize Kubernetes client: %v", err)
-		log.Printf("API will run in limited mode without Kubernetes integration")
+		slog.Warn("kubernetes client initialization failed, running in limited mode",
+			"error", err)
 		// Don't fatal - allow API to run for development
+	} else {
+		slog.Info("kubernetes client initialized successfully")
 	}
 
 	// Initialize services
@@ -85,13 +90,25 @@ func main() {
 	}
 
 	// Get port from environment or default to 8090
+	port := getPort()
+
+	slog.Info("api server starting",
+		"port", port,
+		"address", ":"+port,
+		"endpoints", []string{"/workspaces", "/templates", "/cluster"})
+
+	if err := r.Run(":" + port); err != nil {
+		slog.Error("failed to start api server",
+			"error", err,
+			"port", port)
+		os.Exit(1)
+	}
+}
+
+func getPort() string {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8090"
 	}
-
-	log.Printf("Starting API server on port %s...", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
-	}
+	return port
 }
