@@ -1,8 +1,10 @@
 package k8s
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -133,6 +135,13 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 	c.pfMutex.Lock()
 	defer c.pfMutex.Unlock()
 
+	slog.Info("starting port-forward to resource",
+		"namespace", namespace,
+		"resource", resource,
+		"key_name", keyName,
+		"local_port", localPort,
+		"remote_port", remotePort)
+
 	// Include remote port in key to allow multiple port-forwards to same pod
 	key := fmt.Sprintf("%s/%s:%d", namespace, keyName, remotePort)
 
@@ -140,9 +149,17 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 	if pf, exists := c.portForwards[key]; exists {
 		if pf.LocalPort == localPort && pf.RemotePort == remotePort {
 			// Already running with same ports, nothing to do
+			slog.Info("port-forward already exists with same ports",
+				"key", key,
+				"local_port", localPort,
+				"remote_port", remotePort)
 			return nil
 		}
 		// Different ports, stop existing and create new
+		slog.Info("stopping existing port-forward to restart with different ports",
+			"key", key,
+			"old_local_port", pf.LocalPort,
+			"new_local_port", localPort)
 		c.stopPortForwardLocked(key)
 	}
 
@@ -158,11 +175,32 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 		fmt.Sprintf("%d:%d", localPort, remotePort),
 	)
 
+	// Capture stderr for debugging
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
+	cmdStr := fmt.Sprintf("kubectl port-forward -n %s %s %d:%d", namespace, resource, localPort, remotePort)
+	slog.Info("executing kubectl port-forward command",
+		"command", cmdStr,
+		"key", key)
+
 	// Start the command
 	if err := cmd.Start(); err != nil {
 		cancel()
+		stderr := stderrBuf.String()
+		slog.Error("failed to start port-forward process",
+			"key", key,
+			"command", cmdStr,
+			"error", err,
+			"stderr", stderr)
 		return fmt.Errorf("failed to start port-forward: %w", err)
 	}
+
+	slog.Info("port-forward process started successfully",
+		"key", key,
+		"pid", cmd.Process.Pid,
+		"local_port", localPort,
+		"remote_port", remotePort)
 
 	// Store port-forward info
 	c.portForwards[key] = &PortForward{
@@ -174,6 +212,10 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 		cancel:     cancel,
 	}
 
+	slog.Info("port-forward tracked successfully",
+		"key", key,
+		"total_active_port_forwards", len(c.portForwards))
+
 	return nil
 }
 
@@ -181,6 +223,10 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 func (c *Client) StopPortForward(namespace, service string) error {
 	c.pfMutex.Lock()
 	defer c.pfMutex.Unlock()
+
+	slog.Info("stopping port-forwards for service",
+		"namespace", namespace,
+		"service", service)
 
 	// Stop all port-forwards matching this namespace/service prefix
 	// Since keys now include remote port (namespace/service:port), we need to find all matches
@@ -194,9 +240,20 @@ func (c *Client) StopPortForward(namespace, service string) error {
 		}
 	}
 
+	slog.Info("found port-forwards to stop",
+		"namespace", namespace,
+		"service", service,
+		"count", len(keysToDelete),
+		"keys", keysToDelete)
+
 	for _, key := range keysToDelete {
 		c.stopPortForwardLocked(key)
 	}
+
+	slog.Info("stopped all port-forwards for service",
+		"namespace", namespace,
+		"service", service,
+		"count", len(keysToDelete))
 
 	return nil
 }
@@ -205,8 +262,17 @@ func (c *Client) StopPortForward(namespace, service string) error {
 func (c *Client) stopPortForwardLocked(key string) error {
 	pf, exists := c.portForwards[key]
 	if !exists {
+		slog.Debug("port-forward already stopped or does not exist",
+			"key", key)
 		return nil // Already stopped
 	}
+
+	slog.Info("stopping port-forward",
+		"key", key,
+		"service", pf.Service,
+		"namespace", pf.Namespace,
+		"local_port", pf.LocalPort,
+		"remote_port", pf.RemotePort)
 
 	// Cancel context to stop kubectl
 	if pf.cancel != nil {
@@ -215,10 +281,16 @@ func (c *Client) stopPortForwardLocked(key string) error {
 
 	// Wait for process to exit
 	if pf.cmd != nil && pf.cmd.Process != nil {
+		pid := pf.cmd.Process.Pid
 		_ = pf.cmd.Wait() // Ignore error, process may already be dead
+		slog.Info("port-forward process terminated",
+			"key", key,
+			"pid", pid)
 	}
 
 	delete(c.portForwards, key)
+	slog.Info("port-forward stopped and removed from tracking",
+		"key", key)
 	return nil
 }
 

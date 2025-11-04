@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"time"
 
@@ -42,6 +43,8 @@ func (s *Service) List(ctx context.Context) ([]*model.Workspace, error) {
 		LabelSelector: "app.kubernetes.io/managed-by=workspace",
 	})
 	if err != nil {
+		slog.Error("failed to list workspace pods",
+			"error", err)
 		return nil, fmt.Errorf("failed to list pods: %w", err)
 	}
 
@@ -56,24 +59,53 @@ func (s *Service) List(ctx context.Context) ([]*model.Workspace, error) {
 
 // Get returns a workspace by ID
 func (s *Service) Get(ctx context.Context, id string) (*model.Workspace, error) {
-	pod, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Get(ctx, fmt.Sprintf("workspace-%s", id), metav1.GetOptions{})
+	podName := fmt.Sprintf("workspace-%s", id)
+
+	slog.Info("getting workspace",
+		"workspace_id", id,
+		"pod_name", podName)
+
+	pod, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
+		slog.Warn("workspace not found",
+			"workspace_id", id,
+			"pod_name", podName,
+			"error", err)
 		return nil, fmt.Errorf("workspace not found: %w", err)
 	}
+
+	slog.Info("got workspace successfully",
+		"workspace_id", id,
+		"status", pod.Status.Phase)
 
 	return podToWorkspace(pod), nil
 }
 
 // Create creates a new workspace
 func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest) (*model.Workspace, error) {
+	slog.Info("creating workspace",
+		"name", req.Name,
+		"template", req.Template,
+		"agent", req.Agent,
+		"github_repo", req.GithubRepo,
+		"persistent", req.Persistent)
+
 	// Ensure namespace exists
 	if err := s.k8sClient.EnsureNamespace(ctx); err != nil {
+		slog.Error("failed to ensure namespace",
+			"error", err,
+			"namespace", k8s.WorkspaceNamespace)
 		return nil, fmt.Errorf("failed to ensure namespace: %w", err)
 	}
 
 	id := uuid.New().String()[:8] // Short ID
 	podName := fmt.Sprintf("workspace-%s", id)
 	pvcName := fmt.Sprintf("workspace-%s-pvc", id)
+
+	slog.Debug("generated workspace id",
+		"workspace_id", id,
+		"pod_name", podName,
+		"pvc_name", pvcName)
 
 	// Set default resources if not provided
 	resources := req.Resources
@@ -87,9 +119,20 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 
 	// Create PVC for persistent storage if requested
 	if req.Persistent {
+		slog.Info("creating persistent volume claim",
+			"workspace_id", id,
+			"pvc_name", pvcName,
+			"storage", resources.Storage)
 		if err := s.createPVC(ctx, pvcName, resources.Storage); err != nil {
+			slog.Error("failed to create pvc",
+				"workspace_id", id,
+				"pvc_name", pvcName,
+				"error", err)
 			return nil, fmt.Errorf("failed to create PVC: %w", err)
 		}
+		slog.Info("pvc created successfully",
+			"workspace_id", id,
+			"pvc_name", pvcName)
 	}
 
 	// Build init containers
@@ -239,10 +282,27 @@ func (s *Service) Create(ctx context.Context, req *model.CreateWorkspaceRequest)
 		},
 	}
 
+	slog.Info("creating workspace pod",
+		"workspace_id", id,
+		"pod_name", podName,
+		"image", workspaceImage,
+		"init_containers", len(initContainers))
+
 	created, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
+		slog.Error("failed to create workspace pod",
+			"workspace_id", id,
+			"pod_name", podName,
+			"error", err)
 		return nil, fmt.Errorf("failed to create workspace pod: %w", err)
 	}
+
+	slog.Info("workspace created successfully",
+		"workspace_id", id,
+		"pod_name", podName,
+		"status", created.Status.Phase,
+		"template", req.Template,
+		"agent", req.Agent)
 
 	return podToWorkspace(created), nil
 }
@@ -266,7 +326,10 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	// This prevents orphaned kubectl processes and memory leaks
 	if err := s.k8sClient.StopPortForward(k8s.WorkspaceNamespace, podName); err != nil {
 		// Log but don't fail deletion - port-forward may not exist
-		fmt.Printf("Warning: failed to stop port-forward for workspace %s: %v\n", id, err)
+		slog.Warn("failed to stop port-forward during deletion",
+			"workspace_id", id,
+			"pod_name", podName,
+			"error", err)
 	}
 
 	err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Delete(ctx, podName, metav1.DeleteOptions{})
@@ -291,14 +354,25 @@ func (s *Service) Start(ctx context.Context, id string) error {
 	// - No need to manually recreate pods or store metadata
 
 	podName := fmt.Sprintf("workspace-%s", id)
+
+	slog.Info("starting workspace",
+		"workspace_id", id,
+		"pod_name", podName)
+
 	_, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err == nil {
 		// Pod already exists, nothing to do
+		slog.Info("workspace already running",
+			"workspace_id", id,
+			"pod_name", podName)
 		return nil
 	}
 
 	// Limitation: Cannot restart a stopped workspace in MVP Phase 1
 	// This will be resolved in MVP Phase 2 with Knative migration
+	slog.Warn("cannot restart stopped workspace in MVP Phase 1",
+		"workspace_id", id,
+		"pod_name", podName)
 	return nil
 }
 
@@ -319,9 +393,16 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 
 	podName := fmt.Sprintf("workspace-%s", id)
 
+	slog.Info("stopping workspace",
+		"workspace_id", id,
+		"pod_name", podName)
+
 	// Stop any active port-forward for this workspace
 	if err := s.k8sClient.StopPortForward(k8s.WorkspaceNamespace, podName); err != nil {
-		fmt.Printf("Warning: failed to stop port-forward for workspace %s: %v\n", id, err)
+		slog.Warn("failed to stop port-forward during stop",
+			"workspace_id", id,
+			"pod_name", podName,
+			"error", err)
 	}
 
 	// Delete the pod (PVC remains, preserving workspace data)
@@ -329,10 +410,21 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Pod already deleted/stopped
+			slog.Info("workspace already stopped",
+				"workspace_id", id,
+				"pod_name", podName)
 			return nil
 		}
+		slog.Error("failed to stop workspace",
+			"workspace_id", id,
+			"pod_name", podName,
+			"error", err)
 		return fmt.Errorf("failed to stop workspace: %w", err)
 	}
+
+	slog.Info("workspace stopped successfully",
+		"workspace_id", id,
+		"pod_name", podName)
 
 	return nil
 }
@@ -341,6 +433,10 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 // Returns a map of local URLs where the workspace can be accessed
 func (s *Service) Access(ctx context.Context, id string) (map[string]string, error) {
 	podName := fmt.Sprintf("workspace-%s", id)
+
+	slog.Info("starting workspace access",
+		"workspace_id", id,
+		"pod_name", podName)
 
 	// Verify pod exists and is running
 	pod, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.WorkspaceNamespace).Get(ctx, podName, metav1.GetOptions{})
@@ -358,6 +454,11 @@ func (s *Service) Access(ctx context.Context, id string) (map[string]string, err
 	// Get template from pod labels
 	template := pod.Labels["workspace.dev/template"]
 
+	slog.Info("pod verified and running",
+		"workspace_id", id,
+		"pod_status", pod.Status.Phase,
+		"template", template)
+
 	urls := make(map[string]string)
 
 	// Forward code-server port (8080)
@@ -366,6 +467,12 @@ func (s *Service) Access(ctx context.Context, id string) (map[string]string, err
 		return nil, fmt.Errorf("failed to forward code-server port: %w", err)
 	}
 	urls["code-server"] = fmt.Sprintf("http://127.0.0.1:%d", codeServerPort)
+
+	slog.Info("code-server port-forward established",
+		"workspace_id", id,
+		"local_port", codeServerPort,
+		"remote_port", 8080,
+		"url", urls["code-server"])
 
 	// Forward preview port based on template
 	var previewPort int
@@ -386,11 +493,26 @@ func (s *Service) Access(ctx context.Context, id string) (map[string]string, err
 		localPreviewPort, err := s.findAndForwardPort(ctx, podName, id, previewPort, 1)
 		if err != nil {
 			// Log warning but don't fail - code-server is already accessible
-			fmt.Printf("Warning: failed to forward %s port: %v\n", previewName, err)
+			slog.Warn("failed to forward preview port",
+				"workspace_id", id,
+				"preview_name", previewName,
+				"remote_port", previewPort,
+				"error", err)
 		} else {
 			urls[previewName] = fmt.Sprintf("http://127.0.0.1:%d", localPreviewPort)
+			slog.Info("preview port-forward established",
+				"workspace_id", id,
+				"preview_name", previewName,
+				"local_port", localPreviewPort,
+				"remote_port", previewPort,
+				"url", urls[previewName])
 		}
 	}
+
+	slog.Info("workspace access completed successfully",
+		"workspace_id", id,
+		"urls_count", len(urls),
+		"urls", urls)
 
 	return urls, nil
 }
