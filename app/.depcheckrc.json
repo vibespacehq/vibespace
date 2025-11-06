@@ -1,0 +1,14 @@
+{
+  "ignores": [
+    "@fontsource/space-grotesk",
+    "@vitest/coverage-v8",
+    "autoprefixer",
+    "postcss",
+    "tailwindcss"
+  ],
+  "ignore-patterns": [
+    "dist",
+    "build",
+    "node_modules"
+  ]
+}
