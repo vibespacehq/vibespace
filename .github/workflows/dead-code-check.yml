@@ -32,7 +32,13 @@ jobs:
       - name: Run deadcode
         run: |
           cd api
-          ~/go/bin/deadcode ./...
+          ~/go/bin/deadcode ./... > /tmp/deadcode-output.txt 2>&1 || true
+          if [ -s /tmp/deadcode-output.txt ]; then
+            echo "❌ Go dead code found:"
+            cat /tmp/deadcode-output.txt
+            exit 1
+          fi
+          echo "✓ No Go dead code found"
 
       - name: Install staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
@@ -57,6 +63,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd app
+          rm -rf node_modules package-lock.json
           npm install
 
       - name: Run knip (dead code detection)
