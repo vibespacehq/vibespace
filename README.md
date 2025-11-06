@@ -1,19 +1,19 @@
-# workspaces
+# vibespace
 
 Desktop app for managing containerized development environments in k3s.
 
-## What is workspaces?
+## What is vibespace?
 
-workspaces is a Tauri desktop app that manages isolated dev environments running in local k3s. Each workspace runs code-server (VS Code in browser) and supports AI coding agents like Claude Code and OpenAI Codex.
+vibespace is a Tauri desktop app that manages isolated dev environments running in local k3s. Each vibespace runs code-server (VS Code in browser) and supports AI coding agents like Claude Code and OpenAI Codex.
 
 ### Key Features
 
-- 🚀 **Isolated Environments**: Spin up project-specific workspaces with custom configurations
+- 🚀 **Isolated Environments**: Spin up project-specific vibespaces with custom configurations
 - 🤖 **AI-Ready**: Pre-configured for coding agents with seamless authentication
-- 💻 **Local-First**: All workspaces run on local k3s cluster, no cloud dependency
+- 💻 **Local-First**: All vibespaces run on local k3s cluster, no cloud dependency
 - 📦 **Template-Based**: Quick start with Next.js, Vue, Jupyter, or custom templates
-- 🔄 **Scale-to-Zero**: Workspaces auto-stop when idle to save resources
-- 🌐 **Local DNS**: Access workspaces via `workspace-{id}.local`
+- 🔄 **Scale-to-Zero**: Vibespaces auto-stop when idle to save resources
+- 🌐 **Local DNS**: Access vibespaces via `vibespace-{id}.local`
 
 ## Quick Start
 
@@ -26,7 +26,7 @@ workspaces is a Tauri desktop app that manages isolated dev environments running
 
 **Kubernetes Required**:
 
-workspaces needs Kubernetes to run. Choose one option:
+vibespace needs Kubernetes to run. Choose one option:
 
 #### Option 1: Rancher Desktop (Recommended) ⭐
 
@@ -63,14 +63,14 @@ curl -sfL https://get.k3s.io | sh -s - \
 
 #### Option 4: Existing Cluster
 
-If you already have a Kubernetes cluster (k3d, minikube, Docker Desktop), workspaces will detect it.
+If you already have a Kubernetes cluster (k3d, minikube, Docker Desktop), vibespace will detect it.
 
 ### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yagizdagabak/workspaces
-cd workspaces
+git clone https://github.com/yagizdagabak/vibespace
+cd vibespace
 
 # Install dependencies and run the desktop app
 cd app
@@ -82,8 +82,8 @@ The app will detect your Kubernetes installation on startup. If Kubernetes is no
 
 ### Usage
 
-1. Launch workspaces app
-2. Click "New workspace"
+1. Launch vibespace app
+2. Click "New vibespace"
 3. Choose a template (Next.js, Vue, Jupyter)
 4. Configure resources and AI agents
 5. Click "Create"
@@ -142,7 +142,7 @@ kubectl version --client
 2. Go to Preferences → Kubernetes
 3. Check "Enable Kubernetes"
 4. Wait for cluster to start (green indicator)
-5. Click "Verify installation" in workspaces app
+5. Click "Verify installation" in vibespace app
 
 ## Architecture
 
@@ -158,7 +158,7 @@ kubectl version --client
 ┌────────▼────────┐
 │   k3s Cluster   │
 │  ┌───────────┐  │
-│  │ Workspace │  │  (Knative + code-server)
+│  │ Vibespace │  │  (Knative + code-server)
 │  └───────────┘  │
 └─────────────────┘
 ```
@@ -175,7 +175,7 @@ kubectl version --client
 ## Project Structure
 
 ```
-workspace/
+vibespace/
 ├── app/           # Desktop application (Tauri + React)
 ├── api/           # API server (Go)
 ├── images/        # Container image Dockerfiles
@@ -203,7 +203,7 @@ go run cmd/server/main.go
 **Build Images**:
 ```bash
 cd images/base
-docker build -t workspace-base:latest .
+docker build -t vibespace-base:latest .
 ```
 
 ## Roadmap
@@ -215,7 +215,7 @@ docker build -t workspace-base:latest .
   - [x] Functional tests
   - [x] Go API server
   - [ ] Kubernetes detection & setup guide
-  - [ ] Basic workspace management
+  - [ ] Basic vibespace management
 - [ ] **Phase 2**: Polish & Integration
   - [ ] Rancher Desktop integration
   - [ ] More templates (Vue, Go, Jupyter)

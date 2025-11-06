@@ -1,9 +1,9 @@
 /**
- * Workspace List Container Styles
- * Main workspace management view.
+ * Vibespace List Container Styles
+ * Main vibespace management view.
  */
 
-.workspace-list-container {
+.vibespace-list-container {
   width: 100%;
   height: 100vh;
   background: #000000;
@@ -14,7 +14,7 @@
 }
 
 /* Header */
-.workspace-header {
+.vibespace-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -25,7 +25,7 @@
   z-index: 10;
 }
 
-.workspace-header::after {
+.vibespace-header::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -83,7 +83,7 @@
   color: var(--accent-secondary);
 }
 
-.btn-new-workspace {
+.btn-new-vibespace {
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
@@ -100,7 +100,7 @@
   box-shadow: 0 2px 8px rgba(0, 171, 171, 0.2);
 }
 
-.btn-new-workspace:hover {
+.btn-new-vibespace:hover {
   background: var(--accent-yellow);
   border-color: var(--accent-yellow);
   transform: translateY(-2px);
@@ -128,8 +128,8 @@
   transform: translateY(-2px);
 }
 
-/* Workspace Grid */
-.workspace-grid {
+/* Vibespace Grid */
+.vibespace-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--spacing-5);
@@ -139,22 +139,22 @@
 }
 
 /* Custom scrollbar */
-.workspace-grid::-webkit-scrollbar {
+.vibespace-grid::-webkit-scrollbar {
   width: 6px;
 }
 
-.workspace-grid::-webkit-scrollbar-track {
+.vibespace-grid::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.workspace-grid::-webkit-scrollbar-thumb {
+.vibespace-grid::-webkit-scrollbar-thumb {
   background: #ffffff;
   border-radius: 3px;
   min-height: 40px;
 }
 
 /* Loading State */
-.workspace-loading {
+.vibespace-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -181,13 +181,13 @@
 
 /* Responsive Design */
 @media (max-width: 1024px) {
-  .workspace-grid {
+  .vibespace-grid {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: var(--spacing-4);
     padding: var(--spacing-6);
   }
 
-  .workspace-header {
+  .vibespace-header {
     padding: var(--spacing-5) var(--spacing-6);
   }
 
@@ -197,20 +197,20 @@
 }
 
 @media (max-width: 768px) {
-  .workspace-grid {
+  .vibespace-grid {
     grid-template-columns: 1fr;
     gap: var(--spacing-4);
     padding: var(--spacing-4);
   }
 
-  .workspace-header {
+  .vibespace-header {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--spacing-4);
     padding: var(--spacing-4);
   }
 
-  .btn-new-workspace {
+  .btn-new-vibespace {
     width: 100%;
     justify-content: center;
   }

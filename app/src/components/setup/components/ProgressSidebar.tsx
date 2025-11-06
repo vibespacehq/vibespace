@@ -33,13 +33,13 @@ export function ProgressSidebar({ currentStep }: ProgressSidebarProps) {
     {
       number: 3,
       title: 'Configuration',
-      subtitle: 'workspace settings',
+      subtitle: 'vibespace settings',
       status: currentStep > 3 ? 'completed' : currentStep === 3 ? 'active' : 'pending',
     },
     {
       number: 4,
       title: 'Ready',
-      subtitle: 'Launch workspace',
+      subtitle: 'Launch vibespace',
       status: currentStep >= 4 ? 'active' : 'pending',
     },
   ];
@@ -47,7 +47,7 @@ export function ProgressSidebar({ currentStep }: ProgressSidebarProps) {
   return (
     <aside className="setup-sidebar">
       <div className="sidebar-logo">
-        <img src="/icon-transparent.png" alt="workspaces" className="sidebar-icon" />
+        <img src="/icon-transparent.png" alt="vibespace" className="sidebar-icon" />
         <p>setup</p>
       </div>
       <div className="progress-steps">

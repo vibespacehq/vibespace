@@ -1,13 +1,13 @@
-# workspaces - Product Roadmap
+# vibespace - Product Roadmap
 
-**Vision**: The easiest way to create, manage, and scale development workspaces with AI coding agents.
+**Vision**: The easiest way to create, manage, and scale development vibespaces with AI coding agents.
 
 ---
 
 ## MVP Phase 1: Foundation ⏳ IN PROGRESS
 
 **Timeline**: Weeks 1-3 (Week 2 of 3)
-**Goal**: Prove the core value proposition - workspace management with AI agents works locally.
+**Goal**: Prove the core value proposition - vibespace management with AI agents works locally.
 **Target Users**: Developer early adopters comfortable with command-line tools.
 
 ### Core Features
@@ -16,22 +16,22 @@
 - [x] **Cluster setup wizard** - Guided installation with component status
 - [x] **Component installation** - Knative v1.15.2, Traefik v3.5.3, Registry 2.8.3, BuildKit v0.17.3
 - [x] **Go API server** - Full REST API with Kubernetes client-go integration
-- [x] **Workspace CRUD backend** - Create, list, get, delete (currently uses placeholder image)
+- [x] **Vibespace CRUD backend** - Create, list, get, delete (currently uses placeholder image)
 - [ ] **Docker images with AI agents**:
   - [ ] Base image: code-server + Claude Code CLI
   - [ ] Next.js template with AI agent + CLAUDE.md
   - [ ] Vue template with AI agent + CLAUDE.md
   - [ ] Python/Jupyter template with AI agent + CLAUDE.md
-- [ ] **Single AI agent per workspace** - Baked into container (Claude Code, OpenAI Codex)
+- [ ] **Single AI agent per vibespace** - Baked into container (Claude Code, OpenAI Codex)
 - [ ] **Credential management**:
   - [ ] AI agent API keys (Claude, OpenAI)
   - [ ] Git config (name, email)
   - [ ] SSH keys (generate or import)
   - [ ] Kubernetes Secret generation
-- [ ] **Local workspace access** - Via NodePort or `kubectl port-forward`
+- [ ] **Local vibespace access** - Via NodePort or `kubectl port-forward`
 - [ ] **Template selection UI** - Choose template and configure agent during creation
 
-**Note**: A "template" includes the complete workspace configuration: development stack (Next.js, Python, etc.), AI coding agent selection, agent instruction files (CLAUDE.md), and optionally a connected Git repository.
+**Note**: A "template" includes the complete vibespace configuration: development stack (Next.js, Python, etc.), AI coding agent selection, agent instruction files (CLAUDE.md), and optionally a connected Git repository.
 
 ### Infrastructure
 - **Kubernetes**: Detection-based (users install k3s or Rancher Desktop manually)
@@ -41,10 +41,10 @@
 - **Access**: `localhost:8080` via port-forward
 
 ### Success Metrics
-- [ ] 10 beta users can create and use workspaces
+- [ ] 10 beta users can create and use vibespaces
 - [ ] AI agents work successfully (Claude Code, OpenAI Codex)
-- [ ] Positive feedback on core workspace management
-- [ ] < 5 minutes from download to first workspace
+- [ ] Positive feedback on core vibespace management
+- [ ] < 5 minutes from download to first vibespace
 
 **Status**: ~70% complete
 - ✅ Infrastructure, API server, frontend UI, cluster setup
@@ -62,45 +62,45 @@
 
 #### Knative Scale-to-Zero
 - [ ] Migrate from simple Pods to **Knative Services**
-- [ ] Auto-stop workspaces when idle (scale to zero)
-- [ ] Auto-start workspaces on access (scale from zero)
+- [ ] Auto-stop vibespaces when idle (scale to zero)
+- [ ] Auto-start vibespaces on access (scale from zero)
 - [ ] Saves local machine resources
-- [ ] Workspace start/stop lifecycle UI
+- [ ] Vibespace start/stop lifecycle UI
 
 #### Custom Template Builder
 - [ ] **Visual Dockerfile editor** with syntax highlighting (Monaco)
 - [ ] **BuildKit integration** for building custom images
 - [ ] **Real-time build logs** via Server-Sent Events
 - [ ] Save and manage custom templates
-- [ ] Use custom templates in workspace creation
+- [ ] Use custom templates in vibespace creation
 - [ ] Template metadata (name, description, icon)
 
 #### Multi-Agent Sidecars
-- [ ] **Run multiple AI agents per workspace** (e.g., frontend + backend + testing agents)
+- [ ] **Run multiple AI agents per vibespace** (e.g., frontend + backend + testing agents)
 - [ ] Agents as **Kubernetes sidecar containers** (resource isolation)
 - [ ] **Terminal-based agent switching**: `agent use <name>`
 - [ ] Direct shell access to each agent's environment
 - [ ] Agent coordination for complex tasks
-- [ ] Phase 1 workspaces (single baked-in agent) remain supported
+- [ ] Phase 1 vibespaces (single baked-in agent) remain supported
 
 #### Cloud Service Provider Integration
-- [ ] **AWS EKS** - Deploy workspaces to Amazon Kubernetes
-- [ ] **GCP GKE** - Deploy workspaces to Google Kubernetes
+- [ ] **AWS EKS** - Deploy vibespaces to Amazon Kubernetes
+- [ ] **GCP GKE** - Deploy vibespaces to Google Kubernetes
 - [ ] **DigitalOcean Kubernetes** - Deploy to DOKS
 - [ ] **Azure AKS** - Deploy to Azure Kubernetes
 - [ ] **Deployment mode toggle** - Switch between Local ↔ Cloud
-- [ ] **Remote workspace access** - Secure tunnels for cloud workspaces
-- [ ] **Workspace migration** - Move workspace from local to cloud (and back)
+- [ ] **Remote vibespace access** - Secure tunnels for cloud vibespaces
+- [ ] **Vibespace migration** - Move vibespace from local to cloud (and back)
 - [ ] Cloud credential management (AWS, GCP, Azure, DO API keys)
 
 #### TLS Certificates
 - [ ] **cert-manager deployment** - Automated certificate management
 - [ ] **Let's Encrypt integration** - Free TLS certificates
 - [ ] Automatic certificate renewal
-- [ ] HTTPS for all workspaces (local and cloud)
+- [ ] HTTPS for all vibespaces (local and cloud)
 
 #### Custom Domains & DNS
-- [ ] **Custom domain support** - `myproject.example.com` instead of `workspace-abc123.local`
+- [ ] **Custom domain support** - `myproject.example.com` instead of `vibespace-abc123.local`
 - [ ] **Automated DNS management**:
   - [ ] Cloudflare API integration
   - [ ] AWS Route53 integration
@@ -121,14 +121,14 @@
 - **Networking**: Traefik Ingress + TLS certificates
 - **DNS**: Automated via cloud provider APIs (Cloudflare, Route53, Azure)
 - **Storage**: Local PVCs OR cloud-native volumes (EBS, Persistent Disk, etc.)
-- **Access**: `workspace-{id}.local` OR custom domain with HTTPS
+- **Access**: `vibespace-{id}.local` OR custom domain with HTTPS
 
 ### Success Metrics
 - [ ] 100+ active users
-- [ ] Workspaces successfully scale to zero locally
+- [ ] Vibespaces successfully scale to zero locally
 - [ ] Users deploy to at least 2 cloud providers
 - [ ] Custom domains work with automatic TLS
-- [ ] < 2 minutes to create new workspace
+- [ ] < 2 minutes to create new vibespace
 - [ ] Users report production-grade stability
 
 **ETA**: End of Month 2
@@ -164,32 +164,32 @@
 - [ ] Template submission and approval workflow
 - [ ] Search and filtering
 
-#### Workspace Snapshots & Backups
+#### Vibespace Snapshots & Backups
 - [ ] **One-click snapshot** - Capture PVC + metadata
-- [ ] **Point-in-time restore** - Restore workspace to previous state
+- [ ] **Point-in-time restore** - Restore vibespace to previous state
 - [ ] Share snapshots with team members
 - [ ] Scheduled automatic snapshots
 - [ ] Snapshot storage management
 - [ ] Cross-cloud snapshot migration
 
 #### CI/CD Integration
-- [ ] **GitHub Actions integration** - Use workspaces as CI runners
+- [ ] **GitHub Actions integration** - Use vibespaces as CI runners
 - [ ] **GitLab CI integration**
-- [ ] Workspace-as-CI-runner architecture
-- [ ] Automated testing in workspaces
+- [ ] Vibespace-as-CI-runner architecture
+- [ ] Automated testing in vibespaces
 - [ ] Build artifact management
 
 #### Monitoring & Observability
 - [ ] **Prometheus metrics** - Real-time resource monitoring
-- [ ] **Grafana dashboards** - Pre-built workspace dashboards
-- [ ] **Cost tracking** - Track cloud spending per workspace
-- [ ] **Usage analytics** - Workspace usage patterns
+- [ ] **Grafana dashboards** - Pre-built vibespace dashboards
+- [ ] **Cost tracking** - Track cloud spending per vibespace
+- [ ] **Usage analytics** - Vibespace usage patterns
 - [ ] Alerts for resource limits
 - [ ] Logs aggregation and search
 
 #### Multi-User & Teams
 - [ ] **User authentication** - OAuth, LDAP support
-- [ ] **Team workspaces** - Multiple users, same workspace
+- [ ] **Team vibespaces** - Multiple users, same vibespace
 - [ ] Per-user resource quotas
 - [ ] Shared template library
 - [ ] Role-based access control (RBAC)
@@ -199,7 +199,7 @@
 - [ ] **SSO/SAML** - Enterprise single sign-on
 - [ ] **Audit logs** - Complete activity tracking
 - [ ] **Compliance** - SOC2, GDPR, HIPAA support
-- [ ] **GitOps with ArgoCD** - Workspace definitions as Git repos
+- [ ] **GitOps with ArgoCD** - Vibespace definitions as Git repos
 - [ ] **Harbor registry** - Replace registry:2 with Harbor
   - Vulnerability scanning for all images
   - Image signing and verification
@@ -209,7 +209,7 @@
 
 ### Infrastructure
 - **Installation**: One-click with bundled VM + k3s (zero manual setup)
-- **Multi-tenancy**: User isolation and per-user workspaces
+- **Multi-tenancy**: User isolation and per-user vibespaces
 - **Registry**: Harbor with CVE scanning and RBAC
 - **Compliance**: Audit logs, encryption at rest, SOC2 certification
 - **Monitoring**: Prometheus + Grafana + cost tracking
@@ -234,8 +234,8 @@
 
 **Rationale**:
 1. **Speed to market**: Ship MVP in 3 weeks, not 11 weeks
-2. **Validate first**: Prove workspace management is valuable before building complex installer
-3. **Focus**: Core workspace features > cluster installation complexity
+2. **Validate first**: Prove vibespace management is valuable before building complex installer
+3. **Focus**: Core vibespace features > cluster installation complexity
 4. **Flexibility**: Supports k3s, Rancher Desktop, k3d, existing clusters
 5. **Security**: No sudo execution from app (user controls their system)
 
@@ -246,7 +246,7 @@
 **Rationale**:
 - Phase 1: Simple Pods are faster to implement, easier to debug, sufficient for MVP
 - Phase 2: Knative adds complexity but huge value (scale-to-zero, auto-scaling)
-- Users validate workspaces work before we add sophisticated lifecycle management
+- Users validate vibespaces work before we add sophisticated lifecycle management
 - Knative requires understanding of serverless patterns - better with feedback first
 
 ### Why Cloud Mode in MVP Phase 2, Not Later?
@@ -326,7 +326,7 @@ We welcome contributions! Here's how to get involved:
 2. **Report Issues**: Use GitHub Issues for bugs and feature requests
 3. **Vote on Features**: Comment or 👍 on issues you care about
 4. **Submit PRs**: Follow CONTRIBUTING.md guidelines
-5. **Build Templates**: Create and share your custom workspace templates
+5. **Build Templates**: Create and share your custom vibespace templates
 
 **Current Priority**: We're focused on **MVP Phase 1 (Foundation)**. Features in Phase 2+ are planned but not immediate.
 
@@ -354,4 +354,4 @@ We welcome contributions! Here's how to get involved:
 
 **Last Updated**: 2025-10-16 (MVP Phase 1 - Week 2 of 3)
 
-**Questions?** Open a [GitHub Discussion](https://github.com/yagizdagabak/workspaces/discussions)
+**Questions?** Open a [GitHub Discussion](https://github.com/yagizdagabak/vibespace/discussions)

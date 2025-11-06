@@ -1,10 +1,10 @@
 [package]
-name = "workspaces"
+name = "vibespace"
 version = "0.1.0"
 description = "Desktop app for managing containerized dev environments with AI coding agents"
-authors = ["workspaces contributors"]
+authors = ["vibespace contributors"]
 license = "MIT"
-repository = "https://github.com/yagizdagabak/workspaces"
+repository = "https://github.com/yagizdagabak/vibespace"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

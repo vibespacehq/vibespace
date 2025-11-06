@@ -3,17 +3,17 @@ import { Trash2 } from 'lucide-react';
 import '../styles/DeleteConfirmationModal.css';
 
 interface DeleteConfirmationModalProps {
-  workspaceName: string;
+  vibespaceName: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 /**
- * Modal for confirming workspace deletion.
- * Requires user to type workspace name to prevent accidental deletion.
+ * Modal for confirming vibespace deletion.
+ * Requires user to type vibespace name to prevent accidental deletion.
  */
 export function DeleteConfirmationModal({
-  workspaceName,
+  vibespaceName,
   onConfirm,
   onCancel,
 }: DeleteConfirmationModalProps) {
@@ -27,14 +27,14 @@ export function DeleteConfirmationModal({
 
   // Handle Enter key to confirm (if name matches)
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && inputValue === workspaceName) {
+    if (e.key === 'Enter' && inputValue === vibespaceName) {
       onConfirm();
     } else if (e.key === 'Escape') {
       onCancel();
     }
   };
 
-  const isValid = inputValue === workspaceName;
+  const isValid = inputValue === vibespaceName;
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
@@ -43,15 +43,15 @@ export function DeleteConfirmationModal({
           <div className="modal-icon-warning">
             <Trash2 size={24} />
           </div>
-          <h2>Delete Workspace</h2>
+          <h2>Delete Vibespace</h2>
         </div>
 
         <div className="modal-body">
           <p className="modal-warning">
-            ⚠️ WARNING: This will permanently delete workspace "<strong>{workspaceName}</strong>" and all its data.
+            ⚠️ WARNING: This will permanently delete vibespace "<strong>{vibespaceName}</strong>" and all its data.
           </p>
           <p className="modal-instruction">
-            Type the workspace name "<strong>{workspaceName}</strong>" to confirm deletion:
+            Type the vibespace name "<strong>{vibespaceName}</strong>" to confirm deletion:
           </p>
           <input
             ref={inputRef}
@@ -60,7 +60,7 @@ export function DeleteConfirmationModal({
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={workspaceName}
+            placeholder={vibespaceName}
             autoComplete="off"
           />
         </div>
@@ -79,7 +79,7 @@ export function DeleteConfirmationModal({
             disabled={!isValid}
             type="button"
           >
-            Delete Workspace
+            Delete Vibespace
           </button>
         </div>
       </div>

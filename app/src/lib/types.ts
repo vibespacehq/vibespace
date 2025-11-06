@@ -100,48 +100,48 @@ export interface ClusterContext {
   is_local: boolean;
 }
 
-// Workspace Types
+// Vibespace Types
 
 /**
- * Resource allocations for a workspace (CPU and memory).
+ * Resource allocations for a vibespace (CPU and memory).
  * Maps to Kubernetes resource requests/limits.
  *
  * @public
  */
-export interface WorkspaceResources {
+export interface VibespaceResources {
   cpu: string;
   memory: string;
 }
 
 /**
- * Represents a workspace instance running in the Kubernetes cluster.
- * Each workspace is an isolated development environment with code-server and project-specific configuration.
+ * Represents a vibespace instance running in the Kubernetes cluster.
+ * Each vibespace is an isolated development environment with code-server and project-specific configuration.
  *
  * @public
- * @see SPEC.md Section 5 for complete workspace specifications
+ * @see SPEC.md Section 5 for complete vibespace specifications
  */
-export interface Workspace {
+export interface Vibespace {
   id: string;
   name: string;
   template: string;
   status: 'creating' | 'starting' | 'running' | 'stopping' | 'stopped' | 'deleting' | 'error';
-  resources: WorkspaceResources;
+  resources: VibespaceResources;
   urls: Record<string, string>;
   persistent: boolean;
   created_at: string;
 }
 
 /**
- * Request payload for creating a new workspace.
+ * Request payload for creating a new vibespace.
  * Defines the minimum required configuration to spin up a development environment.
  *
  * @public
  * @see SPEC.md Section 6.2 for API endpoint details
  */
-export interface CreateWorkspaceRequest {
+export interface CreateVibespaceRequest {
   name: string;
   template: string;
-  resources?: WorkspaceResources;
+  resources?: VibespaceResources;
   persistent?: boolean;
   github_repo?: string;
   agent?: string;
@@ -151,8 +151,8 @@ export interface CreateWorkspaceRequest {
 // TODO(Phase 1): Will be used for template selection
 
 /**
- * Represents a workspace template (e.g., Next.js, Vue, Jupyter).
- * Templates define the base image and pre-installed tools for a workspace.
+ * Represents a vibespace template (e.g., Next.js, Vue, Jupyter).
+ * Templates define the base image and pre-installed tools for a vibespace.
  *
  * @public
  * @see SPEC.md Section 9 for template system architecture

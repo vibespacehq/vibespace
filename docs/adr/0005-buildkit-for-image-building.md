@@ -9,7 +9,7 @@
 
 ## Context and Problem Statement
 
-The workspaces project needs to build container images for workspace templates (Next.js, Vue, Jupyter) with different AI agents (Claude, Codex, Gemini) during cluster setup. This requires building **12 images total** (3 base + 9 template×agent combinations) from embedded Dockerfiles.
+The vibespaces project needs to build container images for vibespace templates (Next.js, Vue, Jupyter) with different AI agents (Claude, Codex, Gemini) during cluster setup. This requires building **12 images total** (3 base + 9 template×agent combinations) from embedded Dockerfiles.
 
 The question is: **What image building solution should we use?**
 
@@ -34,7 +34,7 @@ This decision impacts:
 
 ### Option 1: Docker CLI via Docker Socket Mount (Traditional)
 
-Workspace templates built by mounting `/var/run/docker.sock` from host into API server pod.
+Vibespace templates built by mounting `/var/run/docker.sock` from host into API server pod.
 
 **How it works**:
 ```yaml
@@ -78,9 +78,9 @@ spec:
       - name: kaniko
         image: gcr.io/kaniko-project/executor:latest
         args:
-          - --dockerfile=/workspace/Dockerfile
-          - --context=/workspace
-          - --destination=localhost:5000/workspace-nextjs:latest
+          - --dockerfile=/vibespace/Dockerfile
+          - --context=/vibespace
+          - --destination=localhost:5000/vibespace-nextjs:latest
 ```
 
 **Pros**:
@@ -153,8 +153,8 @@ Buildah builds images from Dockerfiles without daemon, similar to Kaniko but wit
 
 **How it works**:
 ```bash
-buildah bud -t workspace-nextjs:latest /workspace
-buildah push workspace-nextjs:latest localhost:5000/workspace-nextjs:latest
+buildah bud -t vibespace-nextjs:latest /vibespace
+buildah push vibespace-nextjs:latest localhost:5000/vibespace-nextjs:latest
 ```
 
 **Pros**:
@@ -215,7 +215,7 @@ BuildKit is the best fit for our requirements:
 
 1. **Privileged Pod Required**
    - BuildKit daemon needs `privileged: true` for overlay filesystem
-   - **Mitigation**: Runs in isolated namespace, not accessible to workspaces
+   - **Mitigation**: Runs in isolated namespace, not accessible to vibespaces
    - **Context**: Local development cluster, not production infrastructure
 
 2. **Port-forwarding Overhead**
@@ -225,7 +225,7 @@ BuildKit is the best fit for our requirements:
 
 3. **Stateful Daemon**
    - BuildKit daemon must be running before builds
-   - **Mitigation**: Cluster setup ensures BuildKit is ready before allowing workspace creation
+   - **Mitigation**: Cluster setup ensures BuildKit is ready before allowing vibespace creation
    - **Benefit**: Shared cache across builds, faster subsequent builds
 
 ## Implementation Details
@@ -248,7 +248,7 @@ Local Registry (cluster)
   | Pull
   |
   v
-Workspace Pod (cluster)
+Vibespace Pod (cluster)
 ```
 
 ### Key Files
@@ -279,12 +279,12 @@ Workspace Pod (cluster)
    // - Cleans up temp directory
    ```
 
-3. **Workspace Creation**
+3. **Vibespace Creation**
    ```yaml
    # Knative Service uses built image
    spec:
      containers:
-     - image: localhost:5000/workspace-nextjs-claude:latest
+     - image: localhost:5000/vibespace-nextjs-claude:latest
    ```
 
 ### Resource Usage
@@ -330,7 +330,7 @@ Workspace Pod (cluster)
 - [BuildKit Documentation](https://docs.docker.com/build/buildkit/)
 - [BuildKit Go Client API](https://pkg.go.dev/github.com/moby/buildkit/client)
 - [ADR 0004: Component Version Selection](./0004-component-version-selection.md) - BuildKit v0.17.3 choice
-- [Issue #37: BuildKit Integration](https://github.com/yagizdagabak/workspaces/issues/37)
+- [Issue #37: BuildKit Integration](https://github.com/yagizdagabak/vibespace/issues/37)
 - [SPEC.md Section 7.3: Image Building](../SPEC.md#73-image-building)
 
 ## Alternatives Considered But Not Implemented

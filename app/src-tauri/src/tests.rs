@@ -99,7 +99,7 @@ fn test_valid_hostname() {
     assert!(is_valid_hostname("example.com"));
     assert!(is_valid_hostname("sub.example.com"));
     assert!(is_valid_hostname("my-app.local"));
-    assert!(is_valid_hostname("workspace-123"));
+    assert!(is_valid_hostname("vibespace-123"));
     assert!(is_valid_hostname("a"));
     assert!(is_valid_hostname("test123"));
 }

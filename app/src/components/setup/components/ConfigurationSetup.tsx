@@ -3,7 +3,7 @@ import { ProgressSidebar } from './ProgressSidebar';
 import '../styles/setup.css';
 import '../styles/ConfigurationSetup.css';
 
-export interface WorkspaceConfiguration {
+export interface VibespaceConfiguration {
   name: string;
   template: string;
   agent: string | null;
@@ -11,11 +11,11 @@ export interface WorkspaceConfiguration {
 }
 
 interface ConfigurationSetupProps {
-  onComplete: (config: WorkspaceConfiguration) => void;
+  onComplete: (config: VibespaceConfiguration) => void;
 }
 
 export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
-  const [workspaceName, setWorkspaceName] = useState('');
+  const [vibespaceName, setVibespaceName] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState('nextjs');
   const [selectedAgent, setSelectedAgent] = useState<string | null>('claude');
   const [githubRepo, setGithubRepo] = useState('');
@@ -51,13 +51,13 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
   ];
 
   const handleContinue = () => {
-    if (!workspaceName.trim()) {
-      alert('Please enter a workspace name');
+    if (!vibespaceName.trim()) {
+      alert('Please enter a vibespace name');
       return;
     }
 
     onComplete({
-      name: workspaceName.trim(),
+      name: vibespaceName.trim(),
       template: selectedTemplate,
       agent: selectedAgent,
       githubRepo: githubRepo.trim(),
@@ -74,7 +74,7 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
             <span>Step 3 of 4</span>
           </div>
           <h1 className="brand-title">Configuration</h1>
-          <p className="brand-subtitle">Set up your workspace preferences</p>
+          <p className="brand-subtitle">Set up your vibespace preferences</p>
           <div className="progress-bar-container">
             <div className="progress-bar-fill" data-progress="50"></div>
           </div>
@@ -82,15 +82,15 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
 
         <div className="setup-required">
           <div className="config-section">
-            <h3 className="config-section-title">Workspace name</h3>
-            <p className="config-section-description">Choose a name for your first workspace</p>
+            <h3 className="config-section-title">Vibespace name</h3>
+            <p className="config-section-description">Choose a name for your first vibespace</p>
             <input
               type="text"
               className="config-input"
               placeholder="my-awesome-project"
-              value={workspaceName}
-              onChange={(e) => setWorkspaceName(e.target.value)}
-              aria-label="Workspace name"
+              value={vibespaceName}
+              onChange={(e) => setVibespaceName(e.target.value)}
+              aria-label="Vibespace name"
             />
           </div>
 
@@ -142,7 +142,7 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
               onChange={(e) => setGithubRepo(e.target.value)}
               aria-label="GitHub repository URL (optional)"
             />
-            <p className="config-hint">Leave empty to start with a blank workspace</p>
+            <p className="config-hint">Leave empty to start with a blank vibespace</p>
           </div>
 
           <div className="setup-actions">

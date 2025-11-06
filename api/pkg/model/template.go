@@ -3,9 +3,9 @@ package model
 // Template represents a pre-configured development environment with specific
 // tools, ports, and AI agent support.
 //
-// Templates define the base configuration for workspaces. Each template is
+// Templates define the base configuration for vibespaces. Each template is
 // built as a container image during cluster setup and stored in the local registry.
-// The actual image name follows the pattern: workspace-{template}-{agent}:latest
+// The actual image name follows the pattern: vibespace-{template}-{agent}:latest
 //
 // Available templates:
 //   - nextjs: Next.js 15.5 with React 19, TypeScript, Tailwind CSS
@@ -25,8 +25,8 @@ type Template struct {
 	Description string `json:"description"`
 
 	// Image is the base registry path (without agent suffix)
-	// Example: localhost:5000/workspace-nextjs
-	// Full image: localhost:5000/workspace-nextjs-claude:latest
+	// Example: localhost:5000/vibespace-nextjs
+	// Full image: localhost:5000/vibespace-nextjs-claude:latest
 	Image string `json:"image"`
 
 	// Category groups templates by type (web, datascience, etc.)
@@ -49,24 +49,24 @@ type Template struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// CreateWorkspaceRequest represents the request to create a new workspace.
+// CreateVibespaceRequest represents the request to create a new vibespace.
 //
-// Workspaces are isolated development environments based on a template.
-// Each workspace runs as a Knative Service in Kubernetes with persistent storage.
-type CreateWorkspaceRequest struct {
-	// Name is the workspace identifier (must be unique, lowercase, alphanumeric + hyphens)
+// Vibespaces are isolated development environments based on a template.
+// Each vibespace runs as a Knative Service in Kubernetes with persistent storage.
+type CreateVibespaceRequest struct {
+	// Name is the vibespace identifier (must be unique, lowercase, alphanumeric + hyphens)
 	Name string `json:"name" binding:"required"`
 
 	// Template specifies which template to use (nextjs, vue, jupyter)
 	Template string `json:"template" binding:"required"`
 
-	// Persistent enables data persistence across workspace restarts
+	// Persistent enables data persistence across vibespace restarts
 	Persistent bool `json:"persistent"`
 
 	// Resources defines CPU and memory limits
 	Resources *Resources `json:"resources,omitempty"`
 
-	// Env provides workspace-specific environment variables
+	// Env provides vibespace-specific environment variables
 	Env map[string]string `json:"env,omitempty"`
 
 	// GithubRepo is an optional GitHub repo URL to clone on startup
@@ -78,8 +78,8 @@ type CreateWorkspaceRequest struct {
 	Agent string `json:"agent,omitempty"`
 }
 
-// UpdateWorkspaceRequest represents the request to update a workspace
-type UpdateWorkspaceRequest struct {
+// UpdateVibespaceRequest represents the request to update a vibespace
+type UpdateVibespaceRequest struct {
 	Name      string            `json:"name,omitempty"`
 	Resources *Resources        `json:"resources,omitempty"`
 	Env       map[string]string `json:"env,omitempty"`

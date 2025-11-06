@@ -18,9 +18,9 @@ src/components/
 │   ├── KubernetesSetup.tsx
 │   ├── KubernetesSetup.css
 │   └── ...
-└── workspace/
-    ├── WorkspaceList.tsx
-    └── WorkspaceList.css
+└── vibespace/
+    ├── VibespaceList.tsx
+    └── VibespaceList.css
 ```
 
 ### The Problem
@@ -82,11 +82,11 @@ src/components/
 │       ├── setup.css              (shared feature styles)
 │       ├── AuthenticationSetup.css
 │       └── KubernetesSetup.css
-└── workspace/
+└── vibespace/
     ├── components/
-    │   └── WorkspaceList.tsx
+    │   └── VibespaceList.tsx
     └── styles/
-        └── WorkspaceList.css
+        └── VibespaceList.css
 ```
 
 **Benefits**:
@@ -124,11 +124,11 @@ src/
 │   │       ├── InstallationInstructions.css
 │   │       ├── ProgressSidebar.css
 │   │       └── ReadySetup.css
-│   └── workspace/                 # Feature: Workspace management
+│   └── vibespace/                 # Feature: Vibespace management
 │       ├── components/
-│       │   └── WorkspaceList.tsx
+│       │   └── VibespaceList.tsx
 │       └── styles/
-│           └── WorkspaceList.css
+│           └── VibespaceList.css
 └── styles/                        # Global design system
     ├── tokens.css                 # CSS variables
     ├── animations.css             # Keyframe animations
@@ -219,7 +219,7 @@ Example: Setup wizard styles
 
 ## References
 
-- [Issue #14](https://github.com/yourusername/workspace/issues/14) - Kubernetes detection & setup refactor
+- [Issue #14](https://github.com/yourusername/vibespace/issues/14) - Kubernetes detection & setup refactor
 - [SPEC.md](../../SPEC.md) - Design system and component structure
 - [.claude/CLAUDE.md](../../.claude/CLAUDE.md) - AI assistant guidelines (to be updated)
 - Commit: `refactor(#14): reorganize components into components/ and styles/ subdirectories`

@@ -6,7 +6,7 @@
 const API_BASE_URL = (import.meta as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL || 'http://localhost:8090';
 
 /**
- * API endpoints for cluster and workspace management
+ * API endpoints for cluster and vibespace management
  */
 export const API_ENDPOINTS = {
   // Cluster endpoints
@@ -16,8 +16,8 @@ export const API_ENDPOINTS = {
   clusterStatus: `${API_BASE_URL}/api/v1/cluster/status`,
   clusterSetup: `${API_BASE_URL}/api/v1/cluster/setup`,
 
-  // Workspace endpoints
-  workspaces: `${API_BASE_URL}/api/v1/workspaces`,
+  // Vibespace endpoints
+  vibespaces: `${API_BASE_URL}/api/v1/vibespaces`,
 } as const;
 
 /**

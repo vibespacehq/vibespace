@@ -1,7 +1,7 @@
 {
-  "name": "workspaces",
+  "name": "vibespace",
   "version": "0.1.0",
-  "description": "Local Kubernetes workspaces manager",
+  "description": "Local Kubernetes vibespaces manager",
   "type": "module",
   "scripts": {
     "dev": "vite",

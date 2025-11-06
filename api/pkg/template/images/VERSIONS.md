@@ -13,21 +13,21 @@ All templates support three AI coding agents:
 - **Codex** (OpenAI Codex CLI)
 - **Gemini** (Google Gemini SDK)
 
-Users select their preferred agent during workspace creation. The agent is baked into the container image.
+Users select their preferred agent during vibespace creation. The agent is baked into the container image.
 
 ### Image Naming Convention
 
 ```
-Base images:     localhost:5000/workspace-base-{agent}:latest
-Template images: localhost:5000/workspace-{template}-{agent}:latest
+Base images:     localhost:5000/vibespace-base-{agent}:latest
+Template images: localhost:5000/vibespace-{template}-{agent}:latest
 
 Examples:
-- localhost:5000/workspace-base-claude:latest
-- localhost:5000/workspace-base-codex:latest
-- localhost:5000/workspace-base-gemini:latest
-- localhost:5000/workspace-nextjs-claude:latest
-- localhost:5000/workspace-vue-codex:latest
-- localhost:5000/workspace-jupyter-gemini:latest
+- localhost:5000/vibespace-base-claude:latest
+- localhost:5000/vibespace-base-codex:latest
+- localhost:5000/vibespace-base-gemini:latest
+- localhost:5000/vibespace-nextjs-claude:latest
+- localhost:5000/vibespace-vue-codex:latest
+- localhost:5000/vibespace-jupyter-gemini:latest
 ```
 
 ### Total Images Built
@@ -40,7 +40,7 @@ Examples:
 
 ## Base Images
 
-### workspace-base-claude:latest
+### vibespace-base-claude:latest
 - **Ubuntu**: 24.04 LTS
 - **code-server**: 4.104.3+ (VS Code 1.104.0+)
 - **Node.js**: 24.x (entering LTS October 2025)
@@ -49,7 +49,7 @@ Examples:
 - **AI Agent**: Claude Code CLI (@anthropic-ai/claude-code)
 - **API Key**: ANTHROPIC_API_KEY (injected via Kubernetes Secret)
 
-### workspace-base-codex:latest
+### vibespace-base-codex:latest
 - **Ubuntu**: 24.04 LTS
 - **code-server**: 4.104.3+ (VS Code 1.104.0+)
 - **Node.js**: 24.x (entering LTS October 2025)
@@ -58,7 +58,7 @@ Examples:
 - **AI Agent**: OpenAI CLI (openai-cli)
 - **API Key**: OPENAI_API_KEY (injected via Kubernetes Secret)
 
-### workspace-base-gemini:latest
+### vibespace-base-gemini:latest
 - **Ubuntu**: 24.04 LTS
 - **code-server**: 4.104.3+ (VS Code 1.104.0+)
 - **Node.js**: 24.x (entering LTS October 2025)
@@ -73,9 +73,9 @@ Examples:
 ## Template Images
 
 ### Next.js Templates (3 variants)
-- **workspace-nextjs-claude:latest**
-- **workspace-nextjs-codex:latest**
-- **workspace-nextjs-gemini:latest**
+- **vibespace-nextjs-claude:latest**
+- **vibespace-nextjs-codex:latest**
+- **vibespace-nextjs-gemini:latest**
 
 **Versions**:
 - **Next.js**: 15.5.5 (stable)
@@ -90,9 +90,9 @@ Examples:
 - dev server: 3000
 
 ### Vue Templates (3 variants)
-- **workspace-vue-claude:latest**
-- **workspace-vue-codex:latest**
-- **workspace-vue-gemini:latest**
+- **vibespace-vue-claude:latest**
+- **vibespace-vue-codex:latest**
+- **vibespace-vue-gemini:latest**
 
 **Versions**:
 - **Vue**: 3.5.22
@@ -105,9 +105,9 @@ Examples:
 - dev server: 5173
 
 ### Jupyter Templates (3 variants)
-- **workspace-jupyter-claude:latest**
-- **workspace-jupyter-codex:latest**
-- **workspace-jupyter-gemini:latest**
+- **vibespace-jupyter-claude:latest**
+- **vibespace-jupyter-codex:latest**
+- **vibespace-jupyter-gemini:latest**
 
 **Versions**:
 - **Python**: 3.12.3 (Ubuntu 24.04 default)
@@ -136,18 +136,18 @@ Images are built automatically during cluster setup using BuildKit:
 
 Build order:
 ```
-1. workspace-base-claude:latest
-2. workspace-base-codex:latest
-3. workspace-base-gemini:latest
-4. workspace-nextjs-claude:latest
-5. workspace-nextjs-codex:latest
-6. workspace-nextjs-gemini:latest
-7. workspace-vue-claude:latest
-8. workspace-vue-codex:latest
-9. workspace-vue-gemini:latest
-10. workspace-jupyter-claude:latest
-11. workspace-jupyter-codex:latest
-12. workspace-jupyter-gemini:latest
+1. vibespace-base-claude:latest
+2. vibespace-base-codex:latest
+3. vibespace-base-gemini:latest
+4. vibespace-nextjs-claude:latest
+5. vibespace-nextjs-codex:latest
+6. vibespace-nextjs-gemini:latest
+7. vibespace-vue-claude:latest
+8. vibespace-vue-codex:latest
+9. vibespace-vue-gemini:latest
+10. vibespace-jupyter-claude:latest
+11. vibespace-jupyter-codex:latest
+12. vibespace-jupyter-gemini:latest
 ```
 
 Total build time: ~5-10 minutes (depending on system)
@@ -182,12 +182,12 @@ Images are rebuilt during cluster setup and pull exact pinned versions above.
 
 ## Agent Selection
 
-Users choose their AI agent during workspace creation:
+Users choose their AI agent during vibespace creation:
 
-**Frontend (workspace creation form)**:
+**Frontend (vibespace creation form)**:
 ```json
 {
-  "name": "my-workspace",
+  "name": "my-vibespace",
   "template": "nextjs",
   "agent": "claude"
 }
@@ -195,7 +195,7 @@ Users choose their AI agent during workspace creation:
 
 **Backend (image selection)**:
 ```
-Image: localhost:5000/workspace-nextjs-claude:latest
+Image: localhost:5000/vibespace-nextjs-claude:latest
 Env: ANTHROPIC_API_KEY (from credential store)
 ```
 

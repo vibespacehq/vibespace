@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-This directory contains Architecture Decision Records (ADRs) for the workspaces project.
+This directory contains Architecture Decision Records (ADRs) for the vibespaces project.
 
 ## What are ADRs?
 
@@ -49,7 +49,7 @@ Write an ADR when making decisions about:
 - ✅ **Infrastructure decisions**: Kubernetes vs Docker, bundling vs detection
 - ✅ **Security approaches**: Authentication, encryption, credential storage
 - ✅ **API design**: REST vs GraphQL, versioning strategy
-- ✅ **Major UX flows**: Onboarding, workspace creation, error handling
+- ✅ **Major UX flows**: Onboarding, vibespace creation, error handling
 
 Don't write an ADR for:
 - ❌ **Implementation details**: Variable names, file structure, code style

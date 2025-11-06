@@ -1,7 +1,7 @@
-/* WIP: Styles for CreateWorkspace component (Phase 1) */
-/* This file will be used when CreateWorkspace is integrated */
+/* WIP: Styles for CreateVibespace component (Phase 1) */
+/* This file will be used when CreateVibespace is integrated */
 
-.create-workspace-form {
+.create-vibespace-form {
   max-width: 700px;
   margin: 0 auto;
   padding: 2rem;
@@ -89,18 +89,18 @@
   border-radius: 4px;
 }
 
-.workspace-created-info {
+.vibespace-created-info {
   margin: 2rem 0;
   padding: 1.5rem;
   background: #1a1a1a;
   border-radius: 8px;
 }
 
-.workspace-created-info p {
+.vibespace-created-info p {
   margin: 0.5rem 0;
   color: #fff;
 }
 
-.workspace-created-info strong {
+.vibespace-created-info strong {
   color: #00ABAB;
 }

@@ -19,7 +19,7 @@ import (
 var vscodeSettingsData []byte
 
 const (
-	// Port numbers for workspace services
+	// Port numbers for vibespace services
 	BuildKitPort   = 1234 // BuildKit daemon port
 	RegistryPort   = 5000 // Local Docker registry port
 	CodeServerPort = 8080 // code-server (VS Code) port
@@ -92,7 +92,7 @@ func NewBuilder(registryURL string, k8sClient K8sClient) *Builder {
 	return b
 }
 
-// cleanupOldTempDirs removes old workspace build temp directories
+// cleanupOldTempDirs removes old vibespace build temp directories
 // This prevents accumulation of sensitive build context files if process crashed
 func (b *Builder) cleanupOldTempDirs() {
 	tmpDir := os.TempDir()
@@ -110,8 +110,8 @@ func (b *Builder) cleanupOldTempDirs() {
 			continue
 		}
 
-		// Match pattern: workspace-build-*
-		if !strings.HasPrefix(entry.Name(), "workspace-build-") {
+		// Match pattern: vibespace-build-*
+		if !strings.HasPrefix(entry.Name(), "vibespace-build-") {
 			continue
 		}
 
@@ -133,7 +133,7 @@ func (b *Builder) cleanupOldTempDirs() {
 	}
 
 	if cleaned > 0 {
-		slog.Info("Cleaned up old workspace build directories",
+		slog.Info("Cleaned up old vibespace build directories",
 			"count", cleaned,
 			"threshold", TempDirCleanupAge.String())
 	}
@@ -218,13 +218,13 @@ type BuildProgressFunc func(progress BuildProgress)
 // BuildImage builds a template image using BuildKit for a specific agent
 func (b *Builder) BuildImage(ctx context.Context, templateID, agent string, progressFn BuildProgressFunc) error {
 	// Image naming:
-	// - Base images: workspace-base-{agent}:latest (e.g., workspace-base-claude:latest)
-	// - Template images: workspace-{template}-{agent}:latest (e.g., workspace-nextjs-claude:latest)
+	// - Base images: vibespace-base-{agent}:latest (e.g., vibespace-base-claude:latest)
+	// - Template images: vibespace-{template}-{agent}:latest (e.g., vibespace-nextjs-claude:latest)
 	var imageName string
 	if templateID == "base" {
-		imageName = fmt.Sprintf("%s/workspace-base-%s:latest", b.registryURL, agent)
+		imageName = fmt.Sprintf("%s/vibespace-base-%s:latest", b.registryURL, agent)
 	} else {
-		imageName = fmt.Sprintf("%s/workspace-%s-%s:latest", b.registryURL, templateID, agent)
+		imageName = fmt.Sprintf("%s/vibespace-%s-%s:latest", b.registryURL, templateID, agent)
 	}
 
 	displayName := fmt.Sprintf("%s-%s", templateID, agent)
@@ -262,7 +262,7 @@ func (b *Builder) BuildImage(ctx context.Context, templateID, agent string, prog
 	}
 
 	// Create temporary build context
-	tempDir, err := os.MkdirTemp("", fmt.Sprintf("workspace-build-%s-%s-*", templateID, agent))
+	tempDir, err := os.MkdirTemp("", fmt.Sprintf("vibespace-build-%s-%s-*", templateID, agent))
 	if err != nil {
 		if progressFn != nil {
 			progressFn(BuildProgress{

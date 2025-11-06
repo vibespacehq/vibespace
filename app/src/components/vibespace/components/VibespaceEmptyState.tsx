@@ -1,17 +1,17 @@
 import { Plus } from 'lucide-react';
-import '../styles/WorkspaceEmptyState.css';
+import '../styles/VibespaceEmptyState.css';
 
-interface WorkspaceEmptyStateProps {
+interface VibespaceEmptyStateProps {
   onCreateNew: () => void;
 }
 
 /**
- * Empty state component displayed when no workspaces exist.
- * Encourages users to create their first workspace.
+ * Empty state component displayed when no vibespaces exist.
+ * Encourages users to create their first vibespace.
  */
-export function WorkspaceEmptyState({ onCreateNew }: WorkspaceEmptyStateProps) {
+export function VibespaceEmptyState({ onCreateNew }: VibespaceEmptyStateProps) {
   return (
-    <div className="workspace-empty-state">
+    <div className="vibespace-empty-state">
       <div className="empty-icon-container">
         <svg
           className="empty-icon"
@@ -64,7 +64,7 @@ export function WorkspaceEmptyState({ onCreateNew }: WorkspaceEmptyStateProps) {
       </div>
 
       <div className="empty-content">
-        <h2>No workspaces yet</h2>
+        <h2>No vibespaces yet</h2>
         <p>
           Create your first containerized development environment with code-server
           and AI coding agents.
@@ -73,7 +73,7 @@ export function WorkspaceEmptyState({ onCreateNew }: WorkspaceEmptyStateProps) {
 
       <button className="btn-create-first" onClick={onCreateNew}>
         <Plus size={18} />
-        Create workspace
+        Create vibespace
       </button>
     </div>
   );

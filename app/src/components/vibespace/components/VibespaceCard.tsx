@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { ExternalLink, Play, Square, Trash2, MoreVertical } from 'lucide-react';
-import type { Workspace } from '../../../lib/types';
+import type { Vibespace } from '../../../lib/types';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
-import '../styles/WorkspaceCard.css';
+import '../styles/VibespaceCard.css';
 
-interface WorkspaceCardProps {
-  workspace: Workspace;
+interface VibespaceCardProps {
+  vibespace: Vibespace;
   onOpen: (id: string, urlType?: string) => void;
   onStart: (id: string) => Promise<void>;
   onStop: (id: string) => Promise<void>;
@@ -13,16 +13,16 @@ interface WorkspaceCardProps {
 }
 
 /**
- * Workspace card component displaying workspace information and actions.
+ * Vibespace card component displaying vibespace information and actions.
  * Shows status, template, resources, and provides controls for open/start/stop/delete.
  */
-export function WorkspaceCard({
-  workspace,
+export function VibespaceCard({
+  vibespace,
   onOpen,
   onStart,
   onStop,
   onDelete,
-}: WorkspaceCardProps) {
+}: VibespaceCardProps) {
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isOperating, setIsOperating] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -53,7 +53,7 @@ export function WorkspaceCard({
     setIsOperating(true);
     setIsActionsOpen(false);
     try {
-      await onStart(workspace.id);
+      await onStart(vibespace.id);
     } finally {
       setIsOperating(false);
     }
@@ -64,7 +64,7 @@ export function WorkspaceCard({
     setIsOperating(true);
     setIsActionsOpen(false);
     try {
-      await onStop(workspace.id);
+      await onStop(vibespace.id);
     } finally {
       setIsOperating(false);
     }
@@ -80,12 +80,12 @@ export function WorkspaceCard({
     setShowDeleteModal(false);
     setIsOperating(true);
     try {
-      await onDelete(workspace.id);
-      // Success - workspace will be removed from list after API call
+      await onDelete(vibespace.id);
+      // Success - vibespace will be removed from list after API call
     } catch (error) {
       // Error handling - show user-friendly message
       const message = error instanceof Error ? error.message : 'Unknown error occurred';
-      alert(`Failed to delete workspace: ${message}`);
+      alert(`Failed to delete vibespace: ${message}`);
     } finally {
       setIsOperating(false);
     }
@@ -107,7 +107,7 @@ export function WorkspaceCard({
     }
   };
 
-  const getStatusColor = (status: Workspace['status']) => {
+  const getStatusColor = (status: Vibespace['status']) => {
     switch (status) {
       case 'running':
         return 'status-running';
@@ -125,30 +125,30 @@ export function WorkspaceCard({
     }
   };
 
-  const canStart = workspace.status === 'stopped';
-  const canStop = workspace.status === 'running';
-  const canOpen = workspace.status === 'running' && workspace.urls?.['code-server'];
+  const canStart = vibespace.status === 'stopped';
+  const canStop = vibespace.status === 'running';
+  const canOpen = vibespace.status === 'running' && vibespace.urls?.['code-server'];
 
   // Determine preview URL type and availability based on template
-  const previewUrlType = workspace.template === 'jupyter' ? 'jupyter' : 'preview';
-  const previewLabel = workspace.template === 'jupyter' ? 'Jupyter' : 'Preview';
-  const canOpenPreview = workspace.status === 'running' && workspace.urls?.[previewUrlType];
+  const previewUrlType = vibespace.template === 'jupyter' ? 'jupyter' : 'preview';
+  const previewLabel = vibespace.template === 'jupyter' ? 'Jupyter' : 'Preview';
+  const canOpenPreview = vibespace.status === 'running' && vibespace.urls?.[previewUrlType];
 
   return (
-    <div className="workspace-card">
-      <div className="workspace-card-header">
-        <div className="workspace-name-section">
-          <h3>{workspace.name}</h3>
-          <span className={`workspace-status ${getStatusColor(workspace.status)}`}>
-            {workspace.status}
+    <div className="vibespace-card">
+      <div className="vibespace-card-header">
+        <div className="vibespace-name-section">
+          <h3>{vibespace.name}</h3>
+          <span className={`vibespace-status ${getStatusColor(vibespace.status)}`}>
+            {vibespace.status}
           </span>
         </div>
-        <div className="workspace-menu-container">
+        <div className="vibespace-menu-container">
           <button
             ref={buttonRef}
-            className="workspace-menu-btn"
+            className="vibespace-menu-btn"
             onClick={() => setIsActionsOpen(!isActionsOpen)}
-            aria-label="Workspace actions"
+            aria-label="Vibespace actions"
             aria-expanded={isActionsOpen}
             disabled={isOperating}
           >
@@ -156,13 +156,13 @@ export function WorkspaceCard({
           </button>
 
           {isActionsOpen && (
-            <div ref={menuRef} className="workspace-actions-menu">
+            <div ref={menuRef} className="vibespace-actions-menu">
               {canStart && (
                 <button
                   onClick={handleStart}
                   disabled={isOperating}
                   className="menu-action"
-                  aria-label="Start workspace"
+                  aria-label="Start vibespace"
                 >
                   <Play size={16} />
                   Start
@@ -173,7 +173,7 @@ export function WorkspaceCard({
                   onClick={handleStop}
                   disabled={isOperating}
                   className="menu-action"
-                  aria-label="Stop workspace"
+                  aria-label="Stop vibespace"
                 >
                   <Square size={16} />
                   Stop
@@ -183,7 +183,7 @@ export function WorkspaceCard({
                 onClick={handleDelete}
                 disabled={isOperating}
                 className="menu-action menu-action-danger"
-                aria-label="Delete workspace"
+                aria-label="Delete vibespace"
               >
                 <Trash2 size={16} />
                 Delete
@@ -193,36 +193,36 @@ export function WorkspaceCard({
         </div>
       </div>
 
-      <div className="workspace-card-body">
-        <div className="workspace-meta">
+      <div className="vibespace-card-body">
+        <div className="vibespace-meta">
           <span className="meta-label">Template</span>
-          <span className="meta-value">{workspace.template}</span>
+          <span className="meta-value">{vibespace.template}</span>
         </div>
-        <div className="workspace-meta">
+        <div className="vibespace-meta">
           <span className="meta-label">CPU</span>
-          <span className="meta-value">{workspace.resources.cpu}</span>
+          <span className="meta-value">{vibespace.resources.cpu}</span>
         </div>
-        <div className="workspace-meta">
+        <div className="vibespace-meta">
           <span className="meta-label">Memory</span>
-          <span className="meta-value">{workspace.resources.memory}</span>
+          <span className="meta-value">{vibespace.resources.memory}</span>
         </div>
-        <div className="workspace-meta">
+        <div className="vibespace-meta">
           <span className="meta-label">Created</span>
-          <span className="meta-value">{formatDate(workspace.created_at)}</span>
+          <span className="meta-value">{formatDate(vibespace.created_at)}</span>
         </div>
-        {workspace.persistent && (
-          <div className="workspace-badge-persistent">
+        {vibespace.persistent && (
+          <div className="vibespace-badge-persistent">
             Persistent
           </div>
         )}
       </div>
 
-      <div className="workspace-card-footer">
+      <div className="vibespace-card-footer">
         <button
-          className="btn-open-workspace"
-          onClick={() => onOpen(workspace.id)}
+          className="btn-open-vibespace"
+          onClick={() => onOpen(vibespace.id)}
           disabled={!canOpen || isOperating}
-          aria-label="Open workspace in browser"
+          aria-label="Open vibespace in browser"
         >
           <ExternalLink size={16} />
           Open
@@ -230,7 +230,7 @@ export function WorkspaceCard({
         {canOpenPreview && (
           <button
             className="btn-open-preview"
-            onClick={() => onOpen(workspace.id, previewUrlType)}
+            onClick={() => onOpen(vibespace.id, previewUrlType)}
             disabled={isOperating}
             aria-label={`Open ${previewLabel} in browser`}
           >
@@ -242,7 +242,7 @@ export function WorkspaceCard({
 
       {showDeleteModal && (
         <DeleteConfirmationModal
-          workspaceName={workspace.name}
+          vibespaceName={vibespace.name}
           onConfirm={confirmDelete}
           onCancel={cancelDelete}
         />

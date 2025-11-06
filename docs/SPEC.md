@@ -1,4 +1,4 @@
-# workspaces - Technical Specification
+# vibespace - Technical Specification
 
 **Version:** 1.0.0
 **Date:** 2025-10-07
@@ -12,7 +12,7 @@
 2. [Architecture](#architecture)
 3. [Technical Stack](#technical-stack)
 4. [Core Components](#core-components)
-5. [Workspace Specifications](#workspace-specifications)
+5. [Vibespace Specifications](#vibespace-specifications)
 6. [API Documentation](#api-documentation)
 7. [Security & Credentials](#security--credentials)
 8. [Networking](#networking)
@@ -25,13 +25,13 @@
 
 ## 1. Project Overview
 
-**Project Name**: `workspaces`
+**Project Name**: `vibespace`
 
 ### 1.1 Naming Conventions
 
 **Project Structure**:
 ```
-workspace/                  # Root (singular)
+vibespace/                  # Root (singular)
 ├── app/                   # Desktop application
 ├── api/                   # Backend API server
 ├── images/                # Container images
@@ -41,31 +41,31 @@ workspace/                  # Root (singular)
 ```
 
 **Kubernetes Resources**:
-- Namespace: `workspace` (singular)
-- Labels: `workspace.dev/*`
-- Resources: `workspace-{id}`, `workspace-{id}-pvc`, `workspace-{id}-secrets`
+- Namespace: `vibespace` (singular)
+- Labels: `vibespace.dev/*`
+- Resources: `vibespace-{id}`, `vibespace-{id}-pvc`, `vibespace-{id}-secrets`
 
 **Domains**:
-- Pattern: `workspace-{id}.local`
-- App ports: `workspace-{id}-3000.local`
+- Pattern: `vibespace-{id}.local`
+- App ports: `vibespace-{id}-3000.local`
 
 **Go Packages**:
-- Singular names: `workspace/`, `template/`, `credential/`
+- Singular names: `vibespace/`, `template/`, `credential/`
 - Standard layout: `cmd/`, `pkg/`, `config/`, `script/`
 
 **API Paths**:
-- Collections: `/api/v1/workspaces`
-- Single resource: `/api/v1/workspaces/{id}`
+- Collections: `/api/v1/vibespaces`
+- Single resource: `/api/v1/vibespaces/{id}`
 
 ### 1.2 Vision
 
-An open-source Tauri desktop app for managing isolated dev environments running in local k3s. Each workspace is a containerized environment with code-server (VS Code in browser), supports AI coding agents like Claude Code and OpenAI Codex.
+An open-source Tauri desktop app for managing isolated dev environments running in local k3s. Each vibespace is a containerized environment with code-server (VS Code in browser), supports AI coding agents like Claude Code and OpenAI Codex.
 
 ### 1.3 Goals
 
-- **Isolated Environments**: Spin up project-specific workspaces with custom configurations
+- **Isolated Environments**: Spin up project-specific vibespaces with custom configurations
 - **AI-Ready**: Pre-configured for coding agents with seamless authentication
-- **Local-First**: All workspaces run on local k3s cluster, no cloud dependency
+- **Local-First**: All vibespaces run on local k3s cluster, no cloud dependency
 - **Developer UX**: Simple desktop UI abstracting Kubernetes complexity
 - **Template-Based**: Quick start with pre-built templates (Next.js, Vue, Jupyter, etc.)
 - **Accessible**: VS Code available both embedded in app and via browser
@@ -82,37 +82,37 @@ An open-source Tauri desktop app for managing isolated dev environments running 
 
 ✅ Desktop app (Tauri) with embedded VS Code
 ✅ Local k3s cluster management (abstracted)
-✅ On-demand and persistent workspaces
+✅ On-demand and persistent vibespaces
 ✅ Scale-to-zero with Knative
 ✅ Local DNS (*.local)
 ✅ Host credential mounting (SSH, Git, AI agents)
 ✅ Custom template builder with BuildKit
 ✅ 3 built-in templates (Next.js, Vue, Jupyter)
 ✅ AI agent configuration (Claude Code, OpenAI Codex)
-✅ Inter-workspace networking (configurable)
+✅ Inter-vibespace networking (configurable)
 ✅ Port forwarding to host
 
 ### 1.6 Key Features (Extended)
 
 🎯 **Cloud Deployment Mode**
 - Desktop app runs locally
-- Backend API + workspaces run in cloud (AWS, GCP, DigitalOcean, etc.)
-- Connect to remote workspaces via embedded code-server
+- Backend API + vibespaces run in cloud (AWS, GCP, DigitalOcean, etc.)
+- Connect to remote vibespaces via embedded code-server
 - Managed k3s cluster in cloud
-- Secure tunnel for workspace access
+- Secure tunnel for vibespace access
 
 🎯 **Certificate Management**
 - Automatic TLS certificate provisioning (Let's Encrypt via cert-manager)
-- Per-workspace HTTPS endpoints
+- Per-vibespace HTTPS endpoints
 - Custom domain support (`myproject.example.com`)
 - Wildcard certificates for subdomains
 - Certificate auto-renewal
 
 🎯 **Custom Domains**
-- Map workspaces to custom domains
+- Map vibespaces to custom domains
 - DNS provider integration (Cloudflare, Route53, etc.)
 - Automatic DNS record creation
-- Support for multiple domains per workspace
+- Support for multiple domains per vibespace
 - CNAME and A record management
 
 ---
@@ -125,12 +125,12 @@ An open-source Tauri desktop app for managing isolated dev environments running 
 ┌─────────────────────────────────────────────────────────────┐
 │                     Desktop App (Tauri)                     │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │  Workspace List │  │  Template       │  │  Settings   │ │
+│  │  Vibespace List │  │  Template       │  │  Settings   │ │
 │  │  + Control      │  │  Builder        │  │  Panel      │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────┘ │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │         Embedded VS Code (WebView)                    │  │
-│  │         Multiple Tabs for Workspaces                  │  │
+│  │         Multiple Tabs for Vibespaces                  │  │
 │  └───────────────────────────────────────────────────────┘  │
 └──────────────────────┬──────────────────────────────────────┘
                        │ HTTP (localhost:8090)
@@ -138,7 +138,7 @@ An open-source Tauri desktop app for managing isolated dev environments running 
 ┌─────────────────────────────────────────────────────────────┐
 │                    API Server (Go)                          │
 │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐   │
-│  │  Workspace   │  │  Template    │  │  k3s Manager    │   │
+│  │  Vibespace   │  │  Template    │  │  k3s Manager    │   │
 │  │  Controller  │  │  Builder     │  │                 │   │
 │  └──────────────┘  └──────────────┘  └─────────────────┘   │
 │  ┌──────────────┐  ┌──────────────┐  ┌─────────────────┐   │
@@ -152,9 +152,9 @@ An open-source Tauri desktop app for managing isolated dev environments running 
 │                    k3s Cluster (local)                      │
 │                                                             │
 │  ┌───────────────────────────────────────────────────────┐ │
-│  │  Knative Serving (Workspaces)                         │ │
+│  │  Knative Serving (Vibespaces)                         │ │
 │  │  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐  │ │
-│  │  │ workspace-1 │  │ workspace-2 │  │ workspace-3  │  │ │
+│  │  │ vibespace-1 │  │ vibespace-2 │  │ vibespace-3  │  │ │
 │  │  │  (Next.js)  │  │  (Vue)      │  │  (Jupyter)   │  │ │
 │  │  │ code-server │  │ code-server │  │ jupyter-lab  │  │ │
 │  │  │ PVC mount   │  │ PVC mount   │  │ PVC mount    │  │ │
@@ -184,14 +184,14 @@ An open-source Tauri desktop app for managing isolated dev environments running 
 
 ### 2.2 Component Interaction Flow
 
-1. **User creates workspace via Tauri UI**
-2. **Tauri → Go API**: POST /api/workspaces (template, config)
+1. **User creates vibespace via Tauri UI**
+2. **Tauri → Go API**: POST /api/vibespaces (template, config)
 3. **Go API → BuildKit**: Build image if custom template
 4. **Go API → k3s**: Create Knative Service + PVC
 5. **Go API → Traefik**: Configure IngressRoute
 6. **Go API → DNS**: Update /etc/hosts
-7. **Go API → Tauri**: Return workspace URL
-8. **Tauri**: Open embedded WebView to workspace-{id}.local
+7. **Go API → Tauri**: Return vibespace URL
+8. **Tauri**: Open embedded WebView to vibespace-{id}.local
 
 ---
 
@@ -214,7 +214,7 @@ All components run on local machine:
            │
 ┌──────────▼──────────┐
 │   k3s Cluster       │  local
-│   - Workspaces      │
+│   - Vibespaces      │
 │   - BuildKit        │
 │   - Registry        │
 └─────────────────────┘
@@ -235,7 +235,7 @@ All components run on local machine:
 
 #### 2.3.2 Cloud Mode
 
-Desktop app local, backend/workspaces in cloud:
+Desktop app local, backend/vibespaces in cloud:
 
 ```
 ┌─────────────────────┐
@@ -256,7 +256,7 @@ Desktop app local, backend/workspaces in cloud:
 │              │                 │
 │   ┌──────────▼─────────────┐  │
 │   │  k3s Cluster           │  │
-│   │  - Workspaces          │  │
+│   │  - Vibespaces          │  │
 │   │  - BuildKit            │  │
 │   │  - Registry            │  │
 │   │  - cert-manager        │  │  (for TLS)
@@ -280,7 +280,7 @@ Desktop app local, backend/workspaces in cloud:
 2. App provisions k3s cluster using Terraform/Pulumi
 3. Installs Knative + Traefik + cert-manager
 4. Configures WireGuard tunnel for secure access
-5. Desktop app connects to `api.yourworkspace.cloud`
+5. Desktop app connects to `api.yourvibespace.cloud`
 
 **Configuration**:
 ```yaml
@@ -293,7 +293,7 @@ cloud:
   cluster:
     nodes: 2
     node_type: s-4vcpu-8gb
-  domain: workspace.yourdomain.com
+  domain: vibespace.yourdomain.com
   tunnel:
     type: wireguard
     port: 51820
@@ -303,11 +303,11 @@ cloud:
 
 #### 2.3.3 Hybrid Mode (Future)
 
-Some workspaces local, some in cloud:
+Some vibespaces local, some in cloud:
 
 ```
-Desktop App → Local k3s (lightweight workspaces)
-           └→ Cloud k3s (heavy workspaces, team sharing)
+Desktop App → Local k3s (lightweight vibespaces)
+           └→ Cloud k3s (heavy vibespaces, team sharing)
 ```
 
 ---
@@ -402,15 +402,15 @@ src/
 │   │       ├── InstallationInstructions.css
 │   │       ├── ProgressSidebar.css
 │   │       └── ReadySetup.css
-│   ├── workspace/                     # Workspace management feature
+│   ├── vibespace/                     # Vibespace management feature
 │   │   ├── components/
-│   │   │   ├── WorkspaceList.tsx    # Grid/list view of workspaces
-│   │   │   ├── WorkspaceCard.tsx    # Individual workspace item
-│   │   │   ├── WorkspaceCreate.tsx  # Creation wizard modal
-│   │   │   ├── WorkspaceSettings.tsx # Per-workspace config
-│   │   │   └── WorkspaceEmbed.tsx   # Embedded code-server iframe
+│   │   │   ├── VibespaceList.tsx    # Grid/list view of vibespaces
+│   │   │   ├── VibespaceCard.tsx    # Individual vibespace item
+│   │   │   ├── VibespaceCreate.tsx  # Creation wizard modal
+│   │   │   ├── VibespaceSettings.tsx # Per-vibespace config
+│   │   │   └── VibespaceEmbed.tsx   # Embedded code-server iframe
 │   │   └── styles/
-│   │       ├── WorkspaceList.css
+│   │       ├── VibespaceList.css
 │   │       └── (other component styles)
 │   ├── template/
 │   │   ├── components/
@@ -441,7 +441,7 @@ src/
 │       │   └── GeneralSettings.tsx  # Resource defaults
 │       └── styles/
 ├── hooks/
-│   ├── useWorkspaces.ts               # React Query workspace CRUD
+│   ├── useVibespaces.ts               # React Query vibespace CRUD
 │   ├── useTemplates.ts                # Template management
 │   ├── useCredentials.ts              # Credential CRUD operations
 │   ├── useCluster.ts                  # k3s status polling
@@ -482,11 +482,11 @@ See `docs/adr/0003-frontend-organization.md` for the architectural decision reco
 
 #### 4.1.2 Key Features
 
-- **Multi-tab WebView**: Each workspace opens in a tab
-- **Real-time Status**: WebSocket connection for workspace events
+- **Multi-tab WebView**: Each vibespace opens in a tab
+- **Real-time Status**: WebSocket connection for vibespace events
 - **Drag-and-drop**: Import Dockerfiles to create templates
 - **System Tray**: Quick access, minimizes to tray
-- **Native Notifications**: Build complete, workspace ready, errors
+- **Native Notifications**: Build complete, vibespace ready, errors
 
 #### 4.1.3 Design System & Theming
 
@@ -569,11 +569,11 @@ See `docs/adr/0003-frontend-organization.md` for the architectural decision reco
 
 **Component Patterns**:
 
-*Workspace Card*:
+*Vibespace Card*:
 ```tsx
 <Card>
   <Status color={running ? 'success' : 'muted'} />
-  <Title>{workspace.name}</Title>
+  <Title>{vibespace.name}</Title>
   <Metadata>
     <Icon>Template</Icon>
     <Icon>CPU</Icon>
@@ -668,7 +668,7 @@ api/
 │       └── main.go                    # Entry point
 ├── pkg/
 │   ├── handler/
-│   │   ├── workspace.go               # Workspace handlers
+│   │   ├── vibespace.go               # Vibespace handlers
 │   │   ├── template.go                # Template handlers
 │   │   ├── credential.go              # Credential handlers
 │   │   ├── cluster.go                 # Cluster handlers
@@ -677,7 +677,7 @@ api/
 │   │   ├── detector.go                # k3s/kubectl detection
 │   │   ├── client.go                  # Kubernetes client
 │   │   └── health.go                  # Cluster health checks
-│   ├── workspace/
+│   ├── vibespace/
 │   │   ├── service.go                 # Business logic
 │   │   ├── knative.go                 # Knative Service management
 │   │   ├── storage.go                 # PVC management
@@ -698,7 +698,7 @@ api/
 │   │   ├── dns.go                     # /etc/hosts manipulation
 │   │   └── proxy.go                   # Port forwarding (if needed)
 │   └── model/
-│       ├── workspace.go               # Workspace model
+│       ├── vibespace.go               # Vibespace model
 │       ├── template.go                # Template model
 │       ├── credential.go              # Credential model
 │       └── config.go                  # Configuration
@@ -729,8 +729,8 @@ registry:
 buildkit:
   address: tcp://buildkitd.default.svc.cluster.local:1234
 
-workspace:
-  namespace: workspace
+vibespace:
+  namespace: vibespace
   default_resources:
     cpu: "2"
     memory: "4Gi"
@@ -738,7 +738,7 @@ workspace:
   dns_domain: local
 
 credential:
-  storage_path: ~/.workspace/credential
+  storage_path: ~/.vibespace/credential
   encryption: aes-256-gcm
 ```
 
@@ -856,7 +856,7 @@ curl -sfL https://get.k3s.io | sh -s - \
 When users install k3s manually, these are the recommended settings:
 
 ```bash
-# Minimal k3s setup for Workspace
+# Minimal k3s setup for Vibespace
 curl -sfL https://get.k3s.io | sh -s - \
   --write-kubeconfig-mode 644 \
   --disable traefik \
@@ -1104,21 +1104,21 @@ spec:
 
 ---
 
-## 5. Workspace Specifications
+## 5. Vibespace Specifications
 
-### 5.1 Workspace Resource
+### 5.1 Vibespace Resource
 
 ```yaml
-# Example: Knative Service for a Next.js workspace
+# Example: Knative Service for a Next.js vibespace
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: workspace-abc123
-  namespace: workspace
+  name: vibespace-abc123
+  namespace: vibespace
   labels:
-    workspace.dev/template: nextjs
-    workspace.dev/owner: user
-    workspace.dev/persistent: "true"
+    vibespace.dev/template: nextjs
+    vibespace.dev/owner: user
+    vibespace.dev/persistent: "true"
 spec:
   template:
     metadata:
@@ -1130,43 +1130,43 @@ spec:
       containerConcurrency: 1
       timeoutSeconds: 300
       containers:
-      - name: workspace
-        image: localhost:5000/workspace-nextjs:latest
+      - name: vibespace
+        image: localhost:5000/vibespace-nextjs:latest
         ports:
         - containerPort: 8080
           name: http1
         env:
-        - name: WORKSPACE_ID
+        - name: VIBESPACE_ID
           value: "abc123"
         - name: ANTHROPIC_API_KEY
           valueFrom:
             secretKeyRef:
-              name: workspace-abc123-secrets
+              name: vibespace-abc123-secrets
               key: claude-api-key
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: workspace-abc123-secrets
+              name: vibespace-abc123-secrets
               key: openai-api-key
         - name: GIT_AUTHOR_NAME
           valueFrom:
             secretKeyRef:
-              name: workspace-abc123-secrets
+              name: vibespace-abc123-secrets
               key: git-author-name
         - name: GIT_AUTHOR_EMAIL
           valueFrom:
             secretKeyRef:
-              name: workspace-abc123-secrets
+              name: vibespace-abc123-secrets
               key: git-author-email
         - name: GIT_COMMITTER_NAME
           valueFrom:
             secretKeyRef:
-              name: workspace-abc123-secrets
+              name: vibespace-abc123-secrets
               key: git-author-name
         - name: GIT_COMMITTER_EMAIL
           valueFrom:
             secretKeyRef:
-              name: workspace-abc123-secrets
+              name: vibespace-abc123-secrets
               key: git-author-email
         resources:
           requests:
@@ -1176,28 +1176,28 @@ spec:
             cpu: "2"
             memory: "4Gi"
         volumeMounts:
-        # Workspace data (persistent)
-        - name: workspace-data
-          mountPath: /workspace
+        # Vibespace data (persistent)
+        - name: vibespace-data
+          mountPath: /vibespace
         # SSH keys from app-managed secrets
         - name: ssh-keys
           mountPath: /home/coder/.ssh
           readOnly: true
       volumes:
-      - name: workspace-data
+      - name: vibespace-data
         persistentVolumeClaim:
-          claimName: workspace-abc123-pvc
+          claimName: vibespace-abc123-pvc
       - name: ssh-keys
         secret:
-          secretName: workspace-abc123-ssh
+          secretName: vibespace-abc123-ssh
           defaultMode: 0600
           optional: true  # SSH keys are optional
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: workspace-abc123-pvc
-  namespace: workspace
+  name: vibespace-abc123-pvc
+  namespace: vibespace
 spec:
   accessModes:
   - ReadWriteOnce
@@ -1209,8 +1209,8 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: workspace-abc123-secrets
-  namespace: workspace
+  name: vibespace-abc123-secrets
+  namespace: vibespace
 type: Opaque
 stringData:
   claude-api-key: "sk-ant-..."
@@ -1221,8 +1221,8 @@ stringData:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: workspace-abc123-ssh
-  namespace: workspace
+  name: vibespace-abc123-ssh
+  namespace: vibespace
 type: kubernetes.io/ssh-auth
 stringData:
   id_ed25519: |
@@ -1239,21 +1239,21 @@ stringData:
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: workspace-abc123
-  namespace: workspace
+  name: vibespace-abc123
+  namespace: vibespace
 spec:
   entryPoints:
   - web
   routes:
-  - match: Host(`workspace-abc123.local`)
+  - match: Host(`vibespace-abc123.local`)
     kind: Rule
     services:
-    - name: workspace-abc123
+    - name: vibespace-abc123
       port: 80
       kind: Service
 ```
 
-### 5.3 Workspace Lifecycle
+### 5.3 Vibespace Lifecycle
 
 ```
 State Machine:
@@ -1283,18 +1283,18 @@ Transitions:
 
 **Base URL**: `http://localhost:8090/api/v1`
 
-#### 6.1.1 Workspaces
+#### 6.1.1 Vibespaces
 
 ```
-POST   /workspaces
-GET    /workspaces
-GET    /workspaces/:id
-PUT    /workspaces/:id
-DELETE /workspaces/:id
-POST   /workspaces/:id/start
-POST   /workspaces/:id/stop
-GET    /workspaces/:id/logs
-GET    /workspaces/:id/status
+POST   /vibespaces
+GET    /vibespaces
+GET    /vibespaces/:id
+PUT    /vibespaces/:id
+DELETE /vibespaces/:id
+POST   /vibespaces/:id/start
+POST   /vibespaces/:id/stop
+GET    /vibespaces/:id/logs
+GET    /vibespaces/:id/status
 ```
 
 #### 6.1.2 Templates
@@ -1339,10 +1339,10 @@ DELETE /registry/images/:name/:tag
 
 ### 6.2 Request/Response Schemas
 
-#### Create Workspace
+#### Create Vibespace
 
 ```http
-POST /api/v1/workspaces
+POST /api/v1/vibespaces
 Content-Type: application/json
 
 {
@@ -1365,7 +1365,7 @@ Content-Type: application/json
   },
   "networking": {
     "exposePort": 3000,
-    "allowInterWorkspace": false
+    "allowInterVibespace": false
   }
 }
 ```
@@ -1380,8 +1380,8 @@ Content-Type: application/json
   "template": "nextjs",
   "status": "creating",
   "urls": {
-    "codeServer": "http://workspace-abc123.local",
-    "app": "http://workspace-abc123-3000.local"
+    "codeServer": "http://vibespace-abc123.local",
+    "app": "http://vibespace-abc123-3000.local"
   },
   "createdAt": "2025-10-07T10:30:00Z",
   "resources": {
@@ -1392,10 +1392,10 @@ Content-Type: application/json
 }
 ```
 
-#### List Workspaces
+#### List Vibespaces
 
 ```http
-GET /api/v1/workspaces
+GET /api/v1/vibespaces
 ```
 
 ```http
@@ -1403,15 +1403,15 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 
 {
-  "workspaces": [
+  "vibespaces": [
     {
       "id": "abc123",
       "name": "my-nextjs-project",
       "template": "nextjs",
       "status": "running",
       "urls": {
-        "codeServer": "http://workspace-abc123.local",
-        "app": "http://workspace-abc123-3000.local"
+        "codeServer": "http://vibespace-abc123.local",
+        "app": "http://vibespace-abc123-3000.local"
       },
       "persistent": true,
       "createdAt": "2025-10-07T10:30:00Z",
@@ -1423,7 +1423,7 @@ Content-Type: application/json
       "template": "jupyter",
       "status": "stopped",
       "urls": {
-        "jupyter": "http://workspace-def456.local"
+        "jupyter": "http://vibespace-def456.local"
       },
       "persistent": false,
       "createdAt": "2025-10-06T09:00:00Z",
@@ -1442,8 +1442,8 @@ Content-Type: application/json
 
 {
   "name": "my-django-template",
-  "baseImage": "localhost:5000/workspace-base:latest",
-  "dockerfile": "FROM localhost:5000/workspace-base:latest\n\nRUN apt-get update && apt-get install -y python3.11 python3-pip\n\nRUN pip3 install django djangorestframework\n\nUSER coder\nWORKDIR /workspace\n\nCMD [\"code-server\", \"--bind-addr\", \"0.0.0.0:8080\", \"--auth\", \"none\"]",
+  "baseImage": "localhost:5000/vibespace-base:latest",
+  "dockerfile": "FROM localhost:5000/vibespace-base:latest\n\nRUN apt-get update && apt-get install -y python3.11 python3-pip\n\nRUN pip3 install django djangorestframework\n\nUSER coder\nWORKDIR /vibespace\n\nCMD [\"code-server\", \"--bind-addr\", \"0.0.0.0:8080\", \"--auth\", \"none\"]",
   "metadata": {
     "description": "Django REST Framework environment",
     "icon": "🐍",
@@ -1472,7 +1472,7 @@ Accept: text/event-stream
 ```
 
 ```
-data: {"step": 1, "message": "FROM localhost:5000/workspace-base:latest", "timestamp": "2025-10-07T10:35:01Z"}
+data: {"step": 1, "message": "FROM localhost:5000/vibespace-base:latest", "timestamp": "2025-10-07T10:35:01Z"}
 
 data: {"step": 2, "message": "RUN apt-get update && apt-get install -y python3.11 python3-pip", "timestamp": "2025-10-07T10:35:05Z"}
 
@@ -1617,7 +1617,7 @@ Content-Type: application/json
 {
   "name": "GitHub SSH Key",
   "keyType": "ed25519",
-  "comment": "john@workspace"
+  "comment": "john@vibespace"
 }
 ```
 
@@ -1628,7 +1628,7 @@ Content-Type: application/json
 {
   "id": "cred-ssh123",
   "name": "GitHub SSH Key",
-  "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJqfH... john@workspace",
+  "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJqfH... john@vibespace",
   "keyType": "ed25519",
   "createdAt": "2025-10-07T10:35:00Z"
 }
@@ -1653,8 +1653,8 @@ Content-Type: application/json
 
 {
   "error": "Resource conflict",
-  "details": "Workspace with name 'my-project' already exists",
-  "code": "WORKSPACE_EXISTS"
+  "details": "Vibespace with name 'my-project' already exists",
+  "code": "VIBESPACE_EXISTS"
 }
 ```
 
@@ -1677,7 +1677,7 @@ Content-Type: application/json
 
 #### 7.1.1 In-App Credential Management
 
-Users authenticate directly within the app. Credentials are stored securely and injected into workspaces as needed.
+Users authenticate directly within the app. Credentials are stored securely and injected into vibespaces as needed.
 
 **Supported credential types**:
 ```
@@ -1689,25 +1689,25 @@ Users authenticate directly within the app. Credentials are stored securely and 
 ```
 
 **Storage**:
-- **Location**: App data directory (`~/.workspace/credentials/`)
+- **Location**: App data directory (`~/.vibespace/credentials/`)
 - **Encryption**: AES-256 at rest, keys managed by OS keychain (Tauri secure storage)
-- **Isolation**: Per-workspace credential assignment (opt-in)
+- **Isolation**: Per-vibespace credential assignment (opt-in)
 
 #### 7.1.2 Credential Injection Strategy
 
-Credentials are injected into workspaces via **Kubernetes Secrets**, not host volume mounts:
+Credentials are injected into vibespaces via **Kubernetes Secrets**, not host volume mounts:
 
 ```yaml
 env:
 - name: ANTHROPIC_API_KEY
   valueFrom:
     secretKeyRef:
-      name: workspace-abc123-secrets
+      name: vibespace-abc123-secrets
       key: claude-api-key
 - name: OPENAI_API_KEY
   valueFrom:
     secretKeyRef:
-      name: workspace-abc123-secrets
+      name: vibespace-abc123-secrets
       key: openai-api-key
 - name: GIT_AUTHOR_NAME
   value: "John Doe"
@@ -1724,16 +1724,16 @@ volumeMounts:
 volumes:
 - name: ssh-keys
   secret:
-    secretName: workspace-abc123-ssh
+    secretName: vibespace-abc123-ssh
     defaultMode: 0600
 ```
 
 **Security considerations**:
 - No direct host filesystem access
 - Credentials stored encrypted in app storage
-- Kubernetes Secrets created per-workspace
-- Automatic cleanup on workspace deletion
-- User controls which workspaces get which credentials
+- Kubernetes Secrets created per-vibespace
+- Automatic cleanup on vibespace deletion
+- User controls which vibespaces get which credentials
 
 #### 7.1.3 AI Agent Authentication
 
@@ -1743,9 +1743,9 @@ volumes:
 3. Selects provider (Claude, OpenAI, etc.)
 4. Enters API key OR initiates OAuth flow
 5. Credential saved to encrypted app storage
-6. When creating workspace, user selects which agents to enable
+6. When creating vibespace, user selects which agents to enable
 7. Backend creates Kubernetes Secret with selected credentials
-8. Environment variables available in workspace
+8. Environment variables available in vibespace
 
 **Example UI Flow**:
 ```
@@ -1770,17 +1770,17 @@ Settings → Credentials
 
 ### 7.2 Network Security
 
-#### 7.2.1 Workspace Isolation
+#### 7.2.1 Vibespace Isolation
 
-By default, workspaces are **network-isolated**:
+By default, vibespaces are **network-isolated**:
 
 ```yaml
-# NetworkPolicy: Deny all inter-workspace traffic by default
+# NetworkPolicy: Deny all inter-vibespace traffic by default
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: workspace-isolation
-  namespace: workspace
+  name: vibespace-isolation
+  namespace: vibespace
 spec:
   podSelector: {}
   policyTypes:
@@ -1795,38 +1795,38 @@ spec:
     ports:
     - protocol: UDP
       port: 53
-  # Allow internet (but not other workspaces)
+  # Allow internet (but not other vibespaces)
   - to:
     - namespaceSelector:
         matchExpressions:
         - key: name
           operator: NotIn
           values:
-          - workspaces
+          - vibespaces
 ```
 
-#### 7.2.2 Inter-Workspace Communication (Opt-in)
+#### 7.2.2 Inter-Vibespace Communication (Opt-in)
 
-When enabled via workspace settings:
+When enabled via vibespace settings:
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: workspace-abc123-allow-def456
-  namespace: workspace
+  name: vibespace-abc123-allow-def456
+  namespace: vibespace
 spec:
   podSelector:
     matchLabels:
-      workspace.dev/id: abc123
+      vibespace.dev/id: abc123
   ingress:
   - from:
     - podSelector:
         matchLabels:
-          workspace.dev/id: def456
+          vibespace.dev/id: def456
 ```
 
-Access via: `workspace-def456.workspaces.svc.cluster.local`
+Access via: `vibespace-def456.vibespaces.svc.cluster.local`
 
 ---
 
@@ -1834,7 +1834,7 @@ Access via: `workspace-def456.workspaces.svc.cluster.local`
 
 ### 8.1 Local DNS
 
-> **Note**: Local DNS configuration (*.local domains) is implemented in **MVP Phase 2** alongside Traefik IngressRoute integration. MVP Phase 1 uses `kubectl port-forward` with `127.0.0.1:PORT` URLs. See Section 8.2.1 for workspace access strategy.
+> **Note**: Local DNS configuration (*.local domains) is implemented in **MVP Phase 2** alongside Traefik IngressRoute integration. MVP Phase 1 uses `kubectl port-forward` with `127.0.0.1:PORT` URLs. See Section 8.2.1 for vibespace access strategy.
 
 #### 8.1.1 Strategy (MVP Phase 2)
 
@@ -1842,54 +1842,54 @@ Access via: `workspace-def456.workspaces.svc.cluster.local`
 
 ```bash
 # Automatically added by backend (Phase 2)
-127.0.0.1  workspace-abc123.local
-127.0.0.1  workspace-abc123-3000.local
-127.0.0.1  workspace-def456.local
+127.0.0.1  vibespace-abc123.local
+127.0.0.1  vibespace-abc123-3000.local
+127.0.0.1  vibespace-def456.local
 ```
 
 **Alternative**: dnsmasq (for wildcard support)
 
 ```bash
 # /etc/dnsmasq.conf
-address=/workspace.local/127.0.0.1
+address=/vibespace.local/127.0.0.1
 ```
 
 #### 8.1.2 Domain Structure
 
-- **Code Server**: `workspace-{id}.local` → port 8080
-- **App Port 1**: `workspace-{id}-3000.local` → port 3000
-- **App Port 2**: `workspace-{id}-8000.local` → port 8000
-- **Custom**: `workspace-{id}-{port}.local` → port {port}
+- **Code Server**: `vibespace-{id}.local` → port 8080
+- **App Port 1**: `vibespace-{id}-3000.local` → port 3000
+- **App Port 2**: `vibespace-{id}-8000.local` → port 8000
+- **Custom**: `vibespace-{id}-{port}.local` → port {port}
 
 #### 8.1.3 Traefik Routing (MVP Phase 2)
 
-When Knative Services are introduced in Phase 2, workspaces will be accessed via Traefik IngressRoutes with custom *.local domains:
+When Knative Services are introduced in Phase 2, vibespace will be accessed via Traefik IngressRoutes with custom *.local domains:
 
 ```yaml
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: workspace-abc123-codeserver
+  name: vibespace-abc123-codeserver
 spec:
   entryPoints: [web]
   routes:
-  - match: Host(`workspace-abc123.local`)
+  - match: Host(`vibespace-abc123.local`)
     kind: Rule
     services:
-    - name: workspace-abc123
+    - name: vibespace-abc123
       port: 80
 ---
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: workspace-abc123-app-3000
+  name: vibespace-abc123-app-3000
 spec:
   entryPoints: [web]
   routes:
-  - match: Host(`workspace-abc123-3000.local`)
+  - match: Host(`vibespace-abc123-3000.local`)
     kind: Rule
     services:
-    - name: workspace-abc123
+    - name: vibespace-abc123
       port: 80
     middlewares:
     - name: port-forward-3000
@@ -1904,23 +1904,23 @@ spec:
       X-Forwarded-Port: "3000"
 ```
 
-### 8.2 Workspace Access Strategy
+### 8.2 Vibespace Access Strategy
 
 #### 8.2.1 Overview: Staged Migration Approach
 
-Workspace access uses a **staged approach** to balance MVP delivery speed with production-ready architecture:
+Vibespace access uses a **staged approach** to balance MVP delivery speed with production-ready architecture:
 
-| Phase | Workspace Type | Access Method | URLs | Status |
+| Phase | Vibespace Type | Access Method | URLs | Status |
 |-------|---------------|---------------|------|--------|
 | **MVP Phase 1** | Kubernetes Pods | `kubectl port-forward` | `http://127.0.0.1:8080+N` | ✅ **Current** |
-| **MVP Phase 2** | Knative Services | Traefik IngressRoutes | `http://workspace-{id}.local` | 🔮 Planned |
+| **MVP Phase 2** | Knative Services | Traefik IngressRoutes | `http://vibespace-{id}.local` | 🔮 Planned |
 
 **Why Staged?**
-- **Phase 1 Goal**: Ship MVP fast, validate workspace concept with users
+- **Phase 1 Goal**: Ship MVP fast, validate vibespace concept with users
 - **Phase 2 Goal**: Production-grade routing when Knative Services are introduced
 - **Trade-off**: Accept port-forward simplicity now, refactor when migrating to Knative
 
-**Migration Trigger**: When workspaces migrate from plain Pods → Knative Services (Phase 2), `kubectl port-forward` to pods becomes fragile (pod names change with revisions, scale-from-zero recreates pods). At that point, switch to Traefik IngressRoutes which work seamlessly with Knative.
+**Migration Trigger**: When vibespaces migrate from plain Pods → Knative Services (Phase 2), `kubectl port-forward` to pods becomes fragile (pod names change with revisions, scale-from-zero recreates pods). At that point, switch to Traefik IngressRoutes which work seamlessly with Knative.
 
 ---
 
@@ -1928,21 +1928,21 @@ Workspace access uses a **staged approach** to balance MVP delivery speed with p
 
 **Current Implementation** (as of MVP Phase 1):
 
-Workspaces run as plain Kubernetes Pods. The API server starts a `kubectl port-forward` when a user clicks "Open Workspace":
+Vibespaces run as plain Kubernetes Pods. The API server starts a `kubectl port-forward` when a user clicks "Open Vibespace":
 
 ```go
-// API: GET /api/v1/workspaces/:id/access
+// API: GET /api/v1/vibespaces/:id/access
 // Returns: { "url": "http://127.0.0.1:8081" }
 
-// Backend implementation (api/pkg/workspace/service.go)
+// Backend implementation (api/pkg/vibespace/service.go)
 func (s *Service) Access(ctx context.Context, id string) (string, error) {
-    podName := fmt.Sprintf("workspace-%s", id)
+    podName := fmt.Sprintf("vibespace-%s", id)
 
     // Assign consistent local port: 8080 + hash(id) mod 1000
     localPort := 8080 + hashStringToPort(id)
 
     // Start port-forward to pod's code-server (port 8080)
-    err := s.k8sClient.StartPortForwardToPod(ctx, "workspace", podName, localPort, 8080)
+    err := s.k8sClient.StartPortForwardToPod(ctx, "vibespace", podName, localPort, 8080)
     if err != nil {
         return "", fmt.Errorf("failed to start port-forward: %w", err)
     }
@@ -1953,20 +1953,20 @@ func (s *Service) Access(ctx context.Context, id string) (string, error) {
 
 **How It Works**:
 1. User clicks "Open" in UI
-2. Frontend calls `GET /api/v1/workspaces/:id/access`
-3. Backend starts `kubectl port-forward pod/workspace-{id} {localPort}:8080`
+2. Frontend calls `GET /api/v1/vibespaces/:id/access`
+3. Backend starts `kubectl port-forward pod/vibespace-{id} {localPort}:8080`
 4. Returns `http://127.0.0.1:{localPort}`
 5. User opens URL in browser → code-server loads
 
 **Port Assignment**:
-- Each workspace gets a consistent local port: `8080 + hash(workspaceID) % 1000`
+- Each vibespace gets a consistent local port: `8080 + hash(vibespaceID) % 1000`
 - Range: `8080-9079` (1000 ports)
-- Same workspace always gets same port (idempotent)
+- Same vibespace always gets same port (idempotent)
 
 **Limitations**:
 - ⚠️ URLs not human-friendly (`http://127.0.0.1:8142` instead of `http://my-project.local`)
 - ⚠️ Port-forward process runs for lifetime of API server
-- ⚠️ Multiple workspaces = multiple port-forward processes
+- ⚠️ Multiple vibespaces = multiple port-forward processes
 - ⚠️ No automatic cleanup if API server crashes (manual `kubectl delete pod`)
 
 **Accepted for Phase 1** because:
@@ -1981,45 +1981,45 @@ func (s *Service) Access(ctx context.Context, id string) (string, error) {
 
 **Future Implementation** (planned for Phase 2 with Knative Services):
 
-When workspaces migrate to Knative Services, access will use Traefik IngressRoutes with custom *.local domains:
+When vibespaces migrate to Knative Services, access will use Traefik IngressRoutes with custom *.local domains:
 
 ```yaml
-# Created automatically when workspace is created
+# Created automatically when vibespace is created
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: workspace-abc123
-  namespace: workspace
+  name: vibespace-abc123
+  namespace: vibespace
 spec:
   entryPoints: [web]
   routes:
-  - match: Host(`workspace-abc123.local`)
+  - match: Host(`vibespace-abc123.local`)
     kind: Rule
     services:
-    - name: workspace-abc123  # Knative Service name
+    - name: vibespace-abc123  # Knative Service name
       port: 80
 ```
 
 ```go
-// Phase 2 API: GET /api/v1/workspaces/:id/access
-// Returns: { "url": "http://workspace-abc123.local" }
+// Phase 2 API: GET /api/v1/vibespaces/:id/access
+// Returns: { "url": "http://vibespace-abc123.local" }
 
 func (s *Service) Access(ctx context.Context, id string) (string, error) {
     // Phase 2: Create IngressRoute + /etc/hosts entry
-    workspaceDomain := fmt.Sprintf("workspace-%s.local", id)
+    vibespaceDomain := fmt.Sprintf("vibespace-%s.local", id)
 
     // 1. Create IngressRoute (if not exists)
-    if err := s.createIngressRoute(ctx, id, workspaceDomain); err != nil {
+    if err := s.createIngressRoute(ctx, id, vibespaceDomain); err != nil {
         return "", err
     }
 
-    // 2. Add /etc/hosts entry: 127.0.0.1 workspace-abc123.local
-    if err := s.updateHostsFile(workspaceDomain); err != nil {
+    // 2. Add /etc/hosts entry: 127.0.0.1 vibespace-abc123.local
+    if err := s.updateHostsFile(vibespaceDomain); err != nil {
         return "", err
     }
 
     // 3. Return clean URL
-    return fmt.Sprintf("http://%s", workspaceDomain), nil
+    return fmt.Sprintf("http://%s", vibespaceDomain), nil
 }
 ```
 
@@ -2027,13 +2027,13 @@ func (s *Service) Access(ctx context.Context, id string) (string, error) {
 1. User clicks "Open" in UI
 2. Backend creates IngressRoute (if needed)
 3. Backend adds `/etc/hosts` entry (requires sudo once)
-4. Returns `http://workspace-abc123.local`
+4. Returns `http://vibespace-abc123.local`
 5. User opens URL → DNS resolves to 127.0.0.1 → Traefik routes to Knative Service → code-server loads
 
 **Benefits** (Phase 2):
 - ✅ Clean URLs (`http://my-project.local`)
 - ✅ Works with Knative scale-from-zero (Traefik waits for pod to start)
-- ✅ Multiple ports supported (`workspace-abc123-3000.local` for app ports)
+- ✅ Multiple ports supported (`vibespace-abc123-3000.local` for app ports)
 - ✅ Production-ready architecture
 - ✅ No long-running port-forward processes
 
@@ -2041,13 +2041,13 @@ func (s *Service) Access(ctx context.Context, id string) (string, error) {
 ```
 Phase 1 (Current)                Phase 2 (Knative)
 -----------------                -----------------
-Pod: workspace-{id}       →      Knative Service: workspace-{id}
+Pod: vibespace-{id}       →      Knative Service: vibespace-{id}
 kubectl port-forward      →      Traefik IngressRoute
-http://127.0.0.1:8080+N  →      http://workspace-{id}.local
+http://127.0.0.1:8080+N  →      http://vibespace-{id}.local
 ```
 
 When Phase 2 migration happens:
-1. Update `api/pkg/workspace/service.go::Access()` to create IngressRoutes
+1. Update `api/pkg/vibespace/service.go::Access()` to create IngressRoutes
 2. Add `/etc/hosts` management (with sudo prompt)
 3. Update frontend to handle `.local` URLs
 4. Remove port-forward cleanup logic
@@ -2057,10 +2057,10 @@ When Phase 2 migration happens:
 
 #### 8.2.4 Dynamic Port Exposure (MVP Phase 2)
 
-In Phase 2, users can expose additional workspace ports at runtime:
+In Phase 2, users can expose additional vibespace ports at runtime:
 
 ```http
-POST /api/v1/workspaces/abc123/expose
+POST /api/v1/vibespaces/abc123/expose
 {
   "port": 5432,
   "protocol": "tcp"
@@ -2068,9 +2068,9 @@ POST /api/v1/workspaces/abc123/expose
 ```
 
 Backend creates:
-1. New IngressRoute for `workspace-abc123-5432.local`
+1. New IngressRoute for `vibespace-abc123-5432.local`
 2. Updates `/etc/hosts`
-3. Returns URL: `http://workspace-abc123-5432.local`
+3. Returns URL: `http://vibespace-abc123-5432.local`
 
 **Use Cases**:
 - Expose dev server (`:3000` for Next.js, `:8000` for Python)
@@ -2118,21 +2118,21 @@ spec:
 
 #### 8.3.2 Automatic Certificate Provisioning
 
-When workspace is created in cloud mode:
+When vibespace is created in cloud mode:
 
 ```yaml
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: workspace-abc123-cert
-  namespace: workspace
+  name: vibespace-abc123-cert
+  namespace: vibespace
 spec:
-  secretName: workspace-abc123-tls
+  secretName: vibespace-abc123-tls
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
   dnsNames:
-  - workspace-abc123.yourdomain.com
+  - vibespace-abc123.yourdomain.com
   - myproject.example.com  # custom domain
 ```
 
@@ -2141,19 +2141,19 @@ spec:
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: workspace-abc123
-  namespace: workspace
+  name: vibespace-abc123
+  namespace: vibespace
 spec:
   entryPoints:
   - websecure
   routes:
-  - match: Host(`workspace-abc123.yourdomain.com`)
+  - match: Host(`vibespace-abc123.yourdomain.com`)
     kind: Rule
     services:
-    - name: workspace-abc123
+    - name: vibespace-abc123
       port: 80
   tls:
-    secretName: workspace-abc123-tls
+    secretName: vibespace-abc123-tls
 ```
 
 **Auto-renewal**: cert-manager handles renewal 30 days before expiry.
@@ -2164,12 +2164,12 @@ spec:
 
 #### 8.4.1 Domain Management
 
-Users can assign custom domains to workspaces:
+Users can assign custom domains to vibespaces:
 
 **UI Flow**:
 ```
-Workspace Settings → Domains
-├─ Default: workspace-abc123.yourdomain.com
+Vibespace Settings → Domains
+├─ Default: vibespace-abc123.yourdomain.com
 └─ Custom Domains:
    ├─ [+ Add Domain]
    │  ├─ Domain: [myproject.example.com]
@@ -2182,7 +2182,7 @@ Workspace Settings → Domains
 
 **API Endpoint**:
 ```http
-POST /api/v1/workspaces/abc123/domains
+POST /api/v1/vibespaces/abc123/domains
 {
   "domain": "myproject.example.com",
   "autoConfigureDNS": true,
@@ -2207,11 +2207,11 @@ When `autoConfigureDNS: true`:
    ```
    A record: myproject.example.com → <cluster-public-ip>
    or
-   CNAME: myproject.example.com → workspace.yourdomain.com
+   CNAME: myproject.example.com → vibespace.yourdomain.com
    ```
 3. Updates IngressRoute with new domain
 4. cert-manager automatically provisions certificate
-5. Workspace accessible via custom domain over HTTPS
+5. Vibespace accessible via custom domain over HTTPS
 
 **Go Implementation**:
 ```go
@@ -2248,25 +2248,25 @@ func (p *CloudflareProvider) CreateRecord(domain, target string) error {
 
 #### 8.4.3 Multi-Domain Support
 
-One workspace can have multiple domains:
+One vibespace can have multiple domains:
 
 ```yaml
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: workspace-abc123
+  name: vibespace-abc123
 spec:
   entryPoints: [websecure]
   routes:
-  - match: Host(`workspace-abc123.yourdomain.com`) || Host(`myproject.example.com`) || Host(`app.custom.dev`)
+  - match: Host(`vibespace-abc123.yourdomain.com`) || Host(`myproject.example.com`) || Host(`app.custom.dev`)
     kind: Rule
     services:
-    - name: workspace-abc123
+    - name: vibespace-abc123
       port: 80
   tls:
-    secretName: workspace-abc123-tls
+    secretName: vibespace-abc123-tls
     domains:
-    - main: workspace-abc123.yourdomain.com
+    - main: vibespace-abc123.yourdomain.com
     - main: myproject.example.com
     - main: app.custom.dev
 ```
@@ -2276,11 +2276,11 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: workspace-abc123-cert
+  name: vibespace-abc123-cert
 spec:
-  secretName: workspace-abc123-tls
+  secretName: vibespace-abc123-tls
   dnsNames:
-  - workspace-abc123.yourdomain.com
+  - vibespace-abc123.yourdomain.com
   - myproject.example.com
   - app.custom.dev
 ```
@@ -2297,15 +2297,15 @@ metadata:
 spec:
   secretName: wildcard-tls
   dnsNames:
-  - "*.workspace.yourdomain.com"
+  - "*.vibespace.yourdomain.com"
   issuerRef:
     name: letsencrypt-prod
     kind: ClusterIssuer
 ```
 
-All workspaces can use:
-- `workspace-abc123.workspace.yourdomain.com`
-- `workspace-def456.workspace.yourdomain.com`
+All vibespaces can use:
+- `vibespace-abc123.vibespace.yourdomain.com`
+- `vibespace-def456.vibespace.yourdomain.com`
 - etc.
 
 ---
@@ -2316,7 +2316,7 @@ All workspaces can use:
 
 **What is a Template?**
 
-A template is a **complete workspace configuration**, not just a development stack. When a user creates a workspace from a template, they're selecting:
+A template is a **complete vibespace configuration**, not just a development stack. When a user creates a vibespace from a template, they're selecting:
 
 1. **Base Development Stack**: Next.js, Python, Vue, Jupyter, etc.
 2. **AI Coding Agent**: Claude Code, OpenAI Codex, Cursor, or custom agent
@@ -2324,7 +2324,7 @@ A template is a **complete workspace configuration**, not just a development sta
 4. **Git Repository** (optional): Clone existing repo or start fresh
 5. **Resource Limits**: Default CPU/memory allocation
 
-**Phase 1 (MVP)**: Single agent baked into workspace container
+**Phase 1 (MVP)**: Single agent baked into vibespace container
 **Phase 2**: Multiple agents as sidecars (see Section 9.3)
 
 **Example**: A "Next.js + Claude Code" template includes:
@@ -2366,7 +2366,7 @@ RUN useradd -m -s /bin/bash -u 1000 coder && \
     chown -R coder:coder /home/coder
 
 USER coder
-WORKDIR /workspace
+WORKDIR /vibespace
 
 # Pre-configure code-server
 RUN mkdir -p ~/.config/code-server && \
@@ -2376,7 +2376,7 @@ RUN mkdir -p ~/.config/code-server && \
 
 EXPOSE 8080
 
-CMD ["code-server", "/workspace"]
+CMD ["code-server", "/vibespace"]
 ```
 
 #### 9.1.2 Next.js Template
@@ -2384,7 +2384,7 @@ CMD ["code-server", "/workspace"]
 **Location**: `images/templates/nextjs/Dockerfile`
 
 ```dockerfile
-FROM localhost:5000/workspace-base:latest
+FROM localhost:5000/vibespace-base:latest
 
 USER root
 
@@ -2418,14 +2418,14 @@ RUN cd /tmp && \
 
 # Create init script to scaffold on first run
 RUN echo '#!/bin/bash\n\
-if [ ! -f /workspace/.initialized ]; then\n\
-  echo "Initializing Next.js workspace..."\n\
-  tar xzf ~/next-template.tar.gz -C /workspace --strip-components=1\n\
-  cd /workspace && pnpm install\n\
-  touch /workspace/.initialized\n\
+if [ ! -f /vibespace/.initialized ]; then\n\
+  echo "Initializing Next.js vibespace..."\n\
+  tar xzf ~/next-template.tar.gz -C /vibespace --strip-components=1\n\
+  cd /vibespace && pnpm install\n\
+  touch /vibespace/.initialized\n\
 fi' > /home/coder/init.sh && chmod +x /home/coder/init.sh
 
-CMD ["/bin/bash", "-c", "~/init.sh && code-server /workspace"]
+CMD ["/bin/bash", "-c", "~/init.sh && code-server /vibespace"]
 ```
 
 #### 9.1.3 Vue Template
@@ -2433,7 +2433,7 @@ CMD ["/bin/bash", "-c", "~/init.sh && code-server /workspace"]
 **Location**: `images/templates/vue/Dockerfile`
 
 ```dockerfile
-FROM localhost:5000/workspace-base:latest
+FROM localhost:5000/vibespace-base:latest
 
 USER root
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
@@ -2456,14 +2456,14 @@ RUN cd /tmp && \
     rm -rf /tmp/vue-template
 
 RUN echo '#!/bin/bash\n\
-if [ ! -f /workspace/.initialized ]; then\n\
-  echo "Initializing Vue workspace..."\n\
-  tar xzf ~/vue-template.tar.gz -C /workspace --strip-components=1\n\
-  cd /workspace && pnpm install\n\
-  touch /workspace/.initialized\n\
+if [ ! -f /vibespace/.initialized ]; then\n\
+  echo "Initializing Vue vibespace..."\n\
+  tar xzf ~/vue-template.tar.gz -C /vibespace --strip-components=1\n\
+  cd /vibespace && pnpm install\n\
+  touch /vibespace/.initialized\n\
 fi' > /home/coder/init.sh && chmod +x /home/coder/init.sh
 
-CMD ["/bin/bash", "-c", "~/init.sh && code-server /workspace"]
+CMD ["/bin/bash", "-c", "~/init.sh && code-server /vibespace"]
 ```
 
 #### 9.1.4 Jupyter Template
@@ -2471,7 +2471,7 @@ CMD ["/bin/bash", "-c", "~/init.sh && code-server /workspace"]
 **Location**: `images/templates/jupyter/Dockerfile`
 
 ```dockerfile
-FROM localhost:5000/workspace-base:latest
+FROM localhost:5000/vibespace-base:latest
 
 USER root
 
@@ -2508,7 +2508,7 @@ RUN mkdir -p ~/.jupyter && \
 EXPOSE 8080 8888
 
 # Start both code-server and Jupyter
-CMD ["/bin/bash", "-c", "jupyter lab --no-browser &>/dev/null & code-server /workspace"]
+CMD ["/bin/bash", "-c", "jupyter lab --no-browser &>/dev/null & code-server /vibespace"]
 ```
 
 ### 9.2 Custom Templates
@@ -2525,7 +2525,7 @@ CMD ["/bin/bash", "-c", "jupyter lab --no-browser &>/dev/null & code-server /wor
   "icon": "🐍",
   "category": "backend",
   "tags": ["python", "django", "api"],
-  "baseImage": "localhost:5000/workspace-base:latest",
+  "baseImage": "localhost:5000/vibespace-base:latest",
   "dockerfile": "...",
   "defaultPorts": [8000, 5432],
   "agent": {
@@ -2585,41 +2585,41 @@ CMD ["/bin/bash", "-c", "jupyter lab --no-browser &>/dev/null & code-server /wor
 
 #### 9.3.1 Overview
 
-**Phase 1**: Single agent baked into workspace container
+**Phase 1**: Single agent baked into vibespace container
 **Phase 2**: Multiple agents running as Kubernetes sidecars
 
 **Why Sidecars?**
 - **Isolation**: Each agent has dedicated resources (CPU, memory)
 - **Parallelism**: Multiple agents work simultaneously on different tasks
-- **Independence**: Agent crashes don't affect workspace or other agents
-- **Flexibility**: Add/remove agents without rebuilding workspace image
+- **Independence**: Agent crashes don't affect vibespace or other agents
+- **Flexibility**: Add/remove agents without rebuilding vibespace image
 
 #### 9.3.2 Pod Architecture
 
 ```yaml
-Pod: workspace-abc123
-├── workspace (main container)
+Pod: vibespace-abc123
+├── vibespace (main container)
 │   ├── code-server (VS Code in browser)
-│   ├── /workspace (shared volume)
+│   ├── /vibespace (shared volume)
 │   └── agent CLI (for switching between agents)
 │
 ├── frontend-agent (sidecar)
 │   ├── Claude Code / OpenAI Codex
 │   ├── Shell server (for terminal access)
-│   └── /workspace (shared volume, read-write)
+│   └── /vibespace (shared volume, read-write)
 │
 ├── backend-agent (sidecar)
 │   ├── Claude Code / OpenAI Codex
 │   ├── Shell server (for terminal access)
-│   └── /workspace (shared volume, read-write)
+│   └── /vibespace (shared volume, read-write)
 │
 └── test-agent (sidecar)
     ├── Claude Code / OpenAI Codex
     ├── Shell server (for terminal access)
-    └── /workspace (shared volume, read-write)
+    └── /vibespace (shared volume, read-write)
 ```
 
-**All containers share**: `/workspace` volume (PVC)
+**All containers share**: `/vibespace` volume (PVC)
 
 #### 9.3.3 Terminal-Based Interaction
 
@@ -2639,7 +2639,7 @@ Connecting to frontend-agent...
 
 # Now in frontend-agent sidecar shell
 frontend-agent@sidecar:~$ pwd
-/workspace
+/vibespace
 
 frontend-agent@sidecar:~$ ls
 components/  pages/  package.json
@@ -2648,14 +2648,14 @@ frontend-agent@sidecar:~$ # Work with the agent
 frontend-agent@sidecar:~$ exit
 Disconnected from frontend-agent
 
-# Back in main workspace shell
+# Back in main vibespace shell
 $
 ```
 
 **Key Features**:
 - Direct shell access to agent sidecars
 - No custom UI needed - terminal-first approach
-- Agents have full workspace filesystem access
+- Agents have full vibespace filesystem access
 - Simple switching: `agent use <name>`
 - Each agent has its own environment and tools
 
@@ -2679,7 +2679,7 @@ $
 
 ```bash
 # CLI command (future)
-$ workspace template export my-django-template
+$ vibespace template export my-django-template
 
 # Creates:
 my-django-template.tar.gz
@@ -2692,14 +2692,14 @@ my-django-template.tar.gz
 
 ```bash
 # CLI command
-$ workspace template import my-django-template.tar.gz
+$ vibespace template import my-django-template.tar.gz
 
 # Or via UI: drag-and-drop .tar.gz file
 ```
 
 #### 9.3.3 Marketplace (Future)
 
-- GitHub repo: `workspace/templates`
+- GitHub repo: `vibespace/templates`
 - Each template is a directory with Dockerfile + metadata
 - UI fetches index.json, shows gallery
 - One-click install builds from GitHub
@@ -2708,7 +2708,7 @@ $ workspace template import my-django-template.tar.gz
 
 ## 10. Implementation Milestones
 
-**Note:** These are internal development milestones for **MVP Phase 1** (see ROADMAP.md for full product phases). MVP Phase 1 corresponds to ROADMAP "Foundation" - proving core workspace management works locally before adding production features.
+**Note:** These are internal development milestones for **MVP Phase 1** (see ROADMAP.md for full product phases). MVP Phase 1 corresponds to ROADMAP "Foundation" - proving core vibespace management works locally before adding production features.
 
 **Implementation Order** (SPEC.md Section 10) tracks **how** we build, while **Product Phases** (ROADMAP.md) track **what** we release to users.
 
@@ -2737,13 +2737,13 @@ $ workspace template import my-django-template.tar.gz
   - Auto-installs Knative, Traefik, Registry, BuildKit if missing
   - Full frontend → backend integration (API_ENDPOINTS.clusterStatus, clusterSetup)
 - [x] **API server** (api/cmd/server/main.go:1-97)
-  - Workspace CRUD endpoints (GET/POST/DELETE /api/v1/workspaces)
+  - Vibespace CRUD endpoints (GET/POST/DELETE /api/v1/vibespaces)
   - Cluster management endpoints (GET/POST /api/v1/cluster/status, /setup)
   - Kubernetes context switching (GET/POST /api/v1/cluster/contexts)
   - SSE streaming for cluster setup progress
 - [x] **Frontend UI**
   - Setup wizard flow (AuthenticationSetup → KubernetesSetup → ConfigurationSetup)
-  - Workspace list with status polling (app/src/hooks/useWorkspaces.ts:1-238)
+  - Vibespace list with status polling (app/src/hooks/useVibespaces.ts:1-238)
   - Full integration with backend APIs (app/src/lib/api-config.ts:1-54)
 
 **Status**: ~70% of MVP Phase 1 complete. Infrastructure and UI foundation solid.
@@ -2752,7 +2752,7 @@ $ workspace template import my-django-template.tar.gz
 
 ### Milestone 2: Core Functionality ⏳ IN PROGRESS (Week 2-3)
 
-**Goal**: Complete workspace creation with AI agents and real images
+**Goal**: Complete vibespace creation with AI agents and real images
 
 #### In Progress:
 - [ ] **Docker images with AI agents**:
@@ -2760,7 +2760,7 @@ $ workspace template import my-django-template.tar.gz
     - ✅ code-server 4.20.0 installed
     - ❌ Add Claude Code CLI installation
     - ❌ Add CLAUDE.md agent instruction files
-    - ❌ Configure agent auto-start on workspace launch
+    - ❌ Configure agent auto-start on vibespace launch
   - [ ] **Next.js template** (images/templates/nextjs/Dockerfile:1-35)
     - ✅ Node.js 20 LTS + pnpm
     - ✅ VS Code extensions (ESLint, Prettier)
@@ -2784,17 +2784,17 @@ $ workspace template import my-django-template.tar.gz
   - [ ] Environment variable injection (ANTHROPIC_API_KEY, OPENAI_API_KEY)
   - [ ] Git config injection (.gitconfig)
   - [ ] SSH key volume mounts (read-only)
-- [ ] **Replace workspace placeholder** (api/pkg/workspace/service.go:134)
+- [ ] **Replace vibespace placeholder** (api/pkg/vibespace/service.go:134)
   - ❌ Currently uses `nginx:alpine` placeholder
-  - [ ] Update to use real workspace images: `localhost:5000/workspace-{template}:latest`
+  - [ ] Update to use real vibespace images: `localhost:5000/vibespace-{template}:latest`
   - [ ] Dynamic container port based on template (8080 for code-server)
-  - [ ] PVC mounting at /workspace
+  - [ ] PVC mounting at /vibespace
 
 #### Blocked By:
-- Docker images must be built before workspace service can use them
+- Docker images must be built before vibespace service can use them
 - Credential backend needed before secrets can be injected
 
-**Target**: End of Week 3 - workspaces launch with AI agents, persistent storage, and credentials
+**Target**: End of Week 3 - vibespaces launch with AI agents, persistent storage, and credentials
 
 ---
 
@@ -2807,12 +2807,12 @@ $ workspace template import my-django-template.tar.gz
   - [ ] Backend unit tests (Go packages)
   - [ ] Frontend component tests (Vitest + React Testing Library)
   - [ ] Integration tests (API + k3s interaction)
-  - [ ] E2E tests (full workspace lifecycle: create → open → delete)
+  - [ ] E2E tests (full vibespace lifecycle: create → open → delete)
   - [ ] Manual QA checklist
 - [ ] **Error handling**:
   - [ ] User-friendly error messages
   - [ ] Automatic retries for transient failures
-  - [ ] "Recover" actions for failed workspaces
+  - [ ] "Recover" actions for failed vibespaces
   - [ ] Graceful degradation when cluster unavailable
 - [ ] **Documentation finalization**:
   - [ ] Update README with accurate feature status
@@ -2824,21 +2824,21 @@ $ workspace template import my-django-template.tar.gz
   - [ ] Docker images pushed to local registry
   - [ ] Release artifacts uploaded to GitHub Releases
 - [ ] **Beta validation**:
-  - [ ] 10 beta users can create and use workspaces
+  - [ ] 10 beta users can create and use vibespaces
   - [ ] AI agents work successfully (Claude Code, OpenAI Codex)
-  - [ ] < 5 minutes from download to first workspace
-  - [ ] Positive feedback on core workspace management
+  - [ ] < 5 minutes from download to first vibespace
+  - [ ] Positive feedback on core vibespace management
 
 **Target**: End of Week 3 - Alpha release to 10 beta testers
 
 **Success Criteria (MVP Phase 1)**:
 - ✅ Kubernetes cluster auto-detected or guided setup complete
 - ✅ All infrastructure components installed (Knative, Traefik, Registry, BuildKit)
-- ✅ Users can create workspaces from templates (Next.js, Vue, Jupyter)
+- ✅ Users can create vibespaces from templates (Next.js, Vue, Jupyter)
 - ✅ AI coding agents pre-configured and working (Claude Code, OpenAI Codex)
-- ✅ Workspaces have persistent storage (PVCs)
+- ✅ Vibespaces have persistent storage (PVCs)
 - ✅ Code accessible via port-forward to localhost:8080
-- ✅ < 5 minutes from app launch to first workspace open
+- ✅ < 5 minutes from app launch to first vibespace open
 
 ---
 
@@ -2857,7 +2857,7 @@ See ROADMAP.md for post-MVP features:
 #### MVP Flow (Phase 1)
 
 ```
-1. User downloads and launches Workspace
+1. User downloads and launches Vibespace
 
 2. Kubernetes Detection
    ├─> App checks for kubectl/k3s
@@ -2872,7 +2872,7 @@ See ROADMAP.md for post-MVP features:
        ┌─────────────────────────────────────────────┐
        │ Kubernetes Required                         │
        │                                             │
-       │ Workspace needs Kubernetes to run.          │
+       │ Vibespace needs Kubernetes to run.          │
        │                                             │
        │ Recommended:                                │
        │ [Download Rancher Desktop]                  │
@@ -2895,16 +2895,16 @@ See ROADMAP.md for post-MVP features:
    └─> [▓▓▓▓▓▓▓▓▓▓] Building base images... (3/3)
    │
 4. Setup complete!
-   ├─> "Your local workspace cluster is ready!"
+   ├─> "Your local vibespace cluster is ready!"
    │
-   └─> [Create your first workspace]
+   └─> [Create your first vibespace]
        [Set up credentials (optional)]
 ```
 
 #### Future Flow (Phase 3 - Full Bundling)
 
 ```
-1. User downloads and launches Workspace
+1. User downloads and launches Vibespace
 
 2. One-Click Setup
    ├─> "Set up Kubernetes cluster" button
@@ -2954,7 +2954,7 @@ See ROADMAP.md for post-MVP features:
        ● Import existing key
 
        Key Type: [ED25519 ▼]
-       Comment: [john@workspace]
+       Comment: [john@vibespace]
 
        [Generate] [Cancel]
 
@@ -2966,15 +2966,15 @@ See ROADMAP.md for post-MVP features:
    └─> Private key stored encrypted in app
 
 6. Credentials ready
-   └─> Now available in workspace creation flow
+   └─> Now available in vibespace creation flow
 ```
 
-### 11.2 Create Workspace (Built-in Template)
+### 11.2 Create Vibespace (Built-in Template)
 
 ```
-1. Click "New Workspace"
+1. Click "New Vibespace"
 
-2. Modal opens: "Create Workspace"
+2. Modal opens: "Create Vibespace"
    ├─ Step 1: Choose Template
    │  ┌─────────┐  ┌─────────┐  ┌─────────┐
    │  │ Next.js │  │   Vue   │  │ Jupyter │  [+Custom]
@@ -2997,41 +2997,41 @@ See ROADMAP.md for post-MVP features:
    │    Credential: [Not configured - Add in Settings]
    │
    └─ Step 4: Advanced (optional)
-      ☐ Allow inter-workspace networking
+      ☐ Allow inter-vibespace networking
       Expose ports: [3000, 3001        ]
       Environment variables:
         NODE_ENV=development
 
 3. Click "Create"
    ├─> Progress indicator
-   │   "Creating workspace..."
+   │   "Creating vibespace..."
    │   "Pulling image..."         ✓
    │   "Creating volumes..."      ✓
    │   "Starting container..."    ...
    │
-4. Workspace ready!
-   ├─> Card appears in workspace list
+4. Vibespace ready!
+   ├─> Card appears in vibespace list
    │   Status: 🟢 Running
    │   URLs:
-   │     Code: workspace-abc123.local
-   │     App:  workspace-abc123-3000.local
+   │     Code: vibespace-abc123.local
+   │     App:  vibespace-abc123-3000.local
    │
    └─> [Open in App] [Open in Browser] [Settings]
 ```
 
-### 11.3 Create Workspace (Custom Template)
+### 11.3 Create Vibespace (Custom Template)
 
 ```
-1. Click "New Workspace" → "Custom Template"
+1. Click "New Vibespace" → "Custom Template"
 
 2. Template Builder
    ├─ Name: [my-django-template]
    ├─ Icon: [🐍 ▼]
-   ├─ Base: [workspace-base ▼]
+   ├─ Base: [vibespace-base ▼]
    │
    └─ Dockerfile:
       ┌─────────────────────────────────────┐
-      │ FROM localhost:5000/workspace-base  │
+      │ FROM localhost:5000/vibespace-base  │
       │                                     │
       │ USER root                           │
       │ RUN apt-get update && \             │
@@ -3043,7 +3043,7 @@ See ROADMAP.md for post-MVP features:
 
 3. Click "Build"
    ├─> Build logs appear (real-time SSE)
-   │   [Step 1/4] FROM localhost:5000/workspace-base
+   │   [Step 1/4] FROM localhost:5000/vibespace-base
    │   [Step 2/4] RUN apt-get update
    │     Reading package lists...
    │   [Step 3/4] RUN pip3 install django
@@ -3053,15 +3053,15 @@ See ROADMAP.md for post-MVP features:
 4. Template saved
    └─> Now appears in template gallery
 
-5. Create workspace from it (same flow as 11.2)
+5. Create vibespace from it (same flow as 11.2)
 ```
 
 ### 11.4 Daily Usage
 
 ```
-1. User opens Workspace app
+1. User opens Vibespace app
 
-2. Dashboard shows existing workspaces
+2. Dashboard shows existing vibespaces
    ┌─────────────────────────────────────┐
    │ my-nextjs-project         🟢 Running │
    │ Last accessed: 2 hours ago          │
@@ -3072,30 +3072,30 @@ See ROADMAP.md for post-MVP features:
    │ [Start] [Delete]                    │
    └─────────────────────────────────────┘
 
-3. Click "Open" on running workspace
+3. Click "Open" on running vibespace
    ├─> New tab opens in app with embedded code-server
    │   Multiple tabs can be open simultaneously
    │
    └─> User codes with Claude Code assistant
        (No auth required, uses host credentials)
 
-4. Click "Start" on stopped workspace
+4. Click "Start" on stopped vibespace
    ├─> Knative scales pod from 0 → 1
-   │   Progress: "Starting workspace... (30s)"
+   │   Progress: "Starting vibespace... (30s)"
    │
    └─> Once ready, [Open] button appears
 
-5. Workspace auto-stops after inactivity (if not persistent)
+5. Vibespace auto-stops after inactivity (if not persistent)
    └─> Knative scales 1 → 0 (saves resources)
 ```
 
 ### 11.5 Expose New Port
 
 ```
-1. User is working in workspace, starts dev server on port 8000
+1. User is working in vibespace, starts dev server on port 8000
 
-2. In Workspace app:
-   ├─> Click workspace → "Settings" → "Ports" tab
+2. In Vibespace app:
+   ├─> Click vibespace → "Settings" → "Ports" tab
    │
    └─> Click "Expose Port"
        Port: [8000]
@@ -3106,8 +3106,8 @@ See ROADMAP.md for post-MVP features:
    ├─> Updates /etc/hosts
    └─> Returns URL
 
-4. New URL appears in workspace card
-   App: workspace-abc123-8000.local
+4. New URL appears in vibespace card
+   App: vibespace-abc123-8000.local
    └─> Click to open in browser
 ```
 
@@ -3122,13 +3122,13 @@ See ROADMAP.md for post-MVP features:
 **When**: After MVP, when multi-user/team scenarios emerge
 
 **What**:
-- Workspace definitions as Git repos
+- Vibespace definitions as Git repos
 - Automatic sync on Git push
-- Rollback to previous workspace states
+- Rollback to previous vibespace states
 - Audit trail of all changes
 
 **Why**:
-- Teams can share workspace configs
+- Teams can share vibespace configs
 - Version-controlled infrastructure
 - Better collaboration
 
@@ -3154,9 +3154,9 @@ See ROADMAP.md for post-MVP features:
 
 **What**:
 - User authentication (OAuth, LDAP)
-- Per-user workspaces and quotas
+- Per-user vibespaces and quotas
 - Shared templates marketplace
-- Team workspaces (multiple users, same workspace)
+- Team vibespaces (multiple users, same vibespace)
 
 **Why**:
 - Shared infrastructure cost savings
@@ -3170,7 +3170,7 @@ See ROADMAP.md for post-MVP features:
 - Deploy to remote k3s/k8s cluster
 - Cloud provider integrations (AWS, GCP, Azure)
 - SSH tunneling for secure access
-- Workspace migration (local ↔ cloud)
+- Vibespace migration (local ↔ cloud)
 
 **Why**:
 - Access from anywhere
@@ -3198,7 +3198,7 @@ See ROADMAP.md for post-MVP features:
 
 **What**:
 - Service mesh (Istio/Linkerd)
-- Workspace-to-workspace mTLS
+- Vibespace-to-vibespace mTLS
 - Traffic splitting (A/B testing)
 - Observability (Jaeger, Grafana)
 
@@ -3207,7 +3207,7 @@ See ROADMAP.md for post-MVP features:
 - Better debugging
 - Production-like environments
 
-#### 12.1.7 Workspace Snapshots
+#### 12.1.7 Vibespace Snapshots
 
 **When**: Users need backup/restore capability
 
@@ -3248,13 +3248,13 @@ MVP (v0.1.0) - Week 5
 
 v0.2.0 - Week 8
 ├─ Template marketplace (GitHub)
-├─ Workspace snapshots
+├─ Vibespace snapshots
 ├─ Resource usage dashboard
 └─ CLI tool
 
 v0.3.0 - Week 12
 ├─ Multi-user support
-├─ Team workspaces
+├─ Team vibespaces
 ├─ Harbor integration
 └─ Advanced networking
 
@@ -3271,7 +3271,7 @@ v1.0.0 - Month 6
 
 ### 13.1 Performance
 
-- **Workspace start time**: <30s (from stopped to accessible)
+- **Vibespace start time**: <30s (from stopped to accessible)
 - **Scale-to-zero**: <3s (from idle to stopped)
 - **Build time**: <5min for typical template
 - **API response**: <200ms (p95)
@@ -3280,14 +3280,14 @@ v1.0.0 - Month 6
 ### 13.2 Resource Usage
 
 - **k3s overhead**: <512MB RAM idle
-- **Workspace idle**: <200MB RAM (scaled to zero)
-- **Workspace active**: ~2GB RAM (code-server + app)
-- **Disk**: ~10GB per workspace (adjustable)
-- **Total**: Minimum 8GB RAM, 50GB disk for 5 workspaces
+- **Vibespace idle**: <200MB RAM (scaled to zero)
+- **Vibespace active**: ~2GB RAM (code-server + app)
+- **Disk**: ~10GB per vibespace (adjustable)
+- **Total**: Minimum 8GB RAM, 50GB disk for 5 vibespaces
 
 ### 13.3 Reliability
 
-- **Workspace uptime**: 99% (excluding user-initiated stops)
+- **Vibespace uptime**: 99% (excluding user-initiated stops)
 - **Data durability**: 99.9% (PVC on local disk)
 - **Cluster recovery**: Automatic restart after crash
 - **Backup**: User-initiated snapshots
@@ -3295,7 +3295,7 @@ v1.0.0 - Month 6
 ### 13.4 Security
 
 - **Credential isolation**: Read-only host mounts
-- **Network isolation**: Default deny inter-workspace
+- **Network isolation**: Default deny inter-vibespace
 - **Privilege escalation**: Containers run as non-root (UID 1000)
 - **Secret management**: Kubernetes Secrets (base64)
 - **API authentication**: (Future) JWT tokens
@@ -3303,7 +3303,7 @@ v1.0.0 - Month 6
 ### 13.5 Usability
 
 - **First-time setup**: <5 minutes
-- **Create workspace**: <3 clicks, <60s
+- **Create vibespace**: <3 clicks, <60s
 - **Learning curve**: No Kubernetes knowledge required
 - **Documentation**: Inline help, tooltips, video tutorials
 

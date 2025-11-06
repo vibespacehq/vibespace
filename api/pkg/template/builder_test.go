@@ -50,7 +50,7 @@ func TestNewBuilder(t *testing.T) {
 
 func TestCleanupOldTempDirs(t *testing.T) {
 	// Create old temp directory
-	tempDir, err := os.MkdirTemp("", "workspace-build-test-*")
+	tempDir, err := os.MkdirTemp("", "vibespace-build-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestBuildImageCreatesTempDir(t *testing.T) {
 	tmpDir := os.TempDir()
 	entries, _ := os.ReadDir(tmpDir)
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "workspace-build-base-claude") {
+		if strings.HasPrefix(entry.Name(), "vibespace-build-base-claude") {
 			t.Errorf("Temp directory not cleaned up: %s", entry.Name())
 			os.RemoveAll(filepath.Join(tmpDir, entry.Name()))
 		}
