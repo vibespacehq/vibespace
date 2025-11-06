@@ -66,23 +66,23 @@ describe('ConfigurationSetup', () => {
     });
   });
 
-  describe('Workspace Name Input', () => {
-    it('renders workspace name input', () => {
+  describe('Vibespace Name Input', () => {
+    it('renders vibespace name input', () => {
       render(<ConfigurationSetup onComplete={vi.fn()} />);
 
-      const input = screen.getByLabelText('Workspace name');
+      const input = screen.getByLabelText('Vibespace name');
       expect(input).toBeInTheDocument();
       expect(input).toHaveAttribute('placeholder', 'my-awesome-project');
     });
 
-    it('allows entering workspace name', async () => {
+    it('allows entering vibespace name', async () => {
       const user = userEvent.setup();
       render(<ConfigurationSetup onComplete={vi.fn()} />);
 
-      const input = screen.getByLabelText('Workspace name');
-      await user.type(input, 'my-workspace');
+      const input = screen.getByLabelText('Vibespace name');
+      await user.type(input, 'my-vibespace');
 
-      expect(input).toHaveValue('my-workspace');
+      expect(input).toHaveValue('my-vibespace');
     });
   });
 
@@ -97,7 +97,7 @@ describe('ConfigurationSetup', () => {
     it('shows hint about leaving empty', () => {
       render(<ConfigurationSetup onComplete={vi.fn()} />);
 
-      expect(screen.getByText('Leave empty to start with a blank workspace')).toBeInTheDocument();
+      expect(screen.getByText('Leave empty to start with a blank vibespace')).toBeInTheDocument();
     });
 
     it('allows entering GitHub repo URL', async () => {
@@ -123,23 +123,23 @@ describe('ConfigurationSetup', () => {
       const onComplete = vi.fn();
       render(<ConfigurationSetup onComplete={onComplete} />);
 
-      // Enter workspace name (required)
-      const nameInput = screen.getByLabelText('Workspace name');
-      await user.type(nameInput, 'my-workspace');
+      // Enter vibespace name (required)
+      const nameInput = screen.getByLabelText('Vibespace name');
+      await user.type(nameInput, 'my-vibespace');
 
       const continueButton = screen.getByRole('button', { name: /continue/i });
       await user.click(continueButton);
 
       expect(onComplete).toHaveBeenCalledTimes(1);
       expect(onComplete).toHaveBeenCalledWith({
-        name: 'my-workspace',
+        name: 'my-vibespace',
         template: 'nextjs',
         agent: 'claude',
         githubRepo: '',
       });
     });
 
-    it('shows alert when continue is clicked without workspace name', async () => {
+    it('shows alert when continue is clicked without vibespace name', async () => {
       const user = userEvent.setup();
       const onComplete = vi.fn();
       const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
@@ -148,7 +148,7 @@ describe('ConfigurationSetup', () => {
       const continueButton = screen.getByRole('button', { name: /continue/i });
       await user.click(continueButton);
 
-      expect(alertSpy).toHaveBeenCalledWith('Please enter a workspace name');
+      expect(alertSpy).toHaveBeenCalledWith('Please enter a vibespace name');
       expect(onComplete).not.toHaveBeenCalled();
 
       alertSpy.mockRestore();
@@ -159,7 +159,7 @@ describe('ConfigurationSetup', () => {
     it('has proper ARIA labels on inputs', () => {
       render(<ConfigurationSetup onComplete={vi.fn()} />);
 
-      expect(screen.getByLabelText('Workspace name')).toBeInTheDocument();
+      expect(screen.getByLabelText('Vibespace name')).toBeInTheDocument();
       expect(screen.getByLabelText('GitHub repository URL (optional)')).toBeInTheDocument();
     });
 

@@ -1,4 +1,4 @@
-# Vue 3.5 + Vite 7 Workspace
+# Vue 3.5 + Vite 7 Vibespace
 
 ## Installed Versions (October 2025)
 - **Vue**: 3.5.22

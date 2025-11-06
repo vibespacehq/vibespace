@@ -32,7 +32,13 @@ jobs:
       - name: Run deadcode
         run: |
           cd api
-          ~/go/bin/deadcode ./...
+          ~/go/bin/deadcode ./... > /tmp/deadcode-output.txt 2>&1 || true
+          if [ -s /tmp/deadcode-output.txt ]; then
+            echo "❌ Go dead code found:"
+            cat /tmp/deadcode-output.txt
+            exit 1
+          fi
+          echo "✓ No Go dead code found"
 
       - name: Install staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
@@ -41,6 +47,20 @@ jobs:
         run: |
           cd api
           ~/go/bin/staticcheck ./...
+
+      - name: Check unused Go dependencies
+        run: |
+          cd api
+          cp go.mod go.mod.backup
+          cp go.sum go.sum.backup
+          go mod tidy
+          if ! diff -q go.mod go.mod.backup || ! diff -q go.sum go.sum.backup; then
+            echo "❌ Unused Go dependencies found or missing dependencies:"
+            echo "Run 'go mod tidy' to fix"
+            diff go.mod go.mod.backup || true
+            exit 1
+          fi
+          echo "✓ No unused Go dependencies"
 
   typescript-deadcode:
     name: TypeScript Dead Code Detection
@@ -57,6 +77,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd app
+          rm -rf node_modules package-lock.json
           npm install
 
       - name: Run knip (dead code detection)
@@ -67,8 +88,13 @@ jobs:
       - name: Check unused dependencies
         run: |
           cd app
-          npx depcheck
-        continue-on-error: true
+          npx depcheck --json > /tmp/depcheck-output.json
+          if [ $(jq -r '.dependencies | length' /tmp/depcheck-output.json) -gt 0 ] || [ $(jq -r '.devDependencies | length' /tmp/depcheck-output.json) -gt 0 ]; then
+            echo "❌ Unused dependencies found:"
+            npx depcheck
+            exit 1
+          fi
+          echo "✓ No unused dependencies"
 
   rust-warnings:
     name: Rust Clippy Warnings
@@ -90,13 +116,27 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - name: Set up Rust
+      - name: Set up Rust (stable)
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+          components: clippy
+
+      - name: Set up Rust (nightly for udeps)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
           components: clippy
 
       - name: Run clippy
         run: |
           cd app/src-tauri
           cargo clippy -- -D warnings
+
+      - name: Install cargo-udeps
+        run: cargo install cargo-udeps --locked
+
+      - name: Check unused Rust dependencies
+        run: |
+          cd app/src-tauri
+          cargo +nightly udeps --all-targets

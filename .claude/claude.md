@@ -1,6 +1,6 @@
-# workspaces - AI Assistant Context
+# vibespace - AI Assistant Context
 
-**Project**: workspaces - containerized dev environments with AI coding agent support
+**Project**: vibespace - containerized dev environments with AI coding agent support
 **Status**: MVP Development
 **Stack**: Tauri + React + Go + k3s + Knative
 
@@ -8,17 +8,17 @@
 
 ## What This Project Does
 
-workspaces is a Tauri desktop app that manages isolated dev environments running as containers in k3s. Each workspace includes code-server (VS Code in browser) and supports AI coding agents (Claude Code, OpenAI Codex).
+vibespace is a Tauri desktop app that manages isolated dev environments running as containers in k3s. Each vibespace includes code-server (VS Code in browser) and supports AI coding agents (Claude Code, OpenAI Codex).
 
 **Deployment Modes**:
 - **Local**: Everything runs on your machine (default)
-- **Cloud**: Desktop app local, workspaces run in cloud (AWS/GCP/DigitalOcean)
-- **Hybrid**: Mix of local and cloud workspaces
+- **Cloud**: Desktop app local, vibespaces run in cloud (AWS/GCP/DigitalOcean)
+- **Hybrid**: Mix of local and cloud vibespaces
 
 Think: Docker Desktop meets VS Code Remote meets Vercel, optimized for AI-assisted development.
 
 **Key Features**:
-- 🚀 Local or cloud workspaces
+- 🚀 Local or cloud vibespaces
 - 🤖 AI agent integration (Claude Code, OpenAI Codex)
 - 🔒 TLS certificates via Let's Encrypt (cloud mode)
 - 🌐 Custom domain support (`myproject.example.com`)
@@ -31,7 +31,7 @@ Think: Docker Desktop meets VS Code Remote meets Vercel, optimized for AI-assist
 ## Repository Structure
 
 ```
-workspace/
+vibespace/
 ├── app/                    # Tauri desktop application
 │   ├── src-tauri/         # Rust backend (Tauri)
 │   └── src/               # React frontend (TypeScript)
@@ -42,7 +42,7 @@ workspace/
 │   ├── cmd/server/        # Entry point
 │   └── pkg/               # Business logic
 │       ├── handler/       # HTTP handlers
-│       ├── workspace/     # Workspace management
+│       ├── vibespace/     # Vibespace management
 │       ├── template/      # Template building
 │       ├── credential/    # Credential management
 │       ├── k3s/          # Kubernetes client
@@ -63,7 +63,7 @@ workspace/
 
 ## Key Concepts
 
-### 1. Workspace
+### 1. Vibespace
 A containerized development environment running in k3s. Contains:
 - code-server (VS Code in browser)
 - Project files (persistent volume)
@@ -73,7 +73,7 @@ A containerized development environment running in k3s. Contains:
 **Lifecycle**: Creating → Starting → Running → Stopping → Stopped → Deleted
 
 ### 2. Template
-A **complete workspace configuration**, not just a stack definition. A template includes:
+A **complete vibespace configuration**, not just a stack definition. A template includes:
 - **Base development stack**: Next.js, Python, Vue, Jupyter, etc.
 - **AI coding agent**: Claude Code, OpenAI Codex, or custom agent (baked into image)
 - **Agent instructions**: CLAUDE.md or agent.md with project-specific context
@@ -82,48 +82,48 @@ A **complete workspace configuration**, not just a stack definition. A template 
 
 **Example**: A "Next.js + Claude Code" template includes Next.js 14 + TypeScript + Tailwind, Claude Code CLI pre-installed, CLAUDE.md with Next.js best practices, and option to clone a user's GitHub repo.
 
-**MVP Phase 1**: Single agent baked into workspace container
+**MVP Phase 1**: Single agent baked into vibespace container
 **MVP Phase 2**: Multiple agents as sidecars (see SPEC.md Section 9.3)
 
-Users configure templates through the UI during workspace creation. Custom templates can be created via BuildKit.
+Users configure templates through the UI during vibespace creation. Custom templates can be created via BuildKit.
 
 ### 3. Credential
-Encrypted secrets managed by the app (stored in `~/.workspaces/credential/`):
+Encrypted secrets managed by the app (stored in `~/.vibespaces/credential/`):
 - AI agent API keys (Claude, OpenAI)
 - Git config (name, email)
 - SSH keys (generated or imported)
 
-Injected into workspaces as Kubernetes Secrets.
+Injected into vibespaces as Kubernetes Secrets.
 
 ### 4. Knative Service
-Workspaces run as Knative Services for auto-scaling (scale-to-zero when idle).
+Vibespaces run as Knative Services for auto-scaling (scale-to-zero when idle).
 
 ---
 
 ## Naming Conventions
 
 ### Code Style
-- **Go**: Standard Go conventions (singular package names: `workspace`, `template`)
+- **Go**: Standard Go conventions (singular package names: `vibespace`, `template`)
 - **TypeScript**: camelCase for variables, PascalCase for components
 - **Files**: kebab-case for non-component files, PascalCase for React components
 
 ### Kubernetes
-- **Namespace**: `workspace` (singular)
-- **Labels**: `workspace.dev/id`, `workspace.dev/template`
-- **Resources**: `workspace-{id}`, `workspace-{id}-pvc`, `workspace-{id}-secrets`
+- **Namespace**: `vibespace` (singular)
+- **Labels**: `vibespace.dev/id`, `vibespace.dev/template`
+- **Resources**: `vibespace-{id}`, `vibespace-{id}-pvc`, `vibespace-{id}-secrets`
 
 ### Domains
 **Local Mode**:
-- Code server: `workspace-{id}.local`
-- App ports: `workspace-{id}-3000.local`, `workspace-{id}-8000.local`
+- Code server: `vibespace-{id}.local`
+- App ports: `vibespace-{id}-3000.local`, `vibespace-{id}-8000.local`
 
 **Cloud Mode**:
-- Default: `workspace-{id}.yourdomain.com`
+- Default: `vibespace-{id}.yourdomain.com`
 - Custom: `myproject.example.com` (with TLS)
 - Automatic DNS configuration via Cloudflare/Route53/etc.
 
 ### API
-- **Endpoints**: `/api/v1/workspaces`, `/api/v1/templates`, `/api/v1/credentials`
+- **Endpoints**: `/api/v1/vibespaces`, `/api/v1/templates`, `/api/v1/credentials`
 - **Methods**: Standard REST (GET, POST, PUT, DELETE)
 
 ---
@@ -145,7 +145,7 @@ Workspaces run as Knative Services for auto-scaling (scale-to-zero when idle).
 **Icons**: Lucide
 
 **Component Patterns**:
-- Cards for workspaces
+- Cards for vibespaces
 - Modals for creation flows
 - Toast notifications for feedback
 - Status badges (🟢 Running, ⚪ Stopped, etc.)
@@ -182,7 +182,7 @@ go run cmd/server/main.go
 **Build Images**:
 ```bash
 cd images/base
-docker build -t workspace-base:latest .
+docker build -t vibespace-base:latest .
 ```
 
 ### Project Commands
@@ -196,7 +196,7 @@ kubectl apply -f k8s/
 # Build all templates
 cd images
 for dir in templates/*; do
-  docker build -t workspace-$(basename $dir):latest $dir
+  docker build -t vibespace-$(basename $dir):latest $dir
 done
 ```
 
@@ -204,13 +204,13 @@ done
 
 ## Common Tasks
 
-### Adding a New Workspace Template
+### Adding a New Vibespace Template
 
 1. Create directory: `images/templates/mytemplate/`
 2. Write `Dockerfile` based on `images/base/`
 3. Add template metadata in API: `api/pkg/model/template.go`
-4. Build image: `docker build -t workspace-mytemplate:latest .`
-5. Push to local registry: `docker push localhost:5000/workspace-mytemplate:latest`
+4. Build image: `docker build -t vibespace-mytemplate:latest .`
+5. Push to local registry: `docker push localhost:5000/vibespace-mytemplate:latest`
 
 ### Adding a New API Endpoint
 
@@ -291,15 +291,15 @@ src/components/
 
 **Example**:
 ```typescript
-// src/components/workspace/components/WorkspaceCard.tsx
-import '../styles/workspace.css';        // Feature-level
-import '../styles/WorkspaceCard.css';    // Component-specific
+// src/components/vibespace/components/VibespaceCard.tsx
+import '../styles/vibespace.css';        // Feature-level
+import '../styles/VibespaceCard.css';    // Component-specific
 
-export function WorkspaceCard({ workspace }) {
+export function VibespaceCard({ vibespace }) {
   return (
-    <div className="workspace-card">
-      <h3>{workspace.name}</h3>
-      <span className="workspace-status">{workspace.status}</span>
+    <div className="vibespace-card">
+      <h3>{vibespace.name}</h3>
+      <span className="vibespace-status">{vibespace.status}</span>
     </div>
   );
 }
@@ -312,7 +312,7 @@ See `docs/adr/0003-frontend-organization.md` for rationale and `SPEC.md` section
 ## Architecture Decisions
 
 ### Why Knative?
-Scale-to-zero saves resources. Workspaces can auto-stop when idle.
+Scale-to-zero saves resources. Vibespaces can auto-stop when idle.
 
 ### Why BuildKit?
 Kubernetes-native, no Docker daemon dependency, faster builds, better caching.
@@ -334,7 +334,7 @@ Lightweight k8s (<512MB RAM), perfect for local development, easy to install.
 
 For **MVP** (Phase 1), we're prioritizing:
 1. **Speed to market** - Ship in 3 weeks, not 11 weeks
-2. **Focus on core value** - Workspace management, not cluster installation
+2. **Focus on core value** - Vibespace management, not cluster installation
 3. **Security** - No sudo execution from app, users control their system
 4. **Flexibility** - Supports k3s, Rancher Desktop, k3d, etc.
 5. **Validation first** - Prove the concept before building polished installer
@@ -375,7 +375,7 @@ For **MVP** (Phase 1), we're prioritizing:
 - `app/src-tauri/tauri.conf.json` - Tauri configuration
 - `api/config/config.yaml` - API server configuration
 - `k8s/*.yaml` - Kubernetes manifests
-- `images/base/Dockerfile` - Base image for all workspaces
+- `images/base/Dockerfile` - Base image for all vibespaces
 
 ---
 
@@ -385,7 +385,7 @@ For **MVP** (Phase 1), we're prioritizing:
 
 - **Unit**: Go packages, React components, hooks
 - **Integration**: API + k3s interaction
-- **E2E**: Full workspace lifecycle (create → open → delete)
+- **E2E**: Full vibespace lifecycle (create → open → delete)
 
 ### Frontend Testing (Vitest + React Testing Library)
 
@@ -423,22 +423,22 @@ npm run test:frontend:coverage
 
 **Example Structure**:
 ```typescript
-// src/components/workspace/components/WorkspaceCard.test.tsx
+// src/components/vibespace/components/VibespaceCard.test.tsx
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { WorkspaceCard } from './WorkspaceCard';
+import { VibespaceCard } from './VibespaceCard';
 
-describe('WorkspaceCard', () => {
-  it('renders workspace name', () => {
-    render(<WorkspaceCard workspace={mockWorkspace} />);
-    expect(screen.getByText('my-workspace')).toBeInTheDocument();
+describe('VibespaceCard', () => {
+  it('renders vibespace name', () => {
+    render(<VibespaceCard vibespace={mockVibespace} />);
+    expect(screen.getByText('my-vibespace')).toBeInTheDocument();
   });
 
   it('calls onOpen when Open button is clicked', async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
-    render(<WorkspaceCard workspace={mockWorkspace} onOpen={onOpen} />);
+    render(<VibespaceCard vibespace={mockVibespace} onOpen={onOpen} />);
 
     await user.click(screen.getByText('Open'));
     expect(onOpen).toHaveBeenCalledWith('ws-1');
@@ -542,15 +542,15 @@ it('uses semantic roles', () => {
 
 **Group related tests**:
 ```typescript
-describe('WorkspaceList', () => {
+describe('VibespaceList', () => {
   describe('Empty State', () => {
     it('shows empty message', () => { /* ... */ });
     it('shows create button', () => { /* ... */ });
   });
 
   describe('Populated State', () => {
-    it('renders workspace cards', () => { /* ... */ });
-    it('shows workspace count', () => { /* ... */ });
+    it('renders vibespace cards', () => { /* ... */ });
+    it('shows vibespace count', () => { /* ... */ });
   });
 });
 ```
@@ -560,7 +560,7 @@ describe('WorkspaceList', () => {
 import { beforeEach, afterEach } from 'vitest';
 
 describe('MyComponent', () => {
-  let mockData: Workspace[];
+  let mockData: Vibespace[];
 
   beforeEach(() => {
     mockData = [/* ... */];
@@ -571,7 +571,7 @@ describe('MyComponent', () => {
   });
 
   it('uses mock data', () => {
-    render(<MyComponent workspaces={mockData} />);
+    render(<MyComponent vibespaces={mockData} />);
     // ...
   });
 });
@@ -581,7 +581,7 @@ describe('MyComponent', () => {
 
 **Target Coverage**: 80%+ for components
 **Priority**:
-1. Critical user flows (authentication, workspace creation)
+1. Critical user flows (authentication, vibespace creation)
 2. Shared components (TitleBar, buttons, forms)
 3. Complex state management
 4. Error handling
@@ -604,7 +604,7 @@ Tests run automatically on:
 ### Examples from Codebase
 
 - `app/src/components/shared/TitleBar.test.tsx` - Window controls
-- `app/src/components/workspace/components/WorkspaceList.test.tsx` - Empty/populated states
+- `app/src/components/vibespace/components/VibespaceList.test.tsx` - Empty/populated states
 - `app/src/components/setup/components/AuthenticationSetup.test.tsx` - Loading states
 
 ### Backend Testing
@@ -613,7 +613,7 @@ Tests run automatically on:
 ```bash
 cd api
 go test ./...
-go test -v ./pkg/workspace  # Specific package
+go test -v ./pkg/vibespace  # Specific package
 go test -cover ./...        # With coverage
 ```
 
@@ -629,10 +629,10 @@ cargo test --verbose
 ## Security Considerations
 
 1. **Credential Encryption**: AES-256 at rest, OS keychain integration
-2. **Network Isolation**: Workspaces isolated by default (NetworkPolicy)
+2. **Network Isolation**: Vibespaces isolated by default (NetworkPolicy)
 3. **No Host Access**: Credentials injected via Kubernetes Secrets, not volume mounts
 4. **Read-only Mounts**: SSH keys mounted read-only when needed
-5. **Non-root Containers**: Workspaces run as UID 1000
+5. **Non-root Containers**: Vibespaces run as UID 1000
 
 ---
 
@@ -644,11 +644,11 @@ sudo systemctl status k3s
 sudo journalctl -u k3s -f
 ```
 
-### Workspace stuck in "Creating"
+### Vibespace stuck in "Creating"
 ```bash
-kubectl get pods -n workspace
-kubectl describe pod workspace-{id} -n workspace
-kubectl logs workspace-{id} -n workspace
+kubectl get pods -n vibespace
+kubectl describe pod vibespace-{id} -n vibespace
+kubectl logs vibespace-{id} -n vibespace
 ```
 
 ### BuildKit build fails
@@ -703,17 +703,17 @@ The pragmatic mix approach balances stability for MVP delivery with modern versi
 - ✅ Infrastructure (Tauri app, Go API, k8s manifests)
 - ✅ Kubernetes detection & guided setup with SSE streaming
 - ✅ Cluster component installation (Knative, Traefik, Registry, BuildKit)
-- ✅ Workspace CRUD backend (with placeholder image)
-- ✅ Full frontend UI (setup wizard, workspace list)
+- ✅ Vibespace CRUD backend (with placeholder image)
+- ✅ Full frontend UI (setup wizard, vibespace list)
 - ✅ Docker images with AI agents (base, Next.js, Vue, Jupyter) - **PR #38**
 - ✅ BuildKit integration with tests, docs, and structured logging
 
 ### In Progress:
 - ⏳ Credential management backend
 - ⏳ Kubernetes Secret generation
-- ⏳ Replace nginx placeholder with real workspace images
+- ⏳ Replace nginx placeholder with real vibespace images
 
-**Next**: Complete credential backend and workspace image integration, then move to end-to-end testing phase.
+**Next**: Complete credential backend and vibespace image integration, then move to end-to-end testing phase.
 
 ---
 
@@ -752,7 +752,7 @@ gh issue list --search "keyword"
 ```bash
 gh issue create --title "Add custom domain support" --body "
 ## Description
-Implement custom domain mapping for workspaces in cloud mode.
+Implement custom domain mapping for vibespaces in cloud mode.
 
 ## Scope
 - DNS provider integration (Cloudflare, Route53)
@@ -763,8 +763,8 @@ Implement custom domain mapping for workspaces in cloud mode.
 
 ## Technical Details
 - Backend: api/pkg/network/dns.go
-- Frontend: app/src/components/workspace/DomainSettings.tsx
-- API endpoints: POST /api/v1/workspaces/:id/domains
+- Frontend: app/src/components/vibespace/DomainSettings.tsx
+- API endpoints: POST /api/v1/vibespaces/:id/domains
 - See SPEC.md Section 8.4
 
 ## Acceptance Criteria
@@ -800,7 +800,7 @@ refactor/#<issue>-<short-description>
 git checkout -b feature/#42-custom-domains
 
 # For bug fix
-git checkout -b fix/#15-workspace-creation-error
+git checkout -b fix/#15-vibespace-creation-error
 
 # For docs
 git checkout -b docs/#7-api-documentation
@@ -870,16 +870,16 @@ git push origin feature/#42-custom-domains
 
 **Create PR**:
 ```bash
-gh pr create --title "feat: Add custom domain support for workspaces (#42)" --body "
+gh pr create --title "feat: Add custom domain support for vibespaces (#42)" --body "
 ## Summary
-Implements custom domain mapping for workspaces in cloud mode.
+Implements custom domain mapping for vibespaces in cloud mode.
 
 ## Changes
 - Added DNS provider interface and implementations (Cloudflare, Route53)
 - Domain validation using TXT record challenge
 - Automatic DNS record creation via provider APIs
 - cert-manager integration for TLS certificates
-- UI for domain management in workspace settings
+- UI for domain management in vibespace settings
 - API endpoints for domain CRUD operations
 
 ## Testing
@@ -1174,7 +1174,7 @@ make deadcode
 # If intentionally unused (for future use), add JSDoc @public tag:
 /**
  * Checks if kubectl is available in the system PATH.
- * Will be used in Phase 2 for workspace health monitoring.
+ * Will be used in Phase 2 for vibespace health monitoring.
  *
  * @public
  * @see Issue #14
@@ -1269,7 +1269,7 @@ export interface MyType {
 
 **Examples from this codebase**:
 - `app/src/hooks/useKubernetesStatus.ts` - Detection functions for Phase 2
-- `app/src/lib/types.ts` - Workspace, Template, Credential types for Phase 1-2
+- `app/src/lib/types.ts` - Vibespace, Template, Credential types for Phase 1-2
 
 See `docs/adr/003-jsdoc-for-future-exports.md` for the architectural decision record.
 

@@ -4585,6 +4585,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
+name = "vibespace"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "base64 0.21.7",
+ "chrono",
+ "dirs 5.0.1",
+ "fs_extra",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "ssh-key",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-shell",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "vswhom"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5352,28 +5374,6 @@ name = "wit-bindgen"
 version = "0.46.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
-
-[[package]]
-name = "workspaces"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "base64 0.21.7",
- "chrono",
- "dirs 5.0.1",
- "fs_extra",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "ssh-key",
- "tauri",
- "tauri-build",
- "tauri-plugin-shell",
- "thiserror 1.0.69",
- "tokio",
- "uuid",
-]
 
 [[package]]
 name = "writeable"

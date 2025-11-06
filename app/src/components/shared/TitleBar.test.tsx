@@ -44,12 +44,12 @@ describe('TitleBar', () => {
     render(<TitleBar />);
 
     // Check icon exists
-    const icon = screen.getByAltText('workspaces');
+    const icon = screen.getByAltText('vibespace');
     expect(icon).toBeInTheDocument();
     expect(icon).toHaveAttribute('src', '/icon.png');
 
     // Check title text
-    expect(screen.getByText('workspaces')).toBeInTheDocument();
+    expect(screen.getByText('vibespace')).toBeInTheDocument();
   });
 
   it('calls minimize when minimize button is clicked', async () => {

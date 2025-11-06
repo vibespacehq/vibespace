@@ -16,7 +16,7 @@ type ClusterConfig struct {
 	RegistryURL       string // Local registry URL (e.g., "localhost:5000")
 	TraefikNodePort   int    // Traefik HTTP NodePort (default: 30080)
 	EnableScaleToZero bool   // Enable Knative scale-to-zero (Phase 2)
-	DefaultMinScale   int    // Default minimum scale for workspaces (1 for Phase 1, 0 for Phase 2)
+	DefaultMinScale   int    // Default minimum scale for vibespaces (1 for Phase 1, 0 for Phase 2)
 }
 
 // DefaultClusterConfig returns the default configuration for local mode

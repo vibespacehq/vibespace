@@ -49,7 +49,7 @@ temp/
 *.tmp
 
 # Credentials (should be in app storage)
-.workspace/
+.vibespace/
 
 # k3s artifacts
 /etc/rancher/

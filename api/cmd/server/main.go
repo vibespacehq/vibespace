@@ -4,15 +4,15 @@ import (
 	"log/slog"
 	"os"
 
-	"workspace/pkg/handler"
-	"workspace/pkg/k8s"
-	"workspace/pkg/workspace"
+	"vibespace/pkg/handler"
+	"vibespace/pkg/k8s"
+	"vibespace/pkg/vibespace"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	slog.Info("initializing workspaces api server",
+	slog.Info("initializing vibespaces api server",
 		"port", getPort())
 
 	// Initialize Kubernetes client
@@ -26,10 +26,10 @@ func main() {
 	}
 
 	// Initialize services
-	workspaceService := workspace.NewService(k8sClient)
+	vibespaceService := vibespace.NewService(k8sClient)
 
 	// Initialize handlers
-	workspaceHandler := handler.NewWorkspaceHandler(workspaceService)
+	vibespaceHandler := handler.NewVibespaceHandler(vibespaceService)
 	templateHandler := handler.NewTemplateHandler()
 	clusterHandler := handler.NewClusterHandler(k8sClient)
 
@@ -59,16 +59,16 @@ func main() {
 			})
 		})
 
-		// Workspaces
-		workspaces := v1.Group("/workspaces")
+		// Vibespaces
+		vibespaces := v1.Group("/vibespaces")
 		{
-			workspaces.GET("", workspaceHandler.List)
-			workspaces.POST("", workspaceHandler.Create)
-			workspaces.GET("/:id", workspaceHandler.Get)
-			workspaces.DELETE("/:id", workspaceHandler.Delete)
-			workspaces.POST("/:id/start", workspaceHandler.Start)
-			workspaces.POST("/:id/stop", workspaceHandler.Stop)
-			workspaces.GET("/:id/access", workspaceHandler.Access)
+			vibespaces.GET("", vibespaceHandler.List)
+			vibespaces.POST("", vibespaceHandler.Create)
+			vibespaces.GET("/:id", vibespaceHandler.Get)
+			vibespaces.DELETE("/:id", vibespaceHandler.Delete)
+			vibespaces.POST("/:id/start", vibespaceHandler.Start)
+			vibespaces.POST("/:id/stop", vibespaceHandler.Stop)
+			vibespaces.GET("/:id/access", vibespaceHandler.Access)
 		}
 
 		// Templates
@@ -95,7 +95,7 @@ func main() {
 	slog.Info("api server starting",
 		"port", port,
 		"address", ":"+port,
-		"endpoints", []string{"/workspaces", "/templates", "/cluster"})
+		"endpoints", []string{"/vibespaces", "/templates", "/cluster"})
 
 	if err := r.Run(":" + port); err != nil {
 		slog.Error("failed to start api server",

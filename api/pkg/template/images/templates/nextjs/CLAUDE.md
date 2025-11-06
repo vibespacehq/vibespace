@@ -1,4 +1,4 @@
-# Next.js 15.5 Workspace
+# Next.js 15.5 Vibespace
 
 ## Installed Versions (October 2025)
 - **Next.js**: 15.5.5

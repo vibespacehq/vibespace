@@ -1,4 +1,4 @@
-package workspace
+package vibespace
 
 import (
 	"fmt"
@@ -23,7 +23,7 @@ func TestHashStringToPort(t *testing.T) {
 		},
 		{
 			name:     "long id",
-			id:       "workspace-f8a3b2c1-9d4e-4f6a-8b7c-1e2d3f4a5b6c",
+			id:       "vibespace-f8a3b2c1-9d4e-4f6a-8b7c-1e2d3f4a5b6c",
 			wantMin:  0,
 			wantMax:  999,
 			checkDet: true,
@@ -65,8 +65,8 @@ func TestHashStringToPort(t *testing.T) {
 }
 
 func TestHashStringToPort_Consistency(t *testing.T) {
-	// Same workspace ID should always produce same port
-	id := "workspace-abc123"
+	// Same vibespace ID should always produce same port
+	id := "vibespace-abc123"
 	results := make(map[int]bool)
 
 	for i := 0; i < 100; i++ {
