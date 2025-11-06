@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -53,18 +52,6 @@ func ListContexts() ([]ClusterContext, error) {
 	return contexts, nil
 }
 
-// GetCurrentContext returns the current context name
-func GetCurrentContext() (string, error) {
-	kubeconfig := getKubeconfigPath()
-
-	config, err := clientcmd.LoadFromFile(kubeconfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to load kubeconfig: %w", err)
-	}
-
-	return config.CurrentContext, nil
-}
-
 // SwitchContext switches to a different Kubernetes context
 func SwitchContext(contextName string) error {
 	kubeconfig := getKubeconfigPath()
@@ -109,46 +96,6 @@ func SwitchContext(contextName string) error {
 		"is_remote", IsContextRemote(contextName))
 
 	return nil
-}
-
-// NewClientWithContext creates a new Kubernetes client for a specific context
-func NewClientWithContext(contextName string) (*Client, error) {
-	kubeconfig := getKubeconfigPath()
-
-	slog.Info("creating kubernetes client for context",
-		"context", contextName)
-
-	// Build config for specific context
-	configLoadingRules := &clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfig}
-	configOverrides := &clientcmd.ConfigOverrides{
-		CurrentContext: contextName,
-	}
-
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(configLoadingRules, configOverrides)
-	restConfig, err := kubeConfig.ClientConfig()
-	if err != nil {
-		slog.Error("failed to build config for context",
-			"context", contextName,
-			"error", err)
-		return nil, fmt.Errorf("failed to build config for context %s: %w", contextName, err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		slog.Error("failed to create clientset for context",
-			"context", contextName,
-			"error", err)
-		return nil, fmt.Errorf("failed to create clientset: %w", err)
-	}
-
-	slog.Info("kubernetes client created successfully",
-		"context", contextName,
-		"host", restConfig.Host)
-
-	return &Client{
-		clientset: clientset,
-		config:    restConfig,
-	}, nil
 }
 
 // getKubeconfigPath returns the path to the kubeconfig file
