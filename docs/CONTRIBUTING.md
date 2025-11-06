@@ -1,4 +1,4 @@
-# Contributing to Workspace
+# Contributing to Vibespace
 
 Thank you for your interest in contributing! This document provides guidelines for contributing to the project.
 
@@ -29,8 +29,8 @@ Thank you for your interest in contributing! This document provides guidelines f
 
 1. **Fork and clone the repository**:
    ```bash
-   gh repo fork yagizdagabak/workspaces --clone
-   cd workspaces
+   gh repo fork yagizdagabak/vibespace --clone
+   cd vibespace
    ```
 
 2. **Install dependencies**:
@@ -145,17 +145,17 @@ Once approved:
 **Style**:
 - Follow standard Go conventions
 - Use `gofmt` and `golint`
-- Package names: singular (`workspace`, not `workspaces`)
+- Package names: singular (`vibespace`, not `vibespaces`)
 - Exported functions: documented with comments
 
 **Structure**:
 ```go
-// pkg/workspace/service.go
-package workspace
+// pkg/vibespace/service.go
+package vibespace
 
-// CreateWorkspace creates a new workspace with the given configuration.
-// It returns the workspace ID or an error if creation fails.
-func CreateWorkspace(config Config) (string, error) {
+// CreateVibespace creates a new vibespace with the given configuration.
+// It returns the vibespace ID or an error if creation fails.
+func CreateVibespace(config Config) (string, error) {
     // Implementation
 }
 ```
@@ -170,13 +170,13 @@ func CreateWorkspace(config Config) (string, error) {
 
 **Component structure**:
 ```tsx
-// components/workspace/WorkspaceCard.tsx
-interface WorkspaceCardProps {
-  workspace: Workspace
+// components/vibespace/VibespaceCard.tsx
+interface VibespaceCardProps {
+  vibespace: Vibespace
   onOpen: (id: string) => void
 }
 
-export function WorkspaceCard({ workspace, onOpen }: WorkspaceCardProps) {
+export function VibespaceCard({ vibespace, onOpen }: VibespaceCardProps) {
   // Implementation
 }
 ```
@@ -292,7 +292,7 @@ cd app && npm install  # Installs knip, depcheck, ts-prune
 **Good commits**:
 ```bash
 feat(#42): add Cloudflare DNS provider
-fix(#15): resolve workspace creation timeout
+fix(#15): resolve vibespace creation timeout
 docs(#7): update API endpoint documentation
 test(#42): add DNS provider unit tests
 ```
@@ -394,8 +394,8 @@ Brief description of changes
 
 **Unit tests**:
 ```go
-// pkg/workspace/service_test.go
-func TestCreateWorkspace(t *testing.T) {
+// pkg/vibespace/service_test.go
+func TestCreateVibespace(t *testing.T) {
     // Test implementation
 }
 ```
@@ -404,18 +404,18 @@ func TestCreateWorkspace(t *testing.T) {
 ```bash
 cd api
 go test ./...
-go test -v ./pkg/workspace  # Verbose for specific package
+go test -v ./pkg/vibespace  # Verbose for specific package
 ```
 
 ### Frontend (React)
 
 **Component tests**:
 ```tsx
-// components/workspace/WorkspaceCard.test.tsx
+// components/vibespace/VibespaceCard.test.tsx
 import { render, screen } from '@testing-library/react'
-import { WorkspaceCard } from './WorkspaceCard'
+import { VibespaceCard } from './VibespaceCard'
 
-test('renders workspace name', () => {
+test('renders vibespace name', () => {
   // Test implementation
 })
 ```
@@ -440,7 +440,7 @@ npm test -- --coverage  # With coverage
 Understanding the codebase:
 
 ```
-workspace/
+vibespace/
  app/              # Tauri desktop app
     src/         # React frontend
     src-tauri/   # Rust backend
@@ -448,7 +448,7 @@ workspace/
     cmd/         # Entry points
     pkg/         # Business logic
  images/           # Docker images
-    base/        # Base workspace image
+    base/        # Base vibespace image
     templates/   # Template images
  k8s/              # Kubernetes manifests
  script/           # Utility scripts
@@ -468,13 +468,13 @@ workspace/
 Follow the project standards:
 
 **Go**:
-- Package names: singular (`workspace`, `template`)
-- Files: lowercase with underscores (`workspace_service.go`)
+- Package names: singular (`vibespace`, `template`)
+- Files: lowercase with underscores (`vibespace_service.go`)
 
 **TypeScript**:
-- Components: PascalCase (`WorkspaceCard.tsx`)
+- Components: PascalCase (`VibespaceCard.tsx`)
 - Utilities: camelCase (`api.ts`, `types.ts`)
-- Hooks: `use` prefix (`useWorkspaces.ts`)
+- Hooks: `use` prefix (`useVibespaces.ts`)
 
 **Git**:
 - Branches: `feature/#42-description`
@@ -563,7 +563,7 @@ Contributors are recognized in:
 - GitHub contributors page
 - Release notes (for significant contributions)
 
-Thank you for contributing to Workspace!
+Thank you for contributing to Vibespace!
 
 ---
 
@@ -603,10 +603,10 @@ gh pr merge 42 --squash             # Merge PR
 
 ### Links
 
-- **Repository**: https://github.com/yagizdagabak/workspaces
+- **Repository**: https://github.com/yagizdagabak/vibespace
 - **Specification**: [SPEC.md](SPEC.md)
-- **Issues**: https://github.com/yagizdagabak/workspaces/issues
-- **Discussions**: https://github.com/yagizdagabak/workspaces/discussions
+- **Issues**: https://github.com/yagizdagabak/vibespace/issues
+- **Discussions**: https://github.com/yagizdagabak/vibespace/discussions
 
 ---
 

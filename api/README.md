@@ -1,6 +1,6 @@
-# Workspace API Server
+# Vibespace API Server
 
-Go backend API for managing Kubernetes workspaces.
+Go backend API for managing Kubernetes vibespaces.
 
 ## Prerequisites
 
@@ -30,14 +30,14 @@ The API server will start on port `8090` by default. Override with `PORT` enviro
 
 - `GET /api/v1/health` - Health check
 
-### Workspaces
+### Vibespaces
 
-- `GET /api/v1/workspaces` - List all workspaces
-- `POST /api/v1/workspaces` - Create a new workspace
-- `GET /api/v1/workspaces/:id` - Get workspace details
-- `DELETE /api/v1/workspaces/:id` - Delete a workspace
-- `POST /api/v1/workspaces/:id/start` - Start a workspace
-- `POST /api/v1/workspaces/:id/stop` - Stop a workspace
+- `GET /api/v1/vibespaces` - List all vibespaces
+- `POST /api/v1/vibespaces` - Create a new vibespace
+- `GET /api/v1/vibespaces/:id` - Get vibespace details
+- `DELETE /api/v1/vibespaces/:id` - Delete a vibespace
+- `POST /api/v1/vibespaces/:id/start` - Start a vibespace
+- `POST /api/v1/vibespaces/:id/stop` - Stop a vibespace
 
 ### Templates
 
@@ -46,10 +46,10 @@ The API server will start on port `8090` by default. Override with `PORT` enviro
 
 ## Example Requests
 
-### Create a workspace
+### Create a vibespace
 
 ```bash
-curl -X POST http://localhost:8090/api/v1/workspaces \
+curl -X POST http://localhost:8090/api/v1/vibespaces \
   -H "Content-Type: application/json" \
   -d '{
     "name": "my-project",
@@ -58,10 +58,10 @@ curl -X POST http://localhost:8090/api/v1/workspaces \
   }'
 ```
 
-### List workspaces
+### List vibespaces
 
 ```bash
-curl http://localhost:8090/api/v1/workspaces
+curl http://localhost:8090/api/v1/vibespaces
 ```
 
 ### List templates
@@ -91,7 +91,7 @@ api/
 │   └── server/          # Main entry point
 ├── pkg/
 │   ├── handler/         # HTTP handlers
-│   ├── workspace/       # Workspace service
+│   ├── vibespace/       # Vibespace service
 │   ├── k8s/             # Kubernetes client wrapper
 │   └── model/           # Data models
 ├── go.mod
@@ -108,5 +108,5 @@ The API server can be configured via environment variables:
 ## Notes
 
 - The API will run in limited mode if Kubernetes is not available (for development)
-- Workspace persistence and auto-scaling features require Knative (will be implemented in Phase 2)
+- Vibespace persistence and auto-scaling features require Knative (will be implemented in Phase 2)
 - Template images must be available in the local registry or Kubernetes cluster

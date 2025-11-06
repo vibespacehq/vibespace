@@ -1,4 +1,4 @@
-# Jupyter Lab 4.4 + Python 3.12 Workspace
+# Jupyter Lab 4.4 + Python 3.12 Vibespace
 
 ## Installed Versions (October 2025)
 - **Python**: 3.12.3 (Ubuntu 24.04 default)
@@ -24,8 +24,8 @@
 - **Jupyter Lab**: 8888 (notebooks)
 
 ## Access
-- Code-server: `http://workspace-{id}.local`
-- Jupyter Lab: `http://workspace-{id}-8888.local`
+- Code-server: `http://vibespace-{id}.local`
+- Jupyter Lab: `http://vibespace-{id}-8888.local`
 
 ## Commands
 - **Jupyter**: Already running in background
@@ -37,8 +37,8 @@
 - ✅ Add markdown cells for documentation
 - ✅ Clear outputs before committing
 - ✅ Keep notebooks focused
-- ✅ Save data to `/workspace/data/`
-- ✅ Export plots to `/workspace/outputs/`
+- ✅ Save data to `/vibespace/data/`
+- ✅ Export plots to `/vibespace/outputs/`
 
 ## Project Structure
 ```

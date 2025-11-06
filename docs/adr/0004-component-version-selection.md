@@ -9,7 +9,7 @@
 
 ## Context and Problem Statement
 
-For the MVP (Phase 1) of the workspaces project, we need to select specific versions of critical Kubernetes components:
+For the MVP (Phase 1) of the vibespaces project, we need to select specific versions of critical Kubernetes components:
 - Knative Serving (workload management)
 - Traefik (ingress controller)
 - Docker Registry (image storage)
@@ -150,14 +150,14 @@ NOT migration compatibility (irrelevant for greenfield project).
   - 100% CPU usage during builds
   - Unresponsiveness and build failures
   - Some issues persist in v0.25.x
-- **Impact**: Directly affects our use case (building workspace images)
+- **Impact**: Directly affects our use case (building vibespace images)
 - **Decision**: Use v0.17.3 (last known stable without CPU issues)
 
 ## Consequences
 
 ### Positive
 - **Faster MVP delivery**: Less time debugging infrastructure issues
-- **Stable foundation**: Developers can focus on workspace features, not cluster problems
+- **Stable foundation**: Developers can focus on vibespace features, not cluster problems
 - **Proven reliability**: All versions have track record in production
 - **Clear upgrade path**: Can evaluate newer versions after MVP validation
 
@@ -200,7 +200,7 @@ NOT migration compatibility (irrelevant for greenfield project).
 - Local k3s testing with each new version
 - Load testing (especially BuildKit image builds)
 - Knative scale-to-zero testing (Phase 2 feature)
-- Compatibility testing with existing workspaces
+- Compatibility testing with existing vibespaces
 
 ### Upgrade Strategy
 - **When to upgrade**: After MVP validation, before Phase 2 features

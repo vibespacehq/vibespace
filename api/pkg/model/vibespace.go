@@ -1,7 +1,7 @@
 package model
 
-// Workspace represents a workspace configuration and state
-type Workspace struct {
+// Vibespace represents a vibespace configuration and state
+type Vibespace struct {
 	ID         string            `json:"id"`
 	Name       string            `json:"name"`
 	Template   string            `json:"template"`
@@ -14,7 +14,7 @@ type Workspace struct {
 	DeletedAt  string            `json:"deleted_at,omitempty"`
 }
 
-// Resources represents resource allocations for a workspace
+// Resources represents resource allocations for a vibespace
 type Resources struct {
 	CPU     string `json:"cpu"`
 	Memory  string `json:"memory"`

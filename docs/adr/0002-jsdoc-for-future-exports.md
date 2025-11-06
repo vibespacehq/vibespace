@@ -10,8 +10,8 @@
 
 During MVP development (Phase 1), we're implementing infrastructure and types that won't be fully utilized until later phases (Phase 2+). Examples include:
 
-- Kubernetes detection functions (`checkKubectl`, `findKubeconfig`, `checkClusterHealth`, `detectInstallType`, `getClusterVersion`) - planned for Phase 2 workspace health monitoring
-- Type definitions (`KubernetesInstallType`, `Workspace`, `CreateWorkspaceRequest`, `Template`, `Credential`, `CredentialData`, `SshKeyPair`) - planned for Phase 1-2 CRUD operations
+- Kubernetes detection functions (`checkKubectl`, `findKubeconfig`, `checkClusterHealth`, `detectInstallType`, `getClusterVersion`) - planned for Phase 2 vibespace health monitoring
+- Type definitions (`KubernetesInstallType`, `Vibespace`, `CreateVibespaceRequest`, `Template`, `Credential`, `CredentialData`, `SshKeyPair`) - planned for Phase 1-2 CRUD operations
 - Utility functions that support future features defined in SPEC.md and ROADMAP.md
 
 ### The Problem

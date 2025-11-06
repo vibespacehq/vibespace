@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"workspace/pkg/k8s"
+	"vibespace/pkg/k8s"
 
 	"github.com/gin-gonic/gin"
 )
@@ -180,35 +179,6 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 			return true
 		}
 	})
-}
-
-// EnsureComponents ensures components are ready before workspace operations
-// This is called internally by workspace creation to ensure setup is complete
-func (h *ClusterHandler) EnsureComponents(ctx context.Context) error {
-	// Check if components are ready
-	components, err := h.k8sClient.CheckComponents(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to check components: %w", err)
-	}
-
-	if components.AllComponentsReady() {
-		return nil
-	}
-
-	// Install missing components without progress callback
-	err = h.k8sClient.EnsureClusterComponents(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to ensure components: %w", err)
-	}
-
-	// Apply default configuration
-	config := k8s.DefaultClusterConfig()
-	err = h.k8sClient.ApplyConfiguration(ctx, config)
-	if err != nil {
-		return fmt.Errorf("failed to apply configuration: %w", err)
-	}
-
-	return nil
 }
 
 // ListContexts returns all available Kubernetes contexts

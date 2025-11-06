@@ -17,7 +17,7 @@ describe('AuthenticationSetup', () => {
   it('renders authentication page with title and description', () => {
     render(<AuthenticationSetup onComplete={onComplete} />);
 
-    expect(screen.getByText('Welcome to workspaces')).toBeInTheDocument();
+    expect(screen.getByText('Welcome to vibespace')).toBeInTheDocument();
     expect(screen.getByText('Sign in to get started')).toBeInTheDocument();
     expect(screen.getAllByText('Authentication').length).toBeGreaterThan(0);
   });

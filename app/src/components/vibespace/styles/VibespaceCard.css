@@ -1,9 +1,9 @@
 /**
- * WorkspaceCard Component Styles
- * Individual workspace card with status, actions, and metadata.
+ * VibespaceCard Component Styles
+ * Individual vibespace card with status, actions, and metadata.
  */
 
-.workspace-card {
+.vibespace-card {
   position: relative;
   padding: var(--spacing-4);
   background: rgba(255, 255, 255, 0.03);
@@ -15,7 +15,7 @@
   gap: var(--spacing-3);
 }
 
-.workspace-card:hover {
+.vibespace-card:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: var(--accent-primary);
   transform: translateY(-2px);
@@ -23,21 +23,21 @@
 }
 
 /* Header */
-.workspace-card-header {
+.vibespace-card-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--spacing-2);
 }
 
-.workspace-name-section {
+.vibespace-name-section {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
 }
 
-.workspace-name-section h3 {
+.vibespace-name-section h3 {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.9375rem;
@@ -46,12 +46,12 @@
   word-break: break-word;
 }
 
-.workspace-menu-container {
+.vibespace-menu-container {
   position: relative;
   flex-shrink: 0;
 }
 
-.workspace-menu-btn {
+.vibespace-menu-btn {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -65,19 +65,19 @@
   flex-shrink: 0;
 }
 
-.workspace-menu-btn:hover:not(:disabled) {
+.vibespace-menu-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.05);
   border-color: var(--accent-primary);
   color: var(--accent-primary);
 }
 
-.workspace-menu-btn:disabled {
+.vibespace-menu-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 /* Status Badge */
-.workspace-status {
+.vibespace-status {
   padding: 0.125rem 0.5rem;
   font-size: 0.625rem;
   font-weight: 700;
@@ -87,33 +87,33 @@
   width: fit-content;
 }
 
-.workspace-status.status-running {
+.vibespace-status.status-running {
   background: rgba(0, 171, 171, 0.2);
   color: var(--accent-primary);
   border: 1px solid rgba(0, 171, 171, 0.5);
 }
 
-.workspace-status.status-stopped {
+.vibespace-status.status-stopped {
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
-.workspace-status.status-transitioning {
+.vibespace-status.status-transitioning {
   background: rgba(241, 2, 243, 0.2);
   color: var(--accent-tertiary);
   border: 1px solid rgba(241, 2, 243, 0.5);
   animation: pulse 2s ease-in-out infinite;
 }
 
-.workspace-status.status-error {
+.vibespace-status.status-error {
   background: rgba(255, 125, 75, 0.2);
   color: var(--accent-secondary);
   border: 1px solid rgba(255, 125, 75, 0.5);
 }
 
 /* Actions Menu */
-.workspace-actions-menu {
+.vibespace-actions-menu {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
@@ -179,7 +179,7 @@
 }
 
 /* Body */
-.workspace-card-body {
+.vibespace-card-body {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
@@ -187,7 +187,7 @@
   border-top: 1px solid var(--border);
 }
 
-.workspace-meta {
+.vibespace-meta {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -195,15 +195,15 @@
   font-family: var(--font-mono);
 }
 
-.workspace-meta .meta-label {
+.vibespace-meta .meta-label {
   color: var(--text-tertiary);
 }
 
-.workspace-meta .meta-value {
+.vibespace-meta .meta-value {
   color: var(--text-secondary);
 }
 
-.workspace-badge-persistent {
+.vibespace-badge-persistent {
   margin-top: var(--spacing-2);
   padding: 0.125rem 0.5rem;
   font-size: 0.625rem;
@@ -218,14 +218,14 @@
 }
 
 /* Footer */
-.workspace-card-footer {
+.vibespace-card-footer {
   padding-top: var(--spacing-2);
   border-top: 1px solid var(--border);
   display: flex;
   gap: var(--spacing-2);
 }
 
-.btn-open-workspace {
+.btn-open-vibespace {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -243,14 +243,14 @@
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.btn-open-workspace:hover:not(:disabled) {
+.btn-open-vibespace:hover:not(:disabled) {
   background: var(--accent-yellow);
   border-color: var(--accent-yellow);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(0, 171, 171, 0.3);
 }
 
-.btn-open-workspace:disabled {
+.btn-open-vibespace:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
@@ -300,15 +300,15 @@
 
 /* Responsive */
 @media (max-width: 768px) {
-  .workspace-card {
+  .vibespace-card {
     padding: var(--spacing-3);
   }
 
-  .workspace-name-section h3 {
+  .vibespace-name-section h3 {
     font-size: 0.875rem;
   }
 
-  .workspace-meta {
+  .vibespace-meta {
     font-size: 0.75rem;
   }
 }

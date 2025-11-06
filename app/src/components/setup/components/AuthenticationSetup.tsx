@@ -27,7 +27,7 @@ export function AuthenticationSetup({ onComplete }: AuthenticationSetupProps) {
             <span className="step-badge-number">1</span>
             <span>Step 1 of 4</span>
           </div>
-          <h1 className="brand-title">Welcome to workspaces</h1>
+          <h1 className="brand-title">Welcome to vibespace</h1>
           <p className="brand-subtitle">Sign in to get started</p>
           <div className="progress-bar-container">
             <div className="progress-bar-fill" data-progress="0"></div>
@@ -37,7 +37,7 @@ export function AuthenticationSetup({ onComplete }: AuthenticationSetupProps) {
         <div className="setup-required">
           <div className="auth-container">
             <p className="auth-description">
-              Sign in with your account to access workspaces and manage your development environments.
+              Sign in with your account to access vibespace and manage your development environments.
             </p>
 
             <div className="auth-methods">

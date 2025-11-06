@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	WorkspaceNamespace = "workspace"
+	VibespaceNamespace = "vibespace"
 )
 
 // PortForward represents an active kubectl port-forward
@@ -90,11 +90,11 @@ func (c *Client) Clientset() *kubernetes.Clientset {
 	return c.clientset
 }
 
-// EnsureNamespace ensures the workspace namespace exists
+// EnsureNamespace ensures the vibespace namespace exists
 func (c *Client) EnsureNamespace(ctx context.Context) error {
 	namespaces := c.clientset.CoreV1().Namespaces()
 
-	_, err := namespaces.Get(ctx, WorkspaceNamespace, metav1.GetOptions{})
+	_, err := namespaces.Get(ctx, VibespaceNamespace, metav1.GetOptions{})
 	if err == nil {
 		// Namespace already exists
 		return nil
@@ -103,9 +103,9 @@ func (c *Client) EnsureNamespace(ctx context.Context) error {
 	// Create namespace
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: WorkspaceNamespace,
+			Name: VibespaceNamespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "workspace",
+				"app.kubernetes.io/managed-by": "vibespace",
 			},
 		},
 	}
