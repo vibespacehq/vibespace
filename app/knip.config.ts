@@ -15,7 +15,6 @@ const config: KnipConfig = {
     'src/**/__tests__/**',
     'src/**/__mocks__/**',
     'src/test/**', // Test setup files
-    'src/components/setup/components/CreateWorkspace.tsx', // WIP - Phase 1
   ],
   ignoreDependencies: [
     'autoprefixer', // PostCSS plugin for Tailwind (auto-loaded by Vite)
