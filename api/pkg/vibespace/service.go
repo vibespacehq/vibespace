@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"strings"
 	"time"
 
 	"vibespace/pkg/k8s"
@@ -159,6 +160,11 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 
 	// Add git clone init container if needed
 	if req.GithubRepo != "" {
+		// Validate GitHub repo URL to prevent command injection
+		if !isValidGitURL(req.GithubRepo) {
+			return nil, fmt.Errorf("invalid GitHub repository URL: must be a valid HTTPS Git URL")
+		}
+
 		initContainers = append(initContainers, corev1.Container{
 			Name:  "git-clone",
 			Image: "alpine/git:latest",
@@ -691,4 +697,24 @@ func isPortAvailable(port int) bool {
 	}
 	listener.Close()
 	return true
+}
+
+// isValidGitURL validates a Git repository URL to prevent command injection
+// Accepts HTTPS URLs for GitHub, GitLab, Bitbucket, and SSH URLs
+func isValidGitURL(url string) bool {
+	// Check for empty or suspiciously short URLs
+	if len(url) < 10 {
+		return false
+	}
+
+	// Check for shell metacharacters that could be used for injection
+	dangerousChars := []string{";", "|", "&", "$", "`", "\n", "\r", "$(", "&&", "||"}
+	for _, char := range dangerousChars {
+		if strings.Contains(url, char) {
+			return false
+		}
+	}
+
+	// Validate URL format - must be HTTPS or SSH
+	return strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "git@")
 }
