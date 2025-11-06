@@ -18,10 +18,8 @@ const config: KnipConfig = {
     'src/components/setup/components/CreateWorkspace.tsx', // WIP - Phase 1
   ],
   ignoreDependencies: [
-    '@tanstack/react-query', // Will be used for API state (Phase 2)
-    'zustand', // Will be used for client state (Phase 2)
-    'autoprefixer', // PostCSS plugin for Tailwind (configured in postcss.config.js)
-    'postcss', // Required by Tailwind CSS (configured in postcss.config.js)
+    'autoprefixer', // PostCSS plugin for Tailwind (auto-loaded by Vite)
+    'postcss', // Required by Tailwind CSS (auto-loaded by Vite for @tailwind directives)
     '@fontsource/space-grotesk', // Font imported in CSS (@import in index.css)
   ],
   ignoreExportsUsedInFile: {
