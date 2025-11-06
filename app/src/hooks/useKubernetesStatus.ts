@@ -83,7 +83,7 @@ export function useKubernetesStatus() {
 
 // Individual detection functions (for advanced use cases)
 // These are exported for future features that need granular control
-// TODO(Phase 2): Will be used by workspace creation wizard and health monitoring
+// TODO(Phase 2): Will be used by vibespace creation wizard and health monitoring
 
 /**
  * Checks if kubectl is available in the system PATH.

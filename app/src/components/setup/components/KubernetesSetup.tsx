@@ -22,7 +22,7 @@ type SetupState = 'detecting' | 'not-found' | 'selecting-cluster' | 'found' | 'i
  * 2. Allows user to select cluster context
  * 3. Checks for required components (Knative, Traefik, Registry, BuildKit)
  * 4. Installs missing components with real-time progress via Server-Sent Events
- * 5. Builds all workspace images (12 images total)
+ * 5. Builds all vibespace images (12 images total)
  *
  * @param props - Component props
  * @param props.onComplete - Callback invoked when setup completes successfully

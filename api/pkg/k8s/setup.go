@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	"workspace/pkg/template"
+	"vibespace/pkg/template"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -153,14 +153,14 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 	}
 	slog.Info("all template images built successfully")
 
-	// Ensure workspace namespace exists
-	slog.Info("ensuring workspace namespace exists")
+	// Ensure vibespace namespace exists
+	slog.Info("ensuring vibespace namespace exists")
 	if err := c.EnsureNamespace(ctx); err != nil {
-		slog.Error("failed to ensure workspace namespace",
+		slog.Error("failed to ensure vibespace namespace",
 			"error", err)
-		return fmt.Errorf("failed to ensure workspace namespace: %w", err)
+		return fmt.Errorf("failed to ensure vibespace namespace: %w", err)
 	}
-	slog.Info("workspace namespace ready")
+	slog.Info("vibespace namespace ready")
 
 	slog.Info("cluster component setup completed successfully")
 	return nil

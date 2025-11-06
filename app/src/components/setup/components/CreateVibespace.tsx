@@ -1,14 +1,14 @@
-// WIP: CreateWorkspace component for Phase 1 workspace creation flow
+// WIP: CreateVibespace component for Phase 1 vibespace creation flow
 // This component will be integrated in a future PR
 // Currently excluded from knip checks via knip.config.ts
 
 import { useState } from 'react';
 import { ProgressSidebar } from './ProgressSidebar';
 import '../styles/setup.css';
-import '../styles/CreateWorkspace.css';
+import '../styles/CreateVibespace.css';
 
-interface CreateWorkspaceProps {
-  onComplete: (workspaceId: string) => void;
+interface CreateVibespaceProps {
+  onComplete: (vibespaceId: string) => void;
 }
 
 type CreationState = 'selecting' | 'creating' | 'ready' | 'error';
@@ -35,40 +35,40 @@ const TEMPLATES = [
   },
 ];
 
-export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
+export function CreateVibespace({ onComplete }: CreateVibespaceProps) {
   const [creationState, setCreationState] = useState<CreationState>('selecting');
   const [selectedTemplate, setSelectedTemplate] = useState('nextjs');
-  const [workspaceName, setWorkspaceName] = useState('my-workspace');
-  const [createdWorkspaceId, setCreatedWorkspaceId] = useState<string | null>(null);
+  const [vibespaceName, setVibespaceName] = useState('my-vibespace');
+  const [createdVibespaceId, setCreatedVibespaceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const createWorkspace = async () => {
+  const createVibespace = async () => {
     setCreationState('creating');
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:8090/api/v1/workspaces', {
+      const response = await fetch('http://localhost:8090/api/v1/vibespaces', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          name: workspaceName,
+          name: vibespaceName,
           template: selectedTemplate,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create workspace');
+        throw new Error(errorData.error || 'Failed to create vibespace');
       }
 
-      const workspace = await response.json();
-      setCreatedWorkspaceId(workspace.id);
+      const vibespace = await response.json();
+      setCreatedVibespaceId(vibespace.id);
       setCreationState('ready');
     } catch (err) {
-      console.error('Failed to create workspace:', err);
-      setError(err instanceof Error ? err.message : 'Failed to create workspace');
+      console.error('Failed to create vibespace:', err);
+      setError(err instanceof Error ? err.message : 'Failed to create vibespace');
       setCreationState('error');
     }
   };
@@ -83,7 +83,7 @@ export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
               <span className="step-badge-number">4</span>
               <span>Step 4 of 4</span>
             </div>
-            <h1 className="brand-title">Creating workspace...</h1>
+            <h1 className="brand-title">Creating vibespace...</h1>
             <p className="brand-subtitle">Setting up your development environment</p>
             <div className="progress-bar-container">
               <div className="progress-bar-fill" data-progress="50"></div>
@@ -98,7 +98,7 @@ export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
     );
   }
 
-  if (creationState === 'ready' && createdWorkspaceId) {
+  if (creationState === 'ready' && createdVibespaceId) {
     return (
       <div className="setup-container">
         <ProgressSidebar currentStep={4} />
@@ -108,7 +108,7 @@ export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
               <span className="step-badge-number">4</span>
               <span>Step 4 of 4</span>
             </div>
-            <h1 className="brand-title">Workspace ready!</h1>
+            <h1 className="brand-title">Vibespace ready!</h1>
             <p className="brand-subtitle">Your development environment is ready to use</p>
             <div className="progress-bar-container">
               <div className="progress-bar-fill" data-progress="100"></div>
@@ -119,9 +119,9 @@ export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
             <div className="success-icon">✓</div>
             <h2>Setup complete</h2>
 
-            <div className="workspace-created-info">
+            <div className="vibespace-created-info">
               <p>
-                <strong>Workspace:</strong> {workspaceName}
+                <strong>Vibespace:</strong> {vibespaceName}
               </p>
               <p>
                 <strong>Template:</strong> {TEMPLATES.find(t => t.id === selectedTemplate)?.name}
@@ -131,16 +131,16 @@ export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
             <div className="ready-info">
               <h3>What's next?</h3>
               <ul className="ready-list">
-                <li>Open your workspace to start coding</li>
-                <li>Create additional workspaces for different projects</li>
+                <li>Open your vibespace to start coding</li>
+                <li>Create additional vibespaces for different projects</li>
                 <li>Integrate AI coding agents (Claude Code, OpenAI Codex)</li>
-                <li>Scale workspaces up or down as needed</li>
+                <li>Scale vibespaces up or down as needed</li>
               </ul>
             </div>
 
             <div className="setup-actions">
-              <button onClick={() => onComplete(createdWorkspaceId)} className="btn-primary btn-launch">
-                Open Workspace
+              <button onClick={() => onComplete(createdVibespaceId)} className="btn-primary btn-launch">
+                Open Vibespace
               </button>
             </div>
           </div>
@@ -159,7 +159,7 @@ export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
             <p className="error-text">{error}</p>
           </header>
           <div className="setup-actions">
-            <button onClick={createWorkspace} className="btn-secondary">
+            <button onClick={createVibespace} className="btn-secondary">
               Retry
             </button>
           </div>
@@ -178,23 +178,23 @@ export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
             <span className="step-badge-number">4</span>
             <span>Step 4 of 4</span>
           </div>
-          <h1 className="brand-title">Create your first workspace</h1>
+          <h1 className="brand-title">Create your first vibespace</h1>
           <p className="brand-subtitle">Choose a template to get started</p>
           <div className="progress-bar-container">
             <div className="progress-bar-fill" data-progress="75"></div>
           </div>
         </header>
 
-        <div className="create-workspace-form">
+        <div className="create-vibespace-form">
           <div className="form-group">
-            <label htmlFor="workspace-name">Workspace name</label>
+            <label htmlFor="vibespace-name">Vibespace name</label>
             <input
-              id="workspace-name"
+              id="vibespace-name"
               type="text"
-              value={workspaceName}
-              onChange={(e) => setWorkspaceName(e.target.value)}
+              value={vibespaceName}
+              onChange={(e) => setVibespaceName(e.target.value)}
               className="form-input"
-              placeholder="my-workspace"
+              placeholder="my-vibespace"
             />
           </div>
 
@@ -217,8 +217,8 @@ export function CreateWorkspace({ onComplete }: CreateWorkspaceProps) {
           </div>
 
           <div className="setup-actions">
-            <button onClick={createWorkspace} className="btn-primary">
-              Create Workspace
+            <button onClick={createVibespace} className="btn-primary">
+              Create Vibespace
             </button>
           </div>
         </div>

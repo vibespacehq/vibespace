@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "workspaces",
+  "productName": "vibespace",
   "version": "0.1.0",
-  "identifier": "com.workspaces.dev",
+  "identifier": "com.vibespace.dev",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "workspaces",
+        "title": "vibespaces",
         "width": 1200,
         "height": 800,
         "minWidth": 800,

@@ -2,27 +2,27 @@ import { useState } from 'react'
 import { TitleBar } from './components/shared/TitleBar'
 import { AuthenticationSetup } from './components/setup/components/AuthenticationSetup'
 import { KubernetesSetup } from './components/setup/components/KubernetesSetup'
-import { ConfigurationSetup, type WorkspaceConfiguration } from './components/setup/components/ConfigurationSetup'
-import { WorkspaceList } from './components/workspace/components/WorkspaceList'
-import { useWorkspaces } from './hooks/useWorkspaces'
+import { ConfigurationSetup, type VibespaceConfiguration } from './components/setup/components/ConfigurationSetup'
+import { VibespaceList } from './components/vibespace/components/VibespaceList'
+import { useVibespaces } from './hooks/useVibespaces'
 
 type SetupStep = 'auth' | 'infrastructure' | 'configuration' | 'creating' | 'complete'
 
 function App() {
   const [setupStep, setSetupStep] = useState<SetupStep>('auth')
-  const [creatingWorkspace, setCreatingWorkspace] = useState(false)
-  const { createWorkspace } = useWorkspaces()
+  const [creatingVibespace, setCreatingVibespace] = useState(false)
+  const { createVibespace } = useVibespaces()
 
   /**
-   * Handles workspace creation from configuration setup.
-   * Creates workspace via API and transitions to complete state.
+   * Handles vibespace creation from configuration setup.
+   * Creates vibespace via API and transitions to complete state.
    */
-  const handleWorkspaceCreation = async (config: WorkspaceConfiguration) => {
+  const handleVibespaceCreation = async (config: VibespaceConfiguration) => {
     setSetupStep('creating')
-    setCreatingWorkspace(true)
+    setCreatingVibespace(true)
 
     try {
-      await createWorkspace({
+      await createVibespace({
         name: config.name,
         template: config.template,
         persistent: true,
@@ -32,11 +32,11 @@ function App() {
 
       setSetupStep('complete')
     } catch (error) {
-      console.error('Failed to create workspace:', error)
-      alert(`Failed to create workspace: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error('Failed to create vibespace:', error)
+      alert(`Failed to create vibespace: ${error instanceof Error ? error.message : 'Unknown error'}`)
       setSetupStep('configuration')
     } finally {
-      setCreatingWorkspace(false)
+      setCreatingVibespace(false)
     }
   }
 
@@ -69,7 +69,7 @@ function App() {
     return (
       <>
         <TitleBar />
-        <ConfigurationSetup onComplete={handleWorkspaceCreation} />
+        <ConfigurationSetup onComplete={handleVibespaceCreation} />
       </>
     )
   }
@@ -89,18 +89,18 @@ function App() {
         }}>
           <div className="spinner" />
           <p style={{ color: 'var(--text-secondary)' }}>
-            {creatingWorkspace ? 'Creating your workspace...' : 'Preparing...'}
+            {creatingVibespace ? 'Creating your vibespace...' : 'Preparing...'}
           </p>
         </div>
       </>
     )
   }
 
-  // Setup complete - show workspace manager
+  // Setup complete - show vibespace manager
   return (
     <>
       <TitleBar />
-      <WorkspaceList onCreateNew={handleCreateNew} />
+      <VibespaceList onCreateNew={handleCreateNew} />
     </>
   )
 }

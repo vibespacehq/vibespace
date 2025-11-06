@@ -74,11 +74,11 @@ export function TitleBar() {
       <div className="titlebar-center">
         <img
           src="/icon.png"
-          alt="workspaces"
+          alt="vibespace"
           className="titlebar-icon"
         />
         <div className="titlebar-divider"></div>
-        <span className="titlebar-title">workspaces</span>
+        <span className="titlebar-title">vibespace</span>
       </div>
 
       <div className="titlebar-right">

@@ -8,7 +8,7 @@
 
 ## Context
 
-workspaces requires Kubernetes to run development environments. We had to decide between two approaches for MVP:
+vibespaces requires Kubernetes to run development environments. We had to decide between two approaches for MVP:
 
 ### Option 1: Detection + Guided Setup
 - App detects existing Kubernetes installations (k3s, Rancher Desktop, k3d, etc.)
@@ -27,7 +27,7 @@ workspaces requires Kubernetes to run development environments. We had to decide
 
 **Detection + Guided Setup**:
 - ✅ **Faster to market**: Ship MVP in ~3 weeks
-- ✅ **Focus on core value**: Spend time on workspace management, not cluster installation
+- ✅ **Focus on core value**: Spend time on vibespace management, not cluster installation
 - ✅ **More secure**: No sudo execution from app, users control their system
 - ✅ **More flexible**: Supports k3s, Rancher Desktop, k3d, existing clusters, cloud clusters
 - ✅ **Smaller app size**: ~10-20MB (Tauri app only)
@@ -54,7 +54,7 @@ workspaces requires Kubernetes to run development environments. We had to decide
 - Likely already have Docker Desktop, k3s, or similar
 - Value getting started quickly over polished installer
 - Can run `brew install k3s` or download Rancher Desktop
-- Want to validate workspace management before committing
+- Want to validate vibespace management before committing
 
 ### Similar Products (How They Handle This)
 
@@ -80,7 +80,7 @@ workspaces requires Kubernetes to run development environments. We had to decide
 **Rationale**:
 
 1. **Speed to market is critical**: Ship in 3 weeks instead of 11 weeks
-   - Validate core value proposition (workspace management with AI agents)
+   - Validate core value proposition (vibespace management with AI agents)
    - Test with real users before investing in polished installer
    - Follow startup best practices: "Build → Measure → Learn"
 
@@ -90,7 +90,7 @@ workspaces requires Kubernetes to run development environments. We had to decide
    - Setup time: ~2-5 minutes vs development time: 8+ weeks
 
 3. **Focus engineering effort on core features**:
-   - Workspace CRUD operations
+   - Vibespace CRUD operations
    - AI agent integration (Claude Code, OpenAI Codex)
    - Template system (Next.js, Vue, Python, Jupyter)
    - Credential management
@@ -120,7 +120,7 @@ workspaces requires Kubernetes to run development environments. We had to decide
 ### Positive
 
 1. **Faster MVP delivery**: Ship by late January 2025 (3 weeks) instead of April 2025 (11 weeks)
-2. **Validation before investment**: Test workspace management before building installer
+2. **Validation before investment**: Test vibespace management before building installer
 3. **Smaller attack surface**: No elevated permissions, no VM management from app
 4. **Greater flexibility**: Supports multiple k8s distributions out of the box
 5. **Easier maintenance**: Don't need to update bundled k3s, handle security patches
@@ -163,7 +163,7 @@ workspaces requires Kubernetes to run development environments. We had to decide
 - Automatic updates for bundled components
 
 **Timeline**: Phase 3 (~6-8 weeks after MVP completion)
-**Related Issue**: [#15 - Bundle Kubernetes runtime for zero-config installation](https://github.com/yagizdagabak/workspaces/issues/15)
+**Related Issue**: [#15 - Bundle Kubernetes runtime for zero-config installation](https://github.com/yagizdagabak/vibespace/issues/15)
 
 ---
 
@@ -171,9 +171,9 @@ workspaces requires Kubernetes to run development environments. We had to decide
 
 - [ROADMAP.md](../../ROADMAP.md) - Product roadmap with all phases
 - [SPEC.md](../../SPEC.md) - Technical specification (Section 4.3)
-- [Issue #14](https://github.com/yagizdagabak/workspaces/issues/14) - Implement detection (Phase 1)
-- [Issue #15](https://github.com/yagizdagabak/workspaces/issues/15) - Bundle Kubernetes (Phase 3)
-- [Issue #16](https://github.com/yagizdagabak/workspaces/issues/16) - Rancher Desktop integration (Phase 2)
+- [Issue #14](https://github.com/yagizdagabak/vibespace/issues/14) - Implement detection (Phase 1)
+- [Issue #15](https://github.com/yagizdagabak/vibespace/issues/15) - Bundle Kubernetes (Phase 3)
+- [Issue #16](https://github.com/yagizdagabak/vibespace/issues/16) - Rancher Desktop integration (Phase 2)
 
 ---
 

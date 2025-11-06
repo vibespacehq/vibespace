@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"workspace/pkg/model"
+	"vibespace/pkg/model"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,7 +17,7 @@ import (
 //
 // Images are built during cluster setup using BuildKit and stored in the local
 // registry at localhost:5000. The actual image name follows the pattern:
-// workspace-{template}-{agent}:latest (e.g., workspace-nextjs-claude:latest)
+// vibespace-{template}-{agent}:latest (e.g., vibespace-nextjs-claude:latest)
 type TemplateHandler struct {
 	// In a real implementation, this would use a template service
 	// For now, we'll return hardcoded templates
@@ -40,7 +40,7 @@ func NewTemplateHandler() *TemplateHandler {
 //	      "id": "nextjs",
 //	      "name": "Next.js 15.5",
 //	      "description": "Next.js 15.5.5 with React 19...",
-//	      "image": "localhost:5000/workspace-nextjs",
+//	      "image": "localhost:5000/vibespace-nextjs",
 //	      "category": "web",
 //	      "tools": ["Node.js 24.x", "npm 11.6.2", ...],
 //	      "ports": {"code-server": 8080, "dev": 3000},
@@ -61,7 +61,7 @@ func (h *TemplateHandler) List(c *gin.Context) {
 	// Template metadata reflecting October 2025 stable versions
 	// Images are built during cluster setup and stored in local registry
 	// Each template supports multiple AI agents (claude, codex, gemini)
-	// Actual image name: localhost:5000/workspace-{template}-{agent}:latest
+	// Actual image name: localhost:5000/vibespace-{template}-{agent}:latest
 	supportedAgents := []string{"claude", "codex", "gemini"}
 
 	templates := []model.Template{
@@ -69,7 +69,7 @@ func (h *TemplateHandler) List(c *gin.Context) {
 			ID:          "nextjs",
 			Name:        "Next.js 15.5",
 			Description: "Next.js 15.5.5 with React 19, TypeScript 5.9.3, Tailwind CSS 4.1, and Turbopack",
-			Image:       "localhost:5000/workspace-nextjs", // -agent suffix added at runtime
+			Image:       "localhost:5000/vibespace-nextjs", // -agent suffix added at runtime
 			Category:    "web",
 			Tools:       []string{"Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", "TypeScript 5.9.3", "code-server 4.104.3"},
 			Ports: map[string]int{
@@ -83,7 +83,7 @@ func (h *TemplateHandler) List(c *gin.Context) {
 			ID:          "vue",
 			Name:        "Vue 3.5",
 			Description: "Vue 3.5.22 with Vite 7.1.10, TypeScript 5.9.3, and Composition API",
-			Image:       "localhost:5000/workspace-vue", // -agent suffix added at runtime
+			Image:       "localhost:5000/vibespace-vue", // -agent suffix added at runtime
 			Category:    "web",
 			Tools:       []string{"Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", "Vite 7.1.10", "TypeScript 5.9.3", "code-server 4.104.3"},
 			Ports: map[string]int{
@@ -97,7 +97,7 @@ func (h *TemplateHandler) List(c *gin.Context) {
 			ID:          "jupyter",
 			Name:        "Jupyter Lab 4.4",
 			Description: "Python 3.14.0 with Jupyter Lab 4.4.9, NumPy, Pandas, Matplotlib, and data science libraries",
-			Image:       "localhost:5000/workspace-jupyter", // -agent suffix added at runtime
+			Image:       "localhost:5000/vibespace-jupyter", // -agent suffix added at runtime
 			Category:    "datascience",
 			Tools:       []string{"Python 3.14.0", "Jupyter Lab 4.4.9", "NumPy", "Pandas", "Matplotlib", "Scikit-learn", "code-server 4.104.3"},
 			Ports: map[string]int{
@@ -131,7 +131,7 @@ func (h *TemplateHandler) List(c *gin.Context) {
 //	  "id": "nextjs",
 //	  "name": "Next.js 15.5",
 //	  "description": "Next.js 15.5.5 with React 19, TypeScript 5.9.3, Tailwind CSS 4.1, and Turbopack",
-//	  "image": "localhost:5000/workspace-nextjs",
+//	  "image": "localhost:5000/vibespace-nextjs",
 //	  "category": "web",
 //	  "tools": ["Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", ...],
 //	  "ports": {"code-server": 8080, "dev": 3000},
@@ -165,7 +165,7 @@ func (h *TemplateHandler) Get(c *gin.Context) {
 			ID:          "nextjs",
 			Name:        "Next.js 15.5",
 			Description: "Next.js 15.5.5 with React 19, TypeScript 5.9.3, Tailwind CSS 4.1, and Turbopack",
-			Image:       "localhost:5000/workspace-nextjs",
+			Image:       "localhost:5000/vibespace-nextjs",
 			Category:    "web",
 			Tools:       []string{"Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", "TypeScript 5.9.3", "code-server 4.104.3"},
 			Ports: map[string]int{
@@ -179,7 +179,7 @@ func (h *TemplateHandler) Get(c *gin.Context) {
 			ID:          "vue",
 			Name:        "Vue 3.5",
 			Description: "Vue 3.5.22 with Vite 7.1.10, TypeScript 5.9.3, and Composition API",
-			Image:       "localhost:5000/workspace-vue",
+			Image:       "localhost:5000/vibespace-vue",
 			Category:    "web",
 			Tools:       []string{"Node.js 24.x", "npm 11.6.2", "pnpm 10.18.3", "Vite 7.1.10", "TypeScript 5.9.3", "code-server 4.104.3"},
 			Ports: map[string]int{
@@ -193,7 +193,7 @@ func (h *TemplateHandler) Get(c *gin.Context) {
 			ID:          "jupyter",
 			Name:        "Jupyter Lab 4.4",
 			Description: "Python 3.14.0 with Jupyter Lab 4.4.9, NumPy, Pandas, Matplotlib, and data science libraries",
-			Image:       "localhost:5000/workspace-jupyter",
+			Image:       "localhost:5000/vibespace-jupyter",
 			Category:    "datascience",
 			Tools:       []string{"Python 3.14.0", "Jupyter Lab 4.4.9", "NumPy", "Pandas", "Matplotlib", "Scikit-learn", "code-server 4.104.3"},
 			Ports: map[string]int{

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"workspace/pkg/k8s"
+	"vibespace/pkg/k8s"
 
 	"github.com/gin-gonic/gin"
 )
@@ -182,8 +182,8 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 	})
 }
 
-// EnsureComponents ensures components are ready before workspace operations
-// This is called internally by workspace creation to ensure setup is complete
+// EnsureComponents ensures components are ready before vibespace operations
+// This is called internally by vibespace creation to ensure setup is complete
 func (h *ClusterHandler) EnsureComponents(ctx context.Context) error {
 	// Check if components are ready
 	components, err := h.k8sClient.CheckComponents(ctx)

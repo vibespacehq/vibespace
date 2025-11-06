@@ -31,10 +31,10 @@ func TestPortForwardKeyGeneration(t *testing.T) {
 		want      string
 	}{
 		{
-			name:      "standard workspace",
-			namespace: "workspace",
-			keyName:   "workspace-abc123",
-			want:      "workspace/workspace-abc123",
+			name:      "standard vibespace",
+			namespace: "vibespace",
+			keyName:   "vibespace-abc123",
+			want:      "vibespace/vibespace-abc123",
 		},
 		{
 			name:      "different namespace",
@@ -63,14 +63,14 @@ func TestPortForwardResourceFormat(t *testing.T) {
 		wantFmt  string
 	}{
 		{
-			name:     "workspace pod",
-			podName:  "workspace-abc123",
-			wantFmt:  "pod/workspace-abc123",
+			name:     "vibespace pod",
+			podName:  "vibespace-abc123",
+			wantFmt:  "pod/vibespace-abc123",
 		},
 		{
 			name:     "pod with special chars",
-			podName:  "workspace-test-123",
-			wantFmt:  "pod/workspace-test-123",
+			podName:  "vibespace-test-123",
+			wantFmt:  "pod/vibespace-test-123",
 		},
 	}
 

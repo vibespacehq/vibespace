@@ -1,5 +1,5 @@
 ARG AGENT=claude
-FROM registry.default.svc.cluster.local:5000/workspace-base-${AGENT}:latest
+FROM registry.default.svc.cluster.local:5000/vibespace-base-${AGENT}:latest
 
 USER root
 
