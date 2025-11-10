@@ -1,0 +1,15 @@
+# Oracle image license: https://www.oracle.com/downloads/licenses/oracle-linux-license.html
+# Image source: https://yum.oracle.com/oracle-linux-templates.html
+
+images:
+- location: "https://yum.oracle.com/templates/OracleLinux/OL9/u5/x86_64/OL9U5_x86_64-kvm-b259.qcow2"
+  arch: "x86_64"
+  digest: "sha256:f1b8f0ca281570dda5e844485d6a300d1a13a629272ffdff4ec84bf56b76b1fc"
+- location: "https://yum.oracle.com/templates/OracleLinux/OL9/u5/aarch64/OL9U5_aarch64-kvm-cloud-b127.qcow2"
+  arch: "aarch64"
+  digest: "sha256:5453d4566783af42283cb3ab34970b87b6def2691137d4f9dcc042f145510986"
+mountTypesUnsupported: [9p]
+
+firmware:
+  # Oracle Linux 9 still requires legacyBIOS, while AlmaLinux 9 and Rocky Linux 9 do not.
+  legacyBIOS: true

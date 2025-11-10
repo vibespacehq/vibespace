@@ -1,0 +1,60 @@
+.nh
+.TH "LIMACTL" "1" "Jul 2025" "" ""
+
+.SH NAME
+limactl - Lima: Linux virtual machines
+
+
+.SH SYNOPSIS
+\fBlimactl [flags]\fP
+
+
+.SH DESCRIPTION
+Lima: Linux virtual machines
+
+
+.SH OPTIONS
+\fB--debug\fP[=false]
+	Debug mode
+
+.PP
+\fB-h\fP, \fB--help\fP[=false]
+	help for limactl
+
+.PP
+\fB--log-format\fP="text"
+	Set the logging format [text, json]
+
+.PP
+\fB--log-level\fP=""
+	Set the logging level [trace, debug, info, warn, error]
+
+.PP
+\fB--tty\fP[=false]
+	Enable TUI interactions such as opening an editor. Defaults to true when stdout is a terminal. Set to false for automation.
+
+.PP
+\fB-y\fP, \fB--yes\fP[=false]
+	Alias of --tty=false
+
+
+.SH EXAMPLE
+.EX
+  Start the default instance:
+  $ limactl start
+
+  Open a shell:
+  $ lima
+
+  Run a container:
+  $ lima nerdctl run -d --name nginx -p 8080:80 nginx:alpine
+
+  Stop the default instance:
+  $ limactl stop
+
+  See also template YAMLs: /usr/local/share/lima/templates
+.EE
+
+
+.SH SEE ALSO
+\fBlimactl-clone(1)\fP, \fBlimactl-completion(1)\fP, \fBlimactl-copy(1)\fP, \fBlimactl-create(1)\fP, \fBlimactl-delete(1)\fP, \fBlimactl-disk(1)\fP, \fBlimactl-edit(1)\fP, \fBlimactl-factory-reset(1)\fP, \fBlimactl-info(1)\fP, \fBlimactl-list(1)\fP, \fBlimactl-network(1)\fP, \fBlimactl-protect(1)\fP, \fBlimactl-prune(1)\fP, \fBlimactl-restart(1)\fP, \fBlimactl-shell(1)\fP, \fBlimactl-show-ssh(1)\fP, \fBlimactl-snapshot(1)\fP, \fBlimactl-start(1)\fP, \fBlimactl-start-at-login(1)\fP, \fBlimactl-stop(1)\fP, \fBlimactl-sudoers(1)\fP, \fBlimactl-tunnel(1)\fP, \fBlimactl-unprotect(1)\fP, \fBlimactl-validate(1)\fP

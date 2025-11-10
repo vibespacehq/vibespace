@@ -1,11 +1,15 @@
 // Prevents additional console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod k8s_manager;
+
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose, Engine as _};
+use tauri::Emitter;
+use k8s_manager::{K8sManager, KubernetesStatus, InstallProgress};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
@@ -179,196 +183,92 @@ fn decrypt_data(encrypted: &str) -> Result<String, String> {
 }
 
 // ============================================================================
-// Kubernetes Detection Types
-// ============================================================================
-
-#[derive(Debug, Serialize)]
-struct KubernetesStatus {
-    available: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    install_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    version: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kubeconfig_path: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    suggested_action: Option<String>,
-}
-
-// ============================================================================
-// Tauri Commands - Kubernetes Detection
+// Tauri Commands - Bundled Kubernetes
 // ============================================================================
 
 #[tauri::command]
-async fn check_kubectl() -> Result<bool, String> {
-    println!("Checking kubectl availability...");
+async fn get_kubernetes_status() -> Result<KubernetesStatus, String> {
+    println!("Getting Kubernetes status...");
 
-    let output = Command::new("which")
-        .arg("kubectl")
-        .output();
+    // Use Local Mode (bundled k8s). Remote Mode not yet implemented.
+    let manager = K8sManager::new_local()?;
+    let status = manager.get_status();
 
-    match output {
-        Ok(result) => Ok(result.status.success()),
-        Err(_) => Ok(false),
-    }
+    println!("Kubernetes status: installed={}, running={}, is_external={}",
+        status.installed, status.running, status.is_external);
+
+    Ok(status)
 }
 
 #[tauri::command]
-async fn find_kubeconfig() -> Result<Option<String>, String> {
-    println!("Finding kubeconfig...");
+async fn install_kubernetes(app_handle: tauri::AppHandle) -> Result<(), String> {
+    println!("Installing bundled Kubernetes...");
 
-    // Check paths in order of preference
-    let paths = vec![
-        std::env::var("KUBECONFIG").ok(),
-        dirs::home_dir().map(|h| h.join(".kube/config").to_string_lossy().to_string()),
-        Some("/etc/rancher/k3s/k3s.yaml".to_string()),
-    ];
+    // Use Local Mode (bundled k8s). Remote Mode not yet implemented.
+    let manager = K8sManager::new_local()?;
 
-    for path in paths.into_iter().flatten() {
-        if std::path::Path::new(&path).exists() {
-            println!("Found kubeconfig at: {}", path);
-            return Ok(Some(path));
+    // Spawn installation in background thread to avoid blocking
+    std::thread::spawn(move || {
+        // Clone app_handle for error handling
+        let app_handle_clone = app_handle.clone();
+
+        let result = manager.install(move |progress: InstallProgress| {
+            let _ = app_handle.emit("install-progress", &progress);
+            println!("Install progress: {} - {}", progress.stage, progress.message);
+        });
+
+        if let Err(e) = result {
+            eprintln!("Kubernetes installation failed: {}", e);
+            let _ = app_handle_clone.emit("install-progress", &InstallProgress {
+                stage: "error".to_string(),
+                progress: 0,
+                message: format!("Installation failed: {}", e),
+            });
+        } else {
+            println!("Kubernetes installed successfully");
         }
-    }
+    });
 
-    println!("No kubeconfig found");
-    Ok(None)
+    // Return immediately - frontend will track progress via events
+    Ok(())
 }
 
 #[tauri::command]
-async fn check_cluster_health(kubeconfig_path: Option<String>) -> Result<bool, String> {
-    println!("Checking cluster health...");
+async fn start_kubernetes() -> Result<(), String> {
+    println!("Starting Kubernetes...");
 
-    let mut cmd = Command::new("kubectl");
-    cmd.arg("cluster-info");
+    let manager = K8sManager::new_local()?;
+    manager.start()?;
 
-    if let Some(path) = kubeconfig_path {
-        cmd.env("KUBECONFIG", path);
-    }
-
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to execute kubectl: {}", e))?;
-
-    Ok(output.status.success())
+    println!("Kubernetes started successfully");
+    Ok(())
 }
 
 #[tauri::command]
-async fn detect_install_type(kubeconfig_path: Option<String>) -> Result<String, String> {
-    println!("Detecting Kubernetes installation type...");
+async fn stop_kubernetes() -> Result<(), String> {
+    println!("Stopping Kubernetes...");
 
-    let mut cmd = Command::new("kubectl");
-    cmd.args(["version", "--output=json"]);
+    let manager = K8sManager::new_local()?;
+    manager.stop()?;
 
-    if let Some(path) = kubeconfig_path {
-        cmd.env("KUBECONFIG", path);
-    }
-
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to execute kubectl: {}", e))?;
-
-    if !output.status.success() {
-        return Ok("unknown".to_string());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Detect based on version string patterns
-    if stdout.contains("k3s") {
-        Ok("k3s".to_string())
-    } else if stdout.contains("rancher") {
-        Ok("rancher-desktop".to_string())
-    } else if stdout.contains("k3d") {
-        Ok("k3d".to_string())
-    } else if stdout.contains("minikube") {
-        Ok("minikube".to_string())
-    } else if stdout.contains("docker-desktop") {
-        Ok("docker-desktop".to_string())
-    } else {
-        Ok("unknown".to_string())
-    }
+    println!("Kubernetes stopped successfully");
+    Ok(())
 }
 
 #[tauri::command]
-async fn get_cluster_version(kubeconfig_path: Option<String>) -> Result<Option<String>, String> {
-    println!("Getting cluster version...");
+async fn uninstall_kubernetes() -> Result<(), String> {
+    println!("Uninstalling Kubernetes...");
 
-    let mut cmd = Command::new("kubectl");
-    cmd.args(["version", "--short", "--client=false"]);
+    let manager = K8sManager::new_local()?;
+    manager.uninstall()?;
 
-    if let Some(path) = kubeconfig_path {
-        cmd.env("KUBECONFIG", path);
-    }
-
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to execute kubectl: {}", e))?;
-
-    if !output.status.success() {
-        return Ok(None);
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(Some(stdout.trim().to_string()))
+    println!("Kubernetes uninstalled successfully");
+    Ok(())
 }
 
 #[tauri::command]
-async fn detect_kubernetes() -> Result<KubernetesStatus, String> {
-    println!("Detecting Kubernetes...");
-
-    // 1. Check kubectl availability
-    let kubectl_available = check_kubectl().await?;
-    if !kubectl_available {
-        return Ok(KubernetesStatus {
-            available: false,
-            install_type: None,
-            version: None,
-            kubeconfig_path: None,
-            error: Some("kubectl not found in PATH".to_string()),
-            suggested_action: Some("install_kubernetes".to_string()),
-        });
-    }
-
-    // 2. Find kubeconfig
-    let kubeconfig = find_kubeconfig().await?;
-    if kubeconfig.is_none() {
-        return Ok(KubernetesStatus {
-            available: false,
-            install_type: None,
-            version: None,
-            kubeconfig_path: None,
-            error: Some("No kubeconfig found".to_string()),
-            suggested_action: Some("install_kubernetes".to_string()),
-        });
-    }
-
-    let kubeconfig_path = kubeconfig.clone();
-
-    // 3. Check cluster health
-    let cluster_healthy = check_cluster_health(kubeconfig.clone()).await?;
-    if !cluster_healthy {
-        return Ok(KubernetesStatus {
-            available: false,
-            install_type: None,
-            version: None,
-            kubeconfig_path,
-            error: Some("Cluster unreachable or not running".to_string()),
-            suggested_action: Some("start_kubernetes".to_string()),
-        });
-    }
-
-    // 4. Detect installation type and version
-    let install_type = detect_install_type(kubeconfig.clone()).await.ok();
-    let version = get_cluster_version(kubeconfig).await.ok().flatten();
-
-    Ok(KubernetesStatus {
-        available: true,
-        install_type,
-        version,
-        kubeconfig_path,
-        error: None,
-        suggested_action: None,
-    })
+async fn get_os_type() -> Result<String, String> {
+    Ok(std::env::consts::OS.to_string())
 }
 
 // ============================================================================
@@ -689,13 +589,13 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
-            // Kubernetes detection
-            detect_kubernetes,
-            check_kubectl,
-            find_kubeconfig,
-            check_cluster_health,
-            detect_install_type,
-            get_cluster_version,
+            // Bundled Kubernetes
+            get_kubernetes_status,
+            install_kubernetes,
+            start_kubernetes,
+            stop_kubernetes,
+            uninstall_kubernetes,
+            get_os_type,
             // Credentials
             save_credential,
             get_credentials,
