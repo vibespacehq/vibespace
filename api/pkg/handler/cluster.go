@@ -42,6 +42,36 @@ func (h *ClusterHandler) GetStatus(c *gin.Context) {
 	slog.Info("cluster status check requested",
 		"remote_addr", c.ClientIP())
 
+	// Check if k8s client is nil (k8s not available when API started)
+	// Try to reinitialize in case k8s was installed after API server started
+	if h.k8sClient == nil {
+		slog.Info("k8s client is nil, attempting to initialize",
+			"remote_addr", c.ClientIP())
+
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			slog.Warn("failed to initialize k8s client, k8s not available yet",
+				"error", err,
+				"remote_addr", c.ClientIP())
+			c.JSON(http.StatusServiceUnavailable, ClusterStatusResponse{
+				Healthy: false,
+				Message: "Kubernetes not available - install via setup wizard",
+				Components: &k8s.ClusterComponents{
+					Knative:  k8s.ComponentStatus{Installed: false, Healthy: false},
+					Traefik:  k8s.ComponentStatus{Installed: false, Healthy: false},
+					Registry: k8s.ComponentStatus{Installed: false, Healthy: false},
+					BuildKit: k8s.ComponentStatus{Installed: false, Healthy: false},
+				},
+			})
+			return
+		}
+
+		// Successfully initialized - update the handler's client
+		h.k8sClient = newClient
+		slog.Info("k8s client initialized successfully",
+			"remote_addr", c.ClientIP())
+	}
+
 	// Check components
 	components, err := h.k8sClient.CheckComponents(ctx)
 	if err != nil {
@@ -95,6 +125,30 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 
 	slog.Info("cluster setup request received",
 		"remote_addr", c.ClientIP())
+
+	// Check if k8s client is nil (k8s not available when API started)
+	// Try to reinitialize in case k8s was installed after API server started
+	if h.k8sClient == nil {
+		slog.Info("k8s client is nil, attempting to initialize for cluster setup",
+			"remote_addr", c.ClientIP())
+
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			slog.Error("failed to initialize k8s client for cluster setup",
+				"error", err,
+				"remote_addr", c.ClientIP())
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "Kubernetes not available",
+				"message": "Kubernetes must be installed before setting up cluster components",
+			})
+			return
+		}
+
+		// Successfully initialized - update the handler's client
+		h.k8sClient = newClient
+		slog.Info("k8s client initialized successfully for cluster setup",
+			"remote_addr", c.ClientIP())
+	}
 
 	// Set SSE headers
 	c.Header("Content-Type", "text/event-stream")
