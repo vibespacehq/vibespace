@@ -4,7 +4,6 @@ import {
   useKubernetesStatus,
   useKubernetesInstall,
   useKubernetesControl,
-  getOSType,
 } from '../../../hooks/useKubernetesStatus';
 import { ProgressSidebar } from './ProgressSidebar';
 import { ClusterStatus, SetupProgress } from '../../../lib/types';
@@ -62,18 +61,10 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const { install: installK8s, isInstalling, progress: k8sProgress, error: k8sError, installComplete } = useKubernetesInstall();
   const { start: startK8s, isStarting } = useKubernetesControl();
   const [setupState, setSetupState] = useState<SetupState>('checking');
-  const [clusterStatus, setClusterStatus] = useState<ClusterStatus | null>(null);
   const [setupProgress, setSetupProgress] = useState<Record<string, SetupProgress>>({});
   const [error, setError] = useState<string | null>(null);
-  const [osType, setOsType] = useState<string>('');
-  const [showExternalMigration, setShowExternalMigration] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const installInProgressRef = useRef(false);
-
-  // Detect OS type on mount
-  useEffect(() => {
-    getOSType().then(setOsType);
-  }, []);
 
   // Update setup state based on Kubernetes status
   useEffect(() => {
@@ -84,10 +75,9 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
 
     if (!status) return;
 
-    // Handle external Kubernetes installations (migration path)
-    if (status.is_external && status.running) {
-      setShowExternalMigration(true);
-      setSetupState('checking');
+    // Skip external Kubernetes installations (not officially supported)
+    if (status.is_external) {
+      console.warn('External Kubernetes detected - not officially supported, use bundled k8s');
       return;
     }
 
@@ -186,8 +176,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     try {
       const clusterStat = await apiFetch<ClusterStatus>(API_ENDPOINTS.clusterStatus);
 
-      setClusterStatus(clusterStat);
-
       if (clusterStat.healthy) {
         setSetupState('ready');
       } else {
@@ -211,7 +199,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         installComponents();
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to check cluster status:', err);
       // Don't fail immediately - Kubernetes might still be starting up
       // Retry after a short delay
@@ -312,19 +299,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
 
     const done = components.filter((c) => c.status === 'done').length;
     return Math.round((done / components.length) * 100);
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'done':
-        return '✓';
-      case 'installing':
-        return '⚙️';
-      case 'error':
-        return '❌';
-      default:
-        return '⏳';
-    }
   };
 
   const getComponentName = (component: string) => {
