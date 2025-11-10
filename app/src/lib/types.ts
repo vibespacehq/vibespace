@@ -1,12 +1,31 @@
-// Kubernetes Detection Types
+// Kubernetes Status Types (Bundled Approach)
 
+/**
+ * Status of bundled Kubernetes runtime (Colima on macOS, k3s on Linux).
+ * Returned by get_kubernetes_status Tauri command.
+ *
+ * @public
+ * @see ADR 0006 for bundled Kubernetes architecture
+ */
 export interface KubernetesStatus {
-  available: boolean;
-  installType?: string;
+  installed: boolean;
+  running: boolean;
   version?: string;
-  kubeconfigPath?: string;
+  is_external: boolean;
   error?: string;
-  suggestedAction?: 'install_kubernetes' | 'start_kubernetes' | 'check_installation';
+  suggested_action?: 'install' | 'start' | 'restart' | 'start_external';
+}
+
+/**
+ * Progress update during Kubernetes installation.
+ * Emitted via 'install-progress' event from install_kubernetes command.
+ *
+ * @public
+ */
+export interface InstallProgress {
+  stage: 'extracting' | 'installing' | 'starting_vm' | 'starting_k3s' | 'verifying' | 'complete';
+  progress: number; // 0-100
+  message: string;
 }
 
 // Cluster Component Types
@@ -84,21 +103,6 @@ export type KubernetesInstallType =
   | 'minikube'
   | 'docker-desktop'
   | 'unknown';
-
-/**
- * Represents a Kubernetes context from the user's kubeconfig.
- * Used to allow users to select which cluster to install components to.
- *
- * @public
- * @see Issue #29 for cluster selection implementation
- */
-export interface ClusterContext {
-  name: string;
-  cluster: string;
-  user: string;
-  is_current: boolean;
-  is_local: boolean;
-}
 
 // Vibespace Types
 
