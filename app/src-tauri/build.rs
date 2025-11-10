@@ -5,7 +5,7 @@ fn main() {
     // Download Kubernetes binaries if missing
     // Only run on macOS or Linux (Windows not supported for bundled k8s)
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
-    let target_triple = std::env::var("CARGO_CFG_TARGET").unwrap_or_default();
+    let target_triple = std::env::var("TARGET").unwrap_or_default();
 
     if target_os == "macos" || target_os == "linux" {
         download_kubernetes_binaries(&target_os);
