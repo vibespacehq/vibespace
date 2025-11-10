@@ -23,7 +23,7 @@ export interface KubernetesStatus {
  * @public
  */
 export interface InstallProgress {
-  stage: 'extracting' | 'installing' | 'starting_vm' | 'starting_k3s' | 'verifying' | 'complete';
+  stage: 'extracting' | 'installing' | 'starting_vm' | 'starting_k3s' | 'verifying' | 'complete' | 'error';
   progress: number; // 0-100
   message: string;
 }

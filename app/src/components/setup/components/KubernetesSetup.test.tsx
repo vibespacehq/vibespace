@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { KubernetesSetup } from './KubernetesSetup';
 import * as kubernetesHook from '../../../hooks/useKubernetesStatus';
-import type { KubernetesStatus, InstallProgress } from '../../../lib/types';
+import type { KubernetesStatus } from '../../../lib/types';
 
 // Mock the hooks
 vi.mock('../../../hooks/useKubernetesStatus', () => ({
