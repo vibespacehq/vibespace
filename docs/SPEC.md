@@ -36,7 +36,6 @@ vibespace/                  # Root (singular)
 ├── api/                   # Backend API server
 ├── images/                # Container images
 ├── k8s/                   # Kubernetes manifests
-├── script/                # Utility scripts
 └── docs/                  # Documentation
 ```
 
@@ -51,7 +50,7 @@ vibespace/                  # Root (singular)
 
 **Go Packages**:
 - Singular names: `vibespace/`, `template/`, `credential/`
-- Standard layout: `cmd/`, `pkg/`, `config/`, `script/`
+- Standard layout: `cmd/`, `pkg/`, `config/`
 
 **API Paths**:
 - Collections: `/api/v1/vibespaces`
@@ -197,43 +196,58 @@ An open-source Tauri desktop app for managing isolated dev environments running 
 
 ### 2.3 Deployment Modes
 
-#### 2.3.1 Local Mode (Default)
+**vibespace supports two deployment architectures**. See [ADR 0006](adr/0006-bundled-kubernetes-runtime.md) for architectural details.
 
-All components run on local machine:
+#### 2.3.1 Local Mode (Current Implementation - MVP)
+
+All components run on local machine with **bundled Kubernetes runtime**:
 
 ```
 ┌─────────────────────┐
 │   Desktop App       │  localhost
 │   (Tauri)           │
 └──────────┬──────────┘
-           │
+           │ HTTP
 ┌──────────▼──────────┐
 │   API Server        │  localhost:8090
 │   (Go)              │
 └──────────┬──────────┘
-           │
+           │ Kubernetes API
 ┌──────────▼──────────┐
-│   k3s Cluster       │  local
+│  Bundled k3s        │  local (Colima/k3s)
 │   - Vibespaces      │
 │   - BuildKit        │
 │   - Registry        │
 └─────────────────────┘
+
+All on same machine
 ```
 
+**Implementation** (ADR 0006):
+- macOS: Colima (lightweight VM) + k3s
+- Linux: Native k3s binary
+- Windows: Not supported (use WSL2 + Linux version)
+
 **Pros**:
+- Zero-configuration setup (~3-5 minutes)
+- No external dependencies
 - No cloud costs
 - Fastest performance
 - Complete offline capability
 - Full data privacy
+- Consistent experience across users
 
 **Cons**:
 - Limited by local resources
-- No remote access
+- No remote access without tunneling
 - Manual backup required
+- Larger app download (~150MB vs ~20MB)
+
+**Status**: Fully implemented in MVP Phase 1
 
 ---
 
-#### 2.3.2 Cloud Mode
+#### 2.3.2 Remote Mode (Planned for Post-MVP)
 
 Desktop app local, backend/vibespaces in cloud:
 
@@ -264,21 +278,37 @@ Desktop app local, backend/vibespaces in cloud:
 └────────────────────────────────┘
 ```
 
+**Implementation** (planned Post-MVP):
+- Tauri app does NOT bundle Kubernetes
+- User manually provisions VPS with k8s (or uses managed k8s)
+- App configured with remote API endpoint (HTTPS)
+- `RemoteK8sProvider` trait handles connection, auth, tunneling
+
 **Pros**:
 - Access from anywhere
 - Unlimited cloud resources
-- Automatic backups
+- Automatic backups (if using managed k8s)
 - Team collaboration ready
 
 **Cons**:
-- Monthly cloud costs (~$50-200/month)
+- Monthly cloud costs (~$50-200/month for VPS)
 - Requires internet connection
 - Slightly higher latency
+- Manual VPS setup required (initially)
 
-**Cloud Setup**:
+**Remote Setup** (initial implementation):
+1. User provisions VPS (DigitalOcean, AWS, GCP, etc.)
+2. User installs k3s on VPS manually
+3. User configures vibespace API server on VPS
+4. Desktop app: User enters remote API endpoint URL
+5. App saves connection config (endpoint, auth token)
+6. Optional: WireGuard tunnel for secure vibespace access
+7. Desktop app connects to remote API via HTTPS
+
+**Future Enhancement** (Auto-Provisioning):
 1. User provides cloud credentials (AWS Access Key, GCP Service Account)
 2. App provisions k3s cluster using Terraform/Pulumi
-3. Installs Knative + Traefik + cert-manager
+3. Installs Knative + Traefik + cert-manager automatically
 4. Configures WireGuard tunnel for secure access
 5. Desktop app connects to `api.yourvibespace.cloud`
 
@@ -673,10 +703,9 @@ api/
 │   │   ├── credential.go              # Credential handlers
 │   │   ├── cluster.go                 # Cluster handlers
 │   │   └── middleware.go              # CORS, logging, auth
-│   ├── k3s/
-│   │   ├── detector.go                # k3s/kubectl detection
-│   │   ├── client.go                  # Kubernetes client
-│   │   └── health.go                  # Cluster health checks
+│   ├── k8s/
+│   │   ├── client.go                  # Kubernetes client (bundled k8s)
+│   │   └── context.go                 # Kubeconfig management
 │   ├── vibespace/
 │   │   ├── service.go                 # Business logic
 │   │   ├── knative.go                 # Knative Service management
@@ -744,106 +773,120 @@ credential:
 
 ---
 
-### 4.3 Kubernetes Cluster Setup
+### 4.3 Kubernetes Cluster Setup (Local Mode)
 
-#### 4.3.1 Installation Approach (MVP)
+#### 4.3.1 Installation Approach (Bundled Kubernetes)
 
-**Phase 1 (MVP)**: Detection + Guided Setup
+**Implementation** (ADR 0006): **Bundle Kubernetes runtime** with vibespace application
 
-The app **detects** existing Kubernetes installations and guides users to install if missing. This approach:
-- ✅ Targets developer early adopters
-- ✅ Supports multiple install methods (k3s, Rancher Desktop, k3d)
-- ✅ Ships faster (no bundling complexity)
-- ✅ More secure (no sudo from app)
+The app **bundles** Kubernetes binaries and provides one-click installation. This approach:
+- ✅ Zero-configuration onboarding (~3-5 minutes)
+- ✅ Consistent experience across all users
+- ✅ No external dependencies or installation guides
+- ✅ Matches competitor simplicity (Vercel, Replit, GitHub Codespaces)
+- ✅ Predictable behavior (same k8s version for everyone)
 
-**Supported Installations**:
-1. **Rancher Desktop** (Recommended) - GUI-based k3s management
-2. **Native k3s** (Advanced) - Command-line installation
-3. **k3d** (Alternative) - k3s in Docker
-4. **Existing clusters** - Any accessible Kubernetes cluster
+**Bundled Components**:
+- **macOS**: Colima (~20MB) + Lima (~30MB) + k3s
+- **Linux**: k3s binary (~50MB)
+- **kubectl**: Kubernetes CLI (~50MB, shared across platforms)
+- **Total app size**: ~150MB (vs ~20MB with detection approach)
 
-**Detection Logic**:
+**Platforms**:
+- ✅ **macOS** (Intel + ARM): Colima + Lima VM + k3s
+- ✅ **Linux**: Native k3s binary
+- ❌ **Windows**: Not supported in Local Mode (use WSL2 + Linux version)
+
+**Installation Flow**:
 ```typescript
 // app/src/hooks/useKubernetesStatus.ts
-// TODO(#14): Implement this detection logic
-async function detectKubernetes() {
-  try {
-    // 1. Check kubectl availability
-    const kubectlAvailable = await invoke('check_kubectl');
-    if (!kubectlAvailable) {
-      return {
-        available: false,
-        error: 'kubectl not found in PATH',
-        suggestedAction: 'install_kubernetes'
-      };
-    }
+// Implemented with bundled k8s approach
 
-    // 2. Find kubeconfig (check multiple locations)
-    const kubeconfigPath = await invoke('find_kubeconfig', {
-      paths: [
-        '~/.kube/config',              // Rancher Desktop, k3d
-        '/etc/rancher/k3s/k3s.yaml',  // Native k3s
-        process.env.KUBECONFIG         // User-defined
-      ]
-    });
+// 1. Check if bundled k8s is installed
+const { status } = useKubernetesStatus();
+//   status.installed: bool
+//   status.running: bool
+//   status.version: string
+//   status.is_external: bool (for backward compatibility)
 
-    // 3. Check cluster connectivity
-    const clusterHealthy = await invoke('check_cluster_health', { kubeconfigPath });
-    if (!clusterHealthy) {
-      return {
-        available: false,
-        error: 'Cluster unreachable or not running',
-        suggestedAction: 'start_kubernetes'
-      };
-    }
+// 2. If not installed, user clicks "Install Kubernetes"
+const { install, isInstalling, progress } = useKubernetesInstall();
+await install(); // One-click installation
 
-    // 4. Detect installation type and version
-    const installType = await invoke('detect_install_type'); // k3s, rancher, k3d, unknown
-    const version = await invoke('get_cluster_version');
+// 3. Progress tracking via events
+listen('install-progress', (event) => {
+  // event.stage: 'extracting' | 'installing' | 'starting_vm' | 'verifying'
+  // event.progress: 0-100
+  // event.message: "Starting Colima VM..." etc.
+});
 
-    return {
-      available: true,
-      type: installType,
-      version: version,
-      kubeconfigPath: kubeconfigPath
-    };
-  } catch (error) {
-    return {
-      available: false,
-      error: error.message,
-      suggestedAction: 'check_installation'
-    };
+// 4. Kubernetes starts automatically after installation
+// 5. Components installed (Knative, Traefik, etc.)
+// 6. Ready to create vibespaces
+```
+
+**Binary Bundling**:
+
+Binaries downloaded during build (not committed to git):
+
+```bash
+# macOS
+app/src-tauri/binaries/macos/colima         # ~20MB
+app/src-tauri/binaries/macos/limactl        # ~30MB
+app/src-tauri/binaries/kubectl-darwin-amd64 # ~50MB
+
+# Linux
+app/src-tauri/binaries/linux/k3s            # ~50MB
+app/src-tauri/binaries/kubectl-linux-amd64  # ~50MB
+```
+
+Configured in `tauri.conf.json`:
+```json
+{
+  "bundle": {
+    "resources": {
+      "binaries/macos/*": "binaries/macos/",
+      "binaries/linux/*": "binaries/linux/"
+    },
+    "externalBin": [
+      "binaries/macos/colima",
+      "binaries/macos/limactl",
+      "binaries/linux/k3s",
+      "binaries/kubectl-darwin-amd64",
+      "binaries/kubectl-linux-amd64"
+    ]
   }
 }
 ```
 
-**Platform-Specific Installation Instructions**:
+**Platform-Specific Installation**:
 
-**macOS**:
+**macOS** (Colima + k3s):
 ```bash
-# Option 1 (Recommended): Rancher Desktop
-# Download from https://rancherdesktop.io/
-# Enable Kubernetes in settings
-
-# Option 2 (Advanced): Native k3s
-brew install k3s
+# Automated by app - user clicks "Install Kubernetes"
+# 1. Extract colima, limactl, kubectl binaries to ~/.vibespace/bin/
+# 2. Start Colima with k3s:
+colima start --kubernetes --cpu 2 --memory 4 --disk 10
+# 3. Kubeconfig: ~/.colima/default/kubeconfig.yaml
+# 4. Verify cluster ready
+# 5. Install components (Knative, Traefik, etc.)
 ```
 
-**Linux**:
+**Linux** (native k3s):
 ```bash
-# Option 1: Native k3s
-curl -sfL https://get.k3s.io | sh -s - \
+# Automated by app - user clicks "Install Kubernetes"
+# 1. Extract k3s, kubectl binaries to ~/.vibespace/bin/
+# 2. Start k3s server:
+k3s server --data-dir ~/.vibespace/k3s-data \
+  --write-kubeconfig ~/.kube/config \
   --write-kubeconfig-mode 644 \
   --disable traefik
-
-# Option 2: Rancher Desktop
-# Download .deb/.rpm from https://rancherdesktop.io/
+# 3. Verify cluster ready
+# 4. Install components (Knative, Traefik, etc.)
 ```
 
 **Windows**:
-```powershell
-# Recommended: Rancher Desktop
-# Download installer from https://rancherdesktop.io/
+Not supported in Local Mode. Use WSL2 + Linux version for bundled k8s experience.
 
 # Alternative: WSL2 + k3s
 # Install WSL2, then run k3s inside Linux
@@ -872,7 +915,7 @@ curl -sfL https://get.k3s.io | sh -s - \
 
 #### 4.3.3 Post-Installation Setup
 
-Once Kubernetes is available (detected by the app), the following components are installed:
+Once Kubernetes is installed (via one-click bundled installation), the following components are installed:
 
 ```bash
 # Install Knative Serving
@@ -892,7 +935,7 @@ kubectl apply -f k8s/buildkit.yaml
 kubectl wait --for=condition=ready pod --all --all-namespaces --timeout=5m
 ```
 
-**Note**: This setup is automated by the app once Kubernetes is detected.
+**Note**: This setup is automated by the app once Kubernetes is installed.
 
 #### 4.3.4 Manifests
 
@@ -2731,16 +2774,16 @@ $ vibespace template import my-django-template.tar.gz
   - BuildKit v0.17.3 container builder (45 lines)
   - All manifests embedded via `go:embed`
   - Component versions (ADR 0004)
-- [x] **Cluster detection & setup** (app/src/components/setup/components/KubernetesSetup.tsx:1-582)
-  - Detects k3s, Rancher Desktop, k3d installations
-  - Real-time component installation with SSE streaming (lines 160-189)
-  - Auto-installs Knative, Traefik, Registry, BuildKit if missing
+- [x] **Cluster installation & setup** (app/src/components/setup/components/KubernetesSetup.tsx:1-628)
+  - One-click bundled Kubernetes installation (Colima on macOS, k3s on Linux)
+  - Real-time installation progress with SSE streaming
+  - Auto-installs cluster components: Knative v1.15.2, Traefik v3.5.3, Registry 2.8.3, BuildKit v0.17.3
+  - Trait-based K8sProvider architecture for Local/Remote modes (ADR 0006)
   - Full frontend → backend integration (API_ENDPOINTS.clusterStatus, clusterSetup)
 - [x] **API server** (api/cmd/server/main.go:1-97)
   - Vibespace CRUD endpoints (GET/POST/DELETE /api/v1/vibespaces)
   - Cluster management endpoints (GET/POST /api/v1/cluster/status, /setup)
-  - Kubernetes context switching (GET/POST /api/v1/cluster/contexts)
-  - SSE streaming for cluster setup progress
+  - SSE streaming for installation and setup progress
 - [x] **Frontend UI**
   - Setup wizard flow (AuthenticationSetup → KubernetesSetup → ConfigurationSetup)
   - Vibespace list with status polling (app/src/hooks/useVibespaces.ts:1-238)
@@ -2754,26 +2797,35 @@ $ vibespace template import my-django-template.tar.gz
 
 **Goal**: Complete vibespace creation with AI agents and real images
 
+#### Completed:
+- [x] **Docker images with AI agents** (api/pkg/template/images/):
+  - [x] **Base images** (base-claude, base-codex, base-gemini)
+    - ✅ code-server 4.104.3+ installed
+    - ✅ Claude Code CLI / OpenAI Codex / Gemini CLI installed
+    - ✅ CLAUDE.md / AGENT.md instruction files
+    - ✅ Agent auto-start configured via init-agents.sh
+    - ✅ Custom VS Code theme matching design system
+  - [x] **Next.js template** (templates/nextjs/Dockerfile)
+    - ✅ Next.js 15.5.5 + TypeScript + Tailwind + pnpm 10.18.3
+    - ✅ VS Code extensions (ESLint, Prettier, Tailwind CSS)
+    - ✅ AI agent integration (multi-agent support via ARG)
+    - ✅ Next.js-specific CLAUDE.md instructions
+  - [x] **Vue template** (templates/vue/Dockerfile)
+    - ✅ Vue 3 + Vite + TypeScript
+    - ✅ VS Code Vue extensions
+    - ✅ AI agent integration
+  - [x] **Jupyter template** (templates/jupyter/Dockerfile)
+    - ✅ Python 3.11 + Jupyter Lab
+    - ✅ Data science libraries (numpy, pandas, matplotlib, scikit-learn, seaborn)
+    - ✅ AI agent integration
+- [x] **Vibespace implementation with real images** (api/pkg/vibespace/service.go:220)
+  - ✅ Uses real vibespace images: `localhost:30500/vibespace-{template}-{agent}:latest`
+  - ✅ Dynamic container ports based on template (code-server:8080, preview ports per template)
+  - ✅ PVC mounting at /vibespace with proper permissions
+  - ✅ Init containers for git clone and permission fixes
+  - ✅ Security context with non-root user (UID 1001)
+
 #### In Progress:
-- [ ] **Docker images with AI agents**:
-  - [ ] **Base image** (images/base/Dockerfile:1-38)
-    - ✅ code-server 4.20.0 installed
-    - ❌ Add Claude Code CLI installation
-    - ❌ Add CLAUDE.md agent instruction files
-    - ❌ Configure agent auto-start on vibespace launch
-  - [ ] **Next.js template** (images/templates/nextjs/Dockerfile:1-35)
-    - ✅ Node.js 20 LTS + pnpm
-    - ✅ VS Code extensions (ESLint, Prettier)
-    - ❌ Add AI agent integration
-    - ❌ Add Next.js-specific CLAUDE.md instructions
-  - [ ] **Vue template** - CREATE NEW
-    - [ ] Vue 3 + Vite
-    - [ ] VS Code Vue extensions
-    - [ ] AI agent integration
-  - [ ] **Jupyter template** - CREATE NEW
-    - [ ] Python 3.11 + Jupyter Lab
-    - [ ] Data science libraries (numpy, pandas, matplotlib)
-    - [ ] AI agent integration
 - [ ] **Credential management backend**:
   - [ ] API handler (api/pkg/handler/credential.go) - CREATE
   - [ ] Service logic (api/pkg/credential/service.go) - CREATE
@@ -2784,17 +2836,13 @@ $ vibespace template import my-django-template.tar.gz
   - [ ] Environment variable injection (ANTHROPIC_API_KEY, OPENAI_API_KEY)
   - [ ] Git config injection (.gitconfig)
   - [ ] SSH key volume mounts (read-only)
-- [ ] **Replace vibespace placeholder** (api/pkg/vibespace/service.go:134)
-  - ❌ Currently uses `nginx:alpine` placeholder
-  - [ ] Update to use real vibespace images: `localhost:5000/vibespace-{template}:latest`
-  - [ ] Dynamic container port based on template (8080 for code-server)
-  - [ ] PVC mounting at /vibespace
 
 #### Blocked By:
-- Docker images must be built before vibespace service can use them
 - Credential backend needed before secrets can be injected
 
 **Target**: End of Week 3 - vibespaces launch with AI agents, persistent storage, and credentials
+
+**Note**: Docker image building is fully automated via BuildAllTemplates during cluster setup (api/pkg/k8s/setup.go:462)
 
 ---
 
@@ -2832,7 +2880,7 @@ $ vibespace template import my-django-template.tar.gz
 **Target**: End of Week 3 - Alpha release to 10 beta testers
 
 **Success Criteria (MVP Phase 1)**:
-- ✅ Kubernetes cluster auto-detected or guided setup complete
+- ✅ Kubernetes cluster installed via one-click bundled setup
 - ✅ All infrastructure components installed (Knative, Traefik, Registry, BuildKit)
 - ✅ Users can create vibespaces from templates (Next.js, Vue, Jupyter)
 - ✅ AI coding agents pre-configured and working (Claude Code, OpenAI Codex)

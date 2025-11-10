@@ -2,7 +2,7 @@
 
 **Date**: 2025-01-08
 
-**Status**: Accepted
+**Status**: Superseded by [ADR 0006: Bundle Kubernetes Runtime](0006-bundled-kubernetes-runtime.md) (2025-01-06)
 
 ---
 
