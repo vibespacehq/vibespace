@@ -336,6 +336,75 @@
   filter: blur(4px);
 }
 
+.setup-description {
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin: 0 0 var(--spacing-6) 0;
+  max-width: 600px;
+}
+
+.installation-info {
+  margin: var(--spacing-6) 0;
+}
+
+.installation-note {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
+.progress-status-text {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Installation progress display */
+.install-progress-container {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0;
+}
+
+.install-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--spacing-4);
+}
+
+.install-progress-message {
+  font-size: 1rem;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.install-progress-percentage {
+  font-size: 1.5rem;
+  color: var(--accent-tertiary);
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -0.02em;
+}
+
+.install-progress-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.install-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-primary), var(--accent-tertiary));
+  border-radius: 999px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 16px rgba(241, 2, 243, 0.6);
+}
+
 
 /* Setup actions (bottom buttons) */
 .setup-actions {
