@@ -504,7 +504,7 @@ impl LocalK8sProvider {
         let new_path = format!("{}:{}:{}", lima_bin_dir.display(), bin_dir.display(), current_path);
 
         let command_str = format!(
-            "PATH='{}' '{}' start --kubernetes --cpu 2 --memory 4 --disk 10",
+            "PATH='{}' '{}' start --kubernetes --cpu 2 --memory 4 --disk 60",
             new_path,
             colima_dest.display()
         );

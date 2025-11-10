@@ -69,7 +69,7 @@ if [ ! -f /workspace/.initialized ]; then\n\
   cp ~/JUPYTER-GUIDE.md ./README.md\n\
   \n\
   # Create example notebook\n\
-  cat > notebooks/01-getting-started.ipynb << '\''"'"'NOTEBOOK'\''"'"'\n\
+  cat > notebooks/01-getting-started.ipynb << '\''EOF_NOTEBOOK'\''\n\
 {\n\
  "cells": [\n\
   {\n\
@@ -133,10 +133,10 @@ if [ ! -f /workspace/.initialized ]; then\n\
  "nbformat": 4,\n\
  "nbformat_minor": 4\n\
 }\n\
-NOTEBOOK\n\
+EOF_NOTEBOOK\n\
   \n\
   # Create .gitignore\n\
-  cat > .gitignore << '\''"'"'GITIGNORE'\''"'"'\n\
+  cat > .gitignore << '\''EOF_GITIGNORE'\''\n\
 # Jupyter\n\
 .ipynb_checkpoints/\n\
 */.ipynb_checkpoints/*\n\
@@ -155,7 +155,7 @@ data/raw/*\n\
 # Outputs\n\
 outputs/*\n\
 !outputs/.gitkeep\n\
-GITIGNORE\n\
+EOF_GITIGNORE\n\
   \n\
   # Create .gitkeep files\n\
   touch data/raw/.gitkeep data/processed/.gitkeep scripts/.gitkeep outputs/.gitkeep\n\
