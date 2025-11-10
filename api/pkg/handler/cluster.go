@@ -42,6 +42,36 @@ func (h *ClusterHandler) GetStatus(c *gin.Context) {
 	slog.Info("cluster status check requested",
 		"remote_addr", c.ClientIP())
 
+	// Check if k8s client is nil (k8s not available when API started)
+	// Try to reinitialize in case k8s was installed after API server started
+	if h.k8sClient == nil {
+		slog.Info("k8s client is nil, attempting to initialize",
+			"remote_addr", c.ClientIP())
+
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			slog.Warn("failed to initialize k8s client, k8s not available yet",
+				"error", err,
+				"remote_addr", c.ClientIP())
+			c.JSON(http.StatusServiceUnavailable, ClusterStatusResponse{
+				Healthy: false,
+				Message: "Kubernetes not available - install via setup wizard",
+				Components: &k8s.ClusterComponents{
+					Knative:  k8s.ComponentStatus{Installed: false, Healthy: false},
+					Traefik:  k8s.ComponentStatus{Installed: false, Healthy: false},
+					Registry: k8s.ComponentStatus{Installed: false, Healthy: false},
+					BuildKit: k8s.ComponentStatus{Installed: false, Healthy: false},
+				},
+			})
+			return
+		}
+
+		// Successfully initialized - update the handler's client
+		h.k8sClient = newClient
+		slog.Info("k8s client initialized successfully",
+			"remote_addr", c.ClientIP())
+	}
+
 	// Check components
 	components, err := h.k8sClient.CheckComponents(ctx)
 	if err != nil {
@@ -95,6 +125,30 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 
 	slog.Info("cluster setup request received",
 		"remote_addr", c.ClientIP())
+
+	// Check if k8s client is nil (k8s not available when API started)
+	// Try to reinitialize in case k8s was installed after API server started
+	if h.k8sClient == nil {
+		slog.Info("k8s client is nil, attempting to initialize for cluster setup",
+			"remote_addr", c.ClientIP())
+
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			slog.Error("failed to initialize k8s client for cluster setup",
+				"error", err,
+				"remote_addr", c.ClientIP())
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error":   "Kubernetes not available",
+				"message": "Kubernetes must be installed before setting up cluster components",
+			})
+			return
+		}
+
+		// Successfully initialized - update the handler's client
+		h.k8sClient = newClient
+		slog.Info("k8s client initialized successfully for cluster setup",
+			"remote_addr", c.ClientIP())
+	}
 
 	// Set SSE headers
 	c.Header("Content-Type", "text/event-stream")
@@ -181,110 +235,15 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 	})
 }
 
-// ListContexts returns all available Kubernetes contexts
-// GET /api/v1/cluster/contexts
-func (h *ClusterHandler) ListContexts(c *gin.Context) {
-	slog.Info("list contexts request received",
-		"remote_addr", c.ClientIP())
-
-	contexts, err := k8s.ListContexts()
-	if err != nil {
-		slog.Error("failed to list contexts",
-			"error", err,
-			"remote_addr", c.ClientIP())
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to list contexts",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	slog.Info("list contexts request completed",
-		"count", len(contexts),
-		"remote_addr", c.ClientIP())
-
-	c.JSON(http.StatusOK, gin.H{
-		"contexts": contexts,
-	})
-}
-
-// SwitchContextRequest represents the request body for context switching
-type SwitchContextRequest struct {
-	Confirmed bool `json:"confirmed"`
-}
-
-// SwitchContext switches to a different Kubernetes context
-// POST /api/v1/cluster/contexts/:name/switch
-func (h *ClusterHandler) SwitchContext(c *gin.Context) {
-	contextName := c.Param("name")
-	if contextName == "" {
-		slog.Warn("switch context request missing context name",
-			"remote_addr", c.ClientIP())
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Context name is required",
-		})
-		return
-	}
-
-	// Check if context is remote
-	isRemote := k8s.IsContextRemote(contextName)
-
-	slog.Info("switch context request received",
-		"context", contextName,
-		"is_remote", isRemote,
-		"remote_addr", c.ClientIP())
-
-	// For remote clusters, require confirmation
-	if isRemote {
-		var req SwitchContextRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			slog.Warn("invalid switch context request body",
-				"context", contextName,
-				"error", err,
-				"remote_addr", c.ClientIP())
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "Invalid request body",
-				"details": err.Error(),
-			})
-			return
-		}
-
-		if !req.Confirmed {
-			slog.Warn("switch context to remote cluster requires confirmation",
-				"context", contextName,
-				"remote_addr", c.ClientIP())
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":              "Confirmation required for remote cluster",
-				"requires_confirmation": true,
-				"is_remote":            true,
-				"context":              contextName,
-			})
-			return
-		}
-	}
-
-	err := k8s.SwitchContext(contextName)
-	if err != nil {
-		slog.Error("failed to switch context",
-			"context", contextName,
-			"is_remote", isRemote,
-			"error", err,
-			"remote_addr", c.ClientIP())
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":   "Failed to switch context",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	slog.Info("context switched successfully",
-		"context", contextName,
-		"is_remote", isRemote,
-		"remote_addr", c.ClientIP())
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":   fmt.Sprintf("Switched to context: %s", contextName),
-		"context":   contextName,
-		"is_remote": isRemote,
-	})
-}
+// NOTE: ListContexts and SwitchContext handlers removed with ADR 0006
+//
+// With bundled Kubernetes (ADR 0006), there is only one cluster managed by
+// vibespace. Context switching is no longer needed.
+//
+// Previously supported endpoints:
+// - GET /api/v1/cluster/contexts - List available contexts
+// - POST /api/v1/cluster/contexts/:name/switch - Switch active context
+//
+// These endpoints have been removed. See:
+// - ADR 0006: docs/adr/0006-bundled-kubernetes-runtime.md
+// - api/pkg/k8s/context.go for more details
