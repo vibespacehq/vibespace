@@ -11,9 +11,25 @@
 vibespace is a Tauri desktop app that manages isolated dev environments running as containers in k3s. Each vibespace includes code-server (VS Code in browser) and supports AI coding agents (Claude Code, OpenAI Codex).
 
 **Deployment Modes**:
-- **Local**: Everything runs on your machine (default)
-- **Cloud**: Desktop app local, vibespaces run in cloud (AWS/GCP/DigitalOcean)
-- **Hybrid**: Mix of local and cloud vibespaces
+
+vibespace supports two deployment architectures:
+
+1. **Local Mode** (Current Implementation - MVP):
+   - All components run on user's machine
+   - Tauri desktop app (UI)
+   - Go API server
+   - Bundled Kubernetes (Colima on macOS, k3s on Linux)
+   - All vibespaces run locally
+   - **Zero-configuration**: One-click installation, ~3-5 minutes setup
+
+2. **Remote Mode** (Planned for Post-MVP):
+   - Control plane (Tauri app) on user's machine
+   - Infrastructure (API + k8s) on VPS
+   - Tauri app connects to remote API via HTTPS
+   - Vibespaces run on VPS
+   - **Use case**: Remote development, team collaboration, cloud resources
+
+See [ADR 0006](docs/adr/0006-bundled-kubernetes-runtime.md) for architectural details.
 
 Think: Docker Desktop meets VS Code Remote meets Vercel, optimized for AI-assisted development.
 
@@ -45,7 +61,7 @@ vibespace/
 │       ├── vibespace/     # Vibespace management
 │       ├── template/      # Template building
 │       ├── credential/    # Credential management
-│       ├── k3s/          # Kubernetes client
+│       ├── k8s/           # Kubernetes client (bundled k8s)
 │       └── model/         # Data models
 ├── images/                # Container image Dockerfiles
 │   ├── base/             # Base image (code-server)
@@ -54,8 +70,6 @@ vibespace/
 │   ├── registry.yaml     # Local registry
 │   ├── buildkit.yaml     # BuildKit daemon
 │   └── traefik.yaml      # Ingress controller
-├── script/                # Utility scripts
-│   └── install_k3s.sh    # k3s setup script
 └── docs/                  # Documentation
 ```
 
@@ -187,13 +201,16 @@ docker build -t vibespace-base:latest .
 
 ### Project Commands
 ```bash
-# Install k3s cluster
-./script/install_k3s.sh
+# NOTE: Kubernetes installation is now handled by the Tauri app (one-click in UI)
+# No manual k8s setup needed! The app bundles Colima/k3s and kubectl.
 
-# Apply manifests
+# If you need to manually check cluster status:
+kubectl cluster-info
+
+# Apply additional manifests (cluster components auto-installed by app):
 kubectl apply -f k8s/
 
-# Build all templates
+# Build all templates (for local development):
 cd images
 for dir in templates/*; do
   docker build -t vibespace-$(basename $dir):latest $dir
@@ -326,44 +343,52 @@ Excellent k8s client library (`client-go`), fast, single binary deployment.
 ### Why k3s?
 Lightweight k8s (<512MB RAM), perfect for local development, easy to install.
 
-### Kubernetes Installation Strategy (MVP Decision)
+### Kubernetes Installation Strategy (Local Mode)
 
-**Decision**: Use **detection + guided setup** instead of bundling Kubernetes runtime.
+**Decision**: **Bundle Kubernetes runtime** with vibespace application for zero-configuration setup.
 
-**Why Detection Instead of Bundling?**
+**Implementation** (ADR 0006):
+- **macOS**: Colima (lightweight VM) + k3s
+- **Linux**: Native k3s binary
+- **Windows**: Not supported in Local Mode (use WSL2 + Linux version)
 
-For **MVP** (Phase 1), we're prioritizing:
-1. **Speed to market** - Ship in 3 weeks, not 11 weeks
-2. **Focus on core value** - Vibespace management, not cluster installation
-3. **Security** - No sudo execution from app, users control their system
-4. **Flexibility** - Supports k3s, Rancher Desktop, k3d, etc.
-5. **Validation first** - Prove the concept before building polished installer
+**Why Bundled Kubernetes?**
 
-**How It Works (MVP)**:
+For **Local Mode**, we prioritize zero-configuration onboarding:
+1. **Instant setup** - One-click installation, ~3-5 minutes
+2. **Reduced friction** - No external dependencies or installation guides
+3. **Consistent experience** - Same k8s version for all users
+4. **Predictable behavior** - Eliminates environment-specific issues
+5. **Matches competitors** - Vercel, Replit, GitHub Codespaces have zero-config onboarding
+
+**How It Works**:
 ```
-1. App checks for kubectl/k3s on startup
-2. If missing → Show platform-specific installation guide
-   - macOS: "Install Rancher Desktop OR brew install k3s"
-   - Linux: "curl -sfL https://get.k3s.io | sh -"
-   - Windows: "Install Rancher Desktop OR use WSL2"
-3. User installs via their preferred method
-4. Click "Verify" → App detects cluster and enables features
+1. User launches vibespace app
+2. Click "Install Kubernetes" button
+3. App extracts bundled binaries (Colima/k3s, kubectl)
+4. Automatic installation with real-time progress updates
+5. Cluster starts, components installed (Knative, Traefik, etc.)
+6. Ready to create vibespaces in ~3-5 minutes
 ```
 
-**Target Users (MVP)**: Developer early adopters who can run `brew install k3s`
+**Trait-Based Architecture** (supports future Remote Mode):
+- `K8sProvider` trait defines common interface
+- `LocalK8sProvider` implements bundled k8s (Colima/k3s)
+- `RemoteK8sProvider` (future) implements VPS connection
+- Frontend/backend use same API regardless of mode
 
-**Roadmap**:
-- **MVP Phase 1**: Detection + guided setup (Issue #14)
-- **MVP Phase 2**: Rancher Desktop deep integration (Issue #16)
-- **Post-MVP**: Full bundling with VM/k3s binaries (Issue #15)
+**External Kubernetes Handling**:
+- vibespace detects external k8s installations (Rancher Desktop, k3d, etc.) via `is_external` flag
+- Shows migration notice suggesting bundled approach for better experience
+- External installations still work but aren't officially supported (use at own risk)
 
-**Why This Is the Right Approach**:
-- Similar to how VS Code, Docker initially shipped, most dev tools work
-- Follows startup best practices: "Ship → Learn → Polish"
-- Bundling is always possible later if users demand it
-- Most developers already have k3s/Docker Desktop/Rancher Desktop
+**Remote Mode** (planned for Post-MVP):
+- No bundled k8s on user's machine
+- Tauri app configured to connect to remote API endpoint (HTTPS)
+- User manually provisions VPS with k8s
+- RemoteK8sProvider handles connection, auth, and tunneling
 
-**Future Enhancement**: Full zero-config bundling (VM + k3s + auto-setup) planned for v2.0 after MVP validation.
+**See**: [ADR 0006](docs/adr/0006-bundled-kubernetes-runtime.md) for full rationale and implementation details.
 
 ---
 
@@ -697,23 +722,25 @@ The pragmatic mix approach balances stability for MVP delivery with modern versi
 
 ## Current Phase
 
-**MVP Phase 1: Foundation** - 85% COMPLETE
+**MVP Phase 1: Foundation** - 95% COMPLETE
 
 ### Completed:
 - ✅ Infrastructure (Tauri app, Go API, k8s manifests)
-- ✅ Kubernetes detection & guided setup with SSE streaming
+- ✅ Bundled Kubernetes runtime (Colima/k3s) with trait-based architecture - **ADR 0006**
+- ✅ One-click k8s installation with real-time progress (SSE streaming)
 - ✅ Cluster component installation (Knative, Traefik, Registry, BuildKit)
-- ✅ Vibespace CRUD backend (with placeholder image)
+- ✅ Vibespace CRUD backend (with real vibespace images)
 - ✅ Full frontend UI (setup wizard, vibespace list)
 - ✅ Docker images with AI agents (base, Next.js, Vue, Jupyter) - **PR #38**
 - ✅ BuildKit integration with tests, docs, and structured logging
+- ✅ K8sProvider trait supporting both Local and Remote modes (architecture ready)
 
 ### In Progress:
 - ⏳ Credential management backend
 - ⏳ Kubernetes Secret generation
-- ⏳ Replace nginx placeholder with real vibespace images
+- ⏳ End-to-end testing
 
-**Next**: Complete credential backend and vibespace image integration, then move to end-to-end testing phase.
+**Next**: Complete credential backend, then move to end-to-end testing and MVP Phase 2.
 
 ---
 
