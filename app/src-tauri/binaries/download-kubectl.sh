@@ -10,26 +10,29 @@ cd "$SCRIPT_DIR"
 # Versions
 KUBECTL_VERSION="v1.27.16"
 
-# Platform and architecture detection
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-ARCH=$(uname -m)
-
-if [ "$OS" = "darwin" ]; then
-    KUBECTL_OS="darwin"
-elif [ "$OS" = "linux" ]; then
-    KUBECTL_OS="linux"
-else
-    echo "Unsupported OS: $OS"
-    exit 1
+# Platform and architecture detection (can be overridden by env vars)
+if [ -z "$KUBECTL_OS" ]; then
+    OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+    if [ "$OS" = "darwin" ]; then
+        KUBECTL_OS="darwin"
+    elif [ "$OS" = "linux" ]; then
+        KUBECTL_OS="linux"
+    else
+        echo "Unsupported OS: $OS"
+        exit 1
+    fi
 fi
 
-if [ "$ARCH" = "x86_64" ]; then
-    KUBECTL_ARCH="amd64"
-elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
-    KUBECTL_ARCH="arm64"
-else
-    echo "Unsupported architecture: $ARCH"
-    exit 1
+if [ -z "$KUBECTL_ARCH" ]; then
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "x86_64" ]; then
+        KUBECTL_ARCH="amd64"
+    elif [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then
+        KUBECTL_ARCH="arm64"
+    else
+        echo "Unsupported architecture: $ARCH"
+        exit 1
+    fi
 fi
 
 echo "Downloading kubectl for $KUBECTL_OS/$KUBECTL_ARCH..."
