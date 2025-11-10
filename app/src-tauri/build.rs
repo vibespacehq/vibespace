@@ -5,9 +5,11 @@ fn main() {
     // Download Kubernetes binaries if missing
     // Only run on macOS or Linux (Windows not supported for bundled k8s)
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_triple = std::env::var("CARGO_CFG_TARGET").unwrap_or_default();
 
     if target_os == "macos" || target_os == "linux" {
         download_kubernetes_binaries(&target_os);
+        create_target_triple_symlinks(&target_os, &target_triple);
     }
 
     // Standard Tauri build
@@ -133,5 +135,59 @@ fn check_and_download_kubectl(binaries_dir: &Path, target_os: &str) {
         println!("cargo:warning=✓ kubectl downloaded successfully");
     } else {
         println!("cargo:warning=✓ kubectl already present");
+    }
+}
+
+fn create_target_triple_symlinks(target_os: &str, target_triple: &str) {
+    use std::fs;
+
+    println!("cargo:warning=Creating target-triple symlinks for {}...", target_triple);
+
+    let binaries_dir = Path::new("binaries");
+
+    // Create symlinks for platform-specific binaries
+    match target_os {
+        "macos" => {
+            let macos_dir = binaries_dir.join("macos");
+            let colima_src = macos_dir.join("colima");
+            let colima_dst = macos_dir.join(format!("colima-{}", target_triple));
+
+            if colima_src.exists() && !colima_dst.exists() {
+                fs::copy(&colima_src, &colima_dst)
+                    .unwrap_or_else(|e| panic!("Failed to copy colima: {}", e));
+                println!("cargo:warning=✓ Created colima-{}", target_triple);
+            }
+        }
+        "linux" => {
+            let linux_dir = binaries_dir.join("linux");
+            let k3s_src = linux_dir.join("k3s");
+            let k3s_dst = linux_dir.join(format!("k3s-{}", target_triple));
+
+            if k3s_src.exists() && !k3s_dst.exists() {
+                fs::copy(&k3s_src, &k3s_dst)
+                    .unwrap_or_else(|e| panic!("Failed to copy k3s: {}", e));
+                println!("cargo:warning=✓ Created k3s-{}", target_triple);
+            }
+        }
+        _ => {}
+    }
+
+    // Create symlinks for kubectl
+    let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let kubectl_src_name = match (target_os, target_arch.as_str()) {
+        ("macos", "x86_64") => "kubectl-darwin-amd64",
+        ("macos", "aarch64") => "kubectl-darwin-arm64",
+        ("linux", "x86_64") => "kubectl-linux-amd64",
+        ("linux", "aarch64") => "kubectl-linux-arm64",
+        _ => return,
+    };
+
+    let kubectl_src = binaries_dir.join(kubectl_src_name);
+    let kubectl_dst = binaries_dir.join(format!("{}-{}", kubectl_src_name, target_triple));
+
+    if kubectl_src.exists() && !kubectl_dst.exists() {
+        fs::copy(&kubectl_src, &kubectl_dst)
+            .unwrap_or_else(|e| panic!("Failed to copy kubectl: {}", e));
+        println!("cargo:warning=✓ Created {}-{}", kubectl_src_name, target_triple);
     }
 }
