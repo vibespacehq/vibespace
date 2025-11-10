@@ -58,9 +58,9 @@
       "exceptionDomain": "",
       "signingIdentity": null,
       "entitlements": null,
-      "resources": [
-        "binaries/macos/lima-dist/**/*"
-      ]
+      "files": {
+        "binaries/macos/lima-dist": "lima-dist"
+      }
     },
     "linux": {
       "deb": {
