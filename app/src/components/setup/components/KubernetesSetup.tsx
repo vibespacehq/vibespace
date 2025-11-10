@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { useKubernetesStatus } from '../../../hooks/useKubernetesStatus';
-import { InstallationInstructions } from './InstallationInstructions';
+import {
+  useKubernetesStatus,
+  useKubernetesInstall,
+  useKubernetesControl,
+} from '../../../hooks/useKubernetesStatus';
 import { ProgressSidebar } from './ProgressSidebar';
-import { ClusterStatus, SetupProgress, ClusterContext } from '../../../lib/types';
+import { ClusterStatus, SetupProgress } from '../../../lib/types';
 import { API_ENDPOINTS, apiFetch } from '../../../lib/api-config';
 import '../styles/setup.css';
 import '../styles/KubernetesSetup.css';
@@ -12,17 +15,35 @@ interface KubernetesSetupProps {
   onComplete?: () => void;
 }
 
-type SetupState = 'detecting' | 'not-found' | 'selecting-cluster' | 'found' | 'installing' | 'ready' | 'error';
+type SetupState =
+  | 'checking'
+  | 'not-installed'
+  | 'installing-k8s'
+  | 'starting-k8s'
+  | 'installing-components'
+  | 'ready'
+  | 'error';
 
 /**
- * Infrastructure setup component for Kubernetes cluster detection and component installation.
+ * Infrastructure setup component for bundled Kubernetes installation and configuration.
  *
- * Handles the complete cluster setup flow:
- * 1. Detects Kubernetes installation (k3s, Rancher Desktop, k3d, etc.)
- * 2. Allows user to select cluster context
- * 3. Checks for required components (Knative, Traefik, Registry, BuildKit)
- * 4. Installs missing components with real-time progress via Server-Sent Events
- * 5. Builds all vibespace images (12 images total)
+ * DEPLOYMENT MODE: This component is for LOCAL MODE only, where all components
+ * (Tauri app, API server, k8s cluster) run on the user's machine.
+ *
+ * With ADR 0006, vibespace bundles Kubernetes runtime for Local Mode:
+ * - macOS: Colima (lightweight VM) + k3s
+ * - Linux: Native k3s installation
+ *
+ * Handles the complete setup flow:
+ * 1. Checks if bundled Kubernetes is installed
+ * 2. Installs Colima/k3s if missing (one-click installation)
+ * 3. Starts Kubernetes cluster
+ * 4. Installs required components (Knative, Traefik, Registry, BuildKit)
+ * 5. Builds all vibespace images
+ *
+ * For REMOTE MODE (Tauri app on user's machine, API/k8s on VPS), a different
+ * setup flow will be implemented in Post-MVP phase. Remote Mode does not install
+ * bundled k8s - it configures connection to remote API endpoint.
  *
  * @param props - Component props
  * @param props.onComplete - Callback invoked when setup completes successfully
@@ -32,28 +53,69 @@ type SetupState = 'detecting' | 'not-found' | 'selecting-cluster' | 'found' | 'i
  * <KubernetesSetup onComplete={() => navigate('/dashboard')} />
  * ```
  *
+ * @see ADR 0006 - Bundled Kubernetes Runtime
  * @public
  */
 export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const { status, isLoading, refetch } = useKubernetesStatus();
-  const [setupState, setSetupState] = useState<SetupState>('detecting');
-  const [clusterStatus, setClusterStatus] = useState<ClusterStatus | null>(null);
+  const { install: installK8s, isInstalling, progress: k8sProgress, error: k8sError, installComplete } = useKubernetesInstall();
+  const { start: startK8s, isStarting } = useKubernetesControl();
+  const [setupState, setSetupState] = useState<SetupState>('checking');
   const [setupProgress, setSetupProgress] = useState<Record<string, SetupProgress>>({});
   const [error, setError] = useState<string | null>(null);
-  const [contexts, setContexts] = useState<ClusterContext[]>([]);
-  const [selectedContext, setSelectedContext] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSwitchingContext, setIsSwitchingContext] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const installInProgressRef = useRef(false);
 
-  // Fetch available contexts when Kubernetes is detected
+  // Update setup state based on Kubernetes status
   useEffect(() => {
-    if (status?.available && setupState === 'detecting') {
-      fetchContexts();
-    } else if (!isLoading && !status?.available) {
-      setSetupState('not-found');
+    if (isLoading) {
+      setSetupState('checking');
+      return;
     }
-  }, [status, isLoading]);
+
+    if (!status) return;
+
+    // Skip external Kubernetes installations (not officially supported)
+    if (status.is_external) {
+      console.warn('External Kubernetes detected - not officially supported, use bundled k8s');
+      return;
+    }
+
+    // Handle bundled Kubernetes states
+    if (!status.installed) {
+      // Don't reset state if we're currently installing
+      if (!isInstalling && !installInProgressRef.current && setupState !== 'installing-k8s') {
+        setSetupState('not-installed');
+        installInProgressRef.current = false;
+      }
+    } else if (!status.running && !installInProgressRef.current && !isInstalling && !isStarting && setupState !== 'installing-k8s' && setupState !== 'starting-k8s') {
+      // Auto-start if installed but not running
+      // Skip if we're currently installing or starting (prevents race condition)
+      setSetupState('starting-k8s');
+      handleStartK8s();
+    } else if (status.running) {
+      // Kubernetes running, check components
+      installInProgressRef.current = false;
+      checkClusterComponents();
+    }
+  }, [status, isLoading, isInstalling, isStarting]);
+
+  // Handle Kubernetes installation errors
+  useEffect(() => {
+    if (k8sError) {
+      setError(k8sError);
+      setSetupState('error');
+    }
+  }, [k8sError]);
+
+  // Handle installation completion
+  useEffect(() => {
+    if (installComplete) {
+      // Installation finished, clear flag and refetch status
+      installInProgressRef.current = false;
+      refetch();
+    }
+  }, [installComplete, refetch]);
 
   // Cleanup EventSource on component unmount
   useEffect(() => {
@@ -67,63 +129,42 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   }, []);
 
   /**
-   * Fetches available Kubernetes contexts from the API.
-   * Displays cluster selection screen once contexts are loaded.
+   * Installs bundled Kubernetes (Colima on macOS, k3s on Linux).
+   * Progress is tracked via k8sProgress state.
    */
-  const fetchContexts = async () => {
+  const handleInstallK8s = async () => {
     try {
-      const data = await apiFetch<{ contexts: ClusterContext[] }>(API_ENDPOINTS.clusterContexts);
-
-      setContexts(data.contexts || []);
-
-      // Don't pre-select any context - force user to choose
-      setSelectedContext(null);
-
-      // Always show cluster selection
-      setSetupState('selecting-cluster');
+      installInProgressRef.current = true;
+      setSetupState('installing-k8s');
+      setError(null);
+      await installK8s();
+      // Don't refetch immediately - installation runs in background
+      // Status will be checked when installation completes via progress events
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('Failed to fetch contexts:', err);
-      setError(`Failed to load cluster contexts: ${message}`);
+      const message = err instanceof Error ? err.message : 'Installation failed';
+      console.error('Failed to install Kubernetes:', err);
+      setError(message);
       setSetupState('error');
+      installInProgressRef.current = false;
     }
   };
 
   /**
-   * Switches the active Kubernetes context.
-   * @param contextName - Name of the context to switch to
+   * Starts bundled Kubernetes cluster.
    */
-  const switchContext = async (contextName: string) => {
+  const handleStartK8s = async () => {
     try {
-      setIsSwitchingContext(true);
-      await apiFetch(API_ENDPOINTS.clusterContextSwitch(contextName), {
-        method: 'POST',
-      });
-
-      setSelectedContext(contextName);
+      setSetupState('starting-k8s');
+      setError(null);
+      await startK8s();
+      // After starting, refetch status to trigger component check
+      await refetch();
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error('Failed to switch context:', err);
-      setError(`Failed to switch cluster context: ${message}`);
+      const message = err instanceof Error ? err.message : 'Failed to start';
+      console.error('Failed to start Kubernetes:', err);
+      setError(message);
       setSetupState('error');
-    } finally {
-      setIsSwitchingContext(false);
     }
-  };
-
-  const proceedWithSelectedCluster = async () => {
-    if (!selectedContext) {
-      return;
-    }
-
-    // Switch to selected context if it's not current
-    const current = contexts.find(ctx => ctx.is_current);
-    if (current?.name !== selectedContext) {
-      await switchContext(selectedContext);
-    }
-
-    // Proceed to component check
-    checkClusterComponents();
   };
 
   /**
@@ -135,13 +176,10 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     try {
       const clusterStat = await apiFetch<ClusterStatus>(API_ENDPOINTS.clusterStatus);
 
-      setClusterStatus(clusterStat);
-
       if (clusterStat.healthy) {
         setSetupState('ready');
       } else {
         // Components missing, start installation
-        setSetupState('found');
         const progress: Record<string, SetupProgress> = {};
         if (!clusterStat.components.knative.installed || !clusterStat.components.knative.healthy) {
           progress['knative'] = { component: 'knative', status: 'pending' };
@@ -157,14 +195,14 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         }
         setSetupProgress(progress);
 
-        // Auto-start installation
+        // Auto-start component installation
         installComponents();
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to check cluster status:', err);
-      setError(`Failed to connect to API server: ${message}`);
-      setSetupState('error');
+      // Don't fail immediately - Kubernetes might still be starting up
+      // Retry after a short delay
+      setTimeout(checkClusterComponents, 2000);
     }
   };
 
@@ -173,7 +211,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
    * Monitors installation progress and handles completion or errors.
    */
   const installComponents = async () => {
-    setSetupState('installing');
+    setSetupState('installing-components');
     setError(null);
 
     try {
@@ -191,10 +229,10 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         console.log('Progress event received:', event.data);
         const progress: SetupProgress = JSON.parse(event.data);
         console.log('Parsed progress:', progress);
-        setSetupProgress(prev => {
+        setSetupProgress((prev) => {
           const updated = {
             ...prev,
-            [progress.component]: progress
+            [progress.component]: progress,
           };
           console.log('Updated setupProgress:', updated);
           return updated;
@@ -259,21 +297,8 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     const components = Object.values(setupProgress);
     if (components.length === 0) return 0;
 
-    const done = components.filter(c => c.status === 'done').length;
+    const done = components.filter((c) => c.status === 'done').length;
     return Math.round((done / components.length) * 100);
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'done':
-        return '✓';
-      case 'installing':
-        return '⚙️';
-      case 'error':
-        return '❌';
-      default:
-        return '⏳';
-    }
   };
 
   const getComponentName = (component: string) => {
@@ -291,8 +316,42 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     }
   };
 
-  // Detecting Kubernetes
-  if (setupState === 'detecting' || isLoading) {
+  const getK8sProgressMessage = () => {
+    // During component installation, show component progress
+    if (setupState === 'installing-components') {
+      const components = Object.values(setupProgress);
+      const installing = components.find((c) => c.status === 'installing');
+      if (installing) {
+        return installing.message || `Installing ${getComponentName(installing.component || '')}...`;
+      }
+      const pending = components.find((c) => c.status === 'pending');
+      if (pending) {
+        return `Installing ${getComponentName(pending.component || '')}...`;
+      }
+      return 'Installing cluster components...';
+    }
+
+    // During K8s installation
+    if (!k8sProgress) return 'Initializing...';
+    return k8sProgress.message;
+  };
+
+  const getK8sProgressPercentage = () => {
+    // During component installation (60-100%)
+    if (setupState === 'installing-components') {
+      const percentage = getProgressPercentage();
+      // Map component progress (0-100) to overall progress (60-100)
+      return 60 + Math.round(percentage * 0.4);
+    }
+
+    // During K8s installation (0-60%)
+    if (!k8sProgress) return 0;
+    // Cap K8s progress at 60% of total
+    return Math.min(Math.round(k8sProgress.progress * 0.6), 60);
+  };
+
+  // Checking Kubernetes status
+  if (setupState === 'checking') {
     return (
       <div className="setup-container">
         <ProgressSidebar currentStep={2} />
@@ -302,23 +361,22 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
               <span className="step-badge-number">2</span>
               <span>Step 2 of 4</span>
             </div>
-            <h1 className="brand-title">Infrastructure Detection</h1>
-            <p className="brand-subtitle">Scanning your system for container runtime</p>
+            <h1 className="brand-title">Checking Installation</h1>
+            <p className="brand-subtitle">Detecting runtime environment</p>
             <div className="progress-bar-container">
               <div className="progress-bar-fill" data-progress="10"></div>
             </div>
           </header>
           <div className="setup-loading">
-            <div className="spinner" />
-            <p>Detecting infrastructure...</p>
+            <p className="progress-status-text">Checking installation status...</p>
           </div>
         </main>
       </div>
     );
   }
 
-  // Installing components
-  if (setupState === 'installing' || setupState === 'found') {
+  // Kubernetes not installed
+  if (setupState === 'not-installed') {
     return (
       <div className="setup-container">
         <ProgressSidebar currentStep={2} />
@@ -328,40 +386,139 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
               <span className="step-badge-number">2</span>
               <span>Step 2 of 4</span>
             </div>
-            <h1 className="brand-title">Setting up infrastructure</h1>
-            <p className="brand-subtitle">Installing required components</p>
+            <h1 className="brand-title">Install vibespace</h1>
+            <p className="brand-subtitle">Set up the local runtime environment</p>
             <div className="progress-bar-container">
-              <div className="progress-bar-fill" data-progress={10 + getProgressPercentage() * 0.9}></div>
+              <div className="progress-bar-fill" data-progress="0"></div>
             </div>
           </header>
+          <div className="setup-required">
+            <p className="setup-description">
+              Create isolated development environments with AI coding assistants.
+              Everything runs locally on your machine.
+            </p>
+            {status?.error && (
+              <div className="error-message">
+                <span className="error-icon">!</span>
+                {status.error}
+              </div>
+            )}
 
-          <div className="setup-configure">
-            <div className="configure-components">
-              {Object.entries(setupProgress).map(([key, progress]) => (
-                <div key={key} className={`component-item status-${progress.status}`}>
-                  <div className="component-item-header">
-                    <div className="component-name">
-                      <span>{getStatusIcon(progress.status)}</span>
-                      <span>{getComponentName(progress.component)}</span>
-                    </div>
-                    <span className="component-status-text">
-                      {progress.status === 'installing' ? 'Installing' : progress.status === 'done' ? 'Complete' : 'Pending'}
-                    </span>
-                  </div>
-                  <div className="component-progress-bar">
-                    <div className="component-progress-fill"></div>
-                  </div>
-                  {progress.message && progress.status === 'installing' && (
-                    <div className="component-message">{progress.message}</div>
-                  )}
-                  {progress.error && (
-                    <div className="component-error">
-                      <span>❌</span>
-                      <span>{progress.error}</span>
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="installation-info">
+              <p className="installation-note">
+                Takes about 2-3 minutes
+              </p>
+            </div>
+
+            <div className="setup-actions">
+              <button onClick={handleInstallK8s} className="btn-primary" disabled={isInstalling}>
+                {isInstalling ? 'Installing...' : 'Install vibespace'}
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Installing Kubernetes
+  if (setupState === 'installing-k8s') {
+    const percentage = getK8sProgressPercentage();
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Installing vibespace</h1>
+            <p className="brand-subtitle">Setting up local runtime environment</p>
+            <div className="progress-bar-container">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${percentage}%` }}
+              ></div>
+            </div>
+          </header>
+          <div className="setup-required">
+            <div className="install-progress-container">
+              <div className="install-progress-header">
+                <span className="install-progress-message">{getK8sProgressMessage()}</span>
+                <span className="install-progress-percentage">{percentage}%</span>
+              </div>
+              <div className="install-progress-bar">
+                <div
+                  className="install-progress-fill"
+                  style={{ width: `${percentage}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Starting Kubernetes
+  if (setupState === 'starting-k8s') {
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Starting vibespace</h1>
+            <p className="brand-subtitle">Initializing runtime environment</p>
+            <div className="progress-bar-container">
+              <div className="progress-bar-fill" data-progress="20"></div>
+            </div>
+          </header>
+          <div className="setup-loading">
+            <p className="progress-status-text">Starting runtime environment...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Installing components (continuation of K8s installation)
+  if (setupState === 'installing-components') {
+    const percentage = getK8sProgressPercentage();
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Installing vibespace</h1>
+            <p className="brand-subtitle">Setting up cluster components</p>
+            <div className="progress-bar-container">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${percentage}%` }}
+              ></div>
+            </div>
+          </header>
+          <div className="setup-required">
+            <div className="install-progress-container">
+              <div className="install-progress-header">
+                <span className="install-progress-message">{getK8sProgressMessage()}</span>
+                <span className="install-progress-percentage">{percentage}%</span>
+              </div>
+              <div className="install-progress-bar">
+                <div
+                  className="install-progress-fill"
+                  style={{ width: `${percentage}%` }}
+                ></div>
+              </div>
             </div>
           </div>
         </main>
@@ -380,50 +537,17 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
               <span className="step-badge-number">2</span>
               <span>Step 2 of 4</span>
             </div>
-            <h1 className="brand-title">Infrastructure Ready</h1>
-            <p className="brand-subtitle">All components installed successfully</p>
+            <h1 className="brand-title">vibespace Ready</h1>
+            <p className="brand-subtitle">Installation complete</p>
             <div className="progress-bar-container">
               <div className="progress-bar-fill" data-progress="100"></div>
             </div>
           </header>
           <div className="setup-success">
             <div className="success-icon">✓</div>
-            <h2>Infrastructure ready</h2>
+            <h2>Ready to create workspaces</h2>
             <div className="cluster-info">
-              {status?.installType && (
-                <p>
-                  <strong>Type:</strong>
-                  <span>{status.installType}</span>
-                </p>
-              )}
-              {status?.version && (
-                <p>
-                  <strong>Version:</strong>
-                  <span>{status.version}</span>
-                </p>
-              )}
-              {clusterStatus && (
-                <div className="component-list">
-                  <div className="component-badges">
-                    <div className="component-badge">
-                      <span className="component-badge-icon">✓</span>
-                      <span>Knative Serving</span>
-                    </div>
-                    <div className="component-badge">
-                      <span className="component-badge-icon">✓</span>
-                      <span>Traefik Ingress</span>
-                    </div>
-                    <div className="component-badge">
-                      <span className="component-badge-icon">✓</span>
-                      <span>Local Registry</span>
-                    </div>
-                    <div className="component-badge">
-                      <span className="component-badge-icon">✓</span>
-                      <span>BuildKit</span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              <p>vibespace is ready to use. You can now create isolated development environments with AI coding assistants.</p>
             </div>
             {onComplete && (
               <div className="setup-actions">
@@ -432,110 +556,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
                 </button>
               </div>
             )}
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  // Cluster selection
-  if (setupState === 'selecting-cluster') {
-    const selectedCtx = contexts.find(ctx => ctx.name === selectedContext);
-    const showWarning = selectedCtx && !selectedCtx.is_local;
-
-    // Filter contexts by search query
-    const filteredContexts = contexts.filter(ctx =>
-      ctx.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ctx.cluster.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ctx.user.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    return (
-      <div className="setup-container">
-        <ProgressSidebar currentStep={2} />
-        <main className="setup-main">
-          <header className="setup-header">
-            <div className="step-badge">
-              <span className="step-badge-number">2</span>
-              <span>Step 2 of 4</span>
-            </div>
-            <h1 className="brand-title">Select Cluster</h1>
-            <p className="brand-subtitle">Choose which Kubernetes cluster to use</p>
-            <div className="progress-bar-container">
-              <div className="progress-bar-fill" data-progress="15"></div>
-            </div>
-          </header>
-
-          <div className="setup-configure">
-            <div className="cluster-selection-grid">
-              {contexts.length > 3 && (
-                <div className="cluster-search">
-                  <input
-                    type="text"
-                    placeholder="Search clusters..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    aria-label="Search Kubernetes clusters"
-                  />
-                </div>
-              )}
-
-              <div className="cluster-grid">
-                {filteredContexts.length > 0 ? (
-                  filteredContexts.map((ctx) => (
-                    <button
-                      key={ctx.name}
-                      className={`cluster-card ${selectedContext === ctx.name ? 'selected' : ''} ${!ctx.is_local ? 'remote' : ''}`}
-                      onClick={() => setSelectedContext(ctx.name)}
-                      aria-label={`Select ${ctx.name} cluster${!ctx.is_local ? ' (remote)' : ''}`}
-                      aria-pressed={selectedContext === ctx.name}
-                    >
-                      <div className="cluster-card-header">
-                        <span className="cluster-card-name">{ctx.name}</span>
-                        <div className="cluster-card-badges">
-                          {ctx.is_current && <span className="cluster-badge current">Current</span>}
-                          {ctx.is_local && <span className="cluster-badge local">Local</span>}
-                          {!ctx.is_local && <span className="cluster-badge remote">Remote</span>}
-                        </div>
-                      </div>
-                      <div className="cluster-card-details">
-                        <div className="cluster-card-info">
-                          <span className="cluster-card-label">Cluster:</span>
-                          <span>{ctx.cluster}</span>
-                        </div>
-                        <div className="cluster-card-info">
-                          <span className="cluster-card-label">User:</span>
-                          <span>{ctx.user}</span>
-                        </div>
-                      </div>
-                      {selectedContext === ctx.name && (
-                        <div className="cluster-card-selected-indicator">✓</div>
-                      )}
-                    </button>
-                  ))
-                ) : (
-                  <div className="cluster-empty">No clusters found</div>
-                )}
-              </div>
-
-              {showWarning && (
-                <div className="cluster-warning">
-                  <span>⚠️</span>
-                  <span>This appears to be a remote cluster. Installing components may affect production workloads.</span>
-                </div>
-              )}
-
-              <div className="setup-actions">
-                <button
-                  onClick={proceedWithSelectedCluster}
-                  className="btn-primary"
-                  disabled={!selectedContext || isSwitchingContext}
-                  aria-busy={isSwitchingContext}
-                >
-                  {isSwitchingContext ? 'Switching...' : 'Continue'}
-                </button>
-              </div>
-            </div>
           </div>
         </main>
       </div>
@@ -565,10 +585,8 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
                 <AlertCircle size={48} strokeWidth={2} />
               </div>
               <h3 className="error-state-title">Something went wrong</h3>
-              <p className="error-state-message">
-                Please check your connection and try again.
-              </p>
-              <button onClick={checkClusterComponents} className="btn-primary">
+              <p className="error-state-message">{error || 'Please check your connection and try again.'}</p>
+              <button onClick={refetch} className="btn-primary">
                 Retry
               </button>
             </div>
@@ -578,40 +596,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     );
   }
 
-  // Kubernetes not found
-  return (
-    <div className="setup-container">
-      <ProgressSidebar currentStep={2} />
-      <main className="setup-main">
-        <header className="setup-header">
-          <div className="step-badge">
-            <span className="step-badge-number">2</span>
-            <span>Step 2 of 4</span>
-          </div>
-          <h1 className="brand-title">Infrastructure Setup</h1>
-          <p className="brand-subtitle">Install the container orchestration layer</p>
-          <div className="progress-bar-container">
-            <div className="progress-bar-fill" data-progress="0"></div>
-          </div>
-        </header>
-        <div className="setup-required">
-          <h2>Container orchestration required</h2>
-          {status?.error && (
-            <div className="error-message">
-              <span className="error-icon">!</span>
-              {status.error}
-            </div>
-          )}
-
-        <InstallationInstructions suggestedAction={status?.suggestedAction} />
-
-        <div className="setup-actions">
-          <button onClick={refetch} className="btn-primary">
-            Verify installation
-          </button>
-        </div>
-      </div>
-      </main>
-    </div>
-  );
+  // Default fallback (should never reach here)
+  return null;
 }

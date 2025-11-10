@@ -1,16 +1,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { KubernetesStatus } from '../lib/types';
+import { listen } from '@tauri-apps/api/event';
+import type { KubernetesStatus, InstallProgress } from '../lib/types';
 
 // Check if running in Tauri or browser
 const isTauri = '__TAURI__' in window;
 
 /**
- * Hook to detect and monitor Kubernetes cluster availability.
+ * Hook to monitor bundled Kubernetes status (installed, running, version).
  *
- * Detects if Kubernetes (kubectl, k3s, Rancher Desktop, etc.) is available
- * on the system. In Tauri mode, uses native OS calls. In browser mode,
- * mocks availability for development.
+ * DEPLOYMENT MODE: This hook is for LOCAL MODE only, where bundled Kubernetes
+ * (Colima/k3s) runs on the user's machine.
+ *
+ * With ADR 0006, vibespace bundles Kubernetes runtime for Local Mode:
+ * - macOS: Colima (lightweight VM) + k3s
+ * - Linux: Native k3s installation
+ *
+ * This hook provides status checking and lifecycle management for the bundled cluster.
+ *
+ * For REMOTE MODE (planned Post-MVP), a different hook will query the remote API
+ * for cluster status instead of checking local binaries.
  *
  * @returns Object containing cluster status, loading state, error state, and refetch function
  *
@@ -20,13 +29,15 @@ const isTauri = '__TAURI__' in window;
  *   const { status, isLoading, error, refetch } = useKubernetesStatus();
  *
  *   if (isLoading) return <Spinner />;
- *   if (!status?.available) return <InstallInstructions />;
+ *   if (!status?.installed) return <InstallKubernetesButton />;
+ *   if (!status?.running) return <StartKubernetesButton />;
  *
- *   return <ClusterInfo version={status.version} type={status.installType} />;
+ *   return <ClusterInfo version={status.version} />;
  * }
  * ```
  *
  * @see {@link KubernetesStatus} for status object structure
+ * @see ADR 0006 for bundled Kubernetes architecture
  * @public
  */
 export function useKubernetesStatus() {
@@ -34,7 +45,7 @@ export function useKubernetesStatus() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const detectKubernetes = useCallback(async () => {
+  const getStatus = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
@@ -43,14 +54,15 @@ export function useKubernetesStatus() {
 
       if (isTauri) {
         // Native app mode - use Tauri invoke
-        result = await invoke<KubernetesStatus>('detect_kubernetes');
+        result = await invoke<KubernetesStatus>('get_kubernetes_status');
       } else {
-        // Browser mode - mock as available for development
+        // Browser mode - mock as installed and running for development
         result = {
-          available: true,
-          installType: 'k3d',
-          version: 'development',
-          suggestedAction: undefined,
+          installed: true,
+          running: true,
+          version: 'v1.27.16+k3s1 (development)',
+          is_external: false,
+          suggested_action: undefined,
         };
       }
 
@@ -59,9 +71,11 @@ export function useKubernetesStatus() {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
       setError(errorMessage);
       setStatus({
-        available: false,
+        installed: false,
+        running: false,
+        is_external: false,
         error: errorMessage,
-        suggestedAction: 'check_installation',
+        suggested_action: 'install',
       });
     } finally {
       setIsLoading(false);
@@ -70,109 +84,206 @@ export function useKubernetesStatus() {
 
   // Initial detection on mount
   useEffect(() => {
-    detectKubernetes();
-  }, [detectKubernetes]);
+    getStatus();
+  }, [getStatus]);
 
   return {
     status,
     isLoading,
     error,
-    refetch: detectKubernetes,
+    refetch: getStatus,
   };
 }
 
-// Individual detection functions (for advanced use cases)
-// These are exported for future features that need granular control
-// TODO(Phase 2): Will be used by vibespace creation wizard and health monitoring
-
 /**
- * Checks if kubectl is available in the system PATH.
+ * Hook to install and monitor bundled Kubernetes.
+ *
+ * Handles the installation flow for bundled Kubernetes (Colima + k3s on macOS,
+ * native k3s on Linux). Provides progress tracking via event listener.
+ *
+ * @returns Object with install function, installation state, and progress updates
+ *
+ * @example
+ * ```tsx
+ * function InstallButton() {
+ *   const { install, isInstalling, progress } = useKubernetesInstall();
+ *
+ *   return (
+ *     <>
+ *       <button onClick={install} disabled={isInstalling}>
+ *         {isInstalling ? 'Installing...' : 'Install Kubernetes'}
+ *       </button>
+ *       {isInstalling && <Progress value={progress?.progress} message={progress?.message} />}
+ *     </>
+ *   );
+ * }
+ * ```
  *
  * @public
- * @returns Promise resolving to true if kubectl is found, false otherwise
+ */
+export function useKubernetesInstall() {
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [progress, setProgress] = useState<InstallProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [installComplete, setInstallComplete] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri) return;
+
+    // Listen for install progress events
+    const unlisten = listen<InstallProgress>('install-progress', (event) => {
+      const progress = event.payload;
+      setProgress(progress);
+
+      // Handle completion or error
+      if (progress.stage === 'complete') {
+        setIsInstalling(false);
+        setInstallComplete(true);
+      } else if (progress.stage === 'error') {
+        setError(progress.message);
+        setIsInstalling(false);
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const install = useCallback(async () => {
+    setIsInstalling(true);
+    setError(null);
+    setProgress(null);
+
+    if (isTauri) {
+      // Installation runs in background, progress tracked via events
+      // Command returns immediately
+      await invoke('install_kubernetes');
+    } else {
+      // Browser mode - simulate installation
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      setIsInstalling(false);
+    }
+  }, []);
+
+  return {
+    install,
+    isInstalling,
+    progress,
+    error,
+    installComplete,
+  };
+}
+
+/**
+ * Hook to start/stop bundled Kubernetes cluster.
+ *
+ * Provides lifecycle management functions for the bundled cluster.
+ * Start/stop operations are idempotent (safe to call multiple times).
+ *
+ * @returns Object with start and stop functions, loading states
+ *
+ * @example
+ * ```tsx
+ * function ControlPanel() {
+ *   const { start, stop, isStarting, isStopping } = useKubernetesControl();
+ *
+ *   return (
+ *     <>
+ *       <button onClick={start} disabled={isStarting}>Start</button>
+ *       <button onClick={stop} disabled={isStopping}>Stop</button>
+ *     </>
+ *   );
+ * }
+ * ```
+ *
+ * @public
+ */
+export function useKubernetesControl() {
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const start = useCallback(async () => {
+    setIsStarting(true);
+    setError(null);
+
+    try {
+      if (isTauri) {
+        await invoke('start_kubernetes');
+      } else {
+        // Browser mode - simulate start
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsStarting(false);
+    }
+  }, []);
+
+  const stop = useCallback(async () => {
+    setIsStopping(true);
+    setError(null);
+
+    try {
+      if (isTauri) {
+        await invoke('stop_kubernetes');
+      } else {
+        // Browser mode - simulate stop
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to stop';
+      setError(errorMessage);
+      throw err;
+    } finally {
+      setIsStopping(false);
+    }
+  }, []);
+
+  const uninstall = useCallback(async () => {
+    try {
+      if (isTauri) {
+        await invoke('uninstall_kubernetes');
+      } else {
+        // Browser mode - simulate uninstall
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to uninstall';
+      setError(errorMessage);
+      throw err;
+    }
+  }, []);
+
+  return {
+    start,
+    stop,
+    uninstall,
+    isStarting,
+    isStopping,
+    error,
+  };
+}
+
+/**
+ * Get the current operating system type.
+ * Used to show platform-specific installation instructions or warnings.
+ *
+ * @public
+ * @returns Promise resolving to 'macos', 'linux', or 'windows'
  * @example
  * ```ts
- * const hasKubectl = await checkKubectl();
- * if (!hasKubectl) {
- *   console.log('kubectl not found, please install Kubernetes');
+ * const os = await getOSType();
+ * if (os === 'windows') {
+ *   console.log('Windows not supported, use WSL2');
  * }
  * ```
  */
-export async function checkKubectl(): Promise<boolean> {
-  if (!isTauri) return true; // Mock in browser mode
-  return await invoke<boolean>('check_kubectl');
-}
-
-/**
- * Attempts to locate a valid kubeconfig file in standard locations.
- * Checks ~/.kube/config, /etc/rancher/k3s/k3s.yaml, and $KUBECONFIG env var.
- *
- * @public
- * @returns Promise resolving to the kubeconfig file path, or null if not found
- * @example
- * ```ts
- * const configPath = await findKubeconfig();
- * if (configPath) {
- *   console.log(`Found kubeconfig at: ${configPath}`);
- * }
- * ```
- */
-export async function findKubeconfig(): Promise<string | null> {
-  if (!isTauri) return '~/.kube/config'; // Mock in browser mode
-  return await invoke<string | null>('find_kubeconfig');
-}
-
-/**
- * Verifies that the Kubernetes cluster is reachable and healthy.
- * Performs connectivity check and basic health validation.
- *
- * @public
- * @param kubeconfigPath - Optional path to kubeconfig file. Uses default if not provided.
- * @returns Promise resolving to true if cluster is healthy and reachable
- * @example
- * ```ts
- * const isHealthy = await checkClusterHealth();
- * if (!isHealthy) {
- *   console.log('Cluster is unreachable or not running');
- * }
- * ```
- */
-export async function checkClusterHealth(kubeconfigPath?: string): Promise<boolean> {
-  if (!isTauri) return true; // Mock in browser mode
-  return await invoke<boolean>('check_cluster_health', { kubeconfigPath });
-}
-
-/**
- * Detects the type of Kubernetes installation present on the system.
- * Can identify k3s, Rancher Desktop, k3d, minikube, Docker Desktop, or unknown.
- *
- * @public
- * @param kubeconfigPath - Optional path to kubeconfig file. Uses default if not provided.
- * @returns Promise resolving to the installation type as a string
- * @example
- * ```ts
- * const installType = await detectInstallType();
- * console.log(`Detected: ${installType}`); // e.g., "rancher-desktop"
- * ```
- */
-export async function detectInstallType(kubeconfigPath?: string): Promise<string> {
-  if (!isTauri) return 'k3d'; // Mock in browser mode
-  return await invoke<string>('detect_install_type', { kubeconfigPath });
-}
-
-/**
- * Retrieves the version of the running Kubernetes cluster.
- *
- * @public
- * @param kubeconfigPath - Optional path to kubeconfig file. Uses default if not provided.
- * @returns Promise resolving to the cluster version string, or null if unable to determine
- * @example
- * ```ts
- * const version = await getClusterVersion();
- * console.log(`Cluster version: ${version}`); // e.g., "v1.27.3+k3s1"
- * ```
- */
-export async function getClusterVersion(kubeconfigPath?: string): Promise<string | null> {
-  if (!isTauri) return 'v1.27.3+k3s1'; // Mock in browser mode
-  return await invoke<string | null>('get_cluster_version', { kubeconfigPath });
+export async function getOSType(): Promise<string> {
+  if (!isTauri) return 'macos'; // Mock in browser mode
+  return await invoke<string>('get_os_type');
 }

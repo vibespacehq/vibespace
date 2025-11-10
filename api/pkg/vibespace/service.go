@@ -40,6 +40,19 @@ func NewService(k8sClient *k8s.Client) *Service {
 
 // List returns all vibespaces
 func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
+	// Check if k8s client is available, try to reinitialize
+	if s.k8sClient == nil {
+		slog.Info("k8s client is nil in vibespace service, attempting to initialize")
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			slog.Warn("kubernetes client not available, returning empty list",
+				"error", err)
+			return []*model.Vibespace{}, nil
+		}
+		s.k8sClient = newClient
+		slog.Info("k8s client initialized successfully in vibespace service")
+	}
+
 	pods, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/managed-by=vibespace",
 	})
@@ -60,6 +73,17 @@ func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
 
 // Get returns a vibespace by ID
 func (s *Service) Get(ctx context.Context, id string) (*model.Vibespace, error) {
+	// Check if k8s client is available, try to reinitialize
+	if s.k8sClient == nil {
+		slog.Info("k8s client is nil in vibespace service, attempting to initialize")
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		}
+		s.k8sClient = newClient
+		slog.Info("k8s client initialized successfully in vibespace service")
+	}
+
 	podName := fmt.Sprintf("vibespace-%s", id)
 
 	slog.Info("getting vibespace",
@@ -84,6 +108,17 @@ func (s *Service) Get(ctx context.Context, id string) (*model.Vibespace, error) 
 
 // Create creates a new vibespace
 func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest) (*model.Vibespace, error) {
+	// Check if k8s client is available, try to reinitialize
+	if s.k8sClient == nil {
+		slog.Info("k8s client is nil in vibespace service, attempting to initialize")
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		}
+		s.k8sClient = newClient
+		slog.Info("k8s client initialized successfully in vibespace service")
+	}
+
 	slog.Info("creating vibespace",
 		"name", req.Name,
 		"template", req.Template,
@@ -317,6 +352,17 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 // Phase 1 (MVP): Deletes the pod only
 // Phase 2 (Knative): Will delete Knative Service which handles all resources
 func (s *Service) Delete(ctx context.Context, id string) error {
+	// Check if k8s client is available, try to reinitialize
+	if s.k8sClient == nil {
+		slog.Info("k8s client is nil in vibespace service, attempting to initialize")
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		}
+		s.k8sClient = newClient
+		slog.Info("k8s client initialized successfully in vibespace service")
+	}
+
 	// MVP Implementation: Delete pod
 	// Note: PVCs are left for manual cleanup to prevent accidental data loss
 	//
@@ -350,6 +396,17 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 // Phase 1 (MVP): Limited implementation - pod recreation not yet supported
 // Phase 2 (Knative): Will use Knative scale-from-zero (minScale=0 -> minScale=1)
 func (s *Service) Start(ctx context.Context, id string) error {
+	// Check if k8s client is available, try to reinitialize
+	if s.k8sClient == nil {
+		slog.Info("k8s client is nil in vibespace service, attempting to initialize")
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		}
+		s.k8sClient = newClient
+		slog.Info("k8s client initialized successfully in vibespace service")
+	}
+
 	// MVP Phase 1 Implementation: Check if pod exists
 	// If pod exists, it's already running (no-op)
 	// If pod doesn't exist, we can't recreate it (no metadata storage in Phase 1)
@@ -386,6 +443,17 @@ func (s *Service) Start(ctx context.Context, id string) error {
 // Phase 1 (MVP): Deletes the pod while preserving PVC (data remains intact)
 // Phase 2 (Knative): Will use Knative scale-to-zero (minScale=1 -> minScale=0)
 func (s *Service) Stop(ctx context.Context, id string) error {
+	// Check if k8s client is available, try to reinitialize
+	if s.k8sClient == nil {
+		slog.Info("k8s client is nil in vibespace service, attempting to initialize")
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		}
+		s.k8sClient = newClient
+		slog.Info("k8s client initialized successfully in vibespace service")
+	}
+
 	// MVP Implementation: Delete pod to stop it, PVC remains for data persistence
 	// Note: Without metadata storage, we can't automatically restart stopped vibespaces
 	// This will be addressed in Phase 1.5 or Phase 2 with Knative
@@ -438,6 +506,17 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 // Access makes a vibespace accessible by starting port-forwards
 // Returns a map of local URLs where the vibespace can be accessed
 func (s *Service) Access(ctx context.Context, id string) (map[string]string, error) {
+	// Check if k8s client is available, try to reinitialize
+	if s.k8sClient == nil {
+		slog.Info("k8s client is nil in vibespace service, attempting to initialize")
+		newClient, err := k8s.NewClient()
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		}
+		s.k8sClient = newClient
+		slog.Info("k8s client initialized successfully in vibespace service")
+	}
+
 	podName := fmt.Sprintf("vibespace-%s", id)
 
 	slog.Info("starting vibespace access",
@@ -569,6 +648,8 @@ func (s *Service) findAndForwardPort(ctx context.Context, podName, vibespaceID s
 
 // createPVC creates a PersistentVolumeClaim for vibespace storage
 func (s *Service) createPVC(ctx context.Context, name string, storage string) error {
+	// k8s client check is performed in the calling function (Create)
+	// so we don't need to check again here
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

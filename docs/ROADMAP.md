@@ -4,51 +4,61 @@
 
 ---
 
-## MVP Phase 1: Foundation ⏳ IN PROGRESS
+## MVP Phase 1: Foundation (Local Mode) ✅ 95% COMPLETE
 
-**Timeline**: Weeks 1-3 (Week 2 of 3)
-**Goal**: Prove the core value proposition - vibespace management with AI agents works locally.
-**Target Users**: Developer early adopters comfortable with command-line tools.
+**Timeline**: Weeks 1-3 (Complete)
+**Goal**: Zero-configuration local development with bundled Kubernetes and AI agents.
+**Target Users**: Developer early adopters who want instant setup.
+**Deployment Mode**: Local Mode only (all components on user's machine)
 
 ### Core Features
 - [x] **Tauri desktop app** - React 19 + TypeScript UI
-- [x] **Kubernetes detection** - Detects k3s, Rancher Desktop, k3d
-- [x] **Cluster setup wizard** - Guided installation with component status
+- [x] **Bundled Kubernetes runtime** - One-click installation (ADR 0006)
+  - [x] macOS: Colima + Lima VM + k3s
+  - [x] Linux: Native k3s binary
+  - [x] Trait-based architecture (K8sProvider) for future Remote Mode
+  - [x] Zero-configuration (~3-5 minutes setup)
+- [x] **Cluster setup wizard** - Automated installation with real-time progress (SSE)
 - [x] **Component installation** - Knative v1.15.2, Traefik v3.5.3, Registry 2.8.3, BuildKit v0.17.3
 - [x] **Go API server** - Full REST API with Kubernetes client-go integration
-- [x] **Vibespace CRUD backend** - Create, list, get, delete (currently uses placeholder image)
-- [ ] **Docker images with AI agents**:
-  - [ ] Base image: code-server + Claude Code CLI
-  - [ ] Next.js template with AI agent + CLAUDE.md
-  - [ ] Vue template with AI agent + CLAUDE.md
-  - [ ] Python/Jupyter template with AI agent + CLAUDE.md
-- [ ] **Single AI agent per vibespace** - Baked into container (Claude Code, OpenAI Codex)
-- [ ] **Credential management**:
+- [x] **Vibespace CRUD backend** - Create, list, get, delete with real vibespace images
+- [x] **Docker images with AI agents**:
+  - [x] Base image: code-server + Claude Code CLI
+  - [x] Next.js template with AI agent + CLAUDE.md
+  - [x] Vue template with AI agent + CLAUDE.md
+  - [x] Python/Jupyter template with AI agent + CLAUDE.md
+- [x] **Single AI agent per vibespace** - Baked into container (Claude Code, OpenAI Codex)
+- [ ] **Credential management**: (⏳ in progress)
   - [ ] AI agent API keys (Claude, OpenAI)
   - [ ] Git config (name, email)
   - [ ] SSH keys (generate or import)
   - [ ] Kubernetes Secret generation
-- [ ] **Local vibespace access** - Via NodePort or `kubectl port-forward`
-- [ ] **Template selection UI** - Choose template and configure agent during creation
+- [x] **Local vibespace access** - Via Knative Services + Traefik ingress
+- [x] **Template selection UI** - Choose template and configure agent during creation
 
 **Note**: A "template" includes the complete vibespace configuration: development stack (Next.js, Python, etc.), AI coding agent selection, agent instruction files (CLAUDE.md), and optionally a connected Git repository.
 
 ### Infrastructure
-- **Kubernetes**: Detection-based (users install k3s or Rancher Desktop manually)
-- **Deployment**: Simple Kubernetes Pods (no Knative yet - easier to implement and debug)
-- **Networking**: NodePort or kubectl port-forward (no Ingress yet)
+- **Kubernetes**: Bundled runtime (Colima on macOS, k3s on Linux)
+- **Deployment**: Knative Services with Traefik ingress
+- **Networking**: Traefik IngressRoutes for local DNS
 - **Storage**: Local PersistentVolumes via k3s local-path provisioner
-- **Access**: `localhost:8080` via port-forward
+- **Access**: `vibespace-{id}.local` via Traefik
+- **Image Building**: BuildKit for custom templates
 
 ### Success Metrics
+- [x] One-click Kubernetes installation works on macOS and Linux
+- [x] App size ~150MB (acceptable for bundled approach)
+- [x] Setup time < 5 minutes from download to first vibespace
 - [ ] 10 beta users can create and use vibespaces
 - [ ] AI agents work successfully (Claude Code, OpenAI Codex)
-- [ ] Positive feedback on core vibespace management
-- [ ] < 5 minutes from download to first vibespace
+- [ ] Positive feedback on zero-config onboarding
 
-**Status**: ~70% complete
-- ✅ Infrastructure, API server, frontend UI, cluster setup
-- ❌ AI agents, templates, credential backend, real images
+**Status**: ~95% complete
+- ✅ Bundled Kubernetes, infrastructure, API server, frontend UI, cluster setup
+- ✅ Docker images with AI agents, BuildKit integration
+- ⏳ Credential backend (in progress)
+- ❌ End-to-end testing
 
 ---
 
@@ -228,18 +238,22 @@
 
 ## Design Decisions & Rationale
 
-### Why Detection First, Bundling Later?
+### Why Bundled Kubernetes in Local Mode (MVP Phase 1)?
 
-**MVP Phase 1 Decision**: Use detection + guided setup instead of bundling Kubernetes.
+**MVP Phase 1 Decision**: Bundle Kubernetes runtime for zero-configuration Local Mode deployment.
 
-**Rationale**:
-1. **Speed to market**: Ship MVP in 3 weeks, not 11 weeks
-2. **Validate first**: Prove vibespace management is valuable before building complex installer
-3. **Focus**: Core vibespace features > cluster installation complexity
-4. **Flexibility**: Supports k3s, Rancher Desktop, k3d, existing clusters
-5. **Security**: No sudo execution from app (user controls their system)
+**Rationale** (See ADR 0006):
+1. **Zero-configuration**: One-click installation, no manual k3s/kubectl setup
+2. **Consistent environment**: All users get same tested versions (Colima 0.6.8, k3s v1.27.4)
+3. **Fast setup**: ~3-5 minutes from download to first vibespace
+4. **Developer-friendly**: No sudo required, no system-wide installation
+5. **Trait-based architecture**: `K8sProvider` trait supports future Remote Mode
 
-**Future**: Full bundling in Post-MVP after product-market fit validation.
+**Trade-offs**:
+- Larger app size (~150MB) vs simpler alternative (detection-based approach)
+- Platform-specific bundling (Colima for macOS, k3s for Linux)
+
+**Future**: Remote Mode (VPS deployment) in MVP Phase 2+ using `RemoteK8sProvider` trait.
 
 ### Why Simple Pods in Phase 1, Knative in Phase 2?
 
@@ -249,14 +263,15 @@
 - Users validate vibespaces work before we add sophisticated lifecycle management
 - Knative requires understanding of serverless patterns - better with feedback first
 
-### Why Cloud Mode in MVP Phase 2, Not Later?
+### Why Remote Mode in MVP Phase 2, Not Later?
 
 **Rationale**:
-- Cloud deployment is valuable early - users want powerful cloud resources
+- Remote Mode (VPS deployment) is valuable early - users want powerful cloud resources
 - TLS and custom domains are table stakes for production use
 - Multi-agent sidecars benefit from cloud resources (more CPU/RAM)
 - Combined with scale-to-zero, makes Phase 2 a compelling "production-ready" release
-- Local-first Phase 1 still validates core concept quickly
+- Local Mode in Phase 1 validates core concept quickly with zero-config setup
+- Trait-based architecture (`RemoteK8sProvider`) makes adding Remote Mode straightforward
 
 ### Why Template Marketplace is Post-MVP?
 
@@ -271,28 +286,32 @@
 
 ## Release Strategy
 
-### Alpha (MVP Phase 1)
+### Alpha (MVP Phase 1 - Local Mode)
 - **Audience**: Internal team + 10 beta testers
 - **Distribution**: GitHub Releases (manual download)
 - **Feedback**: Direct communication, GitHub Issues
+- **Features**: Bundled Kubernetes (Local Mode), AI agents, templates
 - **Timeline**: Week 3
 
-### Beta (MVP Phase 2)
+### Beta (MVP Phase 2 - Remote Mode)
 - **Audience**: 50-100 early adopters
 - **Distribution**: GitHub Releases + homebrew cask (macOS)
 - **Feedback**: GitHub Issues, Discord/Slack community
+- **Features**: Remote Mode support, scale-to-zero, custom domains, TLS
 - **Timeline**: End of Month 2
 
-### v1.0 (Post-MVP with Bundled Kubernetes)
+### v1.0 (General Availability)
 - **Audience**: General public
 - **Distribution**: Official website, package managers (brew, choco, apt, pacman)
 - **Support**: Documentation, community forums, video tutorials
+- **Features**: Stable Local + Remote Mode, template marketplace
 - **Timeline**: Month 3
 
-### v2.0 (Post-MVP with Enterprise Features)
+### v2.0 (Enterprise Features)
 - **Audience**: Teams, enterprises
 - **Distribution**: Cloud marketplaces (AWS, GCP, Azure)
 - **Support**: Paid priority support tiers
+- **Features**: SSO/SAML, audit logs, Harbor registry, team collaboration
 - **Timeline**: Month 6+
 
 ---
@@ -341,17 +360,21 @@ We welcome contributions! Here's how to get involved:
 ## Changelog
 
 ### 2025-01 (Current)
-- ✅ MVP Phase 1 started (Week 2 of 3)
-- ✅ Infrastructure complete (k8s manifests, API server, frontend)
-- ✅ Cluster setup wizard with real-time progress
-- ✅ Architecture decisions: Detection over bundling (ADR 0001), JSDoc for future exports (ADR 0002), Frontend organization (ADR 0003), Component versions (ADR 0004)
-- ⏳ Working on: Docker images with AI agents, credential backend, templates
+- ✅ MVP Phase 1 (Local Mode) at ~95% completion
+- ✅ Bundled Kubernetes runtime (Colima/k3s) with one-click installation
+- ✅ Trait-based architecture (`K8sProvider`) for future Remote Mode
+- ✅ Infrastructure complete (k8s manifests, Knative, Traefik, Registry, BuildKit)
+- ✅ Go API server with Kubernetes client-go integration
+- ✅ Frontend UI (setup wizard, vibespace list, cluster setup with SSE progress)
+- ✅ Docker images with AI agents (base, Next.js, Vue, Jupyter)
+- ✅ Architecture decisions: Bundled k8s runtime (ADR 0006), JSDoc for future exports (ADR 0002), Frontend organization (ADR 0003), Component versions (ADR 0004)
+- ⏳ Working on: Credential management backend, end-to-end testing
 
 ### Future Updates
 - Release notes will be added as phases complete
 
 ---
 
-**Last Updated**: 2025-10-16 (MVP Phase 1 - Week 2 of 3)
+**Last Updated**: 2025-01-16 (MVP Phase 1 - Local Mode at 95% completion)
 
 **Questions?** Open a [GitHub Discussion](https://github.com/yagizdagabak/vibespace/discussions)

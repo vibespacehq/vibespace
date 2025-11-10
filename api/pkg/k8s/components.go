@@ -28,6 +28,19 @@ type ClusterComponents struct {
 func (c *Client) CheckComponents(ctx context.Context) (*ClusterComponents, error) {
 	slog.Info("checking cluster components")
 
+	// Check if client is nil (k8s not available yet)
+	if c.clientset == nil {
+		slog.Warn("k8s clientset not initialized, attempting to reinitialize")
+		// Try to reinitialize the client
+		newClient, err := NewClient()
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes not available: %w", err)
+		}
+		// Update the clientset
+		c.clientset = newClient.clientset
+		c.config = newClient.config
+	}
+
 	components := &ClusterComponents{}
 
 	// Check Knative
