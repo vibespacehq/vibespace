@@ -46,6 +46,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "externalBin": [
+      "binaries/macos/colima",
+      "binaries/linux/k3s",
+      "binaries/kubectl-darwin-arm64",
+      "binaries/kubectl-linux-amd64"
+    ],
     "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "10.15",
@@ -54,20 +60,12 @@
       "entitlements": null,
       "resources": [
         "binaries/macos/lima-dist/**/*"
-      ],
-      "externalBin": [
-        "binaries/macos/colima",
-        "binaries/kubectl-darwin-arm64"
       ]
     },
     "linux": {
       "deb": {
         "depends": []
-      },
-      "externalBin": [
-        "binaries/linux/k3s",
-        "binaries/kubectl-linux-amd64"
-      ]
+      }
     }
   }
 }
