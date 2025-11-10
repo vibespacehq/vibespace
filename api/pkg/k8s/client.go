@@ -58,31 +58,47 @@ func NewClient() (*Client, error) {
 	}, nil
 }
 
-// getK8sConfig returns the Kubernetes config
-// Tries in-cluster config first, then falls back to kubeconfig
+// getK8sConfig returns the Kubernetes config for bundled Kubernetes (LOCAL MODE only).
+//
+// DEPLOYMENT MODE: This function is for LOCAL MODE, where bundled Kubernetes
+// (Colima on macOS, k3s on Linux) runs on the same machine as the API server.
+//
+// With ADR 0006, we use bundled Kubernetes with known kubeconfig locations
+// instead of detecting external installations.
+//
+// For REMOTE MODE (planned Post-MVP), the API server would run on a VPS and
+// access k8s using in-cluster config or a provided kubeconfig path.
 func getK8sConfig() (*rest.Config, error) {
-	// Try in-cluster config
-	config, err := rest.InClusterConfig()
-	if err == nil {
-		return config, nil
-	}
-
-	// Fall back to kubeconfig
-	kubeconfig := os.Getenv("KUBECONFIG")
-	if kubeconfig == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user home directory: %w", err)
-		}
-		kubeconfig = filepath.Join(home, ".kube", "config")
-	}
-
-	config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	// Get bundled kubeconfig path
+	kubeconfig, err := getBundledKubeconfigPath()
 	if err != nil {
-		return nil, fmt.Errorf("failed to build config from kubeconfig: %w", err)
+		return nil, fmt.Errorf("failed to get bundled kubeconfig path: %w", err)
+	}
+
+	// Build config from bundled kubeconfig
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build config from bundled kubeconfig %s: %w", kubeconfig, err)
 	}
 
 	return config, nil
+}
+
+// getBundledKubeconfigPath returns the kubeconfig path for bundled Kubernetes (LOCAL MODE).
+// - macOS (Colima): ~/.kube/config (Colima updates the standard kubeconfig with "colima" context)
+// - Linux (k3s): ~/.kube/config
+//
+// For REMOTE MODE (planned Post-MVP), this would likely use in-cluster config or
+// a configurable kubeconfig path from environment variables.
+func getBundledKubeconfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	// Both macOS (Colima) and Linux (k3s) use ~/.kube/config
+	// Colima updates this file with the "colima" context instead of creating a separate file
+	return filepath.Join(home, ".kube", "config"), nil
 }
 
 // Clientset returns the underlying Kubernetes clientset
@@ -174,6 +190,12 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 		resource,
 		fmt.Sprintf("%d:%d", localPort, remotePort),
 	)
+
+	// Set KUBECONFIG environment variable
+	kubeconfig, err := getBundledKubeconfigPath()
+	if err == nil {
+		cmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfig))
+	}
 
 	// Capture stderr for debugging
 	var stderrBuf bytes.Buffer
