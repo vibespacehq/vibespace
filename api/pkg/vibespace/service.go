@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
 	"time"
 
 	"vibespace/pkg/k8s"
 	"vibespace/pkg/model"
+	"vibespace/pkg/network"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -503,8 +505,44 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
-// Access makes a vibespace accessible by starting port-forwards
-// Returns a map of local URLs where the vibespace can be accessed
+// isKnativeRoutingEnabled checks if Knative routing is enabled via environment variable
+// Returns true if ENABLE_KNATIVE_ROUTING=true, false otherwise (default: true for MVP)
+func isKnativeRoutingEnabled() bool {
+	enabled := os.Getenv("ENABLE_KNATIVE_ROUTING")
+	// Default to true if not set (Knative routing is the default in MVP)
+	if enabled == "" {
+		return true
+	}
+	return enabled == "true" || enabled == "1"
+}
+
+// isDnsEnabled checks if custom DNS resolution is enabled via environment variable
+// Returns true if ENABLE_DNS=true, false otherwise (default: true for MVP)
+func isDnsEnabled() bool {
+	enabled := os.Getenv("ENABLE_DNS")
+	// Default to true if not set (DNS is the default in MVP)
+	if enabled == "" {
+		return true
+	}
+	return enabled == "true" || enabled == "1"
+}
+
+// getBaseDomain returns the base domain for vibespace subdomains
+// Default: vibe.space
+func getBaseDomain() string {
+	domain := os.Getenv("DNS_BASE_DOMAIN")
+	if domain == "" {
+		return "vibe.space"
+	}
+	return domain
+}
+
+// Access makes a vibespace accessible
+// Returns a map of URLs where the vibespace can be accessed
+//
+// Routing modes:
+// 1. Knative + DNS (default): Returns DNS subdomain URLs (code.{project}.vibe.space)
+// 2. Port-forward (fallback): Returns localhost URLs with port-forwarding
 func (s *Service) Access(ctx context.Context, id string) (map[string]string, error) {
 	// Check if k8s client is available, try to reinitialize
 	if s.k8sClient == nil {
@@ -517,9 +555,60 @@ func (s *Service) Access(ctx context.Context, id string) (map[string]string, err
 		slog.Info("k8s client initialized successfully in vibespace service")
 	}
 
+	slog.Info("starting vibespace access",
+		"vibespace_id", id,
+		"knative_routing", isKnativeRoutingEnabled(),
+		"dns_enabled", isDnsEnabled())
+
+	// MODE 1: Knative + DNS routing (default)
+	if isKnativeRoutingEnabled() && isDnsEnabled() {
+		return s.accessViaDNS(ctx, id)
+	}
+
+	// MODE 2: Port-forward fallback (backward compatibility)
+	return s.accessViaPortForward(ctx, id)
+}
+
+// accessViaDNS returns DNS subdomain URLs for a vibespace
+// Used when Knative routing + DNS are enabled (default mode)
+func (s *Service) accessViaDNS(ctx context.Context, id string) (map[string]string, error) {
+	// Get vibespace to extract ProjectName
+	vibespace, err := s.Get(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get vibespace: %w", err)
+	}
+
+	if vibespace.ProjectName == "" {
+		return nil, fmt.Errorf("vibespace has no project name (required for DNS routing)")
+	}
+
+	// Create IngressRoute manager
+	ingressMgr, err := network.NewIngressRouteManager(s.k8sClient, getBaseDomain())
+	if err != nil {
+		slog.Warn("failed to create IngressRoute manager, falling back to port-forward",
+			"vibespace_id", id,
+			"error", err)
+		return s.accessViaPortForward(ctx, id)
+	}
+
+	// Get DNS URLs
+	urls := ingressMgr.GetVibespaceURLs(vibespace.ProjectName)
+
+	slog.Info("vibespace access via DNS completed",
+		"vibespace_id", id,
+		"project_name", vibespace.ProjectName,
+		"urls_count", len(urls),
+		"urls", urls)
+
+	return urls, nil
+}
+
+// accessViaPortForward returns localhost URLs with port-forwarding
+// Used when Knative routing or DNS is disabled (backward compatibility mode)
+func (s *Service) accessViaPortForward(ctx context.Context, id string) (map[string]string, error) {
 	podName := fmt.Sprintf("vibespace-%s", id)
 
-	slog.Info("starting vibespace access",
+	slog.Info("using port-forward access mode",
 		"vibespace_id", id,
 		"pod_name", podName)
 
@@ -594,7 +683,7 @@ func (s *Service) Access(ctx context.Context, id string) (map[string]string, err
 		}
 	}
 
-	slog.Info("vibespace access completed successfully",
+	slog.Info("vibespace access completed via port-forward",
 		"vibespace_id", id,
 		"urls_count", len(urls),
 		"urls", urls)
