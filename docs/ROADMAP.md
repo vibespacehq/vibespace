@@ -71,12 +71,19 @@
 
 ### Core Features
 
-#### Knative Scale-to-Zero ✅ COMPLETED IN MVP PHASE 1 (Issue #52)
+#### Knative Scale-to-Zero + DNS Routing ✅ COMPLETED IN MVP PHASE 1 (Issue #52)
 - [x] Migrate from simple Pods to **Knative Services**
 - [x] Auto-stop vibespaces when idle (scale to zero - minScale=0)
 - [x] Auto-start vibespaces on access (scale from zero)
 - [x] Saves local machine resources
 - [x] Vibespace start/stop lifecycle backend (Start=minScale:1, Stop=minScale:0)
+- [x] **DNS resolution** via bundled dnsd server (miekg/dns on port 5353)
+- [x] **Traefik IngressRoutes** for multi-port routing (code/preview/prod)
+- [x] **Project names** with DNS-friendly format (adjective-noun-number)
+- [x] **Multi-process containers** via supervisord (3 services per vibespace)
+- [x] **Feature flags** for dual-mode operation (Knative vs Pod, DNS vs port-forward)
+- [x] **Frontend integration** with DNS URL optimization
+- [x] **Platform abstraction** (macOS: /etc/resolver, Linux: systemd-resolved)
 - [ ] Vibespace start/stop lifecycle UI (frontend integration pending)
 
 #### Custom Template Builder

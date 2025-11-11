@@ -1336,6 +1336,7 @@ PUT    /vibespaces/:id
 DELETE /vibespaces/:id
 POST   /vibespaces/:id/start
 POST   /vibespaces/:id/stop
+GET    /vibespaces/:id/access      # Get access URLs (DNS or port-forward)
 GET    /vibespaces/:id/logs
 GET    /vibespaces/:id/status
 ```
@@ -1476,6 +1477,44 @@ Content-Type: application/json
   "total": 2
 }
 ```
+
+#### Access Vibespace (Get URLs)
+
+Returns access URLs for a vibespace. Behavior depends on feature flags:
+- **DNS Mode** (default): Returns DNS subdomain URLs for code/preview/prod
+- **Port-Forward Mode** (fallback): Returns localhost URLs with port-forward
+
+```http
+GET /api/v1/vibespaces/:id/access
+```
+
+**Response (DNS Mode - ENABLE_KNATIVE_ROUTING=true, ENABLE_DNS=true)**:
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "code": "http://code.brave-eagle-7421.vibe.space",
+  "preview": "http://preview.brave-eagle-7421.vibe.space",
+  "prod": "http://prod.brave-eagle-7421.vibe.space"
+}
+```
+
+**Response (Port-Forward Mode - Either flag=false)**:
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "code-server": "http://127.0.0.1:8142"
+}
+```
+
+**Notes**:
+- Frontend optimization: Use `vibespace.urls` from List/Get response directly when available (avoids `/access` API call)
+- DNS URLs resolved via bundled dnsd server (127.0.0.1:5353)
+- Port-forward mode starts kubectl port-forward process automatically
+- See Section 8.2.3 for implementation details
 
 #### Build Custom Template
 
@@ -2027,81 +2066,330 @@ func (s *Service) Access(ctx context.Context, id string) (string, error) {
 
 ---
 
-#### 8.2.3 MVP Phase 2: Traefik IngressRoutes + Knative
+#### 8.2.3 Current Implementation: Knative Services + DNS Routing (✅ Completed)
 
-**Future Implementation** (planned for Phase 2 with Knative Services):
+**Implementation Status**: ✅ **Completed in MVP Phase 1** (Issue #52)
 
-When vibespaces migrate to Knative Services, access will use Traefik IngressRoutes with custom *.local domains:
+Vibespaces now run as **Knative Services** with DNS-based routing using Traefik IngressRoutes and a custom DNS server.
+
+##### Architecture Overview
+
+Each vibespace consists of:
+1. **Knative Service** - Serverless container with scale-to-zero
+2. **3 IngressRoutes** - Traefik routing for code/preview/prod subdomains
+3. **Project Name** - DNS-friendly identifier (e.g., `brave-eagle-7421`)
+4. **DNS Resolution** - Custom Go DNS server resolving `*.vibe.space` to 127.0.0.1
+
+##### 1. Knative Service Structure
 
 ```yaml
-# Created automatically when vibespace is created
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: vibespace-abc123
+  namespace: vibespace
+  labels:
+    vibespace.dev/id: abc123
+    vibespace.dev/project: brave-eagle-7421
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/min-scale: "0"  # Scale to zero when idle
+        autoscaling.knative.dev/max-scale: "1"  # Single user per vibespace
+        autoscaling.knative.dev/scale-down-delay: "10m"
+        autoscaling.knative.dev/target: "1"
+    spec:
+      containers:
+      - name: vibespace
+        image: localhost:5000/vibespace-nextjs:latest
+        ports:
+        - name: code
+          containerPort: 8080
+        - name: preview
+          containerPort: 3000
+        - name: prod
+          containerPort: 3001
+        env:
+        - name: VIBESPACE_CODE_PORT
+          value: "8080"
+        - name: VIBESPACE_PREVIEW_PORT
+          value: "3000"
+        - name: VIBESPACE_PROD_PORT
+          value: "3001"
+      timeoutSeconds: 3600  # 1 hour for long coding sessions
+```
+
+**Key Features**:
+- **Scale-to-zero**: `minScale: 0` (stops when idle for 10 minutes)
+- **Multi-port**: 3 ports per vibespace (code-server, dev server, production)
+- **Supervisord**: Multi-process management inside container
+- **Resource limits**: CPU/memory configurable via Resources struct
+
+##### 2. IngressRoute Creation
+
+Three IngressRoutes created per vibespace:
+
+```yaml
+# Code Server (port 8080)
 apiVersion: traefik.containo.us/v1alpha1
 kind: IngressRoute
 metadata:
-  name: vibespace-abc123
+  name: vibespace-abc123-code
   namespace: vibespace
 spec:
   entryPoints: [web]
   routes:
-  - match: Host(`vibespace-abc123.local`)
+  - match: Host(`code.brave-eagle-7421.vibe.space`)
     kind: Rule
     services:
-    - name: vibespace-abc123  # Knative Service name
-      port: 80
+    - name: vibespace-abc123
+      port: 8080
+
+---
+# Preview Server (port 3000)
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vibespace-abc123-preview
+  namespace: vibespace
+spec:
+  entryPoints: [web]
+  routes:
+  - match: Host(`preview.brave-eagle-7421.vibe.space`)
+    kind: Rule
+    services:
+    - name: vibespace-abc123
+      port: 3000
+
+---
+# Production Server (port 3001)
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: vibespace-abc123-prod
+  namespace: vibespace
+spec:
+  entryPoints: [web]
+  routes:
+  - match: Host(`prod.brave-eagle-7421.vibe.space`)
+    kind: Rule
+    services:
+    - name: vibespace-abc123
+      port: 3001
 ```
 
+##### 3. Project Name Generation
+
+**Format**: `{adjective}-{noun}-{number}`
+**Examples**: `brave-eagle-7421`, `happy-cloud-3142`, `swift-river-9876`
+
 ```go
-// Phase 2 API: GET /api/v1/vibespaces/:id/access
-// Returns: { "url": "http://vibespace-abc123.local" }
+// api/pkg/model/project_name.go
+func GenerateProjectName() string {
+    adjectives := []string{"brave", "happy", "swift", "bright", "calm", ...}
+    nouns := []string{"eagle", "cloud", "river", "mountain", "forest", ...}
 
-func (s *Service) Access(ctx context.Context, id string) (string, error) {
-    // Phase 2: Create IngressRoute + /etc/hosts entry
-    vibespaceDomain := fmt.Sprintf("vibespace-%s.local", id)
+    adj := adjectives[rand.Intn(len(adjectives))]
+    noun := nouns[rand.Intn(len(nouns))]
+    number := rand.Intn(10000)
 
-    // 1. Create IngressRoute (if not exists)
-    if err := s.createIngressRoute(ctx, id, vibespaceDomain); err != nil {
-        return "", err
-    }
+    return fmt.Sprintf("%s-%s-%04d", adj, noun, number)
+}
 
-    // 2. Add /etc/hosts entry: 127.0.0.1 vibespace-abc123.local
-    if err := s.updateHostsFile(vibespaceDomain); err != nil {
-        return "", err
-    }
-
-    // 3. Return clean URL
-    return fmt.Sprintf("http://%s", vibespaceDomain), nil
+func ValidateProjectName(name string) error {
+    // DNS-compatible: 3-32 chars, lowercase, hyphens only
+    // Must start/end with alphanumeric (no consecutive hyphens)
+    pattern := `^[a-z0-9]([a-z0-9-]{1,30}[a-z0-9])?$`
+    // ...
 }
 ```
 
-**How It Works** (Phase 2):
-1. User clicks "Open" in UI
-2. Backend creates IngressRoute (if needed)
-3. Backend adds `/etc/hosts` entry (requires sudo once)
-4. Returns `http://vibespace-abc123.local`
-5. User opens URL → DNS resolves to 127.0.0.1 → Traefik routes to Knative Service → code-server loads
+**Uniqueness**: `GenerateUniqueProjectName()` checks existing vibespaces and regenerates on collision.
 
-**Benefits** (Phase 2):
-- ✅ Clean URLs (`http://my-project.local`)
-- ✅ Works with Knative scale-from-zero (Traefik waits for pod to start)
-- ✅ Multiple ports supported (`vibespace-abc123-3000.local` for app ports)
-- ✅ Production-ready architecture
-- ✅ No long-running port-forward processes
+##### 4. DNS Resolution
 
-**Migration Path**:
+**DNS Server**: Custom Go server using `github.com/miekg/dns`
+**Port**: 5353 (unprivileged, no root required)
+**Resolution**: Wildcard `*.vibe.space` → 127.0.0.1
+
+```go
+// api/pkg/dns/server.go
+func (s *Server) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
+    m := new(dns.Msg)
+    m.SetReply(r)
+
+    domain := r.Question[0].Name
+
+    // Wildcard match: *.vibe.space
+    if strings.HasSuffix(domain, ".vibe.space.") {
+        rr := &dns.A{
+            Hdr: dns.RR_Header{
+                Name:   domain,
+                Rrtype: dns.TypeA,
+                Class:  dns.ClassINET,
+                Ttl:    0,  // Zero TTL (no caching)
+            },
+            A: net.ParseIP("127.0.0.1"),
+        }
+        m.Answer = append(m.Answer, rr)
+    }
+
+    w.WriteMsg(m)
+}
 ```
-Phase 1 (Current)                Phase 2 (Knative)
------------------                -----------------
-Pod: vibespace-{id}       →      Knative Service: vibespace-{id}
-kubectl port-forward      →      Traefik IngressRoute
-http://127.0.0.1:8080+N  →      http://vibespace-{id}.local
+
+**Platform Integration**:
+- **macOS**: `/etc/resolver/vibe.space` (domain-scoped resolver)
+- **Linux**: `/etc/systemd/resolved.conf.d/vibespace.conf` (systemd-resolved)
+
+##### 5. Access Endpoint Implementation
+
+```go
+// api/pkg/vibespace/service.go
+func (s *Service) Access(ctx context.Context, id string) (map[string]string, error) {
+    // Check feature flags
+    if isKnativeRoutingEnabled() && isDnsEnabled() {
+        return s.accessViaDNS(ctx, id)
+    } else {
+        return s.accessViaPortForward(ctx, id)
+    }
+}
+
+func (s *Service) accessViaDNS(ctx context.Context, id string) (map[string]string, error) {
+    vibespace, err := s.Get(ctx, id)
+    if err != nil {
+        return nil, err
+    }
+
+    if vibespace.ProjectName == "" {
+        return nil, errors.New("project name not set (required for DNS routing)")
+    }
+
+    // Generate URLs via IngressRoute manager
+    urls := s.ingressRouteManager.GenerateVibespaceURLs(vibespace.ProjectName)
+
+    return map[string]string{
+        "code":    urls["code"],    // http://code.{project}.vibe.space
+        "preview": urls["preview"], // http://preview.{project}.vibe.space
+        "prod":    urls["prod"],    // http://prod.{project}.vibe.space
+    }, nil
+}
+
+func (s *Service) accessViaPortForward(ctx context.Context, id string) (map[string]string, error) {
+    // Legacy fallback: kubectl port-forward
+    localPort := 8080 + hashStringToPort(id)
+
+    err := s.k8sClient.StartPortForwardToPod(ctx, "vibespace", "vibespace-"+id, localPort, 8080)
+    if err != nil {
+        return nil, err
+    }
+
+    return map[string]string{
+        "code-server": fmt.Sprintf("http://127.0.0.1:%d", localPort),
+    }, nil
+}
 ```
 
-When Phase 2 migration happens:
-1. Update `api/pkg/vibespace/service.go::Access()` to create IngressRoutes
-2. Add `/etc/hosts` management (with sudo prompt)
-3. Update frontend to handle `.local` URLs
-4. Remove port-forward cleanup logic
-5. Update tests
+##### 6. Feature Flags
+
+**Configuration** (`api/config/config.yaml`):
+```yaml
+features:
+  enable_knative_routing: true  # Use Knative Services (default)
+  enable_dns: true              # Use DNS resolution (default)
+
+dns:
+  base_domain: vibe.space
+  server_port: 5353
+```
+
+**Environment Variables**:
+- `ENABLE_KNATIVE_ROUTING=true` - Use Knative Services vs direct Pods
+- `ENABLE_DNS=true` - Use DNS resolution vs port-forward
+- `DNS_BASE_DOMAIN=vibe.space` - Base domain for subdomains
+
+**Fallback Behavior**:
+- If Knative disabled → Use direct Pods
+- If DNS disabled → Use port-forward URLs
+- If IngressRoute creation fails → Automatic port-forward fallback
+
+##### 7. Frontend Integration
+
+**API Response Structure**:
+```json
+{
+  "id": "abc123",
+  "name": "my-vibespace",
+  "project_name": "brave-eagle-7421",
+  "status": "running",
+  "urls": {
+    "code": "http://code.brave-eagle-7421.vibe.space",
+    "preview": "http://preview.brave-eagle-7421.vibe.space",
+    "prod": "http://prod.brave-eagle-7421.vibe.space"
+  }
+}
+```
+
+**Frontend Optimization** (`app/src/components/vibespace/components/VibespaceList.tsx`):
+```typescript
+const handleOpen = async (id: string, urlType: string = 'code') => {
+  const vibespace = vibespaces.find((vs) => vs.id === id);
+  let url: string | undefined;
+
+  // Optimization: Use DNS URLs directly if available (no /access API call)
+  if (vibespace?.urls && Object.keys(vibespace.urls).length > 0) {
+    url = vibespace.urls[urlType];
+  } else {
+    // Fallback: Call /access endpoint for port-forward URLs
+    const urls = await accessVibespace(id);
+    url = urls[urlType];
+  }
+
+  if (url) {
+    window.open(url, '_blank');
+  }
+};
+```
+
+**UI Components**:
+- **VibespaceCard**: Shows 3 buttons (Code/Preview/Production) when URLs available
+- **VibespaceList**: Optimizes by using DNS URLs directly (avoids `/access` call)
+
+##### 8. Multi-Process Containers
+
+**Supervisord Configuration** (`api/pkg/template/images/supervisord.conf`):
+```ini
+[program:code-server]
+command=/usr/local/bin/code-server --bind-addr 0.0.0.0:%(ENV_VIBESPACE_CODE_PORT)s
+autorestart=true
+
+[program:preview-server]
+command=/workspace/preview.sh
+autorestart=true
+
+[program:prod-server]
+command=/workspace/prod.sh
+autorestart=true
+```
+
+**Template-Specific Scripts**:
+- **Next.js**: `pnpm dev` (preview), `pnpm build && pnpm start` (prod)
+- **Vue**: `pnpm dev` (preview), `pnpm build && pnpm preview` (prod)
+- **Jupyter**: Jupyter Lab (preview), Jupyter Notebook (prod)
+
+##### Benefits of Current Implementation
+
+- ✅ **Scale-to-zero**: Vibespaces stop when idle (saves resources)
+- ✅ **Multi-port routing**: 3 services per vibespace (code/preview/prod)
+- ✅ **Human-readable URLs**: `code.brave-eagle-7421.vibe.space`
+- ✅ **No sudo required**: DNS server on unprivileged port 5353
+- ✅ **Backward compatible**: Feature flags allow Pod mode fallback
+- ✅ **Production-ready**: No long-running port-forward processes
+- ✅ **Fast startup**: Cold start from zero < 10 seconds
+- ✅ **Zero configuration**: DNS setup automated via Tauri
+
+**Implementation Reference**: See [ADR 0007](/docs/adr/0007-dns-resolution-for-local-vibespaces.md) for DNS strategy rationale.
 
 ---
 
