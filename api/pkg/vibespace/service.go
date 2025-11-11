@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"vibespace/pkg/k8s"
+	"vibespace/pkg/knative"
 	"vibespace/pkg/model"
 	"vibespace/pkg/network"
 
@@ -17,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -30,13 +32,36 @@ const (
 
 // Service handles vibespace operations
 type Service struct {
-	k8sClient *k8s.Client
+	k8sClient           *k8s.Client
+	knativeManager      *knative.ServiceManager
+	ingressRouteManager *network.IngressRouteManager
 }
 
 // NewService creates a new vibespace service
 func NewService(k8sClient *k8s.Client) *Service {
+	// Initialize Knative Service manager (may be nil if k8sClient is nil)
+	var knativeMgr *knative.ServiceManager
+	var ingressMgr *network.IngressRouteManager
+
+	if k8sClient != nil {
+		var err error
+		knativeMgr, err = knative.NewServiceManager(k8sClient)
+		if err != nil {
+			slog.Warn("failed to initialize Knative Service manager",
+				"error", err)
+		}
+
+		ingressMgr, err = network.NewIngressRouteManager(k8sClient, getBaseDomain())
+		if err != nil {
+			slog.Warn("failed to initialize IngressRoute manager",
+				"error", err)
+		}
+	}
+
 	return &Service{
-		k8sClient: k8sClient,
+		k8sClient:           k8sClient,
+		knativeManager:      knativeMgr,
+		ingressRouteManager: ingressMgr,
 	}
 }
 
@@ -55,6 +80,25 @@ func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
 		slog.Info("k8s client initialized successfully in vibespace service")
 	}
 
+	// MODE 1: List Knative Services (default)
+	if isKnativeRoutingEnabled() {
+		services, err := s.knativeManager.ListServices(ctx)
+		if err != nil {
+			slog.Error("failed to list Knative Services",
+				"error", err)
+			return nil, fmt.Errorf("failed to list Knative Services: %w", err)
+		}
+
+		vibespaces := make([]*model.Vibespace, 0, len(services.Items))
+		for i := range services.Items {
+			vibespace := knativeServiceToVibespace(&services.Items[i])
+			vibespaces = append(vibespaces, vibespace)
+		}
+
+		return vibespaces, nil
+	}
+
+	// MODE 2: List Pods (legacy fallback)
 	pods, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/managed-by=vibespace",
 	})
@@ -86,9 +130,32 @@ func (s *Service) Get(ctx context.Context, id string) (*model.Vibespace, error) 
 		slog.Info("k8s client initialized successfully in vibespace service")
 	}
 
+	slog.Info("getting vibespace",
+		"vibespace_id", id)
+
+	// MODE 1: Get Knative Service (default)
+	if isKnativeRoutingEnabled() {
+		service, err := s.knativeManager.GetService(ctx, id)
+		if err != nil {
+			slog.Warn("vibespace not found (Knative Service)",
+				"vibespace_id", id,
+				"error", err)
+			return nil, fmt.Errorf("vibespace not found: %w", err)
+		}
+
+		vibespace := knativeServiceToVibespace(service)
+
+		slog.Info("got vibespace successfully",
+			"vibespace_id", id,
+			"status", vibespace.Status)
+
+		return vibespace, nil
+	}
+
+	// MODE 2: Get Pod (legacy fallback)
 	podName := fmt.Sprintf("vibespace-%s", id)
 
-	slog.Info("getting vibespace",
+	slog.Info("getting vibespace pod",
 		"vibespace_id", id,
 		"pod_name", podName)
 
@@ -137,13 +204,26 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	}
 
 	id := uuid.New().String()[:8] // Short ID
-	podName := fmt.Sprintf("vibespace-%s", id)
 	pvcName := fmt.Sprintf("vibespace-%s-pvc", id)
 
-	slog.Debug("generated vibespace id",
+	// Generate unique project name for DNS routing
+	existingVibespaces, _ := s.List(ctx)
+	existingNames := make([]string, 0, len(existingVibespaces))
+	for _, vs := range existingVibespaces {
+		if vs.ProjectName != "" {
+			existingNames = append(existingNames, vs.ProjectName)
+		}
+	}
+	projectName := model.GenerateUniqueProjectName(existingNames)
+
+	// Allocate ports for multi-process container
+	ports := model.AllocatePorts(8080) // Base port 8080
+
+	slog.Debug("generated vibespace id and project name",
 		"vibespace_id", id,
-		"pod_name", podName,
-		"pvc_name", pvcName)
+		"project_name", projectName,
+		"pvc_name", pvcName,
+		"ports", ports)
 
 	// Set default resources if not provided
 	resources := req.Resources
@@ -256,10 +336,92 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	// Registry is exposed on NodePort 30500, accessible at localhost:30500 from within k3d nodes
 	vibespaceImage := fmt.Sprintf("localhost:30500/vibespace-%s-%s:latest", req.Template, agent)
 
-	// Configure ports based on template
-	// All templates expose code-server on port 8080
-	// Templates also expose their development server ports for preview
-	ports := []corev1.ContainerPort{
+	// MODE 1: Create Knative Service + IngressRoutes (default)
+	if isKnativeRoutingEnabled() {
+		slog.Info("creating vibespace with Knative Service",
+			"vibespace_id", id,
+			"project_name", projectName,
+			"image", vibespaceImage)
+
+		// Create Knative Service
+		err := s.knativeManager.CreateService(ctx, &knative.CreateServiceRequest{
+			VibespaceID: id,
+			Name:        req.Name,
+			ProjectName: projectName,
+			Template:    req.Template,
+			Agent:       agent,
+			Image:       vibespaceImage,
+			Ports:       ports,
+			Resources:   *resources,
+			Env:         req.Env,
+			Persistent:  req.Persistent,
+			PVCName:     pvcName,
+			GithubRepo:  req.GithubRepo,
+		})
+		if err != nil {
+			slog.Error("failed to create Knative Service",
+				"vibespace_id", id,
+				"error", err)
+			return nil, fmt.Errorf("failed to create Knative Service: %w", err)
+		}
+
+		slog.Info("Knative Service created, now creating IngressRoutes",
+			"vibespace_id", id,
+			"project_name", projectName)
+
+		// Create IngressRoutes for DNS routing
+		if isDnsEnabled() {
+			err = s.ingressRouteManager.CreateIngressRoutes(ctx, &network.CreateIngressRoutesRequest{
+				VibespaceID: id,
+				ProjectName: projectName,
+				Namespace:   k8s.VibespaceNamespace,
+			})
+			if err != nil {
+				// Rollback: delete Knative Service
+				slog.Error("failed to create IngressRoutes, rolling back Knative Service",
+					"vibespace_id", id,
+					"error", err)
+				s.knativeManager.DeleteService(ctx, id)
+				return nil, fmt.Errorf("failed to create IngressRoutes: %w", err)
+			}
+
+			slog.Info("IngressRoutes created successfully",
+				"vibespace_id", id,
+				"project_name", projectName)
+		}
+
+		// Build response with URLs
+		urls := model.GenerateURLs(projectName)
+
+		vibespace := &model.Vibespace{
+			ID:          id,
+			Name:        req.Name,
+			ProjectName: projectName,
+			Template:    req.Template,
+			Status:      "creating",
+			Resources:   *resources,
+			Ports:       ports,
+			URLs:        urls,
+			Persistent:  req.Persistent,
+			CreatedAt:   time.Now().Format(time.RFC3339),
+		}
+
+		slog.Info("vibespace created successfully",
+			"vibespace_id", id,
+			"project_name", projectName,
+			"template", req.Template,
+			"agent", req.Agent,
+			"urls", urls)
+
+		return vibespace, nil
+	}
+
+	// MODE 2: Create Pod (legacy fallback mode)
+	slog.Info("creating vibespace with Pod (legacy mode)",
+		"vibespace_id", id)
+
+	// Configure container ports
+	containerPorts := []corev1.ContainerPort{
 		{
 			Name:          "code-server",
 			ContainerPort: 8080,
@@ -270,24 +432,26 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	// Add template-specific preview ports
 	switch req.Template {
 	case "nextjs":
-		ports = append(ports, corev1.ContainerPort{
+		containerPorts = append(containerPorts, corev1.ContainerPort{
 			Name:          "preview",
 			ContainerPort: 3000,
 			Protocol:      corev1.ProtocolTCP,
 		})
 	case "vue":
-		ports = append(ports, corev1.ContainerPort{
+		containerPorts = append(containerPorts, corev1.ContainerPort{
 			Name:          "preview",
 			ContainerPort: 5173,
 			Protocol:      corev1.ProtocolTCP,
 		})
 	case "jupyter":
-		ports = append(ports, corev1.ContainerPort{
+		containerPorts = append(containerPorts, corev1.ContainerPort{
 			Name:          "jupyter",
 			ContainerPort: 8888,
 			Protocol:      corev1.ProtocolTCP,
 		})
 	}
+
+	podName := fmt.Sprintf("vibespace-%s", id)
 
 	// Create pod
 	pod := &corev1.Pod{
@@ -314,7 +478,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 				{
 					Name:         "code-server",
 					Image:        vibespaceImage,
-					Ports:        ports,
+					Ports:        containerPorts,
 					Env:          env,
 					VolumeMounts: volumeMounts,
 					// Resources will be added later
@@ -340,7 +504,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		return nil, fmt.Errorf("failed to create vibespace pod: %w", err)
 	}
 
-	slog.Info("vibespace created successfully",
+	slog.Info("vibespace created successfully (legacy mode)",
 		"vibespace_id", id,
 		"pod_name", podName,
 		"status", created.Status.Phase,
@@ -365,15 +529,34 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		slog.Info("k8s client initialized successfully in vibespace service")
 	}
 
-	// MVP Implementation: Delete pod
-	// Note: PVCs are left for manual cleanup to prevent accidental data loss
-	//
-	// Future Knative Implementation:
-	// - Delete Knative Service instead of Pod
-	// - Knative will handle cleanup of all related resources
-	// - PVC deletion policy will be configurable per vibespace
-	// - kubectl delete ksvc vibespace-{id} -n vibespace
+	slog.Info("deleting vibespace",
+		"vibespace_id", id)
 
+	// MODE 1: Delete Knative Service + IngressRoutes (default)
+	if isKnativeRoutingEnabled() {
+		// Delete IngressRoutes first (DNS routing)
+		if isDnsEnabled() {
+			if err := s.ingressRouteManager.DeleteIngressRoutes(ctx, id, k8s.VibespaceNamespace); err != nil {
+				slog.Warn("failed to delete IngressRoutes",
+					"vibespace_id", id,
+					"error", err)
+				// Continue with Knative Service deletion even if IngressRoute deletion fails
+			}
+		}
+
+		// Delete Knative Service
+		if err := s.knativeManager.DeleteService(ctx, id); err != nil {
+			return fmt.Errorf("failed to delete Knative Service: %w", err)
+		}
+
+		slog.Info("vibespace deleted successfully",
+			"vibespace_id", id)
+
+		// Note: PVCs are left for manual cleanup to prevent accidental data loss
+		return nil
+	}
+
+	// MODE 2: Delete Pod (legacy fallback)
 	podName := fmt.Sprintf("vibespace-%s", id)
 
 	// Stop any active port-forward for this vibespace before deleting
@@ -391,6 +574,11 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to delete vibespace pod: %w", err)
 	}
 
+	slog.Info("vibespace pod deleted successfully",
+		"vibespace_id", id,
+		"pod_name", podName)
+
+	// Note: PVCs are left for manual cleanup to prevent accidental data loss
 	return nil
 }
 
@@ -409,18 +597,35 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		slog.Info("k8s client initialized successfully in vibespace service")
 	}
 
-	// MVP Phase 1 Implementation: Check if pod exists
-	// If pod exists, it's already running (no-op)
-	// If pod doesn't exist, we can't recreate it (no metadata storage in Phase 1)
-	//
-	// MVP Phase 2 (Knative migration):
-	// - Knative Services automatically scale from zero on first request
-	// - Start operation will patch the Knative Service to set minScale=1
-	// - No need to manually recreate pods or store metadata
+	slog.Info("starting vibespace",
+		"vibespace_id", id)
 
+	// MODE 1: Patch Knative Service to scale up (default)
+	if isKnativeRoutingEnabled() {
+		// Set minScale=1 to ensure at least 1 replica is running
+		annotations := map[string]string{
+			"autoscaling.knative.dev/minScale": "1",
+		}
+
+		err := s.knativeManager.PatchService(ctx, id, annotations)
+		if err != nil {
+			slog.Error("failed to start vibespace (Knative)",
+				"vibespace_id", id,
+				"error", err)
+			return fmt.Errorf("failed to start vibespace: %w", err)
+		}
+
+		slog.Info("vibespace started successfully",
+			"vibespace_id", id,
+			"minScale", "1")
+
+		return nil
+	}
+
+	// MODE 2: Check Pod status (legacy fallback)
 	podName := fmt.Sprintf("vibespace-%s", id)
 
-	slog.Info("starting vibespace",
+	slog.Info("checking vibespace pod status",
 		"vibespace_id", id,
 		"pod_name", podName)
 
@@ -433,9 +638,8 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		return nil
 	}
 
-	// Limitation: Cannot restart a stopped vibespace in MVP Phase 1
-	// This will be resolved in MVP Phase 2 with Knative migration
-	slog.Warn("cannot restart stopped vibespace in MVP Phase 1",
+	// Limitation: Cannot restart a stopped vibespace in legacy Pod mode
+	slog.Warn("cannot restart stopped vibespace in legacy Pod mode",
 		"vibespace_id", id,
 		"pod_name", podName)
 	return nil
@@ -456,20 +660,36 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 		slog.Info("k8s client initialized successfully in vibespace service")
 	}
 
-	// MVP Implementation: Delete pod to stop it, PVC remains for data persistence
-	// Note: Without metadata storage, we can't automatically restart stopped vibespaces
-	// This will be addressed in Phase 1.5 or Phase 2 with Knative
-	//
-	// Future Knative Implementation:
-	// - Patch Knative Service to set minScale=0 annotation
-	// - Knative will gracefully scale down to zero replicas after idle timeout
-	// - On next request, Knative auto-scales back up with the same PVC attached
-	// - Provides true scale-to-zero without manual pod deletion
-	// - kubectl patch ksvc vibespace-{id} -n vibespace -p '{"spec":{"template":{"metadata":{"annotations":{"autoscaling.knative.dev/min-scale":"0"}}}}}'
+	slog.Info("stopping vibespace",
+		"vibespace_id", id)
 
+	// MODE 1: Patch Knative Service to scale to zero (default)
+	if isKnativeRoutingEnabled() {
+		// Set minScale=0 to allow scaling to zero replicas
+		annotations := map[string]string{
+			"autoscaling.knative.dev/minScale": "0",
+		}
+
+		err := s.knativeManager.PatchService(ctx, id, annotations)
+		if err != nil {
+			slog.Error("failed to stop vibespace (Knative)",
+				"vibespace_id", id,
+				"error", err)
+			return fmt.Errorf("failed to stop vibespace: %w", err)
+		}
+
+		slog.Info("vibespace stopped successfully",
+			"vibespace_id", id,
+			"minScale", "0")
+
+		// Note: PVC remains attached, data is preserved
+		return nil
+	}
+
+	// MODE 2: Delete Pod (legacy fallback)
 	podName := fmt.Sprintf("vibespace-%s", id)
 
-	slog.Info("stopping vibespace",
+	slog.Info("stopping vibespace pod",
 		"vibespace_id", id,
 		"pod_name", podName)
 
@@ -498,10 +718,11 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to stop vibespace: %w", err)
 	}
 
-	slog.Info("vibespace stopped successfully",
+	slog.Info("vibespace pod stopped successfully",
 		"vibespace_id", id,
 		"pod_name", podName)
 
+	// Note: PVC remains, preserving vibespace data
 	return nil
 }
 
@@ -808,6 +1029,136 @@ func podToVibespace(pod *corev1.Pod) *model.Vibespace {
 		Persistent: true,
 		CreatedAt:  pod.CreationTimestamp.Format(time.RFC3339),
 	}
+}
+
+// knativeServiceToVibespace converts a Knative Service to Vibespace model
+func knativeServiceToVibespace(svc *unstructured.Unstructured) *model.Vibespace {
+	// Extract metadata
+	metadata, _ := svc.Object["metadata"].(map[string]interface{})
+	labels, _ := metadata["labels"].(map[string]string)
+	annotations, _ := metadata["annotations"].(map[string]string)
+
+	id := labels["vibespace.dev/id"]
+	name := labels["app.kubernetes.io/name"]
+	template := labels["vibespace.dev/template"]
+	projectName := labels["vibespace.dev/project-name"]
+	createdAt := annotations["vibespace.dev/created-at"]
+
+	// Extract status from Knative Service
+	status := knativeStatusToVibespaceStatus(svc)
+
+	// Extract ports from container spec
+	ports := extractPortsFromKnativeService(svc)
+
+	// Generate URLs from project name
+	urls := model.GenerateURLs(projectName)
+
+	return &model.Vibespace{
+		ID:          id,
+		Name:        name,
+		ProjectName: projectName,
+		Template:    template,
+		Status:      status,
+		Resources: model.Resources{
+			CPU:     "1",
+			Memory:  "2Gi",
+			Storage: "10Gi",
+		},
+		Ports:      ports,
+		URLs:       urls,
+		Persistent: true, // TODO: Detect from volumes
+		CreatedAt:  createdAt,
+	}
+}
+
+// knativeStatusToVibespaceStatus maps Knative Ready condition to vibespace status
+func knativeStatusToVibespaceStatus(svc *unstructured.Unstructured) string {
+	status, found, _ := unstructured.NestedMap(svc.Object, "status")
+	if !found {
+		return "creating"
+	}
+
+	conditions, found, _ := unstructured.NestedSlice(status, "conditions")
+	if !found {
+		return "creating"
+	}
+
+	// Check Ready condition
+	for _, c := range conditions {
+		condition, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		condType, _, _ := unstructured.NestedString(condition, "type")
+		if condType == "Ready" {
+			condStatus, _, _ := unstructured.NestedString(condition, "status")
+			if condStatus == "True" {
+				return "running"
+			}
+			// Check if scaled to zero
+			reason, _, _ := unstructured.NestedString(condition, "reason")
+			if reason == "NoTraffic" {
+				return "stopped"
+			}
+			return "creating"
+		}
+	}
+
+	return "creating"
+}
+
+// extractPortsFromKnativeService extracts ports from Knative Service container spec
+func extractPortsFromKnativeService(svc *unstructured.Unstructured) model.Ports {
+	// Navigate to spec.template.spec.containers[0].ports
+	containers, found, _ := unstructured.NestedSlice(svc.Object, "spec", "template", "spec", "containers")
+	if !found || len(containers) == 0 {
+		// Return default ports
+		return model.Ports{Code: 8080, Preview: 3000, Prod: 3001}
+	}
+
+	container, ok := containers[0].(map[string]interface{})
+	if !ok {
+		return model.Ports{Code: 8080, Preview: 3000, Prod: 3001}
+	}
+
+	portsArray, found, _ := unstructured.NestedSlice(container, "ports")
+	if !found {
+		return model.Ports{Code: 8080, Preview: 3000, Prod: 3001}
+	}
+
+	ports := model.Ports{}
+	for _, p := range portsArray {
+		port, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		portName, _, _ := unstructured.NestedString(port, "name")
+		portNum, _, _ := unstructured.NestedInt64(port, "containerPort")
+
+		switch portName {
+		case "code":
+			ports.Code = int(portNum)
+		case "preview":
+			ports.Preview = int(portNum)
+		case "prod":
+			ports.Prod = int(portNum)
+		}
+	}
+
+	// Fill in any missing ports with defaults
+	if ports.Code == 0 {
+		ports.Code = 8080
+	}
+	if ports.Preview == 0 {
+		ports.Preview = 3000
+	}
+	if ports.Prod == 0 {
+		ports.Prod = 3001
+	}
+
+	return ports
 }
 
 func envMapToEnvVars(envMap map[string]string) []corev1.EnvVar {
