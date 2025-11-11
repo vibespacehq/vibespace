@@ -3,8 +3,21 @@ FROM registry.default.svc.cluster.local:5000/vibespace-base-${AGENT}:latest
 
 USER root
 
+# Install supervisord for multi-process management
+RUN apt-get update && apt-get install -y supervisor && rm -rf /var/lib/apt/lists/*
+
 # Install pnpm 10.18.3
 RUN npm install -g pnpm@10.18.3
+
+# Create vibespace scripts directory
+RUN mkdir -p /opt/vibespace
+
+# Copy multi-process scripts
+COPY supervisord.conf /opt/vibespace/supervisord.conf
+COPY entrypoint.sh /opt/vibespace/entrypoint.sh
+COPY preview.sh /opt/vibespace/preview.sh
+COPY prod.sh /opt/vibespace/prod.sh
+RUN chmod +x /opt/vibespace/*.sh
 
 USER workspace
 
@@ -23,10 +36,10 @@ RUN mkdir -p ~/.claude ~/.openai ~/.gemini && \
     cp /home/workspace/NEXTJS-GUIDE.md ~/.openai/NEXTJS-GUIDE.md 2>/dev/null || true && \
     cp /home/workspace/NEXTJS-GUIDE.md ~/.gemini/NEXTJS-GUIDE.md 2>/dev/null || true
 
-# Create init script - installs Next.js 15.5.5
+# Create vibespace initialization script - installs Next.js 15.5.5
 RUN echo '#!/bin/bash\n\
 if [ ! -f /workspace/.initialized ]; then\n\
-  echo "Initializing Next.js workspace..."\n\
+  echo "Initializing Next.js vibespace..."\n\
   # Create Next.js app in temp directory (create-next-app has issues with mounted volumes)\n\
   # Use lowercase directory name to avoid npm naming restrictions\n\
   TEMP_DIR="/tmp/nextjs-init-$(date +%s)"\n\
@@ -53,17 +66,13 @@ if [ ! -f /workspace/.initialized ]; then\n\
   echo "  React: $(pnpm list react --depth=0 | grep -oP \"react@\\K[^\\s]+\")"\n\
   echo "  TypeScript: $(pnpm list typescript --depth=0 | grep -oP \"typescript@\\K[^\\s]+\")"\n\
   echo "  Tailwind: $(pnpm list tailwindcss --depth=0 | grep -oP \"tailwindcss@\\K[^\\s]+\")"\n\
-  # Start dev server in background\n\
-  echo "Starting Next.js dev server..."\n\
-  pnpm dev &>/dev/null &\n\
-  echo "  ✓ Dev server running on port 3000"\n\
   echo ""\n\
   touch /workspace/.initialized\n\
-fi\n\
-~/init-agents.sh\n\
-exec code-server /workspace' > /home/workspace/init.sh && \
-    chmod +x /home/workspace/init.sh
+fi' > /home/workspace/init-workspace.sh && \
+    chmod +x /home/workspace/init-workspace.sh
 
-EXPOSE 8080 3000
+# Expose all 3 service ports
+EXPOSE 8080 3000 3001
 
-CMD ["/home/workspace/init.sh"]
+# Use multi-process entrypoint
+CMD ["/bin/bash", "/opt/vibespace/entrypoint.sh"]
