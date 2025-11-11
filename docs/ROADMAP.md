@@ -40,10 +40,11 @@
 
 ### Infrastructure
 - **Kubernetes**: Bundled runtime (Colima on macOS, k3s on Linux)
-- **Deployment**: Knative Services with Traefik ingress
-- **Networking**: Traefik IngressRoutes for local DNS
+- **Deployment**: Knative Services with Traefik ingress ✅ Complete (Issue #52)
+- **Networking**: Traefik IngressRoutes + Custom DNS (*.vibe.space wildcard) ✅ Complete (Issue #52)
 - **Storage**: Local PersistentVolumes via k3s local-path provisioner
-- **Access**: `vibespace-{id}.local` via Traefik
+- **Access**: `{code,preview,prod}.{project}.vibe.space` (e.g., `code.brave-eagle-7421.vibe.space`)
+- **DNS**: Bundled dnsd server (miekg/dns on port 5353) ✅ Complete (Issue #52)
 - **Image Building**: BuildKit for custom templates
 
 ### Success Metrics
@@ -70,12 +71,13 @@
 
 ### Core Features
 
-#### Knative Scale-to-Zero
-- [ ] Migrate from simple Pods to **Knative Services**
-- [ ] Auto-stop vibespaces when idle (scale to zero)
-- [ ] Auto-start vibespaces on access (scale from zero)
-- [ ] Saves local machine resources
-- [ ] Vibespace start/stop lifecycle UI
+#### Knative Scale-to-Zero ✅ COMPLETED IN MVP PHASE 1 (Issue #52)
+- [x] Migrate from simple Pods to **Knative Services**
+- [x] Auto-stop vibespaces when idle (scale to zero - minScale=0)
+- [x] Auto-start vibespaces on access (scale from zero)
+- [x] Saves local machine resources
+- [x] Vibespace start/stop lifecycle backend (Start=minScale:1, Stop=minScale:0)
+- [ ] Vibespace start/stop lifecycle UI (frontend integration pending)
 
 #### Custom Template Builder
 - [ ] **Visual Dockerfile editor** with syntax highlighting (Monaco)

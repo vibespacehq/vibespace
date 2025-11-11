@@ -127,10 +127,11 @@ export interface VibespaceResources {
 export interface Vibespace {
   id: string;
   name: string;
+  project_name?: string; // DNS-friendly name (e.g., "brave-eagle-7421") - added in Knative migration
   template: string;
   status: 'creating' | 'starting' | 'running' | 'stopping' | 'stopped' | 'deleting' | 'error';
   resources: VibespaceResources;
-  urls: Record<string, string>;
+  urls: Record<string, string>; // DNS URLs: {code: "http://code.{project}.vibe.space", preview: ..., prod: ...}
   persistent: boolean;
   created_at: string;
 }
