@@ -3,6 +3,7 @@
  *
  * Manages DNS configuration for vibespace subdomain routing.
  * Handles DNS setup, status checking, and system DNS configuration.
+ * Will be integrated into Setup Wizard (Phase 2) and Settings page.
  *
  * Features:
  * - Check DNS setup status (configured, running, port availability)
@@ -13,6 +14,19 @@
  * @public
  * @see SPEC.md Section 8.1 (DNS Resolution)
  * @see ADR 0007 (DNS Resolution Strategy)
+ * @see Issue #52 (Knative + Traefik + DNS migration)
+ * @example
+ * ```tsx
+ * function DnsSetup() {
+ *   const { status, configureDns } = useDns();
+ *
+ *   if (!status?.configured) {
+ *     return <button onClick={configureDns}>Enable DNS</button>;
+ *   }
+ *
+ *   return <div>DNS running on port {status.port}</div>;
+ * }
+ * ```
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -61,6 +75,11 @@ export interface UseDnsResult {
 /**
  * Hook for managing DNS configuration
  *
+ * Part of the DNS subsystem for vibespace subdomain routing.
+ * Will be integrated into the Setup Wizard and Settings page in Phase 2.
+ *
+ * @public
+ * @see Issue #52
  * @example
  * ```tsx
  * function DnsSetup() {

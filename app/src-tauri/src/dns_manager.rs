@@ -108,6 +108,7 @@ pub trait DnsProvider: Send {
     fn cleanup(&self) -> Result<(), String>;
 
     /// Get DNS server process ID
+    #[allow(dead_code)]
     fn get_pid(&self) -> Option<u32>;
 }
 
@@ -139,14 +140,17 @@ impl DnsManager {
         Ok(DnsManager { provider, platform })
     }
 
+    #[allow(dead_code)]
     pub fn is_installed(&self) -> bool {
         self.provider.is_installed()
     }
 
+    #[allow(dead_code)]
     pub fn is_running(&self) -> bool {
         self.provider.is_running()
     }
 
+    #[allow(dead_code)]
     pub fn is_configured(&self) -> bool {
         self.provider.is_configured()
     }
@@ -174,6 +178,7 @@ impl DnsManager {
         self.provider.cleanup()
     }
 
+    #[allow(dead_code)]
     pub fn get_pid(&self) -> Option<u32> {
         self.provider.get_pid()
     }
