@@ -127,12 +127,12 @@ export function VibespaceCard({
 
   const canStart = vibespace.status === 'stopped';
   const canStop = vibespace.status === 'running';
-  const canOpen = vibespace.status === 'running' && vibespace.urls?.['code-server'];
 
-  // Determine preview URL type and availability based on template
-  const previewUrlType = vibespace.template === 'jupyter' ? 'jupyter' : 'preview';
-  const previewLabel = vibespace.template === 'jupyter' ? 'Jupyter' : 'Preview';
-  const canOpenPreview = vibespace.status === 'running' && vibespace.urls?.[previewUrlType];
+  // Knative DNS URLs: code/preview/prod subdomains
+  const hasUrls = vibespace.urls && Object.keys(vibespace.urls).length > 0;
+  const canOpenCode = vibespace.status === 'running' && (vibespace.urls?.code || vibespace.urls?.['code-server']);
+  const canOpenPreview = vibespace.status === 'running' && vibespace.urls?.preview;
+  const canOpenProd = vibespace.status === 'running' && vibespace.urls?.prod;
 
   return (
     <div className="vibespace-card">
@@ -218,24 +218,37 @@ export function VibespaceCard({
       </div>
 
       <div className="vibespace-card-footer">
-        <button
-          className="btn-open-vibespace"
-          onClick={() => onOpen(vibespace.id)}
-          disabled={!canOpen || isOperating}
-          aria-label="Open vibespace in browser"
-        >
-          <ExternalLink size={16} />
-          Open
-        </button>
+        {canOpenCode && (
+          <button
+            className="btn-open-vibespace"
+            onClick={() => onOpen(vibespace.id, 'code')}
+            disabled={isOperating}
+            aria-label="Open code-server in browser"
+          >
+            <ExternalLink size={16} />
+            Code
+          </button>
+        )}
         {canOpenPreview && (
           <button
             className="btn-open-preview"
-            onClick={() => onOpen(vibespace.id, previewUrlType)}
+            onClick={() => onOpen(vibespace.id, 'preview')}
             disabled={isOperating}
-            aria-label={`Open ${previewLabel} in browser`}
+            aria-label="Open preview server in browser"
           >
             <ExternalLink size={16} />
-            {previewLabel}
+            Preview
+          </button>
+        )}
+        {canOpenProd && (
+          <button
+            className="btn-open-preview"
+            onClick={() => onOpen(vibespace.id, 'prod')}
+            disabled={isOperating}
+            aria-label="Open production server in browser"
+          >
+            <ExternalLink size={16} />
+            Production
           </button>
         )}
       </div>

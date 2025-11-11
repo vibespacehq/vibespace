@@ -14,7 +14,9 @@ const mockVibespace: Vibespace = {
     memory: '4Gi',
   },
   urls: {
-    'code-server': 'http://localhost:8080',
+    code: 'http://code.example.vibe.space',
+    preview: 'http://preview.example.vibe.space',
+    prod: 'http://prod.example.vibe.space',
   },
   persistent: true,
   created_at: '2025-01-15T10:00:00Z',
@@ -55,28 +57,61 @@ describe('VibespaceCard', () => {
     expect(screen.queryByText('Persistent')).not.toBeInTheDocument();
   });
 
-  it('enables open button when vibespace is running', () => {
+  it('enables code button when vibespace is running', () => {
     render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
 
-    const openButton = screen.getByLabelText('Open vibespace in browser');
-    expect(openButton).not.toBeDisabled();
+    const codeButton = screen.getByLabelText('Open code-server in browser');
+    expect(codeButton).not.toBeDisabled();
   });
 
-  it('disables open button when vibespace is stopped', () => {
+  it('disables code button when vibespace is stopped', () => {
     const stoppedVibespace = { ...mockVibespace, status: 'stopped' as const };
     render(<VibespaceCard vibespace={stoppedVibespace} {...mockHandlers} />);
 
-    const openButton = screen.getByLabelText('Open vibespace in browser');
-    expect(openButton).toBeDisabled();
+    expect(screen.queryByLabelText('Open code-server in browser')).not.toBeInTheDocument();
   });
 
-  it('calls onOpen when open button is clicked', async () => {
+  it('calls onOpen with code urlType when code button is clicked', async () => {
     const user = userEvent.setup();
     render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
 
-    await user.click(screen.getByLabelText('Open vibespace in browser'));
+    await user.click(screen.getByLabelText('Open code-server in browser'));
 
-    expect(mockHandlers.onOpen).toHaveBeenCalledWith('ws-1');
+    expect(mockHandlers.onOpen).toHaveBeenCalledWith('ws-1', 'code');
+  });
+
+  it('shows preview button when preview URL is available', () => {
+    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
+
+    const previewButton = screen.getByLabelText('Open preview server in browser');
+    expect(previewButton).toBeInTheDocument();
+    expect(previewButton).not.toBeDisabled();
+  });
+
+  it('calls onOpen with preview urlType when preview button is clicked', async () => {
+    const user = userEvent.setup();
+    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
+
+    await user.click(screen.getByLabelText('Open preview server in browser'));
+
+    expect(mockHandlers.onOpen).toHaveBeenCalledWith('ws-1', 'preview');
+  });
+
+  it('shows production button when prod URL is available', () => {
+    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
+
+    const prodButton = screen.getByLabelText('Open production server in browser');
+    expect(prodButton).toBeInTheDocument();
+    expect(prodButton).not.toBeDisabled();
+  });
+
+  it('calls onOpen with prod urlType when production button is clicked', async () => {
+    const user = userEvent.setup();
+    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
+
+    await user.click(screen.getByLabelText('Open production server in browser'));
+
+    expect(mockHandlers.onOpen).toHaveBeenCalledWith('ws-1', 'prod');
   });
 
   it('shows actions menu when menu button is clicked', async () => {

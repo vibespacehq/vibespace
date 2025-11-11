@@ -25,11 +25,20 @@ export function VibespaceList({ onCreateNew }: VibespaceListProps) {
     accessVibespace,
   } = useVibespaces();
 
-  const handleOpen = async (id: string, urlType: string = 'code-server') => {
+  const handleOpen = async (id: string, urlType: string = 'code') => {
     try {
-      // Call access endpoint to get port-forward URLs
-      const urls = await accessVibespace(id);
-      const url = urls[urlType];
+      // Find vibespace in current list to check if DNS URLs are available
+      const vibespace = vibespaces.find((vs) => vs.id === id);
+      let url: string | undefined;
+
+      // Optimization: Use DNS URLs directly if available (Knative mode)
+      if (vibespace?.urls && Object.keys(vibespace.urls).length > 0) {
+        url = vibespace.urls[urlType];
+      } else {
+        // Fallback: Call /access endpoint for port-forward URLs (legacy Pod mode)
+        const urls = await accessVibespace(id);
+        url = urls[urlType];
+      }
 
       if (!url) {
         throw new Error(`${urlType} URL not available for this vibespace`);

@@ -12,7 +12,11 @@ const mockVibespaces: Vibespace[] = [
     template: 'nextjs',
     status: 'running',
     resources: { cpu: '2', memory: '4Gi' },
-    urls: { 'code-server': 'http://localhost:8080' },
+    urls: {
+      code: 'http://code.example.vibe.space',
+      preview: 'http://preview.example.vibe.space',
+      prod: 'http://prod.example.vibe.space',
+    },
     persistent: true,
     created_at: '2025-01-15T10:00:00Z',
   },
@@ -186,34 +190,23 @@ describe('VibespaceList', () => {
       expect(onCreateNew).toHaveBeenCalledTimes(1);
     });
 
-    it('opens vibespace URL when open is clicked', async () => {
+    it('opens vibespace URL when code button is clicked', async () => {
       const user = userEvent.setup();
-      const accessVibespace = vi.fn().mockResolvedValue({
-        'code-server': 'http://127.0.0.1:8815',
-        'preview': 'http://127.0.0.1:8916'
-      });
       const windowOpenSpy = vi.spyOn(window, 'open');
 
-      vi.spyOn(useVibespacesHook, 'useVibespaces').mockReturnValue({
-        ...mockUseVibespaces,
-        accessVibespace,
-      });
-
       render(<VibespaceList onCreateNew={vi.fn()} />);
 
-      const openButtons = screen.getAllByLabelText('Open vibespace in browser');
-      await user.click(openButtons[0]);
+      // Click the Code button (first vibespace, which has DNS URLs)
+      const codeButton = screen.getAllByLabelText('Open code-server in browser')[0];
+      await user.click(codeButton);
 
-      expect(accessVibespace).toHaveBeenCalledWith('ws-1');
-      expect(windowOpenSpy).toHaveBeenCalledWith('http://127.0.0.1:8815', '_blank');
+      // Should use DNS URL directly (no /access call needed)
+      expect(windowOpenSpy).toHaveBeenCalledWith('http://code.example.vibe.space', '_blank');
     });
 
-    it('calls accessVibespace when open is clicked', async () => {
+    it('uses DNS URLs directly when available (no /access call)', async () => {
       const user = userEvent.setup();
-      const accessVibespace = vi.fn().mockResolvedValue({
-        'code-server': 'http://127.0.0.1:8816',
-        'preview': 'http://127.0.0.1:8917'
-      });
+      const accessVibespace = vi.fn();
 
       vi.spyOn(useVibespacesHook, 'useVibespaces').mockReturnValue({
         ...mockUseVibespaces,
@@ -222,10 +215,31 @@ describe('VibespaceList', () => {
 
       render(<VibespaceList onCreateNew={vi.fn()} />);
 
-      const openButtons = screen.getAllByLabelText('Open vibespace in browser');
-      await user.click(openButtons[0]);
+      const codeButton = screen.getAllByLabelText('Open code-server in browser')[0];
+      await user.click(codeButton);
 
-      expect(accessVibespace).toHaveBeenCalledWith('ws-1');
+      // Should NOT call accessVibespace when DNS URLs are already available
+      expect(accessVibespace).not.toHaveBeenCalled();
+    });
+
+    it('does not show buttons when vibespace has no URLs', () => {
+      // Mock vibespace without URLs (happens when vibespace is stopped or URLs not yet populated)
+      const vibespacesWithoutUrls = [{
+        ...mockVibespaces[0],
+        urls: {},
+      }];
+
+      vi.spyOn(useVibespacesHook, 'useVibespaces').mockReturnValue({
+        ...mockUseVibespaces,
+        vibespaces: vibespacesWithoutUrls,
+      });
+
+      render(<VibespaceList onCreateNew={vi.fn()} />);
+
+      // No buttons should be rendered when URLs are empty
+      expect(screen.queryByLabelText('Open code-server in browser')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Open preview server in browser')).not.toBeInTheDocument();
+      expect(screen.queryByLabelText('Open production server in browser')).not.toBeInTheDocument();
     });
   });
 });

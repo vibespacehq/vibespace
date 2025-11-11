@@ -1951,19 +1951,26 @@ spec:
 
 #### 8.2.1 Overview: Staged Migration Approach
 
-Vibespace access uses a **staged approach** to balance MVP delivery speed with production-ready architecture:
+Vibespace access has **completed migration** to production-ready architecture:
 
 | Phase | Vibespace Type | Access Method | URLs | Status |
 |-------|---------------|---------------|------|--------|
-| **MVP Phase 1** | Kubernetes Pods | `kubectl port-forward` | `http://127.0.0.1:8080+N` | ✅ **Current** |
-| **MVP Phase 2** | Knative Services | Traefik IngressRoutes | `http://vibespace-{id}.local` | 🔮 Planned |
+| **MVP Phase 1 (Initial)** | Kubernetes Pods | `kubectl port-forward` | `http://127.0.0.1:8080+N` | ⚠️ **Legacy** |
+| **MVP Phase 1 (Current)** | Knative Services | Traefik IngressRoutes + DNS | `http://{subdomain}.{project}.vibe.space` | ✅ **Complete** |
 
-**Why Staged?**
-- **Phase 1 Goal**: Ship MVP fast, validate vibespace concept with users
-- **Phase 2 Goal**: Production-grade routing when Knative Services are introduced
-- **Trade-off**: Accept port-forward simplicity now, refactor when migrating to Knative
+**Migration Completed** (Issue #52):
+- Vibespaces now run as **Knative Services** with scale-to-zero capability
+- **3 subdomains per vibespace**: `code.{project}.vibe.space`, `preview.{project}.vibe.space`, `prod.{project}.vibe.space`
+- **Custom DNS resolution** via bundled dnsd server (miekg/dns on port 5353)
+- **Dual-mode operation**: Knative mode (default), Pod mode (legacy fallback via `ENABLE_KNATIVE_ROUTING=false`)
+- **Project names**: DNS-friendly identifiers (e.g., `brave-eagle-7421`) auto-generated with uniqueness check
 
-**Migration Trigger**: When vibespaces migrate from plain Pods → Knative Services (Phase 2), `kubectl port-forward` to pods becomes fragile (pod names change with revisions, scale-from-zero recreates pods). At that point, switch to Traefik IngressRoutes which work seamlessly with Knative.
+**Benefits of Migration**:
+- ✅ Scale-to-zero when idle (minScale=0)
+- ✅ Multi-port routing (code/preview/prod on single vibespace)
+- ✅ Human-readable URLs instead of localhost ports
+- ✅ Seamless integration with Knative lifecycle
+- ✅ Backward compatible via feature flags
 
 ---
 
@@ -2789,7 +2796,7 @@ $ vibespace template import my-django-template.tar.gz
   - Vibespace list with status polling (app/src/hooks/useVibespaces.ts:1-238)
   - Full integration with backend APIs (app/src/lib/api-config.ts:1-54)
 
-**Status**: ~70% of MVP Phase 1 complete. Infrastructure and UI foundation solid.
+**Status**: ~95% of MVP Phase 1 complete. Infrastructure, UI foundation, and Knative migration complete. Only credential management backend remaining.
 
 ---
 
@@ -2824,6 +2831,16 @@ $ vibespace template import my-django-template.tar.gz
   - ✅ PVC mounting at /vibespace with proper permissions
   - ✅ Init containers for git clone and permission fixes
   - ✅ Security context with non-root user (UID 1001)
+- [x] **Knative + Traefik + DNS integration** (Issue #52, PR #53):
+  - ✅ Knative Services replace Pods for scale-to-zero capability
+  - ✅ Traefik IngressRoutes for multi-port routing (code/preview/prod subdomains)
+  - ✅ Custom DNS resolution (miekg/dns server on port 5353, *.vibe.space wildcard)
+  - ✅ Project name generation with uniqueness check (e.g., `brave-eagle-7421`)
+  - ✅ All CRUD operations refactored (Create/List/Get/Delete/Start/Stop use Knative)
+  - ✅ Dual-mode operation via feature flags (Knative default, Pod fallback)
+  - ✅ PatchService for scaling operations (minScale 0↔1)
+  - ✅ Helper functions for Knative→Vibespace conversion
+  - ✅ URL structure: `{code,preview,prod}.{project}.vibe.space`
 
 #### In Progress:
 - [ ] **Credential management backend**:
