@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod k8s_manager;
+mod dns_manager;
 
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
@@ -10,6 +11,7 @@ use aes_gcm::{
 use base64::{engine::general_purpose, Engine as _};
 use tauri::Emitter;
 use k8s_manager::{K8sManager, KubernetesStatus, InstallProgress};
+use dns_manager::{DnsManager, DnsStatus, DnsSetupProgress};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
@@ -269,6 +271,87 @@ async fn uninstall_kubernetes() -> Result<(), String> {
 #[tauri::command]
 async fn get_os_type() -> Result<String, String> {
     Ok(std::env::consts::OS.to_string())
+}
+
+// ============================================================================
+// Tauri Commands - DNS
+// ============================================================================
+
+#[tauri::command]
+async fn get_dns_status() -> Result<DnsStatus, String> {
+    println!("Getting DNS status...");
+
+    let manager = DnsManager::new()?;
+    let status = manager.get_status();
+
+    println!("DNS status: installed={}, running={}, configured={}",
+        status.installed, status.running, status.configured);
+
+    Ok(status)
+}
+
+#[tauri::command]
+async fn setup_dns(app_handle: tauri::AppHandle) -> Result<(), String> {
+    println!("Setting up DNS...");
+
+    let manager = DnsManager::new()?;
+
+    // Spawn setup in background thread to avoid blocking
+    std::thread::spawn(move || {
+        let app_handle_clone = app_handle.clone();
+
+        let result = manager.setup(move |progress: DnsSetupProgress| {
+            let _ = app_handle.emit("dns-setup-progress", &progress);
+            println!("DNS setup progress: {} - {}", progress.stage, progress.message);
+        });
+
+        if let Err(e) = result {
+            eprintln!("DNS setup failed: {}", e);
+            let _ = app_handle_clone.emit("dns-setup-progress", &DnsSetupProgress {
+                stage: "error".to_string(),
+                progress: 0,
+                message: format!("DNS setup failed: {}", e),
+            });
+        } else {
+            println!("DNS setup completed successfully");
+        }
+    });
+
+    // Return immediately - frontend will track progress via events
+    Ok(())
+}
+
+#[tauri::command]
+async fn start_dns() -> Result<(), String> {
+    println!("Starting DNS...");
+
+    let manager = DnsManager::new()?;
+    manager.start()?;
+
+    println!("DNS started successfully");
+    Ok(())
+}
+
+#[tauri::command]
+async fn stop_dns() -> Result<(), String> {
+    println!("Stopping DNS...");
+
+    let manager = DnsManager::new()?;
+    manager.stop()?;
+
+    println!("DNS stopped successfully");
+    Ok(())
+}
+
+#[tauri::command]
+async fn cleanup_dns() -> Result<(), String> {
+    println!("Cleaning up DNS...");
+
+    let manager = DnsManager::new()?;
+    manager.cleanup()?;
+
+    println!("DNS cleanup completed successfully");
+    Ok(())
 }
 
 // ============================================================================
@@ -596,6 +679,12 @@ fn main() {
             stop_kubernetes,
             uninstall_kubernetes,
             get_os_type,
+            // DNS
+            get_dns_status,
+            setup_dns,
+            start_dns,
+            stop_dns,
+            cleanup_dns,
             // Credentials
             save_credential,
             get_credentials,
