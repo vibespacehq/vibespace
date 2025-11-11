@@ -3,7 +3,9 @@
     "externalBin": [
       "binaries/macos/colima",
       "binaries/kubectl-darwin-arm64",
-      "binaries/kubectl-darwin-amd64"
+      "binaries/kubectl-darwin-amd64",
+      "binaries/dnsd-darwin-arm64",
+      "binaries/dnsd-darwin-amd64"
     ]
   }
 }

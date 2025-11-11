@@ -3,7 +3,9 @@
     "externalBin": [
       "binaries/linux/k3s",
       "binaries/kubectl-linux-amd64",
-      "binaries/kubectl-linux-arm64"
+      "binaries/kubectl-linux-arm64",
+      "binaries/dnsd-linux-amd64",
+      "binaries/dnsd-linux-arm64"
     ]
   }
 }

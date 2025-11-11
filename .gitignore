@@ -60,3 +60,6 @@ kubeconfig
 .knip-cache/
 .ts-prune-cache/
 .staticcheck/
+
+# DNS binaries (built by CI or locally)
+app/src-tauri/binaries/dnsd-*
