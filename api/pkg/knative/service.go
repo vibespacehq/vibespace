@@ -382,6 +382,46 @@ func (m *ServiceManager) GetServiceStatus(ctx context.Context, vibespaceID strin
 	return false, "Unknown", "", nil
 }
 
+// PatchService patches a Knative Service with new annotations
+// Used primarily for scaling operations (minScale/maxScale)
+func (m *ServiceManager) PatchService(ctx context.Context, vibespaceID string, annotations map[string]string) error {
+	serviceName := fmt.Sprintf("vibespace-%s", vibespaceID)
+
+	// Get current service
+	service, err := m.GetService(ctx, vibespaceID)
+	if err != nil {
+		return fmt.Errorf("failed to get service for patching: %w", err)
+	}
+
+	// Get current annotations
+	currentAnnotations, _, _ := unstructured.NestedStringMap(service.Object, "spec", "template", "metadata", "annotations")
+	if currentAnnotations == nil {
+		currentAnnotations = make(map[string]string)
+	}
+
+	// Merge new annotations
+	for key, value := range annotations {
+		currentAnnotations[key] = value
+	}
+
+	// Update annotations in the service
+	if err := unstructured.SetNestedStringMap(service.Object, currentAnnotations, "spec", "template", "metadata", "annotations"); err != nil {
+		return fmt.Errorf("failed to set annotations: %w", err)
+	}
+
+	// Update the service
+	_, err = m.dynamicClient.Resource(KnativeGVR).Namespace(k8s.VibespaceNamespace).Update(
+		ctx,
+		service,
+		metav1.UpdateOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to patch Knative Service %s: %w", serviceName, err)
+	}
+
+	return nil
+}
+
 // envMapToEnvVars converts a map to Kubernetes EnvVar slice
 // Helper function for compatibility with existing code
 func envMapToEnvVars(envMap map[string]string) []corev1.EnvVar {
