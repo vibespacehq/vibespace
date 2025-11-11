@@ -3,6 +3,9 @@ FROM registry.default.svc.cluster.local:5000/vibespace-base-${AGENT}:latest
 
 USER root
 
+# Install supervisord for multi-process management
+RUN apt-get update && apt-get install -y supervisor && rm -rf /var/lib/apt/lists/*
+
 # Install Python 3.12 (Ubuntu 24.04 default) and pip
 RUN apt-get update && apt-get install -y \
     python3 \
@@ -11,6 +14,16 @@ RUN apt-get update && apt-get install -y \
     python3-venv \
     && rm -rf /var/lib/apt/lists/* \
     && rm -f /usr/lib/python3.12/EXTERNALLY-MANAGED
+
+# Create vibespace scripts directory
+RUN mkdir -p /opt/vibespace
+
+# Copy multi-process scripts
+COPY supervisord.conf /opt/vibespace/supervisord.conf
+COPY entrypoint.sh /opt/vibespace/entrypoint.sh
+COPY preview.sh /opt/vibespace/preview.sh
+COPY prod.sh /opt/vibespace/prod.sh
+RUN chmod +x /opt/vibespace/*.sh
 
 USER workspace
 
@@ -52,20 +65,20 @@ RUN mkdir -p ~/.jupyter && \
     echo "c.ServerApp.allow_root = False" >> ~/.jupyter/jupyter_lab_config.py && \
     echo "c.ServerApp.open_browser = False" >> ~/.jupyter/jupyter_lab_config.py
 
-# Create init script with version display and project structure
+# Create vibespace initialization script with version display and project structure
 RUN echo '#!/bin/bash\n\
 # Ensure PATH includes user bin for pip-installed executables\n\
 export PATH="/home/workspace/.local/bin:$PATH"\n\
 \n\
-# Initialize workspace structure on first run\n\
+# Initialize vibespace structure on first run\n\
 if [ ! -f /workspace/.initialized ]; then\n\
-  echo "Setting up Jupyter workspace..."\n\
+  echo "Setting up Jupyter vibespace..."\n\
   cd /workspace\n\
   \n\
   # Create project structure\n\
   mkdir -p notebooks data/raw data/processed scripts outputs\n\
   \n\
-  # Copy guide to workspace\n\
+  # Copy guide to vibespace\n\
   cp ~/JUPYTER-GUIDE.md ./README.md\n\
   \n\
   # Create example notebook\n\
@@ -78,7 +91,7 @@ if [ ! -f /workspace/.initialized ]; then\n\
    "source": [\n\
     "# Getting Started with Jupyter Lab\\n",\n\
     "\\n",\n\
-    "Welcome to your Jupyter workspace! This notebook will help you get started.\\n",\n\
+    "Welcome to your Jupyter vibespace! This notebook will help you get started.\\n",\n\
     "\\n",\n\
     "## Quick Start\\n",\n\
     "\\n",\n\
@@ -161,25 +174,20 @@ EOF_GITIGNORE\n\
   touch data/raw/.gitkeep data/processed/.gitkeep scripts/.gitkeep outputs/.gitkeep\n\
   \n\
   touch /workspace/.initialized\n\
-  echo "✓ Workspace structure created"\n\
+  echo "✓ Vibespace structure created"\n\
   echo ""\n\
-fi\n\
-\n\
-echo "Starting Jupyter Lab..."\n\
-jupyter lab --no-browser &>/dev/null &\n\
-sleep 2\n\
-echo "✓ Jupyter Lab running on port 8888"\n\
-echo ""\n\
-echo "Installed versions:"\n\
-echo "  Python: $(python3 --version)"\n\
-echo "  Jupyter Lab: $(jupyter lab --version)"\n\
-echo "  NumPy: $(pip3 show numpy | grep Version | cut -d\\\" \\\" -f2)"\n\
-echo "  Pandas: $(pip3 show pandas | grep Version | cut -d\\\" \\\" -f2)"\n\
-echo "  Matplotlib: $(pip3 show matplotlib | grep Version | cut -d\\\" \\\" -f2)"\n\
-~/init-agents.sh\n\
-exec code-server /workspace' > /home/workspace/init.sh && \
-    chmod +x /home/workspace/init.sh
+  echo "Installed versions:"\n\
+  echo "  Python: $(python3 --version)"\n\
+  echo "  Jupyter Lab: $(jupyter lab --version)"\n\
+  echo "  NumPy: $(pip3 show numpy | grep Version | cut -d\\\" \\\" -f2)"\n\
+  echo "  Pandas: $(pip3 show pandas | grep Version | cut -d\\\" \\\" -f2)"\n\
+  echo "  Matplotlib: $(pip3 show matplotlib | grep Version | cut -d\\\" \\\" -f2)"\n\
+  echo ""\n\
+fi' > /home/workspace/init-workspace.sh && \
+    chmod +x /home/workspace/init-workspace.sh
 
-EXPOSE 8080 8888
+# Expose all 3 service ports
+EXPOSE 8080 3000 3001
 
-CMD ["/home/workspace/init.sh"]
+# Use multi-process entrypoint
+CMD ["/bin/bash", "/opt/vibespace/entrypoint.sh"]
