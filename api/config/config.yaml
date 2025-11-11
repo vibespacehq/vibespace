@@ -14,14 +14,27 @@ registry:
 buildkit:
   address: tcp://buildkitd.default.svc.cluster.local:1234
 
-workspace:
-  namespace: workspace
+vibespace:
+  namespace: vibespace
   default_resources:
     cpu: "2"
     memory: "4Gi"
     storage: "10Gi"
-  dns_domain: local
+
+# Feature flags for Knative migration
+features:
+  # Enable Knative Services (scale-to-zero) instead of direct Pods
+  enable_knative_routing: true
+  # Enable custom DNS resolution with .vibe.space subdomains
+  enable_dns: true
+
+# DNS configuration
+dns:
+  # Base domain for vibespace subdomains (e.g., code.{project}.vibe.space)
+  base_domain: vibe.space
+  # DNS server port (used by bundled dnsd)
+  server_port: 5353
 
 credential:
-  storage_path: ~/.workspace/credential
+  storage_path: ~/.vibespace/credential
   encryption: aes-256-gcm
