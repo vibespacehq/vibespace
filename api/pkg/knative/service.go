@@ -7,7 +7,6 @@ import (
 	"vibespace/pkg/k8s"
 	"vibespace/pkg/model"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -420,22 +419,4 @@ func (m *ServiceManager) PatchService(ctx context.Context, vibespaceID string, a
 	}
 
 	return nil
-}
-
-// envMapToEnvVars converts a map to Kubernetes EnvVar slice
-// Helper function for compatibility with existing code
-func envMapToEnvVars(envMap map[string]string) []corev1.EnvVar {
-	if len(envMap) == 0 {
-		return []corev1.EnvVar{}
-	}
-
-	envVars := make([]corev1.EnvVar, 0, len(envMap))
-	for key, value := range envMap {
-		envVars = append(envVars, corev1.EnvVar{
-			Name:  key,
-			Value: value,
-		})
-	}
-
-	return envVars
 }

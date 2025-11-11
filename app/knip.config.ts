@@ -15,6 +15,7 @@ const config: KnipConfig = {
     'src/**/__tests__/**',
     'src/**/__mocks__/**',
     'src/test/**', // Test setup files
+    'src/hooks/useDns.ts', // DNS hook - will be integrated in Phase 2 (Issue #52)
   ],
   ignoreDependencies: [
     'autoprefixer', // PostCSS plugin for Tailwind (auto-loaded by Vite)
