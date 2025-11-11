@@ -106,6 +106,11 @@ func (c *Client) Clientset() *kubernetes.Clientset {
 	return c.clientset
 }
 
+// Config returns the underlying Kubernetes REST config
+func (c *Client) Config() *rest.Config {
+	return c.config
+}
+
 // EnsureNamespace ensures the vibespace namespace exists
 func (c *Client) EnsureNamespace(ctx context.Context) error {
 	namespaces := c.clientset.CoreV1().Namespaces()
