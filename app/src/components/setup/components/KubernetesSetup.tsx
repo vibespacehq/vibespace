@@ -69,6 +69,8 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const installInProgressRef = useRef(false);
+  const dnsSetupInProgressRef = useRef(false);
+  const dnsUnlistenRef = useRef<(() => void) | null>(null);
 
   // Update setup state based on Kubernetes status
   useEffect(() => {
@@ -128,6 +130,17 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         console.log('Cleaning up EventSource');
         eventSourceRef.current.close();
         eventSourceRef.current = null;
+      }
+    };
+  }, []);
+
+  // Cleanup DNS event listener on component unmount
+  useEffect(() => {
+    return () => {
+      if (dnsUnlistenRef.current) {
+        console.log('Cleaning up DNS event listener');
+        dnsUnlistenRef.current();
+        dnsUnlistenRef.current = null;
       }
     };
   }, []);
@@ -304,11 +317,25 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
    * Requires sudo for OS-level DNS configuration (/etc/resolver on macOS, systemd-resolved on Linux).
    */
   const setupDNS = async () => {
+    // Guard: Prevent multiple simultaneous DNS setup calls
+    if (dnsSetupInProgressRef.current) {
+      console.log('DNS setup already in progress, skipping');
+      return;
+    }
+
+    dnsSetupInProgressRef.current = true;
     setSetupState('installing-dns');
     setError(null);
     setDnsProgress({ stage: 'starting', progress: 0, message: 'Initializing DNS setup...' });
 
     try {
+      // Cleanup any existing listener before creating new one
+      if (dnsUnlistenRef.current) {
+        console.log('Cleaning up previous DNS listener');
+        dnsUnlistenRef.current();
+        dnsUnlistenRef.current = null;
+      }
+
       // Listen for DNS setup progress events
       const unlisten = await listen<{ stage: string; progress: number; message: string }>(
         'dns-setup-progress',
@@ -320,28 +347,54 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
           if (event.payload.stage === 'complete') {
             console.log('DNS setup completed successfully');
             setSetupState('ready');
+            // Cleanup listener immediately on success
+            if (dnsUnlistenRef.current) {
+              dnsUnlistenRef.current();
+              dnsUnlistenRef.current = null;
+            }
+            dnsSetupInProgressRef.current = false;
           } else if (event.payload.stage === 'error') {
             console.error('DNS setup failed:', event.payload.message);
             setError(`DNS setup failed: ${event.payload.message}`);
             setSetupState('error');
+            // Cleanup listener immediately on error
+            if (dnsUnlistenRef.current) {
+              dnsUnlistenRef.current();
+              dnsUnlistenRef.current = null;
+            }
+            dnsSetupInProgressRef.current = false;
           }
         }
       );
+
+      // Store unlisten function in ref for cleanup on unmount
+      dnsUnlistenRef.current = unlisten;
 
       // Start DNS setup (runs in background thread, emits progress events)
       console.log('Invoking setup_dns command...');
       await invoke('setup_dns');
       console.log('setup_dns command started');
 
-      // Cleanup listener after a timeout (safety measure)
+      // Safety timeout: cleanup if no completion event received within 60 seconds
       setTimeout(() => {
-        unlisten();
-      }, 60000); // 60 seconds timeout
+        if (dnsUnlistenRef.current) {
+          console.warn('DNS setup timeout reached, cleaning up listener');
+          dnsUnlistenRef.current();
+          dnsUnlistenRef.current = null;
+          dnsSetupInProgressRef.current = false;
+        }
+      }, 60000);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       console.error('Failed to setup DNS:', err);
       setError(`Failed to setup DNS: ${message}`);
       setSetupState('error');
+      // Cleanup listener on exception
+      if (dnsUnlistenRef.current) {
+        dnsUnlistenRef.current();
+        dnsUnlistenRef.current = null;
+      }
+      dnsSetupInProgressRef.current = false;
     }
   };
 
