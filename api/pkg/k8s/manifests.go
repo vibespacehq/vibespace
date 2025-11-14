@@ -10,8 +10,11 @@ var KnativeServingCRDs []byte
 //go:embed manifests/knative/serving-core.yaml
 var KnativeServingCore []byte
 
-// Traefik Ingress manifest
+// Traefik Ingress manifests
 //
+//go:embed manifests/traefik/traefik-crds.yaml
+var TraefikCRDs []byte
+
 //go:embed manifests/traefik/traefik.yaml
 var TraefikManifest []byte
 
