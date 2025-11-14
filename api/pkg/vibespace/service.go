@@ -78,10 +78,35 @@ func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
 		}
 		s.k8sClient = newClient
 		slog.Info("k8s client initialized successfully in vibespace service")
+
+		// Also reinitialize Knative and IngressRoute managers
+		knativeMgr, err := knative.NewServiceManager(newClient)
+		if err != nil {
+			slog.Warn("failed to initialize Knative Service manager after k8s client init",
+				"error", err)
+		} else {
+			s.knativeManager = knativeMgr
+			slog.Info("knative manager initialized successfully")
+		}
+
+		ingressMgr, err := network.NewIngressRouteManager(newClient, getBaseDomain())
+		if err != nil {
+			slog.Warn("failed to initialize IngressRoute manager after k8s client init",
+				"error", err)
+		} else {
+			s.ingressRouteManager = ingressMgr
+			slog.Info("ingress route manager initialized successfully")
+		}
 	}
 
 	// MODE 1: List Knative Services (default)
 	if isKnativeRoutingEnabled() {
+		// Check if knativeManager is still nil after initialization
+		if s.knativeManager == nil {
+			slog.Warn("knative manager is nil, returning empty list")
+			return []*model.Vibespace{}, nil
+		}
+
 		services, err := s.knativeManager.ListServices(ctx)
 		if err != nil {
 			slog.Error("failed to list Knative Services",
@@ -128,6 +153,23 @@ func (s *Service) Get(ctx context.Context, id string) (*model.Vibespace, error) 
 		}
 		s.k8sClient = newClient
 		slog.Info("k8s client initialized successfully in vibespace service")
+
+		// Also reinitialize Knative and IngressRoute managers
+		knativeMgr, err := knative.NewServiceManager(newClient)
+		if err != nil {
+			slog.Warn("failed to initialize Knative Service manager after k8s client init", "error", err)
+		} else {
+			s.knativeManager = knativeMgr
+			slog.Info("knative manager initialized successfully")
+		}
+
+		ingressMgr, err := network.NewIngressRouteManager(newClient, getBaseDomain())
+		if err != nil {
+			slog.Warn("failed to initialize IngressRoute manager after k8s client init", "error", err)
+		} else {
+			s.ingressRouteManager = ingressMgr
+			slog.Info("ingress route manager initialized successfully")
+		}
 	}
 
 	slog.Info("getting vibespace",
@@ -135,6 +177,11 @@ func (s *Service) Get(ctx context.Context, id string) (*model.Vibespace, error) 
 
 	// MODE 1: Get Knative Service (default)
 	if isKnativeRoutingEnabled() {
+		// Check if knativeManager is still nil after initialization
+		if s.knativeManager == nil {
+			return nil, fmt.Errorf("knative manager is not initialized")
+		}
+
 		service, err := s.knativeManager.GetService(ctx, id)
 		if err != nil {
 			slog.Warn("vibespace not found (Knative Service)",
@@ -186,6 +233,23 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		}
 		s.k8sClient = newClient
 		slog.Info("k8s client initialized successfully in vibespace service")
+
+		// Also reinitialize Knative and IngressRoute managers
+		knativeMgr, err := knative.NewServiceManager(newClient)
+		if err != nil {
+			slog.Warn("failed to initialize Knative Service manager after k8s client init", "error", err)
+		} else {
+			s.knativeManager = knativeMgr
+			slog.Info("knative manager initialized successfully")
+		}
+
+		ingressMgr, err := network.NewIngressRouteManager(newClient, getBaseDomain())
+		if err != nil {
+			slog.Warn("failed to initialize IngressRoute manager after k8s client init", "error", err)
+		} else {
+			s.ingressRouteManager = ingressMgr
+			slog.Info("ingress route manager initialized successfully")
+		}
 	}
 
 	slog.Info("creating vibespace",
@@ -338,6 +402,11 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 
 	// MODE 1: Create Knative Service + IngressRoutes (default)
 	if isKnativeRoutingEnabled() {
+		// Check if knativeManager is still nil after initialization
+		if s.knativeManager == nil {
+			return nil, fmt.Errorf("knative manager is not initialized")
+		}
+
 		slog.Info("creating vibespace with Knative Service",
 			"vibespace_id", id,
 			"project_name", projectName,
@@ -371,6 +440,13 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 
 		// Create IngressRoutes for DNS routing
 		if isDnsEnabled() {
+			if s.ingressRouteManager == nil {
+				slog.Error("ingress route manager is not initialized, cannot create IngressRoutes",
+					"vibespace_id", id)
+				s.knativeManager.DeleteService(ctx, id)
+				return nil, fmt.Errorf("ingress route manager is not initialized")
+			}
+
 			err = s.ingressRouteManager.CreateIngressRoutes(ctx, &network.CreateIngressRoutesRequest{
 				VibespaceID: id,
 				ProjectName: projectName,
@@ -527,6 +603,23 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		}
 		s.k8sClient = newClient
 		slog.Info("k8s client initialized successfully in vibespace service")
+
+		// Also reinitialize Knative and IngressRoute managers
+		knativeMgr, err := knative.NewServiceManager(newClient)
+		if err != nil {
+			slog.Warn("failed to initialize Knative Service manager after k8s client init", "error", err)
+		} else {
+			s.knativeManager = knativeMgr
+			slog.Info("knative manager initialized successfully")
+		}
+
+		ingressMgr, err := network.NewIngressRouteManager(newClient, getBaseDomain())
+		if err != nil {
+			slog.Warn("failed to initialize IngressRoute manager after k8s client init", "error", err)
+		} else {
+			s.ingressRouteManager = ingressMgr
+			slog.Info("ingress route manager initialized successfully")
+		}
 	}
 
 	slog.Info("deleting vibespace",
@@ -534,13 +627,23 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 
 	// MODE 1: Delete Knative Service + IngressRoutes (default)
 	if isKnativeRoutingEnabled() {
+		// Check if knativeManager is still nil after initialization
+		if s.knativeManager == nil {
+			return fmt.Errorf("knative manager is not initialized")
+		}
+
 		// Delete IngressRoutes first (DNS routing)
 		if isDnsEnabled() {
-			if err := s.ingressRouteManager.DeleteIngressRoutes(ctx, id, k8s.VibespaceNamespace); err != nil {
-				slog.Warn("failed to delete IngressRoutes",
-					"vibespace_id", id,
-					"error", err)
-				// Continue with Knative Service deletion even if IngressRoute deletion fails
+			if s.ingressRouteManager != nil {
+				if err := s.ingressRouteManager.DeleteIngressRoutes(ctx, id, k8s.VibespaceNamespace); err != nil {
+					slog.Warn("failed to delete IngressRoutes",
+						"vibespace_id", id,
+						"error", err)
+					// Continue with Knative Service deletion even if IngressRoute deletion fails
+				}
+			} else {
+				slog.Warn("ingress route manager is not initialized, skipping IngressRoute deletion",
+					"vibespace_id", id)
 			}
 		}
 
@@ -595,6 +698,23 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		}
 		s.k8sClient = newClient
 		slog.Info("k8s client initialized successfully in vibespace service")
+
+		// Also reinitialize Knative and IngressRoute managers
+		knativeMgr, err := knative.NewServiceManager(newClient)
+		if err != nil {
+			slog.Warn("failed to initialize Knative Service manager after k8s client init", "error", err)
+		} else {
+			s.knativeManager = knativeMgr
+			slog.Info("knative manager initialized successfully")
+		}
+
+		ingressMgr, err := network.NewIngressRouteManager(newClient, getBaseDomain())
+		if err != nil {
+			slog.Warn("failed to initialize IngressRoute manager after k8s client init", "error", err)
+		} else {
+			s.ingressRouteManager = ingressMgr
+			slog.Info("ingress route manager initialized successfully")
+		}
 	}
 
 	slog.Info("starting vibespace",
@@ -602,6 +722,11 @@ func (s *Service) Start(ctx context.Context, id string) error {
 
 	// MODE 1: Patch Knative Service to scale up (default)
 	if isKnativeRoutingEnabled() {
+		// Check if knativeManager is still nil after initialization
+		if s.knativeManager == nil {
+			return fmt.Errorf("knative manager is not initialized")
+		}
+
 		// Set minScale=1 to ensure at least 1 replica is running
 		annotations := map[string]string{
 			"autoscaling.knative.dev/minScale": "1",
@@ -658,6 +783,23 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 		}
 		s.k8sClient = newClient
 		slog.Info("k8s client initialized successfully in vibespace service")
+
+		// Also reinitialize Knative and IngressRoute managers
+		knativeMgr, err := knative.NewServiceManager(newClient)
+		if err != nil {
+			slog.Warn("failed to initialize Knative Service manager after k8s client init", "error", err)
+		} else {
+			s.knativeManager = knativeMgr
+			slog.Info("knative manager initialized successfully")
+		}
+
+		ingressMgr, err := network.NewIngressRouteManager(newClient, getBaseDomain())
+		if err != nil {
+			slog.Warn("failed to initialize IngressRoute manager after k8s client init", "error", err)
+		} else {
+			s.ingressRouteManager = ingressMgr
+			slog.Info("ingress route manager initialized successfully")
+		}
 	}
 
 	slog.Info("stopping vibespace",
@@ -665,6 +807,11 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 
 	// MODE 1: Patch Knative Service to scale to zero (default)
 	if isKnativeRoutingEnabled() {
+		// Check if knativeManager is still nil after initialization
+		if s.knativeManager == nil {
+			return fmt.Errorf("knative manager is not initialized")
+		}
+
 		// Set minScale=0 to allow scaling to zero replicas
 		annotations := map[string]string{
 			"autoscaling.knative.dev/minScale": "0",
