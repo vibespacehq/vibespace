@@ -332,6 +332,20 @@ func (c *Client) ConfigureKnativeDefaults(ctx context.Context) error {
 func (c *Client) InstallTraefik(ctx context.Context) error {
 	slog.Info("installing traefik")
 
+	// Apply CRDs first (IngressRoute, IngressRouteTCP, IngressRouteUDP, etc.)
+	slog.Info("applying traefik CRDs")
+	if err := c.ApplyManifest(ctx, TraefikCRDs); err != nil {
+		slog.Error("failed to apply traefik CRDs",
+			"error", err)
+		return fmt.Errorf("failed to apply Traefik CRDs: %w", err)
+	}
+	slog.Info("traefik CRDs applied successfully")
+
+	// Wait a bit for CRDs to be registered
+	slog.Info("waiting for CRDs to be registered")
+	time.Sleep(2 * time.Second)
+
+	// Apply core components
 	slog.Info("applying traefik manifest")
 	if err := c.ApplyManifest(ctx, TraefikManifest); err != nil {
 		slog.Error("failed to apply traefik manifest",
