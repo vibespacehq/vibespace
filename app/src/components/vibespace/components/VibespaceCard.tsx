@@ -128,8 +128,7 @@ export function VibespaceCard({
   const canStart = vibespace.status === 'stopped';
   const canStop = vibespace.status === 'running';
 
-  // Knative DNS URLs: code/preview/prod subdomains
-  const hasUrls = vibespace.urls && Object.keys(vibespace.urls).length > 0;
+  // Knative DNS URLs: code/preview/prod subdomains (single-port Caddy architecture)
   const canOpenCode = vibespace.status === 'running' && (vibespace.urls?.code || vibespace.urls?.['code-server']);
   const canOpenPreview = vibespace.status === 'running' && vibespace.urls?.preview;
   const canOpenProd = vibespace.status === 'running' && vibespace.urls?.prod;
