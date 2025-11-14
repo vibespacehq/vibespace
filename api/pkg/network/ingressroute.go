@@ -13,8 +13,9 @@ import (
 )
 
 // IngressRouteGVR is the GroupVersionResource for Traefik IngressRoutes
+// Traefik v3.x uses "traefik.io" (older versions used "traefik.containo.us")
 var IngressRouteGVR = schema.GroupVersionResource{
-	Group:    "traefik.containo.us",
+	Group:    "traefik.io",
 	Version:  "v1alpha1",
 	Resource: "ingressroutes",
 }
