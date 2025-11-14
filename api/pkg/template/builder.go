@@ -21,6 +21,34 @@ var vscodeSettingsData []byte
 //go:embed images/base/Caddyfile
 var caddyfileData []byte
 
+// Shared template files (used by all templates: nextjs, vue, jupyter)
+//go:embed images/supervisord.conf
+var supervisordConfData []byte
+
+//go:embed images/entrypoint.sh
+var entrypointShData []byte
+
+// Next.js template files
+//go:embed images/templates/nextjs/preview.sh
+var nextjsPreviewShData []byte
+
+//go:embed images/templates/nextjs/prod.sh
+var nextjsProdShData []byte
+
+// Vue template files
+//go:embed images/templates/vue/preview.sh
+var vuePreviewShData []byte
+
+//go:embed images/templates/vue/prod.sh
+var vueProdShData []byte
+
+// Jupyter template files
+//go:embed images/templates/jupyter/preview.sh
+var jupyterPreviewShData []byte
+
+//go:embed images/templates/jupyter/prod.sh
+var jupyterProdShData []byte
+
 const (
 	// Port numbers for vibespace services
 	BuildKitPort   = 1234 // BuildKit daemon port
@@ -384,6 +412,92 @@ func (b *Builder) BuildImage(ctx context.Context, templateID, agent string, prog
 			"agent", agent,
 			"dest", caddyfilePath,
 			"size_bytes", len(caddyfileData))
+	}
+
+	// Copy template-specific files (for nextjs, vue, jupyter templates)
+	// These files are needed by supervisord to run multi-process containers
+	if templateID != "base" {
+		// Write shared template files (supervisord.conf, entrypoint.sh)
+		if len(supervisordConfData) == 0 {
+			return fmt.Errorf("embedded supervisord.conf is empty (check go:embed directive)")
+		}
+		supervisordPath := filepath.Join(tempDir, "supervisord.conf")
+		if err := os.WriteFile(supervisordPath, supervisordConfData, 0644); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to write supervisord.conf to %s: %v", supervisordPath, err),
+				})
+			}
+			return fmt.Errorf("failed to write supervisord.conf to %s: %w", supervisordPath, err)
+		}
+
+		if len(entrypointShData) == 0 {
+			return fmt.Errorf("embedded entrypoint.sh is empty (check go:embed directive)")
+		}
+		entrypointPath := filepath.Join(tempDir, "entrypoint.sh")
+		if err := os.WriteFile(entrypointPath, entrypointShData, 0755); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to write entrypoint.sh to %s: %v", entrypointPath, err),
+				})
+			}
+			return fmt.Errorf("failed to write entrypoint.sh to %s: %w", entrypointPath, err)
+		}
+
+		// Write template-specific files (preview.sh, prod.sh)
+		var previewShData, prodShData []byte
+		switch templateID {
+		case "nextjs":
+			previewShData = nextjsPreviewShData
+			prodShData = nextjsProdShData
+		case "vue":
+			previewShData = vuePreviewShData
+			prodShData = vueProdShData
+		case "jupyter":
+			previewShData = jupyterPreviewShData
+			prodShData = jupyterProdShData
+		default:
+			return fmt.Errorf("unknown template ID: %s", templateID)
+		}
+
+		if len(previewShData) == 0 {
+			return fmt.Errorf("embedded preview.sh is empty for template %s (check go:embed directive)", templateID)
+		}
+		previewPath := filepath.Join(tempDir, "preview.sh")
+		if err := os.WriteFile(previewPath, previewShData, 0755); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to write preview.sh to %s: %v", previewPath, err),
+				})
+			}
+			return fmt.Errorf("failed to write preview.sh to %s: %w", previewPath, err)
+		}
+
+		if len(prodShData) == 0 {
+			return fmt.Errorf("embedded prod.sh is empty for template %s (check go:embed directive)", templateID)
+		}
+		prodPath := filepath.Join(tempDir, "prod.sh")
+		if err := os.WriteFile(prodPath, prodShData, 0755); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to write prod.sh to %s: %v", prodPath, err),
+				})
+			}
+			return fmt.Errorf("failed to write prod.sh to %s: %w", prodPath, err)
+		}
+
+		slog.Debug("copied template files to build context",
+			"template", templateID,
+			"agent", agent,
+			"files", []string{"supervisord.conf", "entrypoint.sh", "preview.sh", "prod.sh"})
 	}
 
 	// Connect to BuildKit daemon
