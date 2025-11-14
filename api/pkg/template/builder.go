@@ -18,6 +18,9 @@ import (
 //go:embed images/config/vscode-settings.json
 var vscodeSettingsData []byte
 
+//go:embed images/base/Caddyfile
+var caddyfileData []byte
+
 const (
 	// Port numbers for vibespace services
 	BuildKitPort   = 1234 // BuildKit daemon port
@@ -357,6 +360,30 @@ func (b *Builder) BuildImage(ctx context.Context, templateID, agent string, prog
 			"agent", agent,
 			"dest", settingsDestPath,
 			"size_bytes", len(vscodeSettingsData))
+
+		// Write Caddyfile for internal routing (single-port Caddy architecture)
+		// Caddy listens on port 8080 (Knative's single port) and routes to internal services
+		if len(caddyfileData) == 0 {
+			return fmt.Errorf("embedded Caddyfile is empty (check go:embed directive)")
+		}
+
+		caddyfilePath := filepath.Join(tempDir, "Caddyfile")
+		if err := os.WriteFile(caddyfilePath, caddyfileData, 0644); err != nil {
+			if progressFn != nil {
+				progressFn(BuildProgress{
+					Template: displayName,
+					Status:   "error",
+					Error:    fmt.Sprintf("Failed to write Caddyfile to %s: %v", caddyfilePath, err),
+				})
+			}
+			return fmt.Errorf("failed to write Caddyfile to %s: %w", caddyfilePath, err)
+		}
+
+		slog.Debug("copied Caddyfile to build context",
+			"template", templateID,
+			"agent", agent,
+			"dest", caddyfilePath,
+			"size_bytes", len(caddyfileData))
 	}
 
 	// Connect to BuildKit daemon
