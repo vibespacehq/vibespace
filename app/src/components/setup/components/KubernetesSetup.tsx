@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { AlertCircle } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
   useKubernetesStatus,
   useKubernetesInstall,
@@ -21,6 +23,7 @@ type SetupState =
   | 'installing-k8s'
   | 'starting-k8s'
   | 'installing-components'
+  | 'installing-dns'
   | 'ready'
   | 'error';
 
@@ -62,6 +65,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const { start: startK8s, isStarting } = useKubernetesControl();
   const [setupState, setSetupState] = useState<SetupState>('checking');
   const [setupProgress, setSetupProgress] = useState<Record<string, SetupProgress>>({});
+  const [dnsProgress, setDnsProgress] = useState({ stage: '', progress: 0, message: '' });
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const installInProgressRef = useRef(false);
@@ -244,7 +248,8 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         console.log('Setup complete:', JSON.parse(event.data));
         eventSource.close();
         eventSourceRef.current = null;
-        setSetupState('ready');
+        // After cluster components are installed, setup DNS
+        setupDNS();
       });
 
       eventSource.addEventListener('error', (event) => {
@@ -293,6 +298,53 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
     }
   };
 
+  /**
+   * Setup DNS server for *.vibe.space domain resolution.
+   * Installs DNS binary, configures OS resolver, and starts DNS server.
+   * Requires sudo for OS-level DNS configuration (/etc/resolver on macOS, systemd-resolved on Linux).
+   */
+  const setupDNS = async () => {
+    setSetupState('installing-dns');
+    setError(null);
+    setDnsProgress({ stage: 'starting', progress: 0, message: 'Initializing DNS setup...' });
+
+    try {
+      // Listen for DNS setup progress events
+      const unlisten = await listen<{ stage: string; progress: number; message: string }>(
+        'dns-setup-progress',
+        (event) => {
+          console.log('DNS setup progress:', event.payload);
+          setDnsProgress(event.payload);
+
+          // Check if DNS setup completed
+          if (event.payload.stage === 'complete') {
+            console.log('DNS setup completed successfully');
+            setSetupState('ready');
+          } else if (event.payload.stage === 'error') {
+            console.error('DNS setup failed:', event.payload.message);
+            setError(`DNS setup failed: ${event.payload.message}`);
+            setSetupState('error');
+          }
+        }
+      );
+
+      // Start DNS setup (runs in background thread, emits progress events)
+      console.log('Invoking setup_dns command...');
+      await invoke('setup_dns');
+      console.log('setup_dns command started');
+
+      // Cleanup listener after a timeout (safety measure)
+      setTimeout(() => {
+        unlisten();
+      }, 60000); // 60 seconds timeout
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Failed to setup DNS:', err);
+      setError(`Failed to setup DNS: ${message}`);
+      setSetupState('error');
+    }
+  };
+
   const getProgressPercentage = () => {
     const components = Object.values(setupProgress);
     if (components.length === 0) return 0;
@@ -317,6 +369,11 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   };
 
   const getK8sProgressMessage = () => {
+    // During DNS installation, show DNS progress
+    if (setupState === 'installing-dns') {
+      return dnsProgress.message || 'Setting up DNS server...';
+    }
+
     // During component installation, show component progress
     if (setupState === 'installing-components') {
       const components = Object.values(setupProgress);
@@ -337,11 +394,17 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   };
 
   const getK8sProgressPercentage = () => {
-    // During component installation (60-100%)
+    // During DNS installation (90-100%)
+    if (setupState === 'installing-dns') {
+      // Map DNS progress (0-100) to overall progress (90-100)
+      return 90 + Math.round(dnsProgress.progress * 0.1);
+    }
+
+    // During component installation (60-90%)
     if (setupState === 'installing-components') {
       const percentage = getProgressPercentage();
-      // Map component progress (0-100) to overall progress (60-100)
-      return 60 + Math.round(percentage * 0.4);
+      // Map component progress (0-100) to overall progress (60-90)
+      return 60 + Math.round(percentage * 0.3);
     }
 
     // During K8s installation (0-60%)
@@ -518,6 +581,51 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
                   className="install-progress-fill"
                   style={{ width: `${percentage}%` }}
                 ></div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Installing DNS server
+  if (setupState === 'installing-dns') {
+    const percentage = getK8sProgressPercentage();
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Installing DNS Server</h1>
+            <p className="brand-subtitle">Setting up local domain resolution</p>
+            <div className="progress-bar-container">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${percentage}%` }}
+              ></div>
+            </div>
+          </header>
+          <div className="setup-required">
+            <div className="install-progress-container">
+              <div className="install-progress-header">
+                <span className="install-progress-message">{getK8sProgressMessage()}</span>
+                <span className="install-progress-percentage">{percentage}%</span>
+              </div>
+              <div className="install-progress-bar">
+                <div
+                  className="install-progress-fill"
+                  style={{ width: `${percentage}%` }}
+                ></div>
+              </div>
+              <div className="installation-info">
+                <p className="installation-note">
+                  You may be prompted for administrator access to configure system DNS
+                </p>
               </div>
             </div>
           </div>
