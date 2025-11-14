@@ -344,11 +344,32 @@ func TestBuildEnvironment(t *testing.T) {
 				}
 			}
 
-			// Verify port values
+			// Verify port values (single-port Caddy architecture)
+			// Caddy listens on 8080, routes internally to code:8081, preview:3000, prod:3001
+			if caddyPort, found := foundVars["CADDY_PORT"]; found {
+				if caddyPort != "8080" {
+					t.Errorf("buildEnvironment() CADDY_PORT = %q, want %q", caddyPort, "8080")
+				}
+			}
+
 			if codePort, found := foundVars["VIBESPACE_CODE_PORT"]; found {
-				wantPort := "8080"
+				wantPort := "8081" // Internal code-server port (Caddy proxies 8080 → 8081)
 				if codePort != wantPort {
 					t.Errorf("buildEnvironment() VIBESPACE_CODE_PORT = %q, want %q", codePort, wantPort)
+				}
+			}
+
+			if previewPort, found := foundVars["VIBESPACE_PREVIEW_PORT"]; found {
+				wantPort := "3000" // Internal preview server port
+				if previewPort != wantPort {
+					t.Errorf("buildEnvironment() VIBESPACE_PREVIEW_PORT = %q, want %q", previewPort, wantPort)
+				}
+			}
+
+			if prodPort, found := foundVars["VIBESPACE_PROD_PORT"]; found {
+				wantPort := "3001" // Internal production server port
+				if prodPort != wantPort {
+					t.Errorf("buildEnvironment() VIBESPACE_PROD_PORT = %q, want %q", prodPort, wantPort)
 				}
 			}
 		})
