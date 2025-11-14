@@ -71,21 +71,17 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 	env := m.buildEnvironment(req)
 
 	// Build container ports
-	// We expose all 3 ports from the container, Traefik will route to them
+	// Knative only supports a single named port (http1 or h2c)
+	// Port 8080 is handled by Caddy reverse proxy inside the container,
+	// which routes to backend services based on HTTP Host header:
+	//   - code.{project}.vibe.space → localhost:8081 (code-server)
+	//   - preview.{project}.vibe.space → localhost:3000 (preview server)
+	//   - prod.{project}.vibe.space → localhost:3001 (production server)
+	// See ADR 0009 for architectural decision rationale.
 	ports := []map[string]interface{}{
 		{
-			"containerPort": req.Ports.Code,
-			"name":          "code",
-			"protocol":      "TCP",
-		},
-		{
-			"containerPort": req.Ports.Preview,
-			"name":          "preview",
-			"protocol":      "TCP",
-		},
-		{
-			"containerPort": req.Ports.Prod,
-			"name":          "prod",
+			"containerPort": 8080,
+			"name":          "http1", // Knative requires 'http1' or 'h2c'
 			"protocol":      "TCP",
 		},
 	}
@@ -130,8 +126,8 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 						},
 					},
 					"spec": map[string]interface{}{
-						"containerConcurrency": 1, // Single user per pod
-						"timeoutSeconds":       3600, // 1 hour timeout (code sessions can be long)
+						"containerConcurrency": 1,   // Single user per pod
+						"timeoutSeconds":       600, // 10 minutes (Knative maximum, down from 3600s)
 						"containers": []interface{}{
 							map[string]interface{}{
 								"name":  "vibespace",
@@ -279,18 +275,26 @@ func (m *ServiceManager) buildEnvironment(req *CreateServiceRequest) []interface
 		})
 	}
 
-	// Add port configuration for entrypoint script
+	// Add port configuration for Caddy + internal services
+	// Caddy listens on 8080 (single Knative port) and routes to:
+	//   - code-server: 8081
+	//   - preview: 3000
+	//   - prod: 3001
+	env = append(env, map[string]interface{}{
+		"name":  "CADDY_PORT",
+		"value": "8080",
+	})
 	env = append(env, map[string]interface{}{
 		"name":  "VIBESPACE_CODE_PORT",
-		"value": fmt.Sprintf("%d", req.Ports.Code),
+		"value": "8081", // Internal port (proxied by Caddy from 8080)
 	})
 	env = append(env, map[string]interface{}{
 		"name":  "VIBESPACE_PREVIEW_PORT",
-		"value": fmt.Sprintf("%d", req.Ports.Preview),
+		"value": "3000", // Internal port (proxied by Caddy)
 	})
 	env = append(env, map[string]interface{}{
 		"name":  "VIBESPACE_PROD_PORT",
-		"value": fmt.Sprintf("%d", req.Ports.Prod),
+		"value": "3001", // Internal port (proxied by Caddy)
 	})
 
 	return env

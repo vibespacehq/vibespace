@@ -151,32 +151,41 @@ func TestGenerateUniqueProjectNameFallback(t *testing.T) {
 }
 
 func TestAllocatePorts(t *testing.T) {
-	tests := []struct {
-		name     string
-		basePort int
-		wantCode int
-		wantPrev int
-		wantProd int
-	}{
-		{"from 3000", 3000, 3000, 3001, 3002},
-		{"from 8000", 8000, 8000, 8001, 8002},
-		{"from 9000", 9000, 9000, 9001, 9002},
-	}
+	t.Run("returns external port 8080 for all services in Knative mode", func(t *testing.T) {
+		// In Knative + Caddy mode, basePort is ignored
+		// All external traffic arrives at 8080 (Caddy)
+		// Internal ports are fixed: 8081 (code), 3000 (preview), 3001 (prod)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ports := AllocatePorts(tt.basePort)
-			if ports.Code != tt.wantCode {
-				t.Errorf("AllocatePorts(%d).Code = %d, want %d", tt.basePort, ports.Code, tt.wantCode)
-			}
-			if ports.Preview != tt.wantPrev {
-				t.Errorf("AllocatePorts(%d).Preview = %d, want %d", tt.basePort, ports.Preview, tt.wantPrev)
-			}
-			if ports.Prod != tt.wantProd {
-				t.Errorf("AllocatePorts(%d).Prod = %d, want %d", tt.basePort, ports.Prod, tt.wantProd)
-			}
-		})
-	}
+		ports := AllocatePorts(8080)
+
+		// Verify all external ports are 8080 (Caddy's port)
+		if ports.Code != 8080 {
+			t.Errorf("AllocatePorts().Code = %d, want 8080 (Caddy external port)", ports.Code)
+		}
+		if ports.Preview != 8080 {
+			t.Errorf("AllocatePorts().Preview = %d, want 8080 (Caddy external port)", ports.Preview)
+		}
+		if ports.Prod != 8080 {
+			t.Errorf("AllocatePorts().Prod = %d, want 8080 (Caddy external port)", ports.Prod)
+		}
+	})
+
+	t.Run("basePort parameter is ignored in Knative mode", func(t *testing.T) {
+		// All calls return the same port allocation regardless of basePort
+		ports1 := AllocatePorts(3000)
+		ports2 := AllocatePorts(8000)
+		ports3 := AllocatePorts(9000)
+
+		// All should return 8080 for all services
+		if ports1 != ports2 || ports2 != ports3 {
+			t.Errorf("Port allocation should be consistent regardless of basePort: got %+v, %+v, %+v", ports1, ports2, ports3)
+		}
+
+		// Verify they're all 8080
+		if ports1.Code != 8080 || ports1.Preview != 8080 || ports1.Prod != 8080 {
+			t.Errorf("All ports should be 8080 in Knative mode, got %+v", ports1)
+		}
+	})
 }
 
 func TestGenerateURLs(t *testing.T) {

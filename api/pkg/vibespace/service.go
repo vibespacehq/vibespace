@@ -1108,57 +1108,28 @@ func knativeStatusToVibespaceStatus(svc *unstructured.Unstructured) string {
 	return "creating"
 }
 
-// extractPortsFromKnativeService extracts ports from Knative Service container spec
+// extractPortsFromKnativeService returns external-facing port allocations for a Knative Service.
+//
+// Single-Port Architecture (Knative + Caddy):
+// In Knative mode, the container spec only exposes port 8080 (Caddy reverse proxy).
+// Caddy handles internal routing to:
+// - code-server: localhost:8081
+// - preview server: localhost:3000
+// - production server: localhost:3001
+//
+// This function returns external-facing ports (all 8080) for API responses.
+// The actual container port extraction is skipped because Knative Service only exposes one port.
+// Frontend should use vibespace.urls (DNS URLs) instead of constructing URLs from ports.
+// See ADR 0009 for architectural rationale.
 func extractPortsFromKnativeService(svc *unstructured.Unstructured) model.Ports {
-	// Navigate to spec.template.spec.containers[0].ports
-	containers, found, _ := unstructured.NestedSlice(svc.Object, "spec", "template", "spec", "containers")
-	if !found || len(containers) == 0 {
-		// Return default ports
-		return model.Ports{Code: 8080, Preview: 3000, Prod: 3001}
+	// In Caddy mode, Knative Service only exposes port 8080 externally
+	// Return external-facing ports (all 8080)
+	// Internal routing (8081, 3000, 3001) is handled by Caddy
+	return model.Ports{
+		Code:    8080, // External port (Caddy listens on 8080)
+		Preview: 8080, // External port (Caddy routes internally to 3000)
+		Prod:    8080, // External port (Caddy routes internally to 3001)
 	}
-
-	container, ok := containers[0].(map[string]interface{})
-	if !ok {
-		return model.Ports{Code: 8080, Preview: 3000, Prod: 3001}
-	}
-
-	portsArray, found, _ := unstructured.NestedSlice(container, "ports")
-	if !found {
-		return model.Ports{Code: 8080, Preview: 3000, Prod: 3001}
-	}
-
-	ports := model.Ports{}
-	for _, p := range portsArray {
-		port, ok := p.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		portName, _, _ := unstructured.NestedString(port, "name")
-		portNum, _, _ := unstructured.NestedInt64(port, "containerPort")
-
-		switch portName {
-		case "code":
-			ports.Code = int(portNum)
-		case "preview":
-			ports.Preview = int(portNum)
-		case "prod":
-			ports.Prod = int(portNum)
-		}
-	}
-
-	// Fill in any missing ports with defaults
-	if ports.Code == 0 {
-		ports.Code = 8080
-	}
-	if ports.Preview == 0 {
-		ports.Preview = 3000
-	}
-	if ports.Prod == 0 {
-		ports.Prod = 3001
-	}
-
-	return ports
 }
 
 func envMapToEnvVars(envMap map[string]string) []corev1.EnvVar {

@@ -15,7 +15,19 @@ RUN apt-get update && apt-get install -y \
     openssh-client \
     python3 \
     python3-pip \
+    debian-keyring \
+    debian-archive-keyring \
+    apt-transport-https \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Caddy (reverse proxy for internal routing)
+RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && \
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list && \
+    apt-get update && apt-get install -y caddy && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy Caddy configuration
+COPY Caddyfile /etc/caddy/Caddyfile
 
 # Install code-server (latest 4.104.3+)
 RUN curl -fsSL https://code-server.dev/install.sh | sh
@@ -41,9 +53,9 @@ RUN useradd -m -s /bin/bash -u 1001 workspace && \
 USER workspace
 WORKDIR /workspace
 
-# Pre-configure code-server
+# Pre-configure code-server (binds to 8081, Caddy listens on 8080)
 RUN mkdir -p ~/.config/code-server && \
-    echo "bind-addr: 0.0.0.0:8080" > ~/.config/code-server/config.yaml && \
+    echo "bind-addr: 0.0.0.0:8081" > ~/.config/code-server/config.yaml && \
     echo "auth: none" >> ~/.config/code-server/config.yaml && \
     echo "cert: false" >> ~/.config/code-server/config.yaml
 

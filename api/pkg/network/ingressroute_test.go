@@ -169,16 +169,26 @@ func TestIngressRouteStructure(t *testing.T) {
 		assert.Len(t, routes, 1)
 	})
 
-	t.Run("validates port mappings", func(t *testing.T) {
+	t.Run("validates all routes use single port (Caddy architecture)", func(t *testing.T) {
+		// All IngressRoutes target port 8080 (Caddy reverse proxy)
+		// Caddy handles internal routing to code-server:8081, preview:3000, prod:3001
+		// based on Host header. See ADR 0009 for architectural rationale.
+		caddyPort := 8080
+
+		// All routes target the same port
 		portMappings := map[string]int{
-			"code":    8080,
-			"preview": 3000,
-			"prod":    3001,
+			"code":    caddyPort,
+			"preview": caddyPort,
+			"prod":    caddyPort,
 		}
 
-		assert.Equal(t, 8080, portMappings["code"])
-		assert.Equal(t, 3000, portMappings["preview"])
-		assert.Equal(t, 3001, portMappings["prod"])
+		assert.Equal(t, 8080, portMappings["code"], "Code route must target Caddy on port 8080")
+		assert.Equal(t, 8080, portMappings["preview"], "Preview route must target Caddy on port 8080")
+		assert.Equal(t, 8080, portMappings["prod"], "Production route must target Caddy on port 8080")
+
+		// Verify all ports are identical (single-port architecture)
+		assert.Equal(t, portMappings["code"], portMappings["preview"])
+		assert.Equal(t, portMappings["preview"], portMappings["prod"])
 	})
 }
 

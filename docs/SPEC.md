@@ -2100,31 +2100,105 @@ spec:
         autoscaling.knative.dev/scale-down-delay: "10m"
         autoscaling.knative.dev/target: "1"
     spec:
+      containerConcurrency: 1
+      timeoutSeconds: 600  # 10 minutes (Knative max limit)
       containers:
       - name: vibespace
         image: localhost:5000/vibespace-nextjs:latest
         ports:
-        - name: code
-          containerPort: 8080
-        - name: preview
-          containerPort: 3000
-        - name: prod
-          containerPort: 3001
+        - name: http1           # Knative requires 'http1' or 'h2c'
+          containerPort: 8080   # Single port (Caddy proxy)
+          protocol: TCP
         env:
-        - name: VIBESPACE_CODE_PORT
+        - name: CADDY_PORT
           value: "8080"
+        - name: VIBESPACE_CODE_PORT
+          value: "8081"         # Code-server (internal)
         - name: VIBESPACE_PREVIEW_PORT
-          value: "3000"
+          value: "3000"         # Preview server (internal)
         - name: VIBESPACE_PROD_PORT
-          value: "3001"
-      timeoutSeconds: 3600  # 1 hour for long coding sessions
+          value: "3001"         # Production server (internal)
 ```
 
 **Key Features**:
 - **Scale-to-zero**: `minScale: 0` (stops when idle for 10 minutes)
-- **Multi-port**: 3 ports per vibespace (code-server, dev server, production)
-- **Supervisord**: Multi-process management inside container
+- **Single port**: Port 8080 (Knative constraint, handled by Caddy)
+- **Internal routing**: Caddy reverse proxy routes to 3 backend services
+- **Supervisord**: Multi-process management (4 processes: Caddy + 3 services)
 - **Resource limits**: CPU/memory configurable via Resources struct
+- **Timeout**: 600 seconds (10 minutes, Knative maximum)
+
+##### 1.1 Internal Routing Architecture (Caddy Reverse Proxy)
+
+**Challenge**: Knative Services only support a single container port, but vibespaces need 3 services (code-server, preview, production).
+
+**Solution**: Use Caddy reverse proxy inside the container to route requests based on HTTP `Host` header.
+
+**Architecture Flow**:
+```
+External Request
+    ↓
+[Traefik IngressRoute] (preserves Host header)
+    ↓
+[Knative Service] port 8080 (single port, satisfies Knative constraint)
+    ↓
+[Caddy Reverse Proxy] (listens on 8080)
+    ├─→ localhost:8081 (code-server)   if Host: code.{project}.vibe.space
+    ├─→ localhost:3000 (preview)       if Host: preview.{project}.vibe.space
+    └─→ localhost:3001 (production)    if Host: prod.{project}.vibe.space
+```
+
+**Caddy Configuration** (`/etc/caddy/Caddyfile`):
+```caddyfile
+{
+    admin off
+    auto_https off
+}
+
+:8080 {
+    @code host code.*
+    handle @code {
+        reverse_proxy localhost:8081
+    }
+
+    @preview host preview.*
+    handle @preview {
+        reverse_proxy localhost:3000
+    }
+
+    @prod host prod.*
+    handle @prod {
+        reverse_proxy localhost:3001
+    }
+
+    # Fallback to code-server
+    handle {
+        reverse_proxy localhost:8081
+    }
+}
+```
+
+**How It Works**:
+1. Traefik routes `code.brave-eagle-7421.vibe.space` → Knative Service port 8080
+2. Knative forwards request to container port 8080 (Caddy)
+3. Caddy inspects `Host` header: `code.brave-eagle-7421.vibe.space`
+4. Caddy matches `@code` pattern (`host code.*`)
+5. Caddy proxies request to `localhost:8081` (code-server)
+6. Response flows back through Caddy → Knative → Traefik → Browser
+
+**Benefits**:
+- ✅ Fully Knative-compatible (single port)
+- ✅ Keeps scale-to-zero and fast cold-start (~200-500ms)
+- ✅ Industry-standard pattern (similar to Vercel, Netlify)
+- ✅ WebSocket support (Caddy handles upgrades automatically)
+- ✅ Minimal overhead (~1-5ms latency, +10MB image, ~20-30MB RAM)
+
+**Trade-offs**:
+- ⚠️ Extra network hop inside container (+1-5ms latency)
+- ⚠️ One more process to manage (Caddy via supervisord)
+- ⚠️ Code-server port shifted from 8080 → 8081
+
+**See**: [ADR 0009](../adr/0009-single-port-caddy-routing.md) for detailed rationale and alternatives considered.
 
 ##### 2. IngressRoute Creation
 
@@ -2360,18 +2434,50 @@ const handleOpen = async (id: string, urlType: string = 'code') => {
 
 **Supervisord Configuration** (`api/pkg/template/images/supervisord.conf`):
 ```ini
-[program:code-server]
-command=/usr/local/bin/code-server --bind-addr 0.0.0.0:%(ENV_VIBESPACE_CODE_PORT)s
+[program:caddy]
+command=/usr/bin/caddy run --config /etc/caddy/Caddyfile
 autorestart=true
+priority=1
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+
+[program:code-server]
+command=/usr/local/bin/code-server --bind-addr 0.0.0.0:8081
+autorestart=true
+priority=10
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
 
 [program:preview-server]
 command=/workspace/preview.sh
 autorestart=true
+environment=PORT="3000"
+priority=20
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
 
 [program:prod-server]
 command=/workspace/prod.sh
 autorestart=true
+environment=PORT="3001"
+priority=30
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
 ```
+
+**Process Startup Order**:
+1. **Caddy** (priority=1): Starts first, listens on port 8080
+2. **Code-server** (priority=10): Binds to 8081 (not 8080)
+3. **Preview server** (priority=20): Runs on port 3000
+4. **Production server** (priority=30): Runs on port 3001
 
 **Template-Specific Scripts**:
 - **Next.js**: `pnpm dev` (preview), `pnpm build && pnpm start` (prod)
