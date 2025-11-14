@@ -53,8 +53,10 @@ if [ ! -f /workspace/.initialized ]; then\n\
 fi' > /home/workspace/init-workspace.sh && \
     chmod +x /home/workspace/init-workspace.sh
 
-# Expose all 3 service ports
-EXPOSE 8080 3000 3001
+# Expose only port 8080 (Caddy proxy - single Knative port)
+# Internal services run on 8081 (code-server), 3000 (preview), 3001 (prod)
+# Caddy routes based on Host header
+EXPOSE 8080
 
 # Use multi-process entrypoint
 CMD ["/bin/bash", "/opt/vibespace/entrypoint.sh"]

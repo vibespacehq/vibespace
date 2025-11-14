@@ -13,9 +13,11 @@ const mockVibespaces: Vibespace[] = [
     status: 'running',
     resources: { cpu: '2', memory: '4Gi' },
     urls: {
-      code: 'http://code.example.vibe.space',
-      preview: 'http://preview.example.vibe.space',
-      prod: 'http://prod.example.vibe.space',
+      // Single-port architecture: All URLs point to Knative Service port 8080
+      // Caddy reverse proxy inside container routes based on Host header
+      code: 'http://code.example.vibe.space',       // → localhost:8081 (code-server)
+      preview: 'http://preview.example.vibe.space', // → localhost:3000 (preview)
+      prod: 'http://prod.example.vibe.space',       // → localhost:3001 (prod)
     },
     persistent: true,
     created_at: '2025-01-15T10:00:00Z',

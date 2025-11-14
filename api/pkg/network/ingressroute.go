@@ -52,9 +52,14 @@ type CreateIngressRoutesRequest struct {
 }
 
 // CreateIngressRoutes creates 3 IngressRoutes for a vibespace:
-// - code.{project}.vibe.space → vibespace-{id}:8080 (code-server)
-// - preview.{project}.vibe.space → vibespace-{id}:3000 (dev server)
-// - prod.{project}.vibe.space → vibespace-{id}:3001 (production server)
+// - code.{project}.vibe.space → vibespace-{id}:8080 (Caddy → code-server:8081)
+// - preview.{project}.vibe.space → vibespace-{id}:8080 (Caddy → preview:3000)
+// - prod.{project}.vibe.space → vibespace-{id}:8080 (Caddy → prod:3001)
+//
+// Single-port architecture: All routes target port 8080 where Caddy reverse proxy
+// listens. Caddy inspects the Host header and routes internally to the appropriate
+// service port (8081 for code-server, 3000 for preview, 3001 for production).
+// See ADR 0009 for architectural rationale.
 func (m *IngressRouteManager) CreateIngressRoutes(ctx context.Context, req *CreateIngressRoutesRequest) error {
 	namespace := req.Namespace
 	if namespace == "" {
@@ -64,14 +69,15 @@ func (m *IngressRouteManager) CreateIngressRoutes(ctx context.Context, req *Crea
 	serviceName := fmt.Sprintf("vibespace-%s", req.VibespaceID)
 
 	// Route configurations for the 3 subdomains
+	// All routes target port 8080 (Caddy's external port)
+	// Caddy handles internal routing based on Host header
 	routes := []struct {
 		subdomain string
-		port      int
-		portName  string
+		routeType string
 	}{
-		{"code", 8080, "code"},
-		{"preview", 3000, "preview"},
-		{"prod", 3001, "prod"},
+		{"code", "code"},
+		{"preview", "preview"},
+		{"prod", "prod"},
 	}
 
 	// Create an IngressRoute for each subdomain
@@ -90,7 +96,7 @@ func (m *IngressRouteManager) CreateIngressRoutes(ctx context.Context, req *Crea
 						"app.kubernetes.io/managed-by": "vibespace",
 						"vibespace.dev/id":             req.VibespaceID,
 						"vibespace.dev/project-name":   req.ProjectName,
-						"vibespace.dev/route-type":     route.subdomain,
+						"vibespace.dev/route-type":     route.routeType,
 					},
 				},
 				"spec": map[string]interface{}{
@@ -102,9 +108,10 @@ func (m *IngressRouteManager) CreateIngressRoutes(ctx context.Context, req *Crea
 							"services": []interface{}{
 								map[string]interface{}{
 									"name": serviceName,
-									"port": route.port,
-									// For Knative Services, we need to route to the actual Service
+									"port": 8080, // All routes target Caddy on port 8080
+									// For Knative Services, we route to the Knative Service
 									// Knative creates a K8s Service for each revision
+									// Caddy (listening on 8080) routes internally based on Host header
 									"kind": "Service",
 								},
 							},

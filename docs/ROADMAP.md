@@ -80,11 +80,19 @@
 - [x] **DNS resolution** via bundled dnsd server (miekg/dns on port 5353)
 - [x] **Traefik IngressRoutes** for multi-port routing (code/preview/prod)
 - [x] **Project names** with DNS-friendly format (adjective-noun-number)
-- [x] **Multi-process containers** via supervisord (3 services per vibespace)
+- [x] **Multi-process containers** via supervisord (4 services per vibespace)
 - [x] **Feature flags** for dual-mode operation (Knative vs Pod, DNS vs port-forward)
 - [x] **Frontend integration** with DNS URL optimization
 - [x] **Platform abstraction** (macOS: /etc/resolver, Linux: systemd-resolved)
+- [x] **Single-port + Caddy routing** - Internal reverse proxy for Knative compatibility (ADR 0009)
 - [ ] Vibespace start/stop lifecycle UI (frontend integration pending)
+
+**Routing Architecture** (ADR 0009):
+- Knative limitation: Only ONE container port allowed (named `http1` or `h2c`)
+- Solution: **Caddy reverse proxy** inside container routes based on HTTP Host header
+- Flow: `Traefik → Knative (port 8080) → Caddy → {code-server:8081, preview:3000, prod:3001}`
+- Benefits: Keeps scale-to-zero, fast cold-start (~200-500ms), industry-standard pattern
+- Overhead: +1-5ms latency, +10MB image size, +20-30MB RAM per vibespace
 
 #### Custom Template Builder
 - [ ] **Visual Dockerfile editor** with syntax highlighting (Monaco)

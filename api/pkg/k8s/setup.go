@@ -202,6 +202,129 @@ func (c *Client) InstallKnative(ctx context.Context) error {
 	}
 	slog.Info("knative controller is ready")
 
+	// Configure Knative features for vibespace requirements
+	slog.Info("configuring knative features")
+	if err := c.ConfigureKnativeFeatures(ctx); err != nil {
+		slog.Error("failed to configure knative features",
+			"error", err)
+		return fmt.Errorf("failed to configure Knative features: %w", err)
+	}
+	slog.Info("knative features configured successfully")
+
+	// Configure Knative defaults (revision timeout, etc.)
+	slog.Info("configuring knative defaults")
+	if err := c.ConfigureKnativeDefaults(ctx); err != nil {
+		slog.Error("failed to configure knative defaults",
+			"error", err)
+		return fmt.Errorf("failed to configure Knative defaults: %w", err)
+	}
+	slog.Info("knative defaults configured successfully")
+
+	return nil
+}
+
+// ConfigureKnativeFeatures enables required Knative features for vibespace
+func (c *Client) ConfigureKnativeFeatures(ctx context.Context) error {
+	// Patch config-features ConfigMap to enable:
+	// - kubernetes.podspec-persistent-volume-claim: for PVC support
+	// - kubernetes.podspec-persistent-volume-write: for writable PVCs
+	// - kubernetes.podspec-init-containers: for init containers (git-clone, fix-permissions)
+	// - multi-container: for multiple ports per vibespace
+	slog.Info("enabling knative features for vibespace")
+
+	configMapClient := c.clientset.CoreV1().ConfigMaps("knative-serving")
+
+	// Get current config-features ConfigMap
+	cm, err := configMapClient.Get(ctx, "config-features", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get config-features ConfigMap: %w", err)
+	}
+
+	// Update data fields
+	if cm.Data == nil {
+		cm.Data = make(map[string]string)
+	}
+
+	cm.Data["kubernetes.podspec-persistent-volume-claim"] = "enabled"
+	cm.Data["kubernetes.podspec-persistent-volume-write"] = "enabled"
+	cm.Data["kubernetes.podspec-init-containers"] = "enabled"
+	cm.Data["multi-container"] = "enabled"
+
+	// Update ConfigMap
+	_, err = configMapClient.Update(ctx, cm, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update config-features ConfigMap: %w", err)
+	}
+
+	slog.Info("knative features enabled",
+		"pvc_support", "enabled",
+		"pvc_write", "enabled",
+		"init_containers", "enabled",
+		"multi_container", "enabled")
+
+	// Restart Knative controller to pick up new configuration
+	slog.Info("restarting knative controller to apply new features")
+	deploymentClient := c.clientset.AppsV1().Deployments("knative-serving")
+
+	// Get current controller deployment
+	controller, err := deploymentClient.Get(ctx, "controller", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get controller deployment: %w", err)
+	}
+
+	// Trigger rolling restart by updating an annotation
+	if controller.Spec.Template.Annotations == nil {
+		controller.Spec.Template.Annotations = make(map[string]string)
+	}
+	controller.Spec.Template.Annotations["vibespace.dev/config-reloaded"] = time.Now().Format(time.RFC3339)
+
+	_, err = deploymentClient.Update(ctx, controller, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to restart controller: %w", err)
+	}
+
+	// Wait for controller to be ready again after restart
+	slog.Info("waiting for controller to restart with new config")
+	time.Sleep(5 * time.Second) // Give it a moment to start rolling out
+	if err := c.waitForDeployment(ctx, "knative-serving", "controller", 2*time.Minute); err != nil {
+		return fmt.Errorf("controller not ready after config update: %w", err)
+	}
+
+	slog.Info("knative controller restarted with new features")
+	return nil
+}
+
+// ConfigureKnativeDefaults configures Knative default values
+// Sets revision timeout to 600 seconds (Knative max limit)
+func (c *Client) ConfigureKnativeDefaults(ctx context.Context) error {
+	slog.Info("configuring knative defaults")
+
+	// Get config-defaults ConfigMap
+	cm, err := c.clientset.CoreV1().ConfigMaps("knative-serving").Get(ctx, "config-defaults", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get config-defaults: %w", err)
+	}
+
+	if cm.Data == nil {
+		cm.Data = make(map[string]string)
+	}
+
+	// Set revision timeout to 600 seconds (10 minutes, Knative maximum)
+	// Default is 300s, we increase to 600s for longer coding sessions
+	cm.Data["revision-timeout-seconds"] = "600"
+
+	// Update ConfigMap
+	_, err = c.clientset.CoreV1().ConfigMaps("knative-serving").Update(ctx, cm, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update config-defaults: %w", err)
+	}
+
+	slog.Info("knative defaults configured",
+		"revision-timeout-seconds", "600")
+
+	// Wait for controller to pick up new config (no restart needed for config-defaults)
+	time.Sleep(5 * time.Second)
+
 	return nil
 }
 

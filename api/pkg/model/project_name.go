@@ -151,13 +151,23 @@ func GenerateUniqueProjectName(existingNames []string) string {
 	return fmt.Sprintf("vibespace-%d", time.Now().Unix())
 }
 
-// AllocatePorts allocates 3 consecutive ports for a vibespace
-// Starts from basePort and returns code, preview, prod ports
+// AllocatePorts returns port allocations for a vibespace.
+// In Knative mode with Caddy routing (single-port architecture):
+// - External port: Always 8080 (Caddy listens here)
+// - Internal ports: 8081 (code-server), 3000 (preview), 3001 (prod)
+//
+// The basePort parameter is ignored in Knative mode but kept for API compatibility.
+// All external traffic arrives at port 8080, where Caddy routes internally based on Host header.
+// See ADR 0009 for architectural rationale.
+//
+// Returns external-facing ports (all 8080 in Knative mode).
 func AllocatePorts(basePort int) Ports {
+	// Return external ports (all services accessed via port 8080 + Caddy)
+	// Caddy handles internal routing: 8080 → 8081 (code), 3000 (preview), 3001 (prod)
 	return Ports{
-		Code:    basePort,
-		Preview: basePort + 1,
-		Prod:    basePort + 2,
+		Code:    8080, // External-facing port (Caddy listens here)
+		Preview: 8080, // External-facing port (same for all services)
+		Prod:    8080, // External-facing port (same for all services)
 	}
 }
 
