@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { KubernetesStatus, InstallProgress } from '../lib/types';
@@ -126,6 +126,7 @@ export function useKubernetesInstall() {
   const [progress, setProgress] = useState<InstallProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [installComplete, setInstallComplete] = useState(false);
+  const installInProgressRef = useRef(false);
 
   useEffect(() => {
     if (!isTauri) return;
@@ -139,9 +140,11 @@ export function useKubernetesInstall() {
       if (progress.stage === 'complete') {
         setIsInstalling(false);
         setInstallComplete(true);
+        installInProgressRef.current = false;
       } else if (progress.stage === 'error') {
         setError(progress.message);
         setIsInstalling(false);
+        installInProgressRef.current = false;
       }
     });
 
@@ -151,18 +154,34 @@ export function useKubernetesInstall() {
   }, []);
 
   const install = useCallback(async () => {
+    // Guard: Prevent multiple simultaneous installation calls
+    if (installInProgressRef.current) {
+      console.log('Kubernetes installation already in progress, skipping');
+      return;
+    }
+
+    installInProgressRef.current = true;
     setIsInstalling(true);
     setError(null);
     setProgress(null);
 
-    if (isTauri) {
-      // Installation runs in background, progress tracked via events
-      // Command returns immediately
-      await invoke('install_kubernetes');
-    } else {
-      // Browser mode - simulate installation
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      if (isTauri) {
+        // Installation runs in background, progress tracked via events
+        // Command returns immediately
+        await invoke('install_kubernetes');
+      } else {
+        // Browser mode - simulate installation
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        setIsInstalling(false);
+        installInProgressRef.current = false;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Installation failed';
+      setError(message);
       setIsInstalling(false);
+      installInProgressRef.current = false;
+      throw err;
     }
   }, []);
 

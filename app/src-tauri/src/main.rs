@@ -18,7 +18,16 @@ use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Mutex;
 use tauri::Manager;
+
+// ============================================================================
+// Global State Guards
+// ============================================================================
+
+// Guard to prevent multiple simultaneous Kubernetes installations
+// Without this, multiple clicks or state changes could spawn multiple Colima/k3s processes
+static INSTALL_GUARD: Mutex<bool> = Mutex::new(false);
 
 // ============================================================================
 // Types
@@ -206,6 +215,19 @@ async fn get_kubernetes_status() -> Result<KubernetesStatus, String> {
 async fn install_kubernetes(app_handle: tauri::AppHandle) -> Result<(), String> {
     println!("Installing bundled Kubernetes...");
 
+    // Guard: Prevent multiple simultaneous installations
+    {
+        let mut guard = INSTALL_GUARD.lock()
+            .map_err(|e| format!("Failed to acquire installation lock: {}", e))?;
+
+        if *guard {
+            println!("Installation already in progress, ignoring duplicate request");
+            return Err("Installation already in progress".to_string());
+        }
+
+        *guard = true;
+    }
+
     // Use Local Mode (bundled k8s). Remote Mode not yet implemented.
     let manager = K8sManager::new_local()?;
 
@@ -228,6 +250,12 @@ async fn install_kubernetes(app_handle: tauri::AppHandle) -> Result<(), String> 
             });
         } else {
             println!("Kubernetes installed successfully");
+        }
+
+        // Release the guard when installation completes (success or error)
+        if let Ok(mut guard) = INSTALL_GUARD.lock() {
+            *guard = false;
+            println!("Installation guard released");
         }
     });
 
