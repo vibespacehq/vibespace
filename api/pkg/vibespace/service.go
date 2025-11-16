@@ -396,9 +396,9 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	if agent == "" {
 		agent = "claude"
 	}
-	// Use NodePort registry (accessible from node's localhost)
-	// Registry is exposed on NodePort 30500, accessible at localhost:30500 from within k3d nodes
-	vibespaceImage := fmt.Sprintf("localhost:30500/vibespace-%s-%s:latest", req.Template, agent)
+	// Use cluster-internal registry service (accessible from all pods)
+	// Registry service is in default namespace, exposed internally on port 5000
+	vibespaceImage := fmt.Sprintf("registry.default.svc.cluster.local:5000/vibespace-%s-%s:latest", req.Template, agent)
 
 	// MODE 1: Create Knative Service + IngressRoutes (default)
 	if isKnativeRoutingEnabled() {
