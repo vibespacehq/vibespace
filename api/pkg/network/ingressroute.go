@@ -88,7 +88,7 @@ func (m *IngressRouteManager) CreateIngressRoutes(ctx context.Context, req *Crea
 
 		ingressRoute := &unstructured.Unstructured{
 			Object: map[string]interface{}{
-				"apiVersion": "traefik.containo.us/v1alpha1",
+				"apiVersion": "traefik.io/v1alpha1",
 				"kind":       "IngressRoute",
 				"metadata": map[string]interface{}{
 					"name":      ingressRouteName,
