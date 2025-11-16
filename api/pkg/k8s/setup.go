@@ -202,6 +202,16 @@ func (c *Client) InstallKnative(ctx context.Context) error {
 	}
 	slog.Info("knative controller is ready")
 
+	// Wait for webhook to be ready (required for ConfigMap validation)
+	slog.Info("waiting for knative webhook to be ready",
+		"timeout", "5m")
+	if err := c.waitForDeployment(ctx, "knative-serving", "webhook", 5*time.Minute); err != nil {
+		slog.Error("knative webhook not ready",
+			"error", err)
+		return fmt.Errorf("knative webhook not ready: %w", err)
+	}
+	slog.Info("knative webhook is ready")
+
 	// Configure Knative features for vibespace requirements
 	slog.Info("configuring knative features")
 	if err := c.ConfigureKnativeFeatures(ctx); err != nil {
