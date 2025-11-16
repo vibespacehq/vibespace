@@ -3,29 +3,29 @@
 //
 // ARCHITECTURE:
 // - DnsProvider trait defines common interface for all platforms
-// - MacOsDnsProvider implements /etc/resolver-based DNS (port 5353)
-// - LinuxDnsProvider implements systemd-resolved configuration (port 5353)
+// - MacOsDnsProvider implements /etc/resolver-based DNS (port 53535)
+// - LinuxDnsProvider implements systemd-resolved configuration (port 53535)
 //
 // DNS STRATEGY:
 // This module configures the OS to resolve *.vibe.space domains to 127.0.0.1
-// by directing queries to our custom DNS server running on localhost:5353.
+// by directing queries to our custom DNS server running on localhost:53535.
 //
 // PLATFORM IMPLEMENTATIONS:
 //
 // 1. macOS (using /etc/resolver/):
-//    - Creates /etc/resolver/vibe.space with nameserver 127.0.0.1:5353
+//    - Creates /etc/resolver/vibe.space with nameserver 127.0.0.1:53535
 //    - Uses osascript for graphical sudo prompt
 //    - Requires no system-wide DNS changes
 //    - Scoped to vibe.space domain only
 //
 // 2. Linux (using systemd-resolved):
-//    - Configures resolved to forward *.vibe.space to 127.0.0.1:5353
+//    - Configures resolved to forward *.vibe.space to 127.0.0.1:53535
 //    - Uses pkexec for PolicyKit graphical prompt
 //    - Creates /etc/systemd/resolved.conf.d/vibespace.conf
 //    - Restarts systemd-resolved service
 //
 // SECURITY:
-// - Unprivileged DNS server (port 5353, not 53)
+// - Unprivileged DNS server (port 53535, not 53 - avoids mDNS conflict)
 // - OS-level configuration requires sudo (user consent via GUI)
 // - Only affects vibe.space domain (no system-wide DNS hijacking)
 // - Automatic cleanup on uninstall
@@ -248,7 +248,7 @@ impl MacOsDnsProvider {
     /// Configure /etc/resolver/vibe.space to point to our DNS server
     /// Uses osascript for graphical sudo prompt
     fn configure_resolver(&self) -> Result<(), String> {
-        let resolver_content = "nameserver 127.0.0.1\nport 5353\n";
+        let resolver_content = "nameserver 127.0.0.1\nport 53535\n";
 
         // Create temp file with resolver configuration
         let temp_file = format!("/tmp/vibespace_resolver_{}", uuid::Uuid::new_v4());

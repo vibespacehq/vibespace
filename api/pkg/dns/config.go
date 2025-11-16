@@ -4,7 +4,7 @@ import "time"
 
 // Config holds configuration for the DNS server
 type Config struct {
-	// Port is the UDP/TCP port to listen on (default: 5353 for unprivileged)
+	// Port is the UDP/TCP port to listen on (default: 53535 to avoid mDNS conflict on 5353)
 	Port int
 
 	// Domain is the root domain to handle (e.g., "vibe.space")
@@ -26,7 +26,7 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults for local development
 func DefaultConfig() *Config {
 	return &Config{
-		Port:         5353,            // Unprivileged port
+		Port:         53535,           // Unprivileged port (avoids mDNS conflict on port 5353)
 		Domain:       "vibe.space",    // vibespace domain
 		TargetIP:     "127.0.0.1",     // Localhost IPv4
 		TargetIPv6:   "::1",           // Localhost IPv6

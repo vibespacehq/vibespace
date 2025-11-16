@@ -1182,14 +1182,15 @@ func podToVibespace(pod *corev1.Pod) *model.Vibespace {
 func knativeServiceToVibespace(svc *unstructured.Unstructured) *model.Vibespace {
 	// Extract metadata
 	metadata, _ := svc.Object["metadata"].(map[string]interface{})
-	labels, _ := metadata["labels"].(map[string]string)
-	annotations, _ := metadata["annotations"].(map[string]string)
+	labels, _ := metadata["labels"].(map[string]interface{})
+	annotations, _ := metadata["annotations"].(map[string]interface{})
 
-	id := labels["vibespace.dev/id"]
-	name := labels["app.kubernetes.io/name"]
-	template := labels["vibespace.dev/template"]
-	projectName := labels["vibespace.dev/project-name"]
-	createdAt := annotations["vibespace.dev/created-at"]
+	// Extract labels with type conversion
+	id, _ := labels["vibespace.dev/id"].(string)
+	name, _ := labels["app.kubernetes.io/name"].(string)
+	template, _ := labels["vibespace.dev/template"].(string)
+	projectName, _ := labels["vibespace.dev/project-name"].(string)
+	createdAt, _ := annotations["vibespace.dev/created-at"].(string)
 
 	// Extract status from Knative Service
 	status := knativeStatusToVibespaceStatus(svc)

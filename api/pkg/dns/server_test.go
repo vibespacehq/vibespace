@@ -11,8 +11,8 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 
-	if config.Port != 5353 {
-		t.Errorf("Expected port 5353, got %d", config.Port)
+	if config.Port != 53535 {
+		t.Errorf("Expected port 53535, got %d", config.Port)
 	}
 
 	if config.Domain != "vibe.space" {
@@ -62,7 +62,7 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name: "empty domain",
 			config: &Config{
-				Port:       5353,
+				Port:       53535,
 				Domain:     "",
 				TargetIP:   "127.0.0.1",
 				TargetIPv6: "::1",
@@ -72,7 +72,7 @@ func TestConfigValidation(t *testing.T) {
 		{
 			name: "empty target IP",
 			config: &Config{
-				Port:       5353,
+				Port:       53535,
 				Domain:     "vibe.space",
 				TargetIP:   "",
 				TargetIPv6: "::1",
