@@ -38,6 +38,7 @@ if [ "$FORCE" = false ]; then
     echo "  - colima (VM)"
     echo "  - lima (VM backend)"
     echo "  - kubectl (K8s CLI)"
+    echo "  - dnsd (DNS server)"
     echo ""
     read -p "Are you sure you want to continue? (y/N): " -n 1 -r
     echo ""
@@ -79,6 +80,7 @@ kill_process "vibespace"
 kill_process "colima"
 kill_process "limactl"
 kill_process "kubectl"
+kill_process "dnsd"
 echo ""
 
 # 2. Remove directories
@@ -100,9 +102,9 @@ echo ""
 echo "=== Verification ==="
 
 # Check processes
-if ps aux | grep -E '(colima|kubectl|lima|vibespace)' | grep -v grep > /dev/null; then
+if ps aux | grep -E '(colima|kubectl|lima|vibespace|dnsd)' | grep -v grep > /dev/null; then
     echo -e "${RED}✗${NC} Some processes still running:"
-    ps aux | grep -E '(colima|kubectl|lima|vibespace)' | grep -v grep
+    ps aux | grep -E '(colima|kubectl|lima|vibespace|dnsd)' | grep -v grep
 else
     echo -e "${GREEN}✓${NC} No vibespace-related processes running"
 fi
