@@ -111,7 +111,7 @@ func TestIngressRouteStructure(t *testing.T) {
 		// Expected structure of an IngressRoute
 		ingressRoute := &unstructured.Unstructured{
 			Object: map[string]interface{}{
-				"apiVersion": "traefik.containo.us/v1alpha1",
+				"apiVersion": "traefik.io/v1alpha1",
 				"kind":       "IngressRoute",
 				"metadata": map[string]interface{}{
 					"name":      "vibespace-test-code",
@@ -143,7 +143,7 @@ func TestIngressRouteStructure(t *testing.T) {
 		}
 
 		// Validate structure
-		assert.Equal(t, "traefik.containo.us/v1alpha1", ingressRoute.GetAPIVersion())
+		assert.Equal(t, "traefik.io/v1alpha1", ingressRoute.GetAPIVersion())
 		assert.Equal(t, "IngressRoute", ingressRoute.GetKind())
 		assert.Equal(t, "vibespace-test-code", ingressRoute.GetName())
 
