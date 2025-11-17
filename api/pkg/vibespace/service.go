@@ -396,10 +396,11 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	if agent == "" {
 		agent = "claude"
 	}
-	// Use localhost registry with NodePort (Colima configured with --registry flag)
-	// Colima's --registry localhost:30500 configures k3s to allow insecure pulls from this address
-	// Registry is exposed as NodePort 30500, accessible from k3s node at localhost:30500
-	vibespaceImage := fmt.Sprintf("localhost:30500/vibespace-%s-%s:latest", req.Template, agent)
+	// Use host.docker.internal to access registry from Docker containers in Colima
+	// Colima runs Docker in Lima VM - host.docker.internal resolves to the host machine
+	// Registry is exposed as NodePort 30500 on host, accessible via host.docker.internal:30500
+	// Configured in ~/.colima/default/colima.yaml as insecure-registry
+	vibespaceImage := fmt.Sprintf("host.docker.internal:30500/vibespace-%s-%s:latest", req.Template, agent)
 
 	// MODE 1: Create Knative Service + IngressRoutes (default)
 	if isKnativeRoutingEnabled() {

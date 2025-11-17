@@ -668,6 +668,10 @@ impl LocalK8sProvider {
         let bin_dir = self.install_dir.join("bin");
         let lima_bin_dir = self.install_dir.join("lima/bin");
 
+        // Configure Colima to allow insecure registry access
+        // Create ~/.colima/default/colima.yaml with Docker insecure-registries config
+        self.configure_colima_registry()?;
+
         // Add our bin directories to PATH so colima can find limactl and guest agents
         let current_path = env::var("PATH").unwrap_or_default();
         let new_path = format!("{}:{}:{}", lima_bin_dir.display(), bin_dir.display(), current_path);
@@ -677,8 +681,7 @@ impl LocalK8sProvider {
 
         // Use bash to run colima with PATH set
         // This ensures the environment is properly inherited by Colima's subprocesses (like limactl)
-        // --registry configures k3s to allow pulling from local insecure registry
-        let command_str = format!("PATH='{}' '{}' start --registry localhost:30500", new_path, colima_bin.display());
+        let command_str = format!("PATH='{}' '{}' start", new_path, colima_bin.display());
 
         println!("Executing: bash -c {}", command_str);
 
@@ -694,6 +697,31 @@ impl LocalK8sProvider {
         } else {
             Err("Failed to start Colima".to_string())
         }
+    }
+
+    fn configure_colima_registry(&self) -> Result<(), String> {
+        // Create ~/.colima/default directory if it doesn't exist
+        let home_dir = env::var("HOME").map_err(|_| "HOME environment variable not set".to_string())?;
+        let colima_config_dir = PathBuf::from(&home_dir).join(".colima").join("default");
+
+        fs::create_dir_all(&colima_config_dir)
+            .map_err(|e| format!("Failed to create Colima config directory: {}", e))?;
+
+        // Create colima.yaml with insecure registry configuration
+        let config_path = colima_config_dir.join("colima.yaml");
+        let config_content = r#"# Colima configuration for vibespace
+# Auto-generated - allows pulling images from local registry
+
+docker:
+  insecure-registries:
+    - host.docker.internal:30500
+"#;
+
+        fs::write(&config_path, config_content)
+            .map_err(|e| format!("Failed to write Colima config: {}", e))?;
+
+        println!("Created Colima config at: {:?}", config_path);
+        Ok(())
     }
 
     fn start_k3s(&self) -> Result<(), String> {
