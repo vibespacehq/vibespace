@@ -677,7 +677,8 @@ impl LocalK8sProvider {
 
         // Use bash to run colima with PATH set
         // This ensures the environment is properly inherited by Colima's subprocesses (like limactl)
-        let command_str = format!("PATH='{}' '{}' start", new_path, colima_bin.display());
+        // --registry configures k3s to allow pulling from local insecure registry
+        let command_str = format!("PATH='{}' '{}' start --registry localhost:30500", new_path, colima_bin.display());
 
         println!("Executing: bash -c {}", command_str);
 
