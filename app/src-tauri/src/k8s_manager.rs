@@ -567,6 +567,16 @@ impl LocalK8sProvider {
             }
         }
 
+        // Configure insecure registry for local development
+        println!("Colima started successfully, now configuring insecure registry");
+        std::thread::sleep(Duration::from_secs(2)); // Wait for colima.yaml to be written
+
+        self.configure_colima_registry()?;
+
+        // Restart Colima to apply registry configuration
+        println!("Restarting Colima to apply insecure registry configuration");
+        self.restart_colima(&new_path)?;
+
         progress_callback(InstallProgress {
             stage: "verifying".to_string(),
             progress: 90,
