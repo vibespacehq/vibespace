@@ -989,14 +989,23 @@ metadata:
   name: registry
   namespace: default
 spec:
-  type: NodePort
+  type: ClusterIP  # Internal cluster access only
   ports:
   - port: 5000
     targetPort: 5000
-    nodePort: 30500
   selector:
     app: registry
 ```
+
+**Registry Architecture**:
+- **In-cluster registry**: Registry runs as a pod inside Kubernetes
+- **Service DNS**: Accessible via `registry.default.svc.cluster.local:5000`
+- **Persistent storage**: 50Gi PersistentVolume for image data (persists across restarts)
+- **No external exposure**: ClusterIP service (not accessible from host)
+- **No insecure-registries config needed**: Internal cluster traffic doesn't require TLS
+- **Image URL format**: `registry.default.svc.cluster.local:5000/vibespace-{template}-{agent}:latest`
+
+This approach follows industry best practices (used by kind, minikube, microk8s) and eliminates the complexity of host networking and Docker daemon configuration. See [ADR 0010](./adr/0010-in-cluster-registry.md) for decision rationale.
 
 **BuildKit** (`k8s/buildkit.yaml`):
 ```yaml
