@@ -396,11 +396,11 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	if agent == "" {
 		agent = "claude"
 	}
-	// Use host.docker.internal to access registry from Docker containers in Colima
-	// Colima runs Docker in Lima VM - host.docker.internal resolves to the host machine
-	// Registry is exposed as NodePort 30500 on host, accessible via host.docker.internal:30500
-	// Configured in ~/.colima/default/colima.yaml as insecure-registry
-	vibespaceImage := fmt.Sprintf("host.docker.internal:30500/vibespace-%s-%s:latest", req.Template, agent)
+	// Use in-cluster registry (ClusterIP service in default namespace)
+	// Registry runs as a pod inside Kubernetes with PersistentVolume for image storage
+	// Accessible via cluster DNS: registry.default.svc.cluster.local:5000
+	// No insecure-registries configuration needed (internal cluster traffic)
+	vibespaceImage := fmt.Sprintf("registry.default.svc.cluster.local:5000/vibespace-%s-%s:latest", req.Template, agent)
 
 	// MODE 1: Create Knative Service + IngressRoutes (default)
 	if isKnativeRoutingEnabled() {
