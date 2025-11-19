@@ -226,8 +226,13 @@ done
 1. Create directory: `images/templates/mytemplate/`
 2. Write `Dockerfile` based on `images/base/`
 3. Add template metadata in API: `api/pkg/model/template.go`
-4. Build image: `docker build -t vibespace-mytemplate:latest .`
-5. Push to local registry: `docker push localhost:5000/vibespace-mytemplate:latest`
+4. Build image via BuildKit (runs in-cluster, pushes to `registry.default.svc.cluster.local:5000`)
+5. For local testing, port-forward to registry and push:
+   ```bash
+   kubectl port-forward -n default svc/registry 5000:5000 &
+   docker build -t localhost:5000/vibespace-mytemplate:latest .
+   docker push localhost:5000/vibespace-mytemplate:latest
+   ```
 
 ### Adding a New API Endpoint
 
@@ -681,10 +686,18 @@ kubectl logs vibespace-{id} -n vibespace
 kubectl logs -n default deployment/buildkitd
 ```
 
-### Local registry not accessible
+### In-cluster registry not accessible
 ```bash
-curl http://localhost:5000/v2/_catalog
+# Check registry service and pod
 kubectl get svc -n default registry
+kubectl get pods -n default -l app=registry
+
+# Check registry contents (via port-forward)
+kubectl port-forward -n default svc/registry 5000:5000 &
+curl http://localhost:5000/v2/_catalog
+
+# Or check directly from within cluster
+kubectl run --rm -i --restart=Never registry-test --image=curlimages/curl -- curl http://registry.default.svc.cluster.local:5000/v2/_catalog
 ```
 
 ---
