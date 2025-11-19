@@ -740,6 +740,37 @@ impl LocalK8sProvider {
             return Err("Failed to restart Colima".to_string());
         }
 
+        // Wait for Colima to fully start
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        // Restart Docker daemon inside VM to apply insecure-registries config
+        // Based on GitHub issue #834: config changes require Docker daemon restart
+        println!("Restarting Docker daemon inside Colima VM to apply registry configuration...");
+
+        let daemon_reload = format!("PATH='{}' '{}' ssh sudo systemctl daemon-reload", path_env, colima_bin.display());
+        let status = Command::new("bash")
+            .arg("-c")
+            .arg(&daemon_reload)
+            .status()
+            .map_err(|e| format!("Failed to reload systemd daemon: {}", e))?;
+
+        if !status.success() {
+            println!("Warning: Failed to reload systemd daemon, continuing anyway...");
+        }
+
+        let docker_restart = format!("PATH='{}' '{}' ssh sudo systemctl restart docker", path_env, colima_bin.display());
+        let status = Command::new("bash")
+            .arg("-c")
+            .arg(&docker_restart)
+            .status()
+            .map_err(|e| format!("Failed to restart Docker daemon: {}", e))?;
+
+        if !status.success() {
+            return Err("Failed to restart Docker daemon inside Colima VM".to_string());
+        }
+
+        println!("Docker daemon restarted successfully");
+
         Ok(())
     }
 
@@ -774,9 +805,10 @@ impl LocalK8sProvider {
         }
 
         // Replace "docker: {}" with our insecure registry config
+        // Use official Colima YAML format: 2 spaces for indentation, dash aligned with parent key
         let updated_content = config_content.replace(
             "docker: {}",
-            "docker:\n  insecure-registries:\n    - host.docker.internal:30500"
+            "docker:\n  insecure-registries:\n  - host.docker.internal:30500"
         );
 
         // Verify the replacement worked
