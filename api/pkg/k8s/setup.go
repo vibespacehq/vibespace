@@ -8,8 +8,6 @@ import (
 	"log/slog"
 	"time"
 
-	"vibespace/pkg/template"
-
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -102,7 +100,7 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 			"installed", components.Registry.Installed,
 			"healthy", components.Registry.Healthy)
 		if progressFn != nil {
-			progressFn(SetupProgress{Component: "registry", Status: "installing", Message: "Installing Local Registry..."})
+			progressFn(SetupProgress{Component: "registry", Status: "installing", Message: "Installing Docker Registry..."})
 		}
 		if err := c.InstallRegistry(ctx); err != nil {
 			slog.Error("failed to install registry",
@@ -110,11 +108,11 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 			if progressFn != nil {
 				progressFn(SetupProgress{Component: "registry", Status: "error", Error: err.Error()})
 			}
-			return fmt.Errorf("failed to install Registry: %w", err)
+			return fmt.Errorf("failed to install registry: %w", err)
 		}
 		slog.Info("registry installed successfully")
 		if progressFn != nil {
-			progressFn(SetupProgress{Component: "registry", Status: "done", Message: "Local Registry installed"})
+			progressFn(SetupProgress{Component: "registry", Status: "done", Message: "Docker Registry installed"})
 		}
 	} else {
 		slog.Info("registry already installed and healthy, skipping")
@@ -143,15 +141,15 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 		slog.Info("buildkit already installed and healthy, skipping")
 	}
 
-	// Build template images after BuildKit is ready
-	// BuildTemplateImages sends its own progress updates for each image
-	slog.Info("starting template image builds")
-	if err := c.BuildTemplateImages(ctx, progressFn); err != nil {
-		slog.Error("failed to build template images",
+	// Mirror pre-built images from GHCR to local registry
+	// This replaces local builds - images are pre-built via GitHub Actions
+	slog.Info("starting template image mirroring from GHCR")
+	if err := c.MirrorGHCRImages(ctx, progressFn); err != nil {
+		slog.Error("failed to mirror template images",
 			"error", err)
-		return fmt.Errorf("failed to build template images: %w", err)
+		return fmt.Errorf("failed to mirror template images: %w", err)
 	}
-	slog.Info("all template images built successfully")
+	slog.Info("all template images mirrored successfully")
 
 	// Ensure vibespace namespace exists
 	slog.Info("ensuring vibespace namespace exists")
@@ -377,22 +375,23 @@ func (c *Client) InstallTraefik(ctx context.Context) error {
 	return nil
 }
 
-// InstallRegistry installs the local Docker registry
+
+// InstallRegistry installs the Docker Registry for storing template images
 func (c *Client) InstallRegistry(ctx context.Context) error {
-	slog.Info("installing local registry")
+	slog.Info("installing docker registry")
 
 	slog.Info("applying registry manifest")
 	if err := c.ApplyManifest(ctx, RegistryManifest); err != nil {
 		slog.Error("failed to apply registry manifest",
 			"error", err)
-		return fmt.Errorf("failed to apply Registry manifest: %w", err)
+		return fmt.Errorf("failed to apply registry manifest: %w", err)
 	}
 	slog.Info("registry manifest applied successfully")
 
-	// Wait for Registry to be ready
+	// Wait for registry to be ready
 	slog.Info("waiting for registry to be ready",
-		"timeout", "3m")
-	if err := c.waitForDeployment(ctx, "default", "registry", 3*time.Minute); err != nil {
+		"timeout", "2m")
+	if err := c.waitForDeployment(ctx, "default", "registry", 2*time.Minute); err != nil {
 		slog.Error("registry not ready",
 			"error", err)
 		return fmt.Errorf("registry not ready: %w", err)
@@ -577,38 +576,51 @@ func (c *Client) restMapper() (meta.RESTMapper, error) {
 	return restmapper.NewDiscoveryRESTMapper(apiGroupResources), nil
 }
 
-// BuildTemplateImages builds all template images using BuildKit
-// This is called after BuildKit is installed and ready
+// BuildTemplateImages builds all template images using a Kubernetes Job
+// The Job runs buildctl inside the cluster, avoiding host DNS resolution issues
+// This is called after BuildKit and Registry are installed and ready
 func (c *Client) BuildTemplateImages(ctx context.Context, progressFn SetupProgressFunc) error {
-	// Create builder instance with k8s client for port-forwarding
-	// BuildKit runs inside the cluster, so use cluster-internal registry address
-	builder := template.NewBuilder("registry.default.svc.cluster.local:5000", c)
+	slog.Info("starting Job-based template image build")
 
-	// Start port-forwards to BuildKit and Registry
-	if err := builder.EnsurePortForwards(ctx); err != nil {
-		return fmt.Errorf("failed to setup port-forwards: %w", err)
-	}
-	defer builder.StopPortForwards()
-
-	// Convert template.BuildProgress to SetupProgress
-	buildProgressFn := func(progress template.BuildProgress) {
+	// 1. Create ConfigMap with all Dockerfiles and support files
+	if err := c.createBuildConfigMap(ctx); err != nil {
 		if progressFn != nil {
 			progressFn(SetupProgress{
-				Component: progress.Template,
-				Status:    progress.Status,
-				Message:   progress.Message,
-				Error:     progress.Error,
+				Component: "templates",
+				Status:    "error",
+				Error:     fmt.Sprintf("Failed to create build ConfigMap: %v", err),
 			})
 		}
+		return fmt.Errorf("failed to create build ConfigMap: %w", err)
 	}
 
-	// Build all base images and template images
-	// This will build 12 images total:
-	// - 3 base images (claude, codex, gemini)
-	// - 9 template images (nextjs×3, vue×3, jupyter×3)
-	if err := builder.BuildAllTemplates(ctx, buildProgressFn); err != nil {
-		return fmt.Errorf("failed to build template images: %w", err)
+	// 2. Create and run the build Job
+	if err := c.createBuildJob(ctx); err != nil {
+		// Cleanup ConfigMap on error
+		_ = c.deleteBuildConfigMap(ctx)
+		if progressFn != nil {
+			progressFn(SetupProgress{
+				Component: "templates",
+				Status:    "error",
+				Error:     fmt.Sprintf("Failed to create build Job: %v", err),
+			})
+		}
+		return fmt.Errorf("failed to create build Job: %w", err)
 	}
 
+	// 3. Watch Job until completion (streams logs for progress)
+	if err := c.WatchBuildJob(ctx, progressFn); err != nil {
+		// Cleanup ConfigMap on error (Job auto-cleans via TTL)
+		_ = c.deleteBuildConfigMap(ctx)
+		return fmt.Errorf("build Job failed: %w", err)
+	}
+
+	// 4. Cleanup ConfigMap (Job auto-cleans via TTL)
+	if err := c.deleteBuildConfigMap(ctx); err != nil {
+		slog.Warn("failed to cleanup build ConfigMap", "error", err)
+		// Don't fail the build for cleanup errors
+	}
+
+	slog.Info("all template images built successfully via Job")
 	return nil
 }

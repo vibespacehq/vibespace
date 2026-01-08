@@ -227,10 +227,14 @@
 - [ ] **Audit logs** - Complete activity tracking
 - [ ] **Compliance** - SOC2, GDPR, HIPAA support
 - [ ] **GitOps with ArgoCD** - Vibespace definitions as Git repos
-- [ ] **Harbor registry** - Replace registry:2 with Harbor
-  - Vulnerability scanning for all images
-  - Image signing and verification
-  - User/team-based access control
+- [x] **Harbor registry** - ✅ Basic Harbor v2.11.1 implemented
+  - [x] HTTPS with certificate management
+  - [x] Robot account authentication
+  - [x] Project-based organization
+  - [ ] Vulnerability scanning for all images (Trivy)
+  - [ ] Image signing and verification (Notary)
+  - [ ] Advanced user/team-based access control
+  - [ ] Harbor Portal (web UI)
 - [ ] On-premise deployment options
 - [ ] Priority support tiers
 

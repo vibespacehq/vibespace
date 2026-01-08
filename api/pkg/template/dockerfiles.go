@@ -160,3 +160,34 @@ func GetAllTemplateIDs() []string {
 func GetAllAgents() []string {
 	return []string{"claude", "codex", "gemini"}
 }
+
+// GetAllDockerfiles returns all Dockerfiles for building images
+// Keys are formatted as "{type}-{agent}-Dockerfile" for base images
+// and "{template}-Dockerfile" for template images (which use ARG AGENT)
+func GetAllDockerfiles() map[string][]byte {
+	return map[string][]byte{
+		// Base images (one per agent)
+		"base-claude-Dockerfile": BaseClaudeDockerfile,
+		"base-codex-Dockerfile":  BaseCodexDockerfile,
+		"base-gemini-Dockerfile": BaseGeminiDockerfile,
+		// Template images (agent-agnostic, use ARG)
+		"nextjs-Dockerfile":  NextjsDockerfile,
+		"vue-Dockerfile":     VueDockerfile,
+		"jupyter-Dockerfile": JupyterDockerfile,
+	}
+}
+
+// GetAllAgentMDs returns all agent instruction files
+// Keys are formatted as "{type}-{agent}-CLAUDE.md" or "{type}-{agent}-AGENT.md"
+func GetAllAgentMDs() map[string][]byte {
+	return map[string][]byte{
+		// Base images
+		"base-claude-CLAUDE.md": BaseClaudeMD,
+		"base-codex-AGENT.md":   BaseCodexMD,
+		"base-gemini-AGENT.md":  BaseGeminiMD,
+		// Template images (framework-specific)
+		"nextjs-CLAUDE.md":  NextjsCLAUDEMD,
+		"vue-CLAUDE.md":     VueCLAUDEMD,
+		"jupyter-CLAUDE.md": JupyterCLAUDEMD,
+	}
+}

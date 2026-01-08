@@ -396,10 +396,9 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	if agent == "" {
 		agent = "claude"
 	}
-	// Use in-cluster registry (ClusterIP service in default namespace)
-	// Registry runs as a pod inside Kubernetes with PersistentVolume for image storage
+	// Use local registry (ClusterIP service in default namespace)
+	// Images are mirrored from GHCR during cluster setup
 	// Accessible via cluster DNS: registry.default.svc.cluster.local:5000
-	// No insecure-registries configuration needed (internal cluster traffic)
 	vibespaceImage := fmt.Sprintf("registry.default.svc.cluster.local:5000/vibespace-%s-%s:latest", req.Template, agent)
 
 	// MODE 1: Create Knative Service + IngressRoutes (default)

@@ -154,6 +154,7 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 						},
 						"initContainers": initContainers,
 						"volumes":        volumes,
+						// NOTE: No imagePullSecrets needed - local registry uses HTTP without auth
 					},
 				},
 			},

@@ -162,9 +162,9 @@ An open-source Tauri desktop app for managing isolated dev environments running 
 │  └───────────────────────────────────────────────────────┘ │
 │                                                             │
 │  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │  Traefik    │  │  BuildKit    │  │  Local Registry  │  │
-│  │  Ingress    │  │  Daemon      │  │  (registry:2)    │  │
-│  │  (DNS)      │  │  (Builder)   │  │  (:5000)         │  │
+│  │  Traefik    │  │  BuildKit    │  │  Harbor          │  │
+│  │  Ingress    │  │  Daemon      │  │  Registry        │  │
+│  │  (DNS)      │  │  (Builder)   │  │  (HTTPS)         │  │
 │  └─────────────┘  └──────────────┘  └──────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
                        │
@@ -354,7 +354,7 @@ Desktop App → Local k3s (lightweight vibespaces)
 | **Workload Management** | Knative Serving | Scale-to-zero for resource efficiency, easy domain routing |
 | **Ingress Controller** | Traefik | Built into k3s, excellent local DNS support, simple config |
 | **Container Builder** | BuildKit | Kubernetes-native, faster than Docker, better caching, no daemon |
-| **Image Registry** | registry:2 | Lightweight, sufficient for local use, no external dependencies |
+| **Image Registry** | Harbor | Enterprise-grade, HTTPS, authentication, vulnerability scanning ready |
 | **IDE** | code-server | Official VS Code in browser, full extension support, embeddable |
 | **Storage** | LocalPath Provisioner | Included with k3s, dynamic PVC provisioning |
 
@@ -370,7 +370,7 @@ Desktop App → Local k3s (lightweight vibespaces)
 **Component Versions (MVP - Phase 1)**:
 - **Knative Serving**: v1.15.2 (stable, avoids v1.19 OTel transition bugs)
 - **Traefik**: v3.5.3 (latest stable ingress controller)
-- **Registry**: 2.8.3 (proven for local use)
+- **Harbor**: v2.11.1 (enterprise registry with HTTPS, authentication)
 - **BuildKit**: v0.17.3 (stable, avoids v0.24+ CPU issues)
 
 *Version selection rationale documented in [ADR 0004](../docs/adr/0004-component-version-selection.md). Upgrades to newer versions will be evaluated in Phase 2 after MVP validation.*
@@ -719,9 +719,6 @@ api/
 │   │   ├── service.go                 # Credential business logic
 │   │   ├── secrets.go                 # Kubernetes Secret generation
 │   │   └── types.go                   # Credential types
-│   ├── registry/
-│   │   ├── client.go                  # registry:2 API client
-│   │   └── images.go                  # Image list/pull/push
 │   ├── network/
 │   │   ├── ingress.go                 # IngressRoute management
 │   │   ├── dns.go                     # /etc/hosts manipulation
@@ -925,8 +922,8 @@ kubectl apply -f https://github.com/knative/serving/releases/download/knative-v1
 # Install Traefik (Ingress)
 kubectl apply -f k8s/traefik.yaml
 
-# Install Local Registry
-kubectl apply -f k8s/registry.yaml
+# Install Harbor Registry
+kubectl apply -f k8s/harbor.yaml
 
 # Install BuildKit (Image Building)
 kubectl apply -f k8s/buildkit.yaml
@@ -939,73 +936,31 @@ kubectl wait --for=condition=ready pod --all --all-namespaces --timeout=5m
 
 #### 4.3.4 Manifests
 
-**Registry** (`k8s/registry.yaml`):
-```yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: registry-data
-  namespace: default
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 50Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: registry
-  namespace: default
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: registry
-  template:
-    metadata:
-      labels:
-        app: registry
-    spec:
-      containers:
-      - name: registry
-        image: registry:2
-        ports:
-        - containerPort: 5000
-        volumeMounts:
-        - name: data
-          mountPath: /var/lib/registry
-        env:
-        - name: REGISTRY_STORAGE_DELETE_ENABLED
-          value: "true"
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: registry-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: registry
-  namespace: default
-spec:
-  type: ClusterIP  # Internal cluster access only
-  ports:
-  - port: 5000
-    targetPort: 5000
-  selector:
-    app: registry
-```
+**Harbor Registry** (`k8s/harbor.yaml`):
 
-**Registry Architecture**:
-- **In-cluster registry**: Registry runs as a pod inside Kubernetes
-- **Service DNS**: Accessible via `registry.default.svc.cluster.local:5000`
-- **Persistent storage**: 50Gi PersistentVolume for image data (persists across restarts)
-- **No external exposure**: ClusterIP service (not accessible from host)
-- **No insecure-registries config needed**: Internal cluster traffic doesn't require TLS
-- **Image URL format**: `registry.default.svc.cluster.local:5000/vibespace-{template}-{agent}:latest`
+Harbor is an enterprise-grade container registry providing HTTPS, authentication, and vulnerability scanning capabilities. The manifest includes:
 
-This approach follows industry best practices (used by kind, minikube, microk8s) and eliminates the complexity of host networking and Docker daemon configuration. See [ADR 0010](./adr/0010-in-cluster-registry.md) for decision rationale.
+- **Components**: Core (API), Registry (OCI), RegistryCtl, PostgreSQL, Redis
+- **Storage**: 50Gi PVC for images, 10Gi PVC for database
+- **Network**: ClusterIP services (cluster-internal only)
+- **Security**: Self-signed CA for HTTPS, robot accounts for authentication
+
+**Harbor Architecture**:
+- **Service DNS**: `harbor.default.svc.cluster.local` (HTTPS)
+- **Image URL format**: `harbor.default.svc.cluster.local/vibespace/vibespace-{template}-{agent}:latest`
+- **Authentication**: Robot account `robot$vibespace-builder` with push/pull permissions
+- **Certificate**: Self-signed CA trusted on host via Tauri app (automated sudo prompt)
+- **Projects**: Single project "vibespace" for all vibespace images
+- **Resources**: ~300MB RAM (PostgreSQL + Redis + Core + Registry)
+
+**Certificate Trust Flow**:
+1. Harbor CA generated during installation (4096-bit RSA, 10-year validity)
+2. Server cert with SAN for cluster DNS names
+3. CA mounted into BuildKit pods for HTTPS trust
+4. CA trusted on host system (macOS: system keychain, Linux: /etc/ssl/certs/)
+5. Automated via Tauri app after cluster setup completes
+
+See [ADR 0011](./adr/0011-harbor-registry-migration.md) for migration rationale and implementation details.
 
 **BuildKit** (`k8s/buildkit.yaml`):
 ```yaml
@@ -3600,21 +3555,29 @@ See ROADMAP.md for post-MVP features:
 - Version-controlled infrastructure
 - Better collaboration
 
-#### 12.1.2 Image Registry Upgrade (Harbor)
+#### 12.1.2 Harbor Registry Enhancements
 
-**When**: Security scanning and RBAC become requirements
+**Status**: ✅ Harbor v2.11.1 now implemented (minimal configuration)
 
-**What**:
-- Replace registry:2 with Harbor
-- Vulnerability scanning for all images
-- User/team-based access control
+**Current Implementation** (MVP Phase 1):
+- Harbor registry with HTTPS and certificate management
+- Robot account authentication for BuildKit
+- Project-based organization
+- Basic RBAC (robot accounts)
+
+**Future Enhancements** (Post-MVP):
+- Vulnerability scanning for all images (Trivy integration)
+- Harbor Portal (web UI) for image management
 - Webhook integrations (Slack, etc.)
-- Image signing and verification
+- Image signing and verification (Notary)
+- Advanced user/team-based access control
 
 **Why**:
 - Enterprise security requirements
 - Compliance (scan for CVEs)
 - Better multi-user support
+
+**See**: [ADR 0011](../adr/0011-harbor-registry-migration.md) for migration details
 
 #### 12.1.3 Multi-User Support
 

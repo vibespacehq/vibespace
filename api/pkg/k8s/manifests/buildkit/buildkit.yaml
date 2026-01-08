@@ -5,6 +5,33 @@ metadata:
   namespace: default
 data:
   buildkitd.toml: |
+    # BuildKit daemon configuration for Kubernetes
+    # See: https://docs.docker.com/build/buildkit/toml-configuration/
+
+    # Worker configuration - OCI (runc) executor
+    [worker.oci]
+      enabled = true
+      platforms = [ "linux/amd64", "linux/arm64" ]
+      snapshotter = "auto"
+
+      # Garbage collection settings
+      gc = true
+      gckeepstorage = "30%"
+
+      [[worker.oci.gcpolicy]]
+        keepBytes = 5368709120  # 5GB
+        keepDuration = 172800   # 48 hours
+        filters = [ "type==source.local", "type==exec.cachemount", "type==source.git.checkout" ]
+
+      [[worker.oci.gcpolicy]]
+        all = true
+        keepBytes = 10737418240  # 10GB
+
+    # Disable containerd worker (not available in our setup)
+    [worker.containerd]
+      enabled = false
+
+    # Local registry configuration (HTTP, no authentication)
     [registry."registry.default.svc.cluster.local:5000"]
       http = true
       insecure = true
@@ -24,6 +51,12 @@ spec:
       labels:
         app: buildkitd
     spec:
+      # Use host network to allow BuildKit's OCI worker to resolve cluster DNS
+      # BuildKit's build containers need to access in-cluster services like the registry
+      hostNetwork: true
+      # Enable cluster DNS resolution while using host networking
+      # This allows the pod to resolve service names like registry.default.svc.cluster.local
+      dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: buildkitd
         image: moby/buildkit:v0.17.3
@@ -40,7 +73,9 @@ spec:
         - name: buildkit-socket
           mountPath: /run/buildkit
         - name: buildkit-config
-          mountPath: /etc/buildkit
+          mountPath: /etc/buildkit/buildkitd.toml
+          subPath: buildkitd.toml
+          readOnly: true
         ports:
         - containerPort: 1234
       volumes:

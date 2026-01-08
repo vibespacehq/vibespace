@@ -692,19 +692,9 @@ impl LocalK8sProvider {
         }
 
         // Now that Colima has started and created colima.yaml, configure insecure registry
-        println!("Colima started successfully, now configuring insecure registry");
+        println!("Colima started successfully");
 
-        // Wait a moment for colima.yaml to be fully written
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        // Update colima.yaml with insecure-registries config
-        self.configure_colima_registry()?;
-
-        // Restart Colima to apply the configuration
-        println!("Restarting Colima to apply insecure registry configuration");
-        self.restart_colima(&new_path)?;
-
-        // Wait for cluster to be ready after restart
+        // Wait for cluster to be ready
         self.wait_for_cluster_ready()?;
 
         Ok(())

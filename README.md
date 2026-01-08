@@ -27,7 +27,7 @@ vibespace is a Tauri desktop app that manages isolated dev environments running 
 **No External Dependencies!** vibespace bundles everything you need:
 - Kubernetes runtime (Colima on macOS, k3s on Linux)
 - kubectl CLI tool
-- All required components (Knative, Traefik, Registry, BuildKit)
+- All required components (Knative, Traefik, Harbor, BuildKit)
 
 ### Installation
 
@@ -176,7 +176,7 @@ docker build -t vibespace-base:latest .
   - [x] Functional tests
   - [x] Go API server
   - [x] Bundled Kubernetes (Local Mode)
-  - [x] Component installation (Knative, Traefik, Registry, BuildKit)
+  - [x] Component installation (Knative, Traefik, Harbor, BuildKit)
   - [x] Basic vibespace management
   - [x] Docker images with AI agents
   - [ ] Credential management (in progress)
@@ -206,6 +206,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 - [k3s](https://k3s.io/) - Lightweight Kubernetes
 - [Colima](https://github.com/abiosoft/colima) - Container runtime for macOS
 - [Knative](https://knative.dev/) - Serverless on Kubernetes
+- [Harbor](https://goharbor.io/) - Enterprise container registry
 - [code-server](https://github.com/coder/code-server) - VS Code in browser
 - [Tauri](https://tauri.app/) - Desktop app framework
 - [BuildKit](https://github.com/moby/buildkit) - Container image builder

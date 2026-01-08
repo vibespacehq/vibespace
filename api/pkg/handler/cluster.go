@@ -247,3 +247,6 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 // These endpoints have been removed. See:
 // - ADR 0006: docs/adr/0006-bundled-kubernetes-runtime.md
 // - api/pkg/k8s/context.go for more details
+
+// NOTE: GetHarborCA handler removed - Harbor replaced with simple Docker Registry
+// that doesn't require TLS certificates (uses HTTP for cluster-internal access)

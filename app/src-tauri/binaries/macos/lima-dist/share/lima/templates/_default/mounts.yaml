@@ -1,6 +1,0 @@
-mounts:
-- location: "~"
-
-- location: "{{.GlobalTempDir}}/lima"
-  mountPoint: /tmp/lima
-  writable: true

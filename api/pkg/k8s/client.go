@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -136,6 +137,7 @@ func (c *Client) EnsureNamespace(ctx context.Context) error {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	slog.Info("vibespace namespace created", "namespace", VibespaceNamespace)
 	return nil
 }
 
@@ -168,17 +170,29 @@ func (c *Client) startPortForwardToResource(ctx context.Context, namespace, reso
 
 	// Check if port-forward already exists
 	if pf, exists := c.portForwards[key]; exists {
-		if pf.LocalPort == localPort && pf.RemotePort == remotePort {
-			// Already running with same ports, nothing to do
-			slog.Info("port-forward already exists with same ports",
+		// Check if the process is still running
+		processAlive := false
+		if pf.cmd != nil && pf.cmd.Process != nil {
+			// Check if process is still running by sending signal 0
+			if err := pf.cmd.Process.Signal(syscall.Signal(0)); err == nil {
+				processAlive = true
+			}
+		}
+
+		if processAlive && pf.LocalPort == localPort && pf.RemotePort == remotePort {
+			// Already running with same ports and process is alive
+			slog.Info("port-forward already exists and is alive",
 				"key", key,
 				"local_port", localPort,
-				"remote_port", remotePort)
+				"remote_port", remotePort,
+				"pid", pf.cmd.Process.Pid)
 			return nil
 		}
-		// Different ports, stop existing and create new
-		slog.Info("stopping existing port-forward to restart with different ports",
+
+		// Process is dead or ports are different, stop existing and create new
+		slog.Info("stopping stale or mismatched port-forward",
 			"key", key,
+			"process_alive", processAlive,
 			"old_local_port", pf.LocalPort,
 			"new_local_port", localPort)
 		c.stopPortForwardLocked(key)
