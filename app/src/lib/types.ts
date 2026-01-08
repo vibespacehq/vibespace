@@ -31,7 +31,7 @@ export interface InstallProgress {
 // Cluster Component Types
 
 /**
- * Status of a single cluster component (Knative, Traefik, Registry, BuildKit).
+ * Status of a single cluster component (Knative, Traefik, Registry).
  * Used to display installation status and health in the UI.
  *
  * @public
@@ -55,7 +55,6 @@ export interface ClusterComponents {
   knative: ComponentStatus;
   traefik: ComponentStatus;
   registry: ComponentStatus;
-  buildkit: ComponentStatus;
 }
 
 /**
@@ -83,7 +82,7 @@ export interface ClusterStatus {
  * @see Issue #29 for cluster setup implementation
  */
 export interface SetupProgress {
-  component: 'knative' | 'traefik' | 'registry' | 'buildkit';
+  component: 'knative' | 'traefik' | 'registry';
   status: 'pending' | 'installing' | 'done' | 'error';
   message?: string;
   error?: string;
@@ -118,8 +117,20 @@ export interface VibespaceResources {
 }
 
 /**
+ * Represents a dynamically detected service running in the vibespace.
+ * Claude detects running processes (dev servers, APIs, etc.) and exposes them automatically.
+ *
+ * @public
+ */
+export interface ExposedService {
+  name: string;
+  port: number;
+  url?: string;
+}
+
+/**
  * Represents a vibespace instance running in the Kubernetes cluster.
- * Each vibespace is an isolated development environment with code-server and project-specific configuration.
+ * Each vibespace is an isolated development environment with Claude Code.
  *
  * @public
  * @see SPEC.md Section 5 for complete vibespace specifications
@@ -127,13 +138,14 @@ export interface VibespaceResources {
 export interface Vibespace {
   id: string;
   name: string;
-  project_name?: string; // DNS-friendly name (e.g., "brave-eagle-7421") - added in Knative migration
-  template: string;
+  project_name?: string; // DNS-friendly name (e.g., "brave-eagle-7421")
   status: 'creating' | 'starting' | 'running' | 'stopping' | 'stopped' | 'deleting' | 'error';
   resources: VibespaceResources;
-  urls: Record<string, string>; // DNS URLs: {code: "http://code.{project}.vibe.space", preview: ..., prod: ...}
+  services?: ExposedService[]; // Dynamically detected services
   persistent: boolean;
   created_at: string;
+  updated_at?: string;
+  deleted_at?: string;
 }
 
 /**
@@ -145,33 +157,13 @@ export interface Vibespace {
  */
 export interface CreateVibespaceRequest {
   name: string;
-  template: string;
   resources?: VibespaceResources;
   persistent?: boolean;
   github_repo?: string;
-  agent?: string;
-}
-
-// Template Types
-// TODO(Phase 1): Will be used for template selection
-
-/**
- * Represents a vibespace template (e.g., Next.js, Vue, Jupyter).
- * Templates define the base image and pre-installed tools for a vibespace.
- *
- * @public
- * @see SPEC.md Section 9 for template system architecture
- */
-export interface Template {
-  id: string;
-  name: string;
-  description: string;
-  image: string;
-  tags: string[];
+  env?: Record<string, string>;
 }
 
 // Credential Types
-// TODO(Phase 2): Will be used for credential management UI
 
 /**
  * Represents a stored credential (AI agent API key, SSH key, Git config, etc.).

@@ -41,8 +41,8 @@ type SetupState =
  * 1. Checks if bundled Kubernetes is installed
  * 2. Installs Colima/k3s if missing (one-click installation)
  * 3. Starts Kubernetes cluster
- * 4. Installs required components (Knative, Traefik, Registry, BuildKit)
- * 5. Builds all vibespace images
+ * 4. Installs required components (Knative, Traefik, Registry)
+ * 5. Configures GHCR image pull secrets
  *
  * For REMOTE MODE (Tauri app on user's machine, API/k8s on VPS), a different
  * setup flow will be implemented in Post-MVP phase. Remote Mode does not install
@@ -206,9 +206,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         }
         if (!clusterStat.components.registry.installed || !clusterStat.components.registry.healthy) {
           progress['registry'] = { component: 'registry', status: 'pending' };
-        }
-        if (!clusterStat.components.buildkit.installed || !clusterStat.components.buildkit.healthy) {
-          progress['buildkit'] = { component: 'buildkit', status: 'pending' };
         }
         setSetupProgress(progress);
 
@@ -414,8 +411,6 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         return 'Traefik Ingress';
       case 'registry':
         return 'Docker Registry';
-      case 'buildkit':
-        return 'BuildKit';
       default:
         return component;
     }

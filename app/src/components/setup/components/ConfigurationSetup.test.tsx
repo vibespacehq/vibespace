@@ -4,68 +4,6 @@ import userEvent from '@testing-library/user-event';
 import { ConfigurationSetup } from './ConfigurationSetup';
 
 describe('ConfigurationSetup', () => {
-  describe('Template Selection', () => {
-    it('renders all template options', () => {
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      expect(screen.getByText('Next.js')).toBeInTheDocument();
-      expect(screen.getByText('Vue')).toBeInTheDocument();
-      expect(screen.getByText('Jupyter')).toBeInTheDocument();
-    });
-
-    it('pre-selects Next.js template by default', () => {
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      const nextjsCard = screen.getByText('Next.js').closest('button');
-      expect(nextjsCard).toHaveClass('selected');
-    });
-
-    it('allows selecting a different template', async () => {
-      const user = userEvent.setup();
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      const vueCard = screen.getByText('Vue').closest('button');
-      await user.click(vueCard!);
-
-      expect(vueCard).toHaveClass('selected');
-    });
-  });
-
-  describe('AI Agent Selection', () => {
-    it('renders all AI agent options', () => {
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      expect(screen.getByText('Claude Code')).toBeInTheDocument();
-      expect(screen.getByText('OpenAI Codex')).toBeInTheDocument();
-      expect(screen.getByText('Gemini CLI')).toBeInTheDocument();
-    });
-
-    it('pre-selects Claude Code by default', () => {
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      const claudeCard = screen.getByText('Claude Code').closest('button');
-      expect(claudeCard).toHaveClass('selected');
-    });
-
-    it('shows config file badge for each agent', () => {
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      expect(screen.getByText('CLAUDE.md')).toBeInTheDocument();
-      expect(screen.getByText('.codex')).toBeInTheDocument();
-      expect(screen.getByText('.gemini')).toBeInTheDocument();
-    });
-
-    it('allows selecting a different agent', async () => {
-      const user = userEvent.setup();
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      const codexCard = screen.getByText('OpenAI Codex').closest('button');
-      await user.click(codexCard!);
-
-      expect(codexCard).toHaveClass('selected');
-    });
-  });
-
   describe('Vibespace Name Input', () => {
     it('renders vibespace name input', () => {
       render(<ConfigurationSetup onComplete={vi.fn()} />);
@@ -111,14 +49,31 @@ describe('ConfigurationSetup', () => {
     });
   });
 
-  describe('Continue Button', () => {
-    it('renders continue button', () => {
+  describe('Claude Code Info', () => {
+    it('displays Claude Code built-in info', () => {
       render(<ConfigurationSetup onComplete={vi.fn()} />);
 
-      expect(screen.getByRole('button', { name: /continue/i })).toBeInTheDocument();
+      expect(screen.getByText('Claude Code Built-in')).toBeInTheDocument();
+      expect(screen.getByText(/Every vibespace includes Claude Code/)).toBeInTheDocument();
     });
 
-    it('calls onComplete when continue is clicked with valid name', async () => {
+    it('displays Claude logo', () => {
+      render(<ConfigurationSetup onComplete={vi.fn()} />);
+
+      const claudeLogo = screen.getByAltText('Claude Code');
+      expect(claudeLogo).toBeInTheDocument();
+      expect(claudeLogo).toHaveAttribute('src', '/logos/agents/claude.svg');
+    });
+  });
+
+  describe('Create Button', () => {
+    it('renders create vibespace button', () => {
+      render(<ConfigurationSetup onComplete={vi.fn()} />);
+
+      expect(screen.getByRole('button', { name: /create vibespace/i })).toBeInTheDocument();
+    });
+
+    it('calls onComplete when button is clicked with valid name', async () => {
       const user = userEvent.setup();
       const onComplete = vi.fn();
       render(<ConfigurationSetup onComplete={onComplete} />);
@@ -127,26 +82,46 @@ describe('ConfigurationSetup', () => {
       const nameInput = screen.getByLabelText('Vibespace name');
       await user.type(nameInput, 'my-vibespace');
 
-      const continueButton = screen.getByRole('button', { name: /continue/i });
-      await user.click(continueButton);
+      const createButton = screen.getByRole('button', { name: /create vibespace/i });
+      await user.click(createButton);
 
       expect(onComplete).toHaveBeenCalledTimes(1);
       expect(onComplete).toHaveBeenCalledWith({
         name: 'my-vibespace',
-        template: 'nextjs',
-        agent: 'claude',
         githubRepo: '',
       });
     });
 
-    it('shows alert when continue is clicked without vibespace name', async () => {
+    it('includes github repo in callback when provided', async () => {
+      const user = userEvent.setup();
+      const onComplete = vi.fn();
+      render(<ConfigurationSetup onComplete={onComplete} />);
+
+      // Enter vibespace name
+      const nameInput = screen.getByLabelText('Vibespace name');
+      await user.type(nameInput, 'my-project');
+
+      // Enter github repo
+      const repoInput = screen.getByLabelText('GitHub repository URL (optional)');
+      await user.type(repoInput, 'https://github.com/user/repo');
+
+      const createButton = screen.getByRole('button', { name: /create vibespace/i });
+      await user.click(createButton);
+
+      expect(onComplete).toHaveBeenCalledWith({
+        name: 'my-project',
+        githubRepo: 'https://github.com/user/repo',
+      });
+    });
+
+    it('shows alert when button is clicked without vibespace name', async () => {
       const user = userEvent.setup();
       const onComplete = vi.fn();
       const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
       render(<ConfigurationSetup onComplete={onComplete} />);
 
-      const continueButton = screen.getByRole('button', { name: /continue/i });
-      await user.click(continueButton);
+      const createButton = screen.getByRole('button', { name: /create vibespace/i });
+      await user.click(createButton);
 
       expect(alertSpy).toHaveBeenCalledWith('Please enter a vibespace name');
       expect(onComplete).not.toHaveBeenCalled();
@@ -168,24 +143,6 @@ describe('ConfigurationSetup', () => {
 
       const sections = container.querySelectorAll('.config-section');
       expect(sections.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Display Logos', () => {
-    it('displays template logos', () => {
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      const nextjsLogo = screen.getByAltText('Next.js');
-      expect(nextjsLogo).toBeInTheDocument();
-      expect(nextjsLogo).toHaveAttribute('src', '/logos/templates/nextjs.svg');
-    });
-
-    it('displays agent logos', () => {
-      render(<ConfigurationSetup onComplete={vi.fn()} />);
-
-      const claudeLogo = screen.getByAltText('Claude Code');
-      expect(claudeLogo).toBeInTheDocument();
-      expect(claudeLogo).toHaveAttribute('src', '/logos/agents/claude.svg');
     });
   });
 });

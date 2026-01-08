@@ -24,10 +24,8 @@ function App() {
     try {
       await createVibespace({
         name: config.name,
-        template: config.template,
         persistent: true,
         github_repo: config.githubRepo || undefined,
-        agent: config.agent || undefined,
       })
 
       setSetupStep('complete')

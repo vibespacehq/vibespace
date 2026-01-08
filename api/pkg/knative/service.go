@@ -44,22 +44,15 @@ type CreateServiceRequest struct {
 	VibespaceID string
 	Name        string
 	ProjectName string
-	Template    string
-	Agent       string
+	ClaudeID    string // Claude instance ID (1, 2, 3, etc.)
 	Image       string
-	Ports       model.Ports
 	Resources   model.Resources
 	Env         map[string]string
 	Persistent  bool
 	PVCName     string
-	GithubRepo  string
 }
 
 // CreateService creates a Knative Service for a vibespace
-// The service runs a single pod with multiple ports:
-// - Port 8080: code-server (VS Code in browser)
-// - Port 3000: preview server (npm run dev, etc.)
-// - Port 3001: production server (next start, static files, etc.)
 func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRequest) error {
 	// Build init containers
 	initContainers := m.buildInitContainers(req)
@@ -70,24 +63,16 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 	// Build environment variables
 	env := m.buildEnvironment(req)
 
-	// Build container ports
-	// Knative only supports a single named port (http1 or h2c)
-	// Port 8080 is handled by Caddy reverse proxy inside the container,
-	// which routes to backend services based on HTTP Host header:
-	//   - code.{project}.vibe.space → localhost:8081 (code-server)
-	//   - preview.{project}.vibe.space → localhost:3000 (preview server)
-	//   - prod.{project}.vibe.space → localhost:3001 (production server)
-	// See ADR 0009 for architectural decision rationale.
+	// Single port for ttyd web terminal
 	ports := []map[string]interface{}{
 		{
-			"containerPort": 8080,
+			"containerPort": 7681,
 			"name":          "http1", // Knative requires 'http1' or 'h2c'
 			"protocol":      "TCP",
 		},
 	}
 
 	// Build Knative Service manifest
-	// Knative uses a special structure with spec.template.spec (pod template)
 	service := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "serving.knative.dev/v1",
@@ -99,7 +84,6 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 					"app.kubernetes.io/name":       req.Name,
 					"app.kubernetes.io/managed-by": "vibespace",
 					"vibespace.dev/id":             req.VibespaceID,
-					"vibespace.dev/template":       req.Template,
 					"vibespace.dev/project-name":   req.ProjectName,
 				},
 				"annotations": map[string]string{
@@ -110,10 +94,9 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 				"template": map[string]interface{}{
 					"metadata": map[string]interface{}{
 						"labels": map[string]string{
-							"app.kubernetes.io/name":       req.Name,
-							"vibespace.dev/id":             req.VibespaceID,
-							"vibespace.dev/template":       req.Template,
-							"vibespace.dev/project-name":   req.ProjectName,
+							"app.kubernetes.io/name":     req.Name,
+							"vibespace.dev/id":           req.VibespaceID,
+							"vibespace.dev/project-name": req.ProjectName,
 						},
 						"annotations": map[string]string{
 							// Scale-to-zero configuration
@@ -127,7 +110,12 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 					},
 					"spec": map[string]interface{}{
 						"containerConcurrency": 1,   // Single user per pod
-						"timeoutSeconds":       600, // 10 minutes (Knative maximum, down from 3600s)
+						"timeoutSeconds":       600, // 10 minutes (Knative maximum)
+						"imagePullSecrets": []interface{}{
+							map[string]interface{}{
+								"name": "ghcr-secret",
+							},
+						},
 						"containers": []interface{}{
 							map[string]interface{}{
 								"name":  "vibespace",
@@ -146,15 +134,14 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 								},
 								"volumeMounts": volumeMounts,
 								"securityContext": map[string]interface{}{
-									"runAsUser":  1001,
-									"runAsGroup": 1001,
-									"fsGroup":    1001,
+									"runAsUser":  1000,
+									"runAsGroup": 1000,
+									"fsGroup":    1000,
 								},
 							},
 						},
 						"initContainers": initContainers,
 						"volumes":        volumes,
-						// NOTE: No imagePullSecrets needed - local registry uses HTTP without auth
 					},
 				},
 			},
@@ -185,25 +172,7 @@ func (m *ServiceManager) buildInitContainers(req *CreateServiceRequest) []interf
 			"image":   "busybox:latest",
 			"command": []string{"sh", "-c"},
 			"args": []string{
-				"chown -R 1001:1001 /vibespace && chmod -R 755 /vibespace",
-			},
-			"volumeMounts": []interface{}{
-				map[string]interface{}{
-					"name":      "vibespace-data",
-					"mountPath": "/vibespace",
-				},
-			},
-		})
-	}
-
-	// Git clone init container
-	if req.GithubRepo != "" {
-		initContainers = append(initContainers, map[string]interface{}{
-			"name":    "git-clone",
-			"image":   "alpine/git:latest",
-			"command": []string{"sh", "-c"},
-			"args": []string{
-				fmt.Sprintf("git clone %s /vibespace/repo || echo 'Failed to clone repository'", req.GithubRepo),
+				"chown -R 1000:1000 /vibespace && chmod -R 755 /vibespace",
 			},
 			"volumeMounts": []interface{}{
 				map[string]interface{}{
@@ -250,52 +219,24 @@ func (m *ServiceManager) buildEnvironment(req *CreateServiceRequest) []interface
 		})
 	}
 
-	// Add vibespace metadata
+	// Vibespace metadata
 	env = append(env, map[string]interface{}{
 		"name":  "VIBESPACE_ID",
 		"value": req.VibespaceID,
 	})
 	env = append(env, map[string]interface{}{
-		"name":  "VIBESPACE_NAME",
-		"value": req.Name,
-	})
-	env = append(env, map[string]interface{}{
-		"name":  "VIBESPACE_PROJECT_NAME",
+		"name":  "VIBESPACE_PROJECT",
 		"value": req.ProjectName,
 	})
 	env = append(env, map[string]interface{}{
-		"name":  "VIBESPACE_TEMPLATE",
-		"value": req.Template,
+		"name":  "VIBESPACE_CLAUDE_ID",
+		"value": req.ClaudeID,
 	})
 
-	// Add agent configuration
-	if req.Agent != "" {
-		env = append(env, map[string]interface{}{
-			"name":  "VIBESPACE_AGENT",
-			"value": req.Agent,
-		})
-	}
-
-	// Add port configuration for Caddy + internal services
-	// Caddy listens on 8080 (single Knative port) and routes to:
-	//   - code-server: 8081
-	//   - preview: 3000
-	//   - prod: 3001
+	// NATS configuration
 	env = append(env, map[string]interface{}{
-		"name":  "CADDY_PORT",
-		"value": "8080",
-	})
-	env = append(env, map[string]interface{}{
-		"name":  "VIBESPACE_CODE_PORT",
-		"value": "8081", // Internal port (proxied by Caddy from 8080)
-	})
-	env = append(env, map[string]interface{}{
-		"name":  "VIBESPACE_PREVIEW_PORT",
-		"value": "3000", // Internal port (proxied by Caddy)
-	})
-	env = append(env, map[string]interface{}{
-		"name":  "VIBESPACE_PROD_PORT",
-		"value": "3001", // Internal port (proxied by Caddy)
+		"name":  "NATS_URL",
+		"value": "nats://nats.default.svc.cluster.local:4222",
 	})
 
 	return env

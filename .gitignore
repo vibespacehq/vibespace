@@ -51,6 +51,9 @@ temp/
 # Credentials (should be in app storage)
 .vibespace/
 
+# Reference codebases (not part of vibespace)
+demiurg/
+
 # k3s artifacts
 /etc/rancher/
 kubeconfig

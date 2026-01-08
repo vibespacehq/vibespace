@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"vibespace/pkg/k8s"
@@ -34,6 +35,14 @@ type ClusterStatusResponse struct {
 	Message    string                 `json:"message,omitempty"`
 }
 
+// SetupClusterRequest represents the request body for cluster setup
+type SetupClusterRequest struct {
+	// GHCRUsername is the GitHub username for pulling images from GHCR (private repos)
+	GHCRUsername string `json:"ghcr_username"`
+	// GHCRToken is the GitHub PAT with read:packages scope
+	GHCRToken string `json:"ghcr_token"`
+}
+
 // GetStatus returns the cluster status including all components
 // GET /api/v1/cluster/status
 func (h *ClusterHandler) GetStatus(c *gin.Context) {
@@ -60,7 +69,6 @@ func (h *ClusterHandler) GetStatus(c *gin.Context) {
 					Knative:  k8s.ComponentStatus{Installed: false, Healthy: false},
 					Traefik:  k8s.ComponentStatus{Installed: false, Healthy: false},
 					Registry: k8s.ComponentStatus{Installed: false, Healthy: false},
-					BuildKit: k8s.ComponentStatus{Installed: false, Healthy: false},
 				},
 			})
 			return
@@ -112,7 +120,6 @@ func (h *ClusterHandler) GetStatus(c *gin.Context) {
 		"knative_healthy", components.Knative.Healthy,
 		"traefik_healthy", components.Traefik.Healthy,
 		"registry_healthy", components.Registry.Healthy,
-		"buildkit_healthy", components.BuildKit.Healthy,
 		"remote_addr", c.ClientIP())
 
 	c.JSON(http.StatusOK, response)
@@ -125,6 +132,27 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 
 	slog.Info("cluster setup request received",
 		"remote_addr", c.ClientIP())
+
+	// Parse optional request body for GHCR credentials
+	var req SetupClusterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// Body is optional, continue without credentials
+		slog.Info("no GHCR credentials provided in request body")
+	}
+
+	// Fallback to environment variables if not provided in request
+	if req.GHCRUsername == "" {
+		req.GHCRUsername = os.Getenv("GHCR_USERNAME")
+	}
+	if req.GHCRToken == "" {
+		req.GHCRToken = os.Getenv("GHCR_TOKEN")
+	}
+
+	if req.GHCRToken != "" {
+		slog.Info("GHCR credentials configured",
+			"username", req.GHCRUsername,
+			"source", map[bool]string{true: "env", false: "request"}[os.Getenv("GHCR_TOKEN") != ""])
+	}
 
 	// Check if k8s client is nil (k8s not available when API started)
 	// Try to reinitialize in case k8s was installed after API server started
@@ -170,8 +198,17 @@ func (h *ClusterHandler) SetupCluster(c *gin.Context) {
 			progressChan <- progress
 		}
 
+		// Create setup config with GHCR credentials if provided
+		var setupConfig *k8s.SetupConfig
+		if req.GHCRToken != "" {
+			setupConfig = &k8s.SetupConfig{
+				GHCRUsername: req.GHCRUsername,
+				GHCRToken:    req.GHCRToken,
+			}
+		}
+
 		// Install components
-		err := h.k8sClient.EnsureClusterComponents(ctx, progressFn)
+		err := h.k8sClient.EnsureClusterComponents(ctx, setupConfig, progressFn)
 		if err != nil {
 			slog.Error("cluster setup failed during component installation",
 				"error", err)

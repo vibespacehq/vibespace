@@ -7,16 +7,11 @@ import type { Vibespace } from '../../../lib/types';
 const mockVibespace: Vibespace = {
   id: 'ws-1',
   name: 'test-vibespace',
-  template: 'nextjs',
+  project_name: 'brave-fox-42',
   status: 'running',
   resources: {
     cpu: '2',
     memory: '4Gi',
-  },
-  urls: {
-    code: 'http://code.example.vibe.space',
-    preview: 'http://preview.example.vibe.space',
-    prod: 'http://prod.example.vibe.space',
   },
   persistent: true,
   created_at: '2025-01-15T10:00:00Z',
@@ -25,9 +20,9 @@ const mockVibespace: Vibespace = {
 describe('VibespaceCard', () => {
   const mockHandlers = {
     onOpen: vi.fn(),
-    onStart: vi.fn(),
-    onStop: vi.fn(),
-    onDelete: vi.fn(),
+    onStart: vi.fn().mockResolvedValue(undefined),
+    onStop: vi.fn().mockResolvedValue(undefined),
+    onDelete: vi.fn().mockResolvedValue(undefined),
   };
 
   beforeEach(() => {
@@ -39,9 +34,14 @@ describe('VibespaceCard', () => {
 
     expect(screen.getByText('test-vibespace')).toBeInTheDocument();
     expect(screen.getByText('running')).toBeInTheDocument();
-    expect(screen.getByText('nextjs')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
     expect(screen.getByText('4Gi')).toBeInTheDocument();
+  });
+
+  it('shows project name when available', () => {
+    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
+
+    expect(screen.getByText('brave-fox-42')).toBeInTheDocument();
   });
 
   it('shows persistent badge for persistent vibespaces', () => {
@@ -57,61 +57,26 @@ describe('VibespaceCard', () => {
     expect(screen.queryByText('Persistent')).not.toBeInTheDocument();
   });
 
-  it('enables code button when vibespace is running', () => {
+  it('shows Open button when vibespace is running', () => {
     render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
 
-    const codeButton = screen.getByLabelText('Open code-server in browser');
-    expect(codeButton).not.toBeDisabled();
+    expect(screen.getByLabelText('Open vibespace')).toBeInTheDocument();
   });
 
-  it('disables code button when vibespace is stopped', () => {
+  it('does not show Open button when vibespace is stopped', () => {
     const stoppedVibespace = { ...mockVibespace, status: 'stopped' as const };
     render(<VibespaceCard vibespace={stoppedVibespace} {...mockHandlers} />);
 
-    expect(screen.queryByLabelText('Open code-server in browser')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Open vibespace')).not.toBeInTheDocument();
   });
 
-  it('calls onOpen with code urlType when code button is clicked', async () => {
+  it('calls onOpen with vibespace id when Open button is clicked', async () => {
     const user = userEvent.setup();
     render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
 
-    await user.click(screen.getByLabelText('Open code-server in browser'));
+    await user.click(screen.getByLabelText('Open vibespace'));
 
-    expect(mockHandlers.onOpen).toHaveBeenCalledWith('ws-1', 'code');
-  });
-
-  it('shows preview button when preview URL is available', () => {
-    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
-
-    const previewButton = screen.getByLabelText('Open preview server in browser');
-    expect(previewButton).toBeInTheDocument();
-    expect(previewButton).not.toBeDisabled();
-  });
-
-  it('calls onOpen with preview urlType when preview button is clicked', async () => {
-    const user = userEvent.setup();
-    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
-
-    await user.click(screen.getByLabelText('Open preview server in browser'));
-
-    expect(mockHandlers.onOpen).toHaveBeenCalledWith('ws-1', 'preview');
-  });
-
-  it('shows production button when prod URL is available', () => {
-    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
-
-    const prodButton = screen.getByLabelText('Open production server in browser');
-    expect(prodButton).toBeInTheDocument();
-    expect(prodButton).not.toBeDisabled();
-  });
-
-  it('calls onOpen with prod urlType when production button is clicked', async () => {
-    const user = userEvent.setup();
-    render(<VibespaceCard vibespace={mockVibespace} {...mockHandlers} />);
-
-    await user.click(screen.getByLabelText('Open production server in browser'));
-
-    expect(mockHandlers.onOpen).toHaveBeenCalledWith('ws-1', 'prod');
+    expect(mockHandlers.onOpen).toHaveBeenCalledWith('ws-1');
   });
 
   it('shows actions menu when menu button is clicked', async () => {

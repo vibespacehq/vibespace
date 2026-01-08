@@ -1,194 +1,212 @@
 package vibespace
 
 import (
-	"fmt"
-	"net"
+	"os"
 	"testing"
 )
 
-func TestHashStringToPort(t *testing.T) {
+func TestGetVibespaceImage(t *testing.T) {
 	tests := []struct {
 		name     string
-		id       string
-		wantMin  int
-		wantMax  int
-		checkDet bool // check deterministic (same input = same output)
+		envValue string
+		want     string
 	}{
 		{
-			name:     "short id",
-			id:       "abc123",
-			wantMin:  0,
-			wantMax:  999,
-			checkDet: true,
+			name:     "default image",
+			envValue: "",
+			want:     DefaultImage,
 		},
 		{
-			name:     "long id",
-			id:       "vibespace-f8a3b2c1-9d4e-4f6a-8b7c-1e2d3f4a5b6c",
-			wantMin:  0,
-			wantMax:  999,
-			checkDet: true,
-		},
-		{
-			name:     "empty id",
-			id:       "",
-			wantMin:  0,
-			wantMax:  999,
-			checkDet: true,
-		},
-		{
-			name:     "special characters",
-			id:       "test-!@#$%",
-			wantMin:  0,
-			wantMax:  999,
-			checkDet: true,
+			name:     "custom image from env",
+			envValue: "ghcr.io/custom/image:v1.0",
+			want:     "ghcr.io/custom/image:v1.0",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hashStringToPort(tt.id)
+			// Save and restore env var
+			original := os.Getenv("VIBESPACE_IMAGE")
+			defer os.Setenv("VIBESPACE_IMAGE", original)
 
-			// Check range
-			if got < tt.wantMin || got > tt.wantMax {
-				t.Errorf("hashStringToPort(%q) = %d, want in range [%d, %d]", tt.id, got, tt.wantMin, tt.wantMax)
+			if tt.envValue != "" {
+				os.Setenv("VIBESPACE_IMAGE", tt.envValue)
+			} else {
+				os.Unsetenv("VIBESPACE_IMAGE")
 			}
 
-			// Check deterministic behavior
-			if tt.checkDet {
-				got2 := hashStringToPort(tt.id)
-				if got != got2 {
-					t.Errorf("hashStringToPort(%q) not deterministic: first=%d, second=%d", tt.id, got, got2)
-				}
+			got := getVibespaceImage()
+			if got != tt.want {
+				t.Errorf("getVibespaceImage() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestHashStringToPort_Consistency(t *testing.T) {
-	// Same vibespace ID should always produce same port
-	id := "vibespace-abc123"
-	results := make(map[int]bool)
-
-	for i := 0; i < 100; i++ {
-		port := hashStringToPort(id)
-		results[port] = true
+func TestGetBaseDomain(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		want     string
+	}{
+		{
+			name:     "default domain",
+			envValue: "",
+			want:     "vibe.space",
+		},
+		{
+			name:     "custom domain from env",
+			envValue: "example.com",
+			want:     "example.com",
+		},
 	}
 
-	if len(results) != 1 {
-		t.Errorf("hashStringToPort not consistent: got %d different ports for same ID", len(results))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save and restore env var
+			original := os.Getenv("DNS_BASE_DOMAIN")
+			defer os.Setenv("DNS_BASE_DOMAIN", original)
+
+			if tt.envValue != "" {
+				os.Setenv("DNS_BASE_DOMAIN", tt.envValue)
+			} else {
+				os.Unsetenv("DNS_BASE_DOMAIN")
+			}
+
+			got := getBaseDomain()
+			if got != tt.want {
+				t.Errorf("getBaseDomain() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestHashStringToPort_Distribution(t *testing.T) {
-	// Different IDs should produce different ports (roughly distributed)
-	ids := []string{
-		"ws-1", "ws-2", "ws-3", "ws-4", "ws-5",
-		"ws-6", "ws-7", "ws-8", "ws-9", "ws-10",
-	}
-
-	ports := make(map[int]bool)
-	for _, id := range ids {
-		port := hashStringToPort(id)
-		ports[port] = true
-	}
-
-	// At least 50% should be unique (simple collision check)
-	if len(ports) < len(ids)/2 {
-		t.Errorf("hashStringToPort poor distribution: only %d unique ports for %d IDs", len(ports), len(ids))
-	}
-}
-
-func TestIsPortAvailable(t *testing.T) {
+func TestIsValidGitURL(t *testing.T) {
 	tests := []struct {
 		name string
-		port int
+		url  string
 		want bool
 	}{
 		{
-			name: "privileged port",
-			port: 80,
-			want: false, // Usually can't bind to privileged ports without root
+			name: "valid HTTPS URL",
+			url:  "https://github.com/user/repo.git",
+			want: true,
 		},
 		{
-			name: "invalid port - negative",
-			port: -1,
+			name: "valid SSH URL",
+			url:  "git@github.com:user/repo.git",
+			want: true,
+		},
+		{
+			name: "empty URL",
+			url:  "",
 			want: false,
 		},
 		{
-			name: "invalid port - too high",
-			port: 65536,
+			name: "too short URL",
+			url:  "https://a",
 			want: false,
 		},
 		{
-			name: "valid high port",
-			port: 45678,
-			want: true, // Likely available
+			name: "invalid - contains semicolon",
+			url:  "https://github.com/user/repo.git; rm -rf /",
+			want: false,
+		},
+		{
+			name: "invalid - contains pipe",
+			url:  "https://github.com/user/repo.git | cat /etc/passwd",
+			want: false,
+		},
+		{
+			name: "invalid - contains ampersand",
+			url:  "https://github.com/user/repo.git & whoami",
+			want: false,
+		},
+		{
+			name: "invalid - contains dollar sign",
+			url:  "https://github.com/user/$HOME/repo.git",
+			want: false,
+		},
+		{
+			name: "invalid - contains backtick",
+			url:  "https://github.com/user/`whoami`/repo.git",
+			want: false,
+		},
+		{
+			name: "invalid - contains newline",
+			url:  "https://github.com/user/repo.git\nrm -rf /",
+			want: false,
+		},
+		{
+			name: "invalid - command substitution",
+			url:  "https://github.com/$(whoami)/repo.git",
+			want: false,
+		},
+		{
+			name: "invalid - double ampersand",
+			url:  "https://github.com/user/repo.git && cat /etc/passwd",
+			want: false,
+		},
+		{
+			name: "invalid - double pipe",
+			url:  "https://github.com/user/repo.git || true",
+			want: false,
+		},
+		{
+			name: "invalid - HTTP URL (not HTTPS)",
+			url:  "http://github.com/user/repo.git",
+			want: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isPortAvailable(tt.port)
-
-			// For privileged/invalid ports, we expect false
-			if tt.port <= 1024 || tt.port < 0 || tt.port > 65535 {
-				if got != false {
-					t.Errorf("isPortAvailable(%d) = %v, want false for invalid/privileged port", tt.port, got)
-				}
-				return
-			}
-
-			// For valid high ports, we just check it returns a boolean
-			// (actual availability depends on system state)
-			if got != true && got != false {
-				t.Errorf("isPortAvailable(%d) returned non-boolean", tt.port)
+			got := isValidGitURL(tt.url)
+			if got != tt.want {
+				t.Errorf("isValidGitURL(%q) = %v, want %v", tt.url, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestIsPortAvailable_InUse(t *testing.T) {
-	// Test that port is correctly detected as unavailable when in use
-	// This is a more complex test that requires actually binding to a port
+func TestGenerateUniqueProjectName(t *testing.T) {
+	// Test that generated names are unique
+	existing := []string{"swift-fox", "bright-owl"}
+	names := make(map[string]bool)
 
-	// Skip this test in short mode
-	if testing.Short() {
-		t.Skip("skipping port binding test in short mode")
+	for i := 0; i < 10; i++ {
+		name := generateUniqueProjectName(existing)
+
+		// Should not be in existing list
+		for _, ex := range existing {
+			if name == ex {
+				t.Errorf("generateUniqueProjectName() returned existing name: %q", name)
+			}
+		}
+
+		// Should not duplicate
+		if names[name] {
+			// It's okay to get duplicates since we're generating random names
+			// and not adding them to existing list between calls
+		}
+		names[name] = true
 	}
+}
 
-	// Try to find an available port first
-	testPort := 0
-	for port := 18080; port < 18090; port++ {
-		if isPortAvailable(port) {
-			testPort = port
+func TestGenerateUniqueProjectName_Format(t *testing.T) {
+	// Test that generated names have correct format (adjective-noun)
+	name := generateUniqueProjectName([]string{})
+
+	// Should contain at least one hyphen
+	hasHyphen := false
+	for _, c := range name {
+		if c == '-' {
+			hasHyphen = true
 			break
 		}
 	}
 
-	if testPort == 0 {
-		t.Skip("no available ports in test range")
-	}
-
-	// Port should be available initially
-	if !isPortAvailable(testPort) {
-		t.Fatalf("test port %d not available initially", testPort)
-	}
-
-	// Bind to the port using net.Listen
-	listener, err := netListenTCP(testPort)
-	if err != nil {
-		t.Fatalf("failed to bind to test port %d: %v", testPort, err)
-	}
-	defer listener.Close()
-
-	// Port should now be unavailable
-	if isPortAvailable(testPort) {
-		t.Errorf("isPortAvailable(%d) = true, want false (port is bound)", testPort)
+	if !hasHyphen {
+		t.Errorf("generateUniqueProjectName() = %q, want name with hyphen (adjective-noun format)", name)
 	}
 }
-
-// Helper function for testing
-func netListenTCP(port int) (net.Listener, error) {
-	return net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-}
-

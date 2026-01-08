@@ -151,35 +151,20 @@ func GenerateUniqueProjectName(existingNames []string) string {
 	return fmt.Sprintf("vibespace-%d", time.Now().Unix())
 }
 
-// AllocatePorts returns port allocations for a vibespace.
-// In Knative mode with Caddy routing (single-port architecture):
-// - External port: Always 8080 (Caddy listens here)
-// - Internal ports: 8081 (code-server), 3000 (preview), 3001 (prod)
-//
-// The basePort parameter is ignored in Knative mode but kept for API compatibility.
-// All external traffic arrives at port 8080, where Caddy routes internally based on Host header.
-// See ADR 0009 for architectural rationale.
-//
-// Returns external-facing ports (all 8080 in Knative mode).
-func AllocatePorts(basePort int) Ports {
-	// Return external ports (all services accessed via port 8080 + Caddy)
-	// Caddy handles internal routing: 8080 → 8081 (code), 3000 (preview), 3001 (prod)
-	return Ports{
-		Code:    8080, // External-facing port (Caddy listens here)
-		Preview: 8080, // External-facing port (same for all services)
-		Prod:    8080, // External-facing port (same for all services)
+// GenerateServiceURL generates the URL for a dynamically detected service
+// Format: https://{port}.{project}.vibe.space
+func GenerateServiceURL(projectName string, port int, baseDomain string) string {
+	if baseDomain == "" {
+		baseDomain = "vibe.space"
 	}
+	return fmt.Sprintf("https://%d.%s.%s", port, projectName, baseDomain)
 }
 
-// GenerateURLs generates the 3 URLs for a vibespace based on project name
-// Format:
-//   - code.{project}.vibe.space
-//   - preview.{project}.vibe.space
-//   - prod.{project}.vibe.space
-func GenerateURLs(projectName string) map[string]string {
-	return map[string]string{
-		"code":    fmt.Sprintf("http://code.%s.vibe.space", projectName),
-		"preview": fmt.Sprintf("http://preview.%s.vibe.space", projectName),
-		"prod":    fmt.Sprintf("http://prod.%s.vibe.space", projectName),
+// GenerateMainURL generates the main URL for a vibespace
+// Format: https://{project}.vibe.space
+func GenerateMainURL(projectName string, baseDomain string) string {
+	if baseDomain == "" {
+		baseDomain = "vibe.space"
 	}
+	return fmt.Sprintf("https://%s.%s", projectName, baseDomain)
 }

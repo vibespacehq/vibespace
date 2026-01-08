@@ -150,107 +150,83 @@ func TestGenerateUniqueProjectNameFallback(t *testing.T) {
 	}
 }
 
-func TestAllocatePorts(t *testing.T) {
-	t.Run("returns external port 8080 for all services in Knative mode", func(t *testing.T) {
-		// In Knative + Caddy mode, basePort is ignored
-		// All external traffic arrives at 8080 (Caddy)
-		// Internal ports are fixed: 8081 (code), 3000 (preview), 3001 (prod)
-
-		ports := AllocatePorts(8080)
-
-		// Verify all external ports are 8080 (Caddy's port)
-		if ports.Code != 8080 {
-			t.Errorf("AllocatePorts().Code = %d, want 8080 (Caddy external port)", ports.Code)
-		}
-		if ports.Preview != 8080 {
-			t.Errorf("AllocatePorts().Preview = %d, want 8080 (Caddy external port)", ports.Preview)
-		}
-		if ports.Prod != 8080 {
-			t.Errorf("AllocatePorts().Prod = %d, want 8080 (Caddy external port)", ports.Prod)
-		}
-	})
-
-	t.Run("basePort parameter is ignored in Knative mode", func(t *testing.T) {
-		// All calls return the same port allocation regardless of basePort
-		ports1 := AllocatePorts(3000)
-		ports2 := AllocatePorts(8000)
-		ports3 := AllocatePorts(9000)
-
-		// All should return 8080 for all services
-		if ports1 != ports2 || ports2 != ports3 {
-			t.Errorf("Port allocation should be consistent regardless of basePort: got %+v, %+v, %+v", ports1, ports2, ports3)
-		}
-
-		// Verify they're all 8080
-		if ports1.Code != 8080 || ports1.Preview != 8080 || ports1.Prod != 8080 {
-			t.Errorf("All ports should be 8080 in Knative mode, got %+v", ports1)
-		}
-	})
-}
-
-func TestGenerateURLs(t *testing.T) {
+func TestGenerateServiceURL(t *testing.T) {
 	tests := []struct {
 		name        string
 		projectName string
-		wantCode    string
-		wantPreview string
-		wantProd    string
+		port        int
+		baseDomain  string
+		want        string
 	}{
 		{
-			"simple project",
+			"default domain",
 			"myproject",
-			"http://code.myproject.vibe.space",
-			"http://preview.myproject.vibe.space",
-			"http://prod.myproject.vibe.space",
+			3000,
+			"",
+			"https://3000.myproject.vibe.space",
+		},
+		{
+			"custom domain",
+			"myproject",
+			8080,
+			"example.com",
+			"https://8080.myproject.example.com",
 		},
 		{
 			"project with hyphens",
 			"my-awesome-project",
-			"http://code.my-awesome-project.vibe.space",
-			"http://preview.my-awesome-project.vibe.space",
-			"http://prod.my-awesome-project.vibe.space",
-		},
-		{
-			"project with numbers",
-			"project123",
-			"http://code.project123.vibe.space",
-			"http://preview.project123.vibe.space",
-			"http://prod.project123.vibe.space",
+			3000,
+			"vibe.space",
+			"https://3000.my-awesome-project.vibe.space",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			urls := GenerateURLs(tt.projectName)
-
-			if urls["code"] != tt.wantCode {
-				t.Errorf("GenerateURLs(%q)['code'] = %q, want %q", tt.projectName, urls["code"], tt.wantCode)
-			}
-			if urls["preview"] != tt.wantPreview {
-				t.Errorf("GenerateURLs(%q)['preview'] = %q, want %q", tt.projectName, urls["preview"], tt.wantPreview)
-			}
-			if urls["prod"] != tt.wantProd {
-				t.Errorf("GenerateURLs(%q)['prod'] = %q, want %q", tt.projectName, urls["prod"], tt.wantProd)
+			got := GenerateServiceURL(tt.projectName, tt.port, tt.baseDomain)
+			if got != tt.want {
+				t.Errorf("GenerateServiceURL(%q, %d, %q) = %q, want %q",
+					tt.projectName, tt.port, tt.baseDomain, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestPortsValidation(t *testing.T) {
-	// Ensure ports are in valid range
-	for i := 0; i < 10; i++ {
-		basePort := 3000 + (i * 100)
-		ports := AllocatePorts(basePort)
+func TestGenerateMainURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		projectName string
+		baseDomain  string
+		want        string
+	}{
+		{
+			"default domain",
+			"myproject",
+			"",
+			"https://myproject.vibe.space",
+		},
+		{
+			"custom domain",
+			"myproject",
+			"example.com",
+			"https://myproject.example.com",
+		},
+		{
+			"project with hyphens",
+			"my-awesome-project",
+			"vibe.space",
+			"https://my-awesome-project.vibe.space",
+		},
+	}
 
-		if ports.Code < 1 || ports.Code > 65535 {
-			t.Errorf("AllocatePorts(%d).Code = %d is out of valid range", basePort, ports.Code)
-		}
-		if ports.Preview < 1 || ports.Preview > 65535 {
-			t.Errorf("AllocatePorts(%d).Preview = %d is out of valid range", basePort, ports.Preview)
-		}
-		if ports.Prod < 1 || ports.Prod > 65535 {
-			t.Errorf("AllocatePorts(%d).Prod = %d is out of valid range", basePort, ports.Prod)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := GenerateMainURL(tt.projectName, tt.baseDomain)
+			if got != tt.want {
+				t.Errorf("GenerateMainURL(%q, %q) = %q, want %q",
+					tt.projectName, tt.baseDomain, got, tt.want)
+			}
+		})
 	}
 }
 

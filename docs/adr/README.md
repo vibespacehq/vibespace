@@ -1,74 +1,60 @@
-# Architecture Decision Records (ADRs)
+# Architecture Decision Records
 
-This directory contains Architecture Decision Records (ADRs) for the vibespaces project.
+This directory contains Architecture Decision Records (ADRs) for vibespace.
 
-## What are ADRs?
+## What is an ADR?
 
-ADRs document significant architectural decisions made in the project. They capture:
-- **Context**: Why we needed to make a decision
-- **Decision**: What we decided to do
-- **Consequences**: What happens as a result (good and bad)
+An ADR is a document that captures an important architectural decision made along with its context and consequences.
 
-ADRs are immutable once accepted. If a decision changes, create a new ADR superseding the old one.
+## ADR Index
 
-## Format
+### Active ADRs
 
-Each ADR follows this structure:
+| ADR | Title | Status |
+|-----|-------|--------|
+| [0002](../../adr/0002-jsdoc-for-future-exports.md) | JSDoc for Future Exports | Accepted |
+| [0003](../../adr/0003-frontend-organization.md) | Frontend Organization | Accepted |
+| [0004](../../adr/0004-component-version-selection.md) | Component Version Selection | Accepted |
+| [0005](../../adr/0005-buildkit-for-image-building.md) | BuildKit for Image Building | Accepted (needs update) |
+| [0006](../../adr/0006-bundled-kubernetes-runtime.md) | Bundled Kubernetes Runtime | Accepted |
+| [0008](../../adr/0008-https-certificate-management.md) | HTTPS Certificate Management | Proposed (Post-MVP) |
+| [0012](../../adr/0012-ghcr-prebuilt-images.md) | GHCR Pre-built Images | Accepted (needs update) |
+| [0013](0013-multi-claude-architecture.md) | Multi-Claude Architecture | Accepted |
+| [0014](0014-nats-messaging.md) | NATS for Real-Time Messaging | Accepted |
+| [0015](0015-dynamic-port-exposure.md) | Dynamic Port Exposure | Accepted |
+
+### Superseded ADRs
+
+| ADR | Title | Superseded By |
+|-----|-------|---------------|
+| [0001](../../adr/0001-detection-over-bundling.md) | Detection Over Bundling | 0006 (Bundled Kubernetes) |
+| [0007](../../adr/0007-dns-resolution-for-local-vibespaces.md) | DNS Resolution for Local Vibespaces | 0015 (Dynamic Port Exposure) |
+| [0009](../../adr/0009-single-port-caddy-routing.md) | Single-Port Caddy Routing | 0015 (Dynamic Port Exposure) |
+
+### Notes on Updates Needed
+
+- **0005 (BuildKit)**: Update to reflect single image build instead of 12 template images
+- **0012 (GHCR)**: Update to reflect single image workflow instead of 12 images
+
+## Creating a New ADR
+
+Use this template:
 
 ```markdown
-# ADR XXXX: [Short Title]
+# ADR XXXX: Title
 
+**Status**: Proposed | Accepted | Deprecated | Superseded
 **Date**: YYYY-MM-DD
-**Status**: [Proposed | Accepted | Superseded by ADR-YYYY | Deprecated]
 
 ## Context
-[Why we need to make a decision]
+
+What is the issue that we're seeing that is motivating this decision?
 
 ## Decision
-[What we decided to do]
+
+What is the change that we're proposing?
 
 ## Consequences
-[What happens as a result - positive and negative]
 
-## References
-[Links to related docs, issues, PRs]
+What becomes easier or more difficult after this change?
 ```
-
-## Index
-
-| ADR | Title | Status | Date |
-|-----|-------|--------|------|
-| [0001](0001-detection-over-bundling.md) | Use Detection Over Bundling for Kubernetes (MVP) | Accepted | 2025-01-08 |
-| [0002](0002-jsdoc-for-future-exports.md) | Use JSDoc Tags for Future Exports | Accepted | 2025-10-10 |
-| [0003](0003-frontend-organization.md) | Frontend Component and Style Organization | Accepted | 2025-10-11 |
-
-## When to Write an ADR
-
-Write an ADR when making decisions about:
-- ✅ **Architecture changes**: Database choice, deployment model, tech stack
-- ✅ **Infrastructure decisions**: Kubernetes vs Docker, bundling vs detection
-- ✅ **Security approaches**: Authentication, encryption, credential storage
-- ✅ **API design**: REST vs GraphQL, versioning strategy
-- ✅ **Major UX flows**: Onboarding, vibespace creation, error handling
-
-Don't write an ADR for:
-- ❌ **Implementation details**: Variable names, file structure, code style
-- ❌ **Minor changes**: Bug fixes, small refactors, dependency updates
-- ❌ **Obvious choices**: Using TypeScript (already in stack), standard patterns
-
-## Contributing
-
-To propose a new ADR:
-
-1. Create a new file: `docs/adr/XXXX-short-title.md`
-2. Use next available number (current: 0004)
-3. Start with `**Status**: Proposed`
-4. Open PR for discussion
-5. Update status to `Accepted` when merged
-6. Add entry to index above
-
-## Further Reading
-
-- [Architecture Decision Records (ADRs) by Michael Nygard](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)
-- [ADR GitHub Organization](https://adr.github.io/)
-- [Example ADRs from other projects](https://github.com/joelparkerhenderson/architecture-decision-record)

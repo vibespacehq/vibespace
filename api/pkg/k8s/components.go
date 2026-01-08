@@ -21,7 +21,6 @@ type ClusterComponents struct {
 	Knative  ComponentStatus `json:"knative"`
 	Traefik  ComponentStatus `json:"traefik"`
 	Registry ComponentStatus `json:"registry"`
-	BuildKit ComponentStatus `json:"buildkit"`
 }
 
 // CheckComponents checks the status of all required cluster components
@@ -52,15 +51,11 @@ func (c *Client) CheckComponents(ctx context.Context) (*ClusterComponents, error
 	// Check Registry
 	components.Registry = c.checkRegistry(ctx)
 
-	// Check BuildKit
-	components.BuildKit = c.checkBuildKit(ctx)
-
 	slog.Info("cluster component check completed",
 		"all_ready", components.AllComponentsReady(),
 		"knative_healthy", components.Knative.Healthy,
 		"traefik_healthy", components.Traefik.Healthy,
-		"registry_healthy", components.Registry.Healthy,
-		"buildkit_healthy", components.BuildKit.Healthy)
+		"registry_healthy", components.Registry.Healthy)
 
 	return components, nil
 }
@@ -232,49 +227,11 @@ func (c *Client) checkRegistry(ctx context.Context) ComponentStatus {
 	return status
 }
 
-// checkBuildKit checks if BuildKit is installed and healthy
-func (c *Client) checkBuildKit(ctx context.Context) ComponentStatus {
-	slog.Debug("checking buildkit component")
-
-	status := ComponentStatus{Installed: false, Healthy: false}
-
-	// Check if buildkitd deployment exists in default namespace
-	deployment, err := c.clientset.AppsV1().Deployments("default").Get(ctx, "buildkitd", metav1.GetOptions{})
-	if err != nil {
-		status.Error = "buildkitd deployment not found"
-		slog.Debug("buildkit check failed", "reason", status.Error)
-		return status
-	}
-
-	status.Installed = true
-
-	// Check if deployment is ready
-	if deployment.Status.ReadyReplicas > 0 {
-		status.Healthy = true
-	} else {
-		status.Error = "buildkitd deployment not ready"
-		slog.Debug("buildkit check failed", "reason", status.Error)
-	}
-
-	// Get version from image tag
-	if len(deployment.Spec.Template.Spec.Containers) > 0 {
-		image := deployment.Spec.Template.Spec.Containers[0].Image
-		status.Version = image
-	}
-
-	if status.Healthy {
-		slog.Debug("buildkit component healthy", "version", status.Version)
-	}
-
-	return status
-}
-
 // AllComponentsReady checks if all components are installed and healthy
 func (c *ClusterComponents) AllComponentsReady() bool {
 	return c.Knative.Installed && c.Knative.Healthy &&
 		c.Traefik.Installed && c.Traefik.Healthy &&
-		c.Registry.Installed && c.Registry.Healthy &&
-		c.BuildKit.Installed && c.BuildKit.Healthy
+		c.Registry.Installed && c.Registry.Healthy
 }
 
 // GetMissingComponents returns a list of component names that are not ready
@@ -289,9 +246,6 @@ func (c *ClusterComponents) GetMissingComponents() []string {
 	}
 	if !c.Registry.Installed || !c.Registry.Healthy {
 		missing = append(missing, "registry")
-	}
-	if !c.BuildKit.Installed || !c.BuildKit.Healthy {
-		missing = append(missing, "buildkit")
 	}
 
 	return missing

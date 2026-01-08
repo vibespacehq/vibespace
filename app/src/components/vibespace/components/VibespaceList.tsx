@@ -25,23 +25,14 @@ export function VibespaceList({ onCreateNew }: VibespaceListProps) {
     accessVibespace,
   } = useVibespaces();
 
-  const handleOpen = async (id: string, urlType: string = 'code') => {
+  const handleOpen = async (id: string) => {
     try {
-      // Find vibespace in current list to check if DNS URLs are available
-      const vibespace = vibespaces.find((vs) => vs.id === id);
-      let url: string | undefined;
-
-      // Optimization: Use DNS URLs directly if available (Knative mode)
-      if (vibespace?.urls && Object.keys(vibespace.urls).length > 0) {
-        url = vibespace.urls[urlType];
-      } else {
-        // Fallback: Call /access endpoint for port-forward URLs (legacy Pod mode)
-        const urls = await accessVibespace(id);
-        url = urls[urlType];
-      }
+      // Get access URL from the API
+      const urls = await accessVibespace(id);
+      const url = urls['main'];
 
       if (!url) {
-        throw new Error(`${urlType} URL not available for this vibespace`);
+        throw new Error('URL not available for this vibespace');
       }
 
       // Check if running in Tauri context
@@ -107,7 +98,7 @@ export function VibespaceList({ onCreateNew }: VibespaceListProps) {
               <img src="/icon-transparent.png" alt="vibespace" className="header-icon" />
               <h1>vibespace</h1>
             </div>
-            <p>Containerized development environments with AI coding agents</p>
+            <p>Containerized development environments with Claude Code</p>
           </div>
           <button className="btn-new-vibespace" onClick={onCreateNew}>
             <Plus size={18} />
