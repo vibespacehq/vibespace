@@ -1,5 +1,6 @@
 ARG AGENT=claude
-FROM registry.default.svc.cluster.local:5000/vibespace-base-${AGENT}:latest
+ARG BASE_REGISTRY=ghcr.io/yagizdagabak/vibespace
+FROM ${BASE_REGISTRY}/vibespace-base-${AGENT}:latest
 
 USER root
 

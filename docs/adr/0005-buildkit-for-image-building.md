@@ -4,6 +4,7 @@
 **Status**: Accepted
 **Deciders**: Development Team
 **Context**: Issue #37 - BuildKit Integration for Template Images
+**Related**: [ADR 0011](./0011-harbor-registry-migration.md) - Registry upgraded to Harbor (2025-11-20)
 
 ---
 
@@ -230,12 +231,21 @@ BuildKit is the best fit for our requirements:
 
 ## Implementation Details
 
-### Architecture
+### Architecture (Updated: Job-Based Approach)
+
+**Original design** used port-forwarding from host to BuildKit, but this had a critical issue: the BuildKit session auth provider runs on the host and couldn't resolve cluster DNS (`harbor.default.svc.cluster.local`).
+
+**Current design** uses a Kubernetes Job that runs `buildctl` entirely in-cluster:
 
 ```
 API Server (host)
   |
-  | Port-forward (127.0.0.1:1234)
+  | Creates ConfigMap + Job
+  |
+  v
+Build Job (cluster)
+  |
+  | buildctl --addr tcp://buildkitd:1234
   |
   v
 BuildKit Daemon (cluster)
@@ -243,7 +253,7 @@ BuildKit Daemon (cluster)
   | Build & Push
   |
   v
-Local Registry (cluster)
+Harbor Registry (cluster)
   |
   | Pull
   |
@@ -251,11 +261,18 @@ Local Registry (cluster)
 Vibespace Pod (cluster)
 ```
 
+**Why Job-based approach**:
+- BuildKit session auth provider fetches OAuth tokens from client side (host)
+- Host cannot resolve cluster DNS (`harbor.default.svc.cluster.local`)
+- Running `buildctl` CLI in-cluster avoids this issue entirely
+- Parallel builds: Phase 1 builds 3 base images, Phase 2 builds 9 template images
+
 ### Key Files
 
-- `api/pkg/template/builder.go` - BuildKit client integration
-- `api/pkg/template/dockerfiles.go` - Embedded Dockerfiles (go:embed)
-- `api/pkg/k8s/client.go` - Port-forwarding management
+- `api/pkg/k8s/build_job.go` - Job creation, ConfigMap management, watching
+- `api/pkg/template/builder.go` - Embedded support files (go:embed)
+- `api/pkg/template/dockerfiles.go` - Embedded Dockerfiles and agent MDs
+- `api/pkg/k8s/setup.go` - BuildTemplateImages orchestration
 - `api/pkg/k8s/manifests/buildkit/buildkit.yaml` - BuildKit deployment manifest
 
 ### Build Flow
@@ -266,25 +283,44 @@ Vibespace Pod (cluster)
    # Wait for BuildKit pod to be ready
    ```
 
-2. **Image Build** (during setup or on-demand)
+2. **Image Build** (during setup)
    ```go
-   // Start port-forward
-   builder.EnsurePortForwards(ctx)
+   // 1. Create ConfigMap with all Dockerfiles and support files
+   c.createBuildConfigMap(ctx)
 
-   // Build image
-   builder.BuildImage(ctx, "nextjs", "claude", progressFn)
-   // - Creates temp directory with Dockerfile + CLAUDE.md
-   // - Connects to BuildKit via port-forward
-   // - Builds and pushes to registry
-   // - Cleans up temp directory
+   // 2. Create Job that runs buildctl in-cluster
+   c.createBuildJob(ctx)
+
+   // 3. Watch Job until completion
+   c.WatchBuildJob(ctx, progressFn)
+
+   // 4. Cleanup ConfigMap
+   c.deleteBuildConfigMap(ctx)
    ```
 
-3. **Vibespace Creation**
+3. **Build Job Execution**
+   ```bash
+   # Phase 1: Build base images in parallel
+   for agent in claude codex gemini; do
+     buildctl build --output type=image,name=harbor.../vibespace-base-${agent}:latest,push=true &
+   done
+   wait
+
+   # Phase 2: Build template images in parallel
+   for template in nextjs vue jupyter; do
+     for agent in claude codex gemini; do
+       buildctl build --opt build-arg:AGENT=${agent} ... &
+     done
+   done
+   wait
+   ```
+
+4. **Vibespace Creation**
    ```yaml
    # Knative Service uses built image
    spec:
      containers:
-     - image: localhost:5000/vibespace-nextjs-claude:latest
+     - image: harbor.default.svc.cluster.local/vibespace/vibespace-nextjs-claude:latest
    ```
 
 ### Resource Usage
@@ -376,16 +412,15 @@ Use Bazel or custom Go-based image builder.
   }
   ```
 
-- **Parallel builds**: Build multiple images concurrently (current: sequential)
-  ```go
-  errgroup.Go(func() error { return builder.BuildImage(ctx, "nextjs", "claude", progressFn) })
-  errgroup.Go(func() error { return builder.BuildImage(ctx, "vue", "codex", progressFn) })
-  ```
+- ~~**Parallel builds**: Build multiple images concurrently~~ **IMPLEMENTED** (2025-11-30)
+  - Phase 1: 3 base images build in parallel
+  - Phase 2: 9 template images build in parallel
+  - Total build time: ~4-5 minutes (vs ~24 minutes sequential)
 
 - **Build cache export**: Save BuildKit cache to registry for faster builds
   ```go
   buildOpts.CacheExports = []client.CacheOptionsEntry{
-    {Type: "registry", Attrs: map[string]string{"ref": "localhost:5000/buildcache"}},
+    {Type: "registry", Attrs: map[string]string{"ref": "harbor.default.svc.cluster.local/buildcache"}},
   }
   ```
 

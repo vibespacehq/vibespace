@@ -250,6 +250,7 @@ async fn install_kubernetes(app_handle: tauri::AppHandle) -> Result<(), String> 
             });
         } else {
             println!("Kubernetes installed successfully");
+            // NOTE: Harbor CA trust removed - using simple Docker Registry with HTTP (no TLS)
         }
 
         // Release the guard when installation completes (success or error)
@@ -592,6 +593,23 @@ fn start_api_server(app_handle: tauri::AppHandle) {
     thread::spawn(move || {
         println!("Starting API server...");
 
+        // Kill any existing process on port 8090 (handles dev restarts)
+        #[cfg(target_os = "macos")]
+        {
+            let _ = Command::new("bash")
+                .args(["-c", "lsof -ti:8090 | xargs kill -9 2>/dev/null || true"])
+                .output();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = Command::new("bash")
+                .args(["-c", "fuser -k 8090/tcp 2>/dev/null || true"])
+                .output();
+        }
+
+        // Small delay to ensure port is freed
+        thread::sleep(std::time::Duration::from_millis(100));
+
         // Determine API server binary path
         let api_server_path = if cfg!(debug_assertions) {
             // Development mode: run from source using 'go run'
@@ -713,6 +731,7 @@ fn main() {
             start_dns,
             stop_dns,
             cleanup_dns,
+            // NOTE: Certificate Trust removed - using simple Docker Registry with HTTP (no TLS)
             // Credentials
             save_credential,
             get_credentials,

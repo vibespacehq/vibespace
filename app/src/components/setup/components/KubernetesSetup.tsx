@@ -413,7 +413,7 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
       case 'traefik':
         return 'Traefik Ingress';
       case 'registry':
-        return 'Local Registry';
+        return 'Docker Registry';
       case 'buildkit':
         return 'BuildKit';
       default:

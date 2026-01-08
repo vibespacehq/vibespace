@@ -87,6 +87,9 @@ func main() {
 			// NOTE: Context routes removed with ADR 0006 (bundled Kubernetes)
 			// Previously: GET /contexts, POST /contexts/:name/switch
 		}
+
+		// NOTE: Setup routes removed - Harbor replaced with simple Docker Registry
+		// Previously: GET /setup/harbor-ca
 	}
 
 	// Get port from environment or default to 8090

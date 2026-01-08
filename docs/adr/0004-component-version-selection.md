@@ -1,9 +1,10 @@
 # ADR 0004: Component Version Selection for MVP
 
 **Date**: 2025-10-13
-**Status**: Accepted
+**Status**: Accepted (registry decision superseded by ADR 0011)
 **Deciders**: Development Team
 **Context**: Issue #29 - Cluster Setup Implementation
+**Related**: [ADR 0011](./0011-harbor-registry-migration.md) - Registry upgraded to Harbor v2.11.1 (2025-11-20)
 
 ---
 
@@ -12,7 +13,7 @@
 For the MVP (Phase 1) of the vibespaces project, we need to select specific versions of critical Kubernetes components:
 - Knative Serving (workload management)
 - Traefik (ingress controller)
-- Docker Registry (image storage)
+- Harbor (image registry) - ~~Docker Registry~~ superseded, see ADR 0011
 - BuildKit (image building)
 
 The question is: **Should we use the latest stable versions or more conservative choices?**

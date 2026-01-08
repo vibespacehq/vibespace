@@ -1,0 +1,113 @@
+name: Build and Push Images to GHCR
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (default: latest)'
+        required: false
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/vibespace
+
+jobs:
+  build-base-images:
+    name: Build Base Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        agent: [claude, codex, gemini]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/vibespace-base-${{ matrix.agent }}
+          tags: |
+            type=raw,value=${{ github.event.inputs.tag || 'latest' }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
+            type=sha,prefix=
+
+      - name: Build and push base image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api/pkg/template/images/base-${{ matrix.agent }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-template-images:
+    name: Build Template Images
+    runs-on: ubuntu-latest
+    needs: build-base-images
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        template: [nextjs, vue, jupyter]
+        agent: [claude, codex, gemini]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/vibespace-${{ matrix.template }}-${{ matrix.agent }}
+          tags: |
+            type=raw,value=${{ github.event.inputs.tag || 'latest' }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
+            type=sha,prefix=
+
+      - name: Prepare build context
+        run: |
+          # Copy support files to template directory
+          cp api/pkg/template/images/templates/entrypoint.sh api/pkg/template/images/templates/${{ matrix.template }}/
+          cp api/pkg/template/images/templates/supervisord.conf api/pkg/template/images/templates/${{ matrix.template }}/
+
+      - name: Build and push template image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api/pkg/template/images/templates/${{ matrix.template }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            AGENT=${{ matrix.agent }}
+            BASE_REGISTRY=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

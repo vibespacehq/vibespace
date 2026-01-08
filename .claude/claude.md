@@ -66,10 +66,11 @@ vibespace/
 ├── images/                # Container image Dockerfiles
 │   ├── base/             # Base image (code-server)
 │   └── templates/        # Template images (Next.js, Vue, etc.)
-├── k8s/                   # Kubernetes manifests
-│   ├── registry.yaml     # Local registry
-│   ├── buildkit.yaml     # BuildKit daemon
-│   └── traefik.yaml      # Ingress controller
+├── api/pkg/k8s/manifests/ # Kubernetes manifests (embedded in Go)
+│   ├── registry/         # Docker Registry (HTTP, cluster-internal)
+│   ├── buildkit/         # BuildKit daemon
+│   ├── knative/          # Knative Serving
+│   └── traefik/          # Traefik Ingress
 └── docs/                  # Documentation
 ```
 
@@ -223,16 +224,31 @@ done
 
 ### Adding a New Vibespace Template
 
-1. Create directory: `images/templates/mytemplate/`
-2. Write `Dockerfile` based on `images/base/`
-3. Add template metadata in API: `api/pkg/model/template.go`
-4. Build image via BuildKit (runs in-cluster, pushes to `registry.default.svc.cluster.local:5000`)
-5. For local testing, port-forward to registry and push:
-   ```bash
-   kubectl port-forward -n default svc/registry 5000:5000 &
-   docker build -t localhost:5000/vibespace-mytemplate:latest .
-   docker push localhost:5000/vibespace-mytemplate:latest
-   ```
+1. Create directory: `api/pkg/template/images/templates/mytemplate/`
+2. Write `Dockerfile` based on `api/pkg/template/images/base-claude/`
+3. Add `CLAUDE.md` with template-specific agent instructions
+4. Add `preview.sh` and `prod.sh` scripts if needed
+5. Add go:embed directives in `api/pkg/template/dockerfiles.go` and `api/pkg/template/builder.go`
+6. Update `GetAllDockerfiles()` and `GetAllSupportFiles()` functions
+7. Add template metadata in API: `api/pkg/model/template.go`
+
+**How images work**: Template images are pre-built via GitHub Actions CI/CD and published to GHCR (`ghcr.io/yagizdagabak/vibespace/`). During cluster setup:
+1. Images are mirrored from GHCR to the local registry via `MirrorGHCRImages()`
+2. A Kubernetes Job runs `crane` to copy all 12 images
+3. Images become available at `registry.default.svc.cluster.local:5000`
+4. Knative Services pull from the local registry
+
+For custom template builds, BuildKit can still build directly to the local registry.
+
+For manual testing during development:
+```bash
+# Check mirror Job logs
+kubectl logs job/vibespace-mirror-images -f
+
+# Check if images exist in local registry
+kubectl run --rm -i --restart=Never registry-test --image=curlimages/curl -- \
+  curl -s http://registry.default.svc.cluster.local:5000/v2/_catalog
+```
 
 ### Adding a New API Endpoint
 
@@ -686,18 +702,22 @@ kubectl logs vibespace-{id} -n vibespace
 kubectl logs -n default deployment/buildkitd
 ```
 
-### In-cluster registry not accessible
+### Docker Registry issues
 ```bash
-# Check registry service and pod
+# Check registry pod and service
 kubectl get svc -n default registry
 kubectl get pods -n default -l app=registry
 
-# Check registry contents (via port-forward)
-kubectl port-forward -n default svc/registry 5000:5000 &
-curl http://localhost:5000/v2/_catalog
+# Check registry logs
+kubectl logs -n default deployment/registry
 
-# Or check directly from within cluster
-kubectl run --rm -i --restart=Never registry-test --image=curlimages/curl -- curl http://registry.default.svc.cluster.local:5000/v2/_catalog
+# List images in registry
+kubectl run --rm -i --restart=Never registry-test --image=curlimages/curl -- \
+  curl -s http://registry.default.svc.cluster.local:5000/v2/_catalog
+
+# Check specific image tags
+kubectl run --rm -i --restart=Never registry-test --image=curlimages/curl -- \
+  curl -s http://registry.default.svc.cluster.local:5000/v2/vibespace-nextjs-claude/tags/list
 ```
 
 ---
@@ -718,7 +738,7 @@ kubectl run --rm -i --restart=Never registry-test --image=curlimages/curl -- cur
 - **k3s**: Lightweight Kubernetes (1.27+)
 - **Knative Serving**: v1.15.2 (serverless workload management)
 - **Traefik**: v3.5.3 (ingress controller)
-- **Registry**: 2.8.3 (local image storage)
+- **Harbor**: v2.11.1 (enterprise registry with HTTPS, authentication)
 - **BuildKit**: v0.17.3 (container image builder)
 - **code-server**: VS Code in browser
 
@@ -741,7 +761,7 @@ The pragmatic mix approach balances stability for MVP delivery with modern versi
 - ✅ Infrastructure (Tauri app, Go API, k8s manifests)
 - ✅ Bundled Kubernetes runtime (Colima/k3s) with trait-based architecture - **ADR 0006**
 - ✅ One-click k8s installation with real-time progress (SSE streaming)
-- ✅ Cluster component installation (Knative, Traefik, Registry, BuildKit)
+- ✅ Cluster component installation (Knative, Traefik, Harbor, BuildKit)
 - ✅ Vibespace CRUD backend (with real vibespace images)
 - ✅ Full frontend UI (setup wizard, vibespace list)
 - ✅ Docker images with AI agents (base, Next.js, Vue, Jupyter) - **PR #38**

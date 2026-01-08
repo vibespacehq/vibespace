@@ -81,6 +81,12 @@ kill_process "colima"
 kill_process "limactl"
 kill_process "kubectl"
 kill_process "dnsd"
+
+# Kill Go API server (might be running as "main" from go run or as binary)
+pkill -9 -f "vibespace-api" 2>/dev/null && echo -e "${GREEN}✓${NC} Killed vibespace-api processes" || echo -e "${GREEN}✓${NC} No vibespace-api processes to kill"
+pkill -9 -f "go run.*cmd/server" 2>/dev/null && echo -e "${GREEN}✓${NC} Killed go run server processes" || echo -e "${GREEN}✓${NC} No go run server processes to kill"
+# Kill any process listening on API port 8090
+lsof -ti:8090 2>/dev/null | xargs kill -9 2>/dev/null && echo -e "${GREEN}✓${NC} Killed process on port 8090" || echo -e "${GREEN}✓${NC} No process on port 8090"
 echo ""
 
 # 2. Remove directories
@@ -96,6 +102,14 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 remove_dir "$REPO_ROOT/app/dist" "app/dist"
 remove_dir "$REPO_ROOT/app/src-tauri/target" "app/src-tauri/target"
+
+# Remove API binary if it exists
+if [ -f "$REPO_ROOT/api/vibespace-api" ]; then
+    rm -f "$REPO_ROOT/api/vibespace-api"
+    echo -e "${GREEN}✓${NC} Removed api/vibespace-api binary"
+else
+    echo -e "${GREEN}✓${NC} api/vibespace-api binary (already removed)"
+fi
 echo ""
 
 # 3. Verify cleanup

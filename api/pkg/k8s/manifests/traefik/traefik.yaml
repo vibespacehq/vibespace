@@ -14,14 +14,31 @@ kind: ClusterRole
 metadata:
   name: traefik
 rules:
+# Core Kubernetes resources
 - apiGroups: [""]
-  resources: ["services", "endpoints", "secrets"]
+  resources: ["services", "nodes", "pods", "secrets"]
   verbs: ["get", "list", "watch"]
-- apiGroups: ["extensions", "networking.k8s.io"]
+# EndpointSlices (v3.1+ requirement - replaces endpoints)
+- apiGroups: ["discovery.k8s.io"]
+  resources: ["endpointslices"]
+  verbs: ["list", "watch"]
+# Standard Kubernetes Ingress
+- apiGroups: ["networking.k8s.io"]
   resources: ["ingresses", "ingressclasses"]
   verbs: ["get", "list", "watch"]
-- apiGroups: ["traefik.containo.us"]
-  resources: ["*"]
+# Traefik Custom Resource Definitions
+- apiGroups: ["traefik.io"]
+  resources:
+    - "ingressroutes"
+    - "ingressroutetcps"
+    - "ingressrouteudps"
+    - "middlewares"
+    - "middlewaretcps"
+    - "serverstransports"
+    - "serverstransporttcps"
+    - "tlsoptions"
+    - "tlsstores"
+    - "traefikservices"
   verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
