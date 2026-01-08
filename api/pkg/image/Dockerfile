@@ -56,7 +56,10 @@ RUN npm install -g @anthropic-ai/claude-code
 # Create non-root user (UID 1000 matches typical host user)
 RUN useradd -m -s /bin/bash -u 1000 user && \
     mkdir -p /vibespace && \
-    chown user:user /vibespace
+    chown user:user /vibespace && \
+    # Create npm global directory and config (as root, then chown)
+    mkdir -p /home/user/.npm-global /home/user/.config/claude-code && \
+    chown -R user:user /home/user
 
 # Copy port detector and nats-bridge binaries (built separately)
 COPY --chown=root:root port-detector /usr/bin/port-detector
@@ -74,13 +77,9 @@ RUN chmod +x /entrypoint.sh
 USER user
 WORKDIR /vibespace
 
-# Create npm global directory to avoid permission issues
-RUN mkdir -p ~/.npm-global && \
-    npm config set prefix ~/.npm-global
-
-# Pre-configure Claude Code for non-interactive mode
-RUN mkdir -p ~/.config/claude-code && \
-    echo '{"autoApprove": true, "telemetry": false}' > ~/.config/claude-code/config.json
+# Configure npm global directory and Claude Code
+RUN npm config set prefix /home/user/.npm-global && \
+    echo '{"autoApprove": true, "telemetry": false}' > /home/user/.config/claude-code/config.json
 
 # Expose ttyd port
 EXPOSE 7681
