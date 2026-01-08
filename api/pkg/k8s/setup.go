@@ -3,11 +3,14 @@ package k8s
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,9 +32,17 @@ type SetupProgress struct {
 // SetupProgressFunc is a callback function for reporting progress
 type SetupProgressFunc func(progress SetupProgress)
 
+// SetupConfig contains configuration for cluster setup
+type SetupConfig struct {
+	// GHCRUsername is the GitHub username for pulling images from GHCR
+	GHCRUsername string
+	// GHCRToken is the GitHub PAT with read:packages scope
+	GHCRToken string
+}
+
 // EnsureClusterComponents ensures all required components are installed
 // It's idempotent and safe to call multiple times
-func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupProgressFunc) error {
+func (c *Client) EnsureClusterComponents(ctx context.Context, config *SetupConfig, progressFn SetupProgressFunc) error {
 	slog.Info("starting cluster component setup")
 
 	// Check what's already installed
@@ -45,8 +56,7 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 	slog.Info("cluster component status checked",
 		"knative_healthy", components.Knative.Healthy,
 		"traefik_healthy", components.Traefik.Healthy,
-		"registry_healthy", components.Registry.Healthy,
-		"buildkit_healthy", components.BuildKit.Healthy)
+		"registry_healthy", components.Registry.Healthy)
 
 	// Install missing components (skip if already installed)
 	if !components.Knative.Installed || !components.Knative.Healthy {
@@ -118,39 +128,6 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 		slog.Info("registry already installed and healthy, skipping")
 	}
 
-	if !components.BuildKit.Installed || !components.BuildKit.Healthy {
-		slog.Info("buildkit not ready, starting installation",
-			"installed", components.BuildKit.Installed,
-			"healthy", components.BuildKit.Healthy)
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "buildkit", Status: "installing", Message: "Installing BuildKit..."})
-		}
-		if err := c.InstallBuildKit(ctx); err != nil {
-			slog.Error("failed to install buildkit",
-				"error", err)
-			if progressFn != nil {
-				progressFn(SetupProgress{Component: "buildkit", Status: "error", Error: err.Error()})
-			}
-			return fmt.Errorf("failed to install BuildKit: %w", err)
-		}
-		slog.Info("buildkit installed successfully")
-		if progressFn != nil {
-			progressFn(SetupProgress{Component: "buildkit", Status: "done", Message: "BuildKit installed"})
-		}
-	} else {
-		slog.Info("buildkit already installed and healthy, skipping")
-	}
-
-	// Mirror pre-built images from GHCR to local registry
-	// This replaces local builds - images are pre-built via GitHub Actions
-	slog.Info("starting template image mirroring from GHCR")
-	if err := c.MirrorGHCRImages(ctx, progressFn); err != nil {
-		slog.Error("failed to mirror template images",
-			"error", err)
-		return fmt.Errorf("failed to mirror template images: %w", err)
-	}
-	slog.Info("all template images mirrored successfully")
-
 	// Ensure vibespace namespace exists
 	slog.Info("ensuring vibespace namespace exists")
 	if err := c.EnsureNamespace(ctx); err != nil {
@@ -159,6 +136,26 @@ func (c *Client) EnsureClusterComponents(ctx context.Context, progressFn SetupPr
 		return fmt.Errorf("failed to ensure vibespace namespace: %w", err)
 	}
 	slog.Info("vibespace namespace ready")
+
+	// Create GHCR pull secret if credentials provided
+	if config != nil && config.GHCRToken != "" {
+		slog.Info("creating GHCR pull secret")
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "ghcr-secret", Status: "installing", Message: "Creating GHCR pull secret..."})
+		}
+		if err := c.EnsureGHCRSecret(ctx, config.GHCRUsername, config.GHCRToken); err != nil {
+			slog.Error("failed to create GHCR secret",
+				"error", err)
+			if progressFn != nil {
+				progressFn(SetupProgress{Component: "ghcr-secret", Status: "error", Error: err.Error()})
+			}
+			return fmt.Errorf("failed to create GHCR secret: %w", err)
+		}
+		slog.Info("GHCR pull secret created")
+		if progressFn != nil {
+			progressFn(SetupProgress{Component: "ghcr-secret", Status: "done", Message: "GHCR pull secret created"})
+		}
+	}
 
 	slog.Info("cluster component setup completed successfully")
 	return nil
@@ -233,11 +230,6 @@ func (c *Client) InstallKnative(ctx context.Context) error {
 
 // ConfigureKnativeFeatures enables required Knative features for vibespace
 func (c *Client) ConfigureKnativeFeatures(ctx context.Context) error {
-	// Patch config-features ConfigMap to enable:
-	// - kubernetes.podspec-persistent-volume-claim: for PVC support
-	// - kubernetes.podspec-persistent-volume-write: for writable PVCs
-	// - kubernetes.podspec-init-containers: for init containers (git-clone, fix-permissions)
-	// - multi-container: for multiple ports per vibespace
 	slog.Info("enabling knative features for vibespace")
 
 	configMapClient := c.clientset.CoreV1().ConfigMaps("knative-serving")
@@ -256,7 +248,6 @@ func (c *Client) ConfigureKnativeFeatures(ctx context.Context) error {
 	cm.Data["kubernetes.podspec-persistent-volume-claim"] = "enabled"
 	cm.Data["kubernetes.podspec-persistent-volume-write"] = "enabled"
 	cm.Data["kubernetes.podspec-init-containers"] = "enabled"
-	cm.Data["multi-container"] = "enabled"
 
 	// Update ConfigMap
 	_, err = configMapClient.Update(ctx, cm, metav1.UpdateOptions{})
@@ -267,8 +258,7 @@ func (c *Client) ConfigureKnativeFeatures(ctx context.Context) error {
 	slog.Info("knative features enabled",
 		"pvc_support", "enabled",
 		"pvc_write", "enabled",
-		"init_containers", "enabled",
-		"multi_container", "enabled")
+		"init_containers", "enabled")
 
 	// Restart Knative controller to pick up new configuration
 	slog.Info("restarting knative controller to apply new features")
@@ -303,7 +293,6 @@ func (c *Client) ConfigureKnativeFeatures(ctx context.Context) error {
 }
 
 // ConfigureKnativeDefaults configures Knative default values
-// Sets revision timeout to 600 seconds (Knative max limit)
 func (c *Client) ConfigureKnativeDefaults(ctx context.Context) error {
 	slog.Info("configuring knative defaults")
 
@@ -318,7 +307,6 @@ func (c *Client) ConfigureKnativeDefaults(ctx context.Context) error {
 	}
 
 	// Set revision timeout to 600 seconds (10 minutes, Knative maximum)
-	// Default is 300s, we increase to 600s for longer coding sessions
 	cm.Data["revision-timeout-seconds"] = "600"
 
 	// Update ConfigMap
@@ -330,7 +318,7 @@ func (c *Client) ConfigureKnativeDefaults(ctx context.Context) error {
 	slog.Info("knative defaults configured",
 		"revision-timeout-seconds", "600")
 
-	// Wait for controller to pick up new config (no restart needed for config-defaults)
+	// Wait for controller to pick up new config
 	time.Sleep(5 * time.Second)
 
 	return nil
@@ -340,7 +328,7 @@ func (c *Client) ConfigureKnativeDefaults(ctx context.Context) error {
 func (c *Client) InstallTraefik(ctx context.Context) error {
 	slog.Info("installing traefik")
 
-	// Apply CRDs first (IngressRoute, IngressRouteTCP, IngressRouteUDP, etc.)
+	// Apply CRDs first
 	slog.Info("applying traefik CRDs")
 	if err := c.ApplyManifest(ctx, TraefikCRDs); err != nil {
 		slog.Error("failed to apply traefik CRDs",
@@ -375,8 +363,7 @@ func (c *Client) InstallTraefik(ctx context.Context) error {
 	return nil
 }
 
-
-// InstallRegistry installs the Docker Registry for storing template images
+// InstallRegistry installs the Docker Registry
 func (c *Client) InstallRegistry(ctx context.Context) error {
 	slog.Info("installing docker registry")
 
@@ -397,31 +384,6 @@ func (c *Client) InstallRegistry(ctx context.Context) error {
 		return fmt.Errorf("registry not ready: %w", err)
 	}
 	slog.Info("registry is ready")
-
-	return nil
-}
-
-// InstallBuildKit installs BuildKit
-func (c *Client) InstallBuildKit(ctx context.Context) error {
-	slog.Info("installing buildkit")
-
-	slog.Info("applying buildkit manifest")
-	if err := c.ApplyManifest(ctx, BuildKitManifest); err != nil {
-		slog.Error("failed to apply buildkit manifest",
-			"error", err)
-		return fmt.Errorf("failed to apply BuildKit manifest: %w", err)
-	}
-	slog.Info("buildkit manifest applied successfully")
-
-	// Wait for BuildKit to be ready
-	slog.Info("waiting for buildkit to be ready",
-		"timeout", "3m")
-	if err := c.waitForDeployment(ctx, "default", "buildkitd", 3*time.Minute); err != nil {
-		slog.Error("buildkit not ready",
-			"error", err)
-		return fmt.Errorf("buildKit not ready: %w", err)
-	}
-	slog.Info("buildkit is ready")
 
 	return nil
 }
@@ -531,7 +493,6 @@ func (c *Client) waitForDeployment(ctx context.Context, namespace, name string, 
 			deployment, err := c.clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
 			if err != nil {
 				if errors.IsNotFound(err) {
-					// Deployment not created yet, continue waiting
 					slog.Debug("deployment not found yet, waiting",
 						"namespace", namespace,
 						"deployment", name)
@@ -576,51 +537,77 @@ func (c *Client) restMapper() (meta.RESTMapper, error) {
 	return restmapper.NewDiscoveryRESTMapper(apiGroupResources), nil
 }
 
-// BuildTemplateImages builds all template images using a Kubernetes Job
-// The Job runs buildctl inside the cluster, avoiding host DNS resolution issues
-// This is called after BuildKit and Registry are installed and ready
-func (c *Client) BuildTemplateImages(ctx context.Context, progressFn SetupProgressFunc) error {
-	slog.Info("starting Job-based template image build")
+// EnsureGHCRSecret creates or updates the GHCR pull secret for pulling images
+// from GitHub Container Registry (private repos)
+func (c *Client) EnsureGHCRSecret(ctx context.Context, username, token string) error {
+	if username == "" {
+		return fmt.Errorf("GHCR username is required")
+	}
+	if token == "" {
+		return fmt.Errorf("GHCR token is required")
+	}
 
-	// 1. Create ConfigMap with all Dockerfiles and support files
-	if err := c.createBuildConfigMap(ctx); err != nil {
-		if progressFn != nil {
-			progressFn(SetupProgress{
-				Component: "templates",
-				Status:    "error",
-				Error:     fmt.Sprintf("Failed to create build ConfigMap: %v", err),
-			})
+	// Create Docker config JSON for GHCR authentication
+	// Format: {"auths":{"ghcr.io":{"username":"...","password":"...","auth":"base64(user:pass)"}}}
+	auth := base64.StdEncoding.EncodeToString([]byte(username + ":" + token))
+	dockerConfig := map[string]interface{}{
+		"auths": map[string]interface{}{
+			"ghcr.io": map[string]interface{}{
+				"username": username,
+				"password": token,
+				"auth":     auth,
+			},
+		},
+	}
+
+	dockerConfigJSON, err := json.Marshal(dockerConfig)
+	if err != nil {
+		return fmt.Errorf("failed to marshal docker config: %w", err)
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ghcr-secret",
+			Namespace: VibespaceNamespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "vibespace",
+				"app.kubernetes.io/component":  "registry-credentials",
+			},
+		},
+		Type: corev1.SecretTypeDockerConfigJson,
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: dockerConfigJSON,
+		},
+	}
+
+	secretClient := c.clientset.CoreV1().Secrets(VibespaceNamespace)
+
+	// Try to get existing secret
+	existing, err := secretClient.Get(ctx, "ghcr-secret", metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Create new secret
+			_, err = secretClient.Create(ctx, secret, metav1.CreateOptions{})
+			if err != nil {
+				return fmt.Errorf("failed to create GHCR secret: %w", err)
+			}
+			slog.Info("GHCR pull secret created",
+				"namespace", VibespaceNamespace,
+				"secret", "ghcr-secret")
+			return nil
 		}
-		return fmt.Errorf("failed to create build ConfigMap: %w", err)
+		return fmt.Errorf("failed to get GHCR secret: %w", err)
 	}
 
-	// 2. Create and run the build Job
-	if err := c.createBuildJob(ctx); err != nil {
-		// Cleanup ConfigMap on error
-		_ = c.deleteBuildConfigMap(ctx)
-		if progressFn != nil {
-			progressFn(SetupProgress{
-				Component: "templates",
-				Status:    "error",
-				Error:     fmt.Sprintf("Failed to create build Job: %v", err),
-			})
-		}
-		return fmt.Errorf("failed to create build Job: %w", err)
+	// Update existing secret
+	existing.Data = secret.Data
+	_, err = secretClient.Update(ctx, existing, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update GHCR secret: %w", err)
 	}
+	slog.Info("GHCR pull secret updated",
+		"namespace", VibespaceNamespace,
+		"secret", "ghcr-secret")
 
-	// 3. Watch Job until completion (streams logs for progress)
-	if err := c.WatchBuildJob(ctx, progressFn); err != nil {
-		// Cleanup ConfigMap on error (Job auto-cleans via TTL)
-		_ = c.deleteBuildConfigMap(ctx)
-		return fmt.Errorf("build Job failed: %w", err)
-	}
-
-	// 4. Cleanup ConfigMap (Job auto-cleans via TTL)
-	if err := c.deleteBuildConfigMap(ctx); err != nil {
-		slog.Warn("failed to cleanup build ConfigMap", "error", err)
-		// Don't fail the build for cleanup errors
-	}
-
-	slog.Info("all template images built successfully via Job")
 	return nil
 }

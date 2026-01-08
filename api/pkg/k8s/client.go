@@ -13,6 +13,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -34,10 +35,11 @@ type PortForward struct {
 
 // Client wraps the Kubernetes client
 type Client struct {
-	clientset    *kubernetes.Clientset
-	config       *rest.Config
-	portForwards map[string]*PortForward
-	pfMutex      sync.Mutex
+	clientset     *kubernetes.Clientset
+	dynamicClient dynamic.Interface
+	config        *rest.Config
+	portForwards  map[string]*PortForward
+	pfMutex       sync.Mutex
 }
 
 // NewClient creates a new Kubernetes client
@@ -52,10 +54,16 @@ func NewClient() (*Client, error) {
 		return nil, fmt.Errorf("failed to create k8s clientset: %w", err)
 	}
 
+	dynClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create k8s dynamic client: %w", err)
+	}
+
 	return &Client{
-		clientset:    clientset,
-		config:       config,
-		portForwards: make(map[string]*PortForward),
+		clientset:     clientset,
+		dynamicClient: dynClient,
+		config:        config,
+		portForwards:  make(map[string]*PortForward),
 	}, nil
 }
 
@@ -105,6 +113,11 @@ func getBundledKubeconfigPath() (string, error) {
 // Clientset returns the underlying Kubernetes clientset
 func (c *Client) Clientset() *kubernetes.Clientset {
 	return c.clientset
+}
+
+// DynamicClient returns the underlying Kubernetes dynamic client
+func (c *Client) DynamicClient() dynamic.Interface {
+	return c.dynamicClient
 }
 
 // Config returns the underlying Kubernetes REST config

@@ -3,8 +3,7 @@ package network
 import (
 	"context"
 	"fmt"
-
-	"vibespace/pkg/k8s"
+	"log/slog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -12,197 +11,176 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-// IngressRouteGVR is the GroupVersionResource for Traefik IngressRoutes
-// Traefik v3.x uses "traefik.io" (older versions used "traefik.containo.us")
-var IngressRouteGVR = schema.GroupVersionResource{
-	Group:    "traefik.io",
-	Version:  "v1alpha1",
-	Resource: "ingressroutes",
-}
-
-// IngressRouteManager manages Traefik IngressRoutes for vibespaces
+// IngressRouteManager handles Traefik IngressRoute creation for vibespaces
 type IngressRouteManager struct {
-	k8sClient     *k8s.Client
 	dynamicClient dynamic.Interface
-	baseDomain    string // e.g., "vibe.space"
+	baseDomain    string
 }
 
-// NewIngressRouteManager creates a new IngressRoute manager
-func NewIngressRouteManager(k8sClient *k8s.Client, baseDomain string) (*IngressRouteManager, error) {
-	dynamicClient, err := dynamic.NewForConfig(k8sClient.Config())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create dynamic client: %w", err)
-	}
-
+// NewIngressRouteManager creates a new IngressRouteManager
+func NewIngressRouteManager(dynamicClient dynamic.Interface, baseDomain string) *IngressRouteManager {
 	if baseDomain == "" {
-		baseDomain = "vibe.space" // Default domain
+		baseDomain = "vibe.space"
 	}
-
 	return &IngressRouteManager{
-		k8sClient:     k8sClient,
 		dynamicClient: dynamicClient,
 		baseDomain:    baseDomain,
-	}, nil
+	}
 }
 
-// CreateIngressRoutesRequest contains parameters for creating IngressRoutes
-type CreateIngressRoutesRequest struct {
-	VibespaceID string
-	ProjectName string // DNS-friendly project name
-	Namespace   string
+// IngressRouteGVR returns the GroupVersionResource for Traefik IngressRoute
+func IngressRouteGVR() schema.GroupVersionResource {
+	return schema.GroupVersionResource{
+		Group:    "traefik.io",
+		Version:  "v1alpha1",
+		Resource: "ingressroutes",
+	}
 }
 
-// CreateIngressRoutes creates 3 IngressRoutes for a vibespace:
-// - code.{project}.vibe.space → vibespace-{id}:8080 (Caddy → code-server:8081)
-// - preview.{project}.vibe.space → vibespace-{id}:8080 (Caddy → preview:3000)
-// - prod.{project}.vibe.space → vibespace-{id}:8080 (Caddy → prod:3001)
+// CreateVibespaceRoutes creates the IngressRoutes for a vibespace:
+// 1. Main route: {projectname}.vibe.space -> Knative service (port 8080)
+// 2. Wildcard route: *.{projectname}.vibe.space -> Knative service (port 8080)
 //
-// Single-port architecture: All routes target port 8080 where Caddy reverse proxy
-// listens. Caddy inspects the Host header and routes internally to the appropriate
-// service port (8081 for code-server, 3000 for preview, 3001 for production).
-// See ADR 0009 for architectural rationale.
-func (m *IngressRouteManager) CreateIngressRoutes(ctx context.Context, req *CreateIngressRoutesRequest) error {
-	namespace := req.Namespace
-	if namespace == "" {
-		namespace = k8s.VibespaceNamespace
+// Both routes go to port 8080 where Caddy runs. Caddy handles:
+// - Main route: serves the primary UI/application
+// - Wildcard route: parses subdomain to extract port, forwards to localhost:{port}
+func (m *IngressRouteManager) CreateVibespaceRoutes(ctx context.Context, projectName, serviceName, namespace string) error {
+	slog.Info("creating IngressRoutes for vibespace",
+		"project_name", projectName,
+		"service_name", serviceName,
+		"namespace", namespace,
+		"base_domain", m.baseDomain)
+
+	// Create main route: {projectname}.{basedomain}
+	mainHost := fmt.Sprintf("%s.%s", projectName, m.baseDomain)
+	if err := m.createIngressRoute(ctx, projectName, mainHost, serviceName, namespace, false); err != nil {
+		return fmt.Errorf("failed to create main IngressRoute: %w", err)
 	}
 
-	serviceName := fmt.Sprintf("vibespace-%s", req.VibespaceID)
-
-	// Route configurations for the 3 subdomains
-	// All routes target port 8080 (Caddy's external port)
-	// Caddy handles internal routing based on Host header
-	routes := []struct {
-		subdomain string
-		routeType string
-	}{
-		{"code", "code"},
-		{"preview", "preview"},
-		{"prod", "prod"},
+	// Create wildcard route: *.{projectname}.{basedomain}
+	wildcardHost := fmt.Sprintf("*.%s.%s", projectName, m.baseDomain)
+	if err := m.createIngressRoute(ctx, projectName+"-wildcard", wildcardHost, serviceName, namespace, true); err != nil {
+		return fmt.Errorf("failed to create wildcard IngressRoute: %w", err)
 	}
 
-	// Create an IngressRoute for each subdomain
-	for _, route := range routes {
-		host := fmt.Sprintf("%s.%s.%s", route.subdomain, req.ProjectName, m.baseDomain)
-		ingressRouteName := fmt.Sprintf("vibespace-%s-%s", req.VibespaceID, route.subdomain)
+	slog.Info("IngressRoutes created successfully",
+		"project_name", projectName,
+		"main_host", mainHost,
+		"wildcard_host", wildcardHost)
 
-		ingressRoute := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "traefik.io/v1alpha1",
-				"kind":       "IngressRoute",
-				"metadata": map[string]interface{}{
-					"name":      ingressRouteName,
-					"namespace": namespace,
-					"labels": map[string]string{
-						"app.kubernetes.io/managed-by": "vibespace",
-						"vibespace.dev/id":             req.VibespaceID,
-						"vibespace.dev/project-name":   req.ProjectName,
-						"vibespace.dev/route-type":     route.routeType,
-					},
+	return nil
+}
+
+// createIngressRoute creates a single Traefik IngressRoute
+func (m *IngressRouteManager) createIngressRoute(ctx context.Context, name, host, serviceName, namespace string, isWildcard bool) error {
+	routeName := fmt.Sprintf("vibespace-%s", name)
+
+	slog.Debug("creating IngressRoute",
+		"route_name", routeName,
+		"host", host,
+		"service_name", serviceName,
+		"is_wildcard", isWildcard)
+
+	// Build the IngressRoute spec
+	ingressRoute := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "traefik.io/v1alpha1",
+			"kind":       "IngressRoute",
+			"metadata": map[string]interface{}{
+				"name":      routeName,
+				"namespace": namespace,
+				"labels": map[string]interface{}{
+					"vibespace.dev/managed": "true",
+					"vibespace.dev/project": name,
 				},
-				"spec": map[string]interface{}{
-					"entryPoints": []interface{}{"web"}, // HTTP (port 80)
-					"routes": []interface{}{
-						map[string]interface{}{
-							"match": fmt.Sprintf("Host(`%s`)", host),
-							"kind":  "Rule",
-							"services": []interface{}{
-								map[string]interface{}{
-									"name": serviceName,
-									"port": 8080, // All routes target Caddy on port 8080
-									// For Knative Services, we route to the Knative Service
-									// Knative creates a K8s Service for each revision
-									// Caddy (listening on 8080) routes internally based on Host header
-									"kind": "Service",
-								},
+			},
+			"spec": map[string]interface{}{
+				"entryPoints": []interface{}{"websecure"},
+				"routes": []interface{}{
+					map[string]interface{}{
+						"match": fmt.Sprintf("Host(`%s`)", host),
+						"kind":  "Rule",
+						"services": []interface{}{
+							map[string]interface{}{
+								// Knative creates a service with format: {ksvc-name}
+								// The private service is: {ksvc-name}-private
+								// We route to the main service which load balances
+								"name": serviceName,
+								"port": 80, // Knative service port
 							},
 						},
 					},
 				},
+				"tls": map[string]interface{}{
+					"certResolver": "le", // Let's Encrypt resolver configured in Traefik
+				},
 			},
-		}
+		},
+	}
 
-		// Create the IngressRoute
-		_, err := m.dynamicClient.Resource(IngressRouteGVR).Namespace(namespace).Create(
-			ctx,
-			ingressRoute,
-			metav1.CreateOptions{},
-		)
+	// Create or update the IngressRoute
+	client := m.dynamicClient.Resource(IngressRouteGVR()).Namespace(namespace)
+
+	// Check if exists
+	existing, err := client.Get(ctx, routeName, metav1.GetOptions{})
+	if err == nil {
+		// Update existing
+		ingressRoute.SetResourceVersion(existing.GetResourceVersion())
+		_, err = client.Update(ctx, ingressRoute, metav1.UpdateOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to create IngressRoute for %s: %w", route.subdomain, err)
+			return fmt.Errorf("failed to update IngressRoute %s: %w", routeName, err)
 		}
+		slog.Debug("IngressRoute updated", "route_name", routeName)
+	} else {
+		// Create new
+		_, err = client.Create(ctx, ingressRoute, metav1.CreateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create IngressRoute %s: %w", routeName, err)
+		}
+		slog.Debug("IngressRoute created", "route_name", routeName)
 	}
 
 	return nil
 }
 
-// DeleteIngressRoutes deletes all IngressRoutes for a vibespace
-func (m *IngressRouteManager) DeleteIngressRoutes(ctx context.Context, vibespaceID string, namespace string) error {
-	if namespace == "" {
-		namespace = k8s.VibespaceNamespace
+// DeleteVibespaceRoutes deletes all IngressRoutes for a vibespace
+func (m *IngressRouteManager) DeleteVibespaceRoutes(ctx context.Context, projectName, namespace string) error {
+	slog.Info("deleting IngressRoutes for vibespace",
+		"project_name", projectName,
+		"namespace", namespace)
+
+	client := m.dynamicClient.Resource(IngressRouteGVR()).Namespace(namespace)
+
+	// Delete main route
+	mainRouteName := fmt.Sprintf("vibespace-%s", projectName)
+	if err := client.Delete(ctx, mainRouteName, metav1.DeleteOptions{}); err != nil {
+		slog.Warn("failed to delete main IngressRoute (may not exist)",
+			"route_name", mainRouteName,
+			"error", err)
 	}
 
-	// Delete all IngressRoutes with the vibespace ID label
-	labelSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespaceID)
-
-	err := m.dynamicClient.Resource(IngressRouteGVR).Namespace(namespace).DeleteCollection(
-		ctx,
-		metav1.DeleteOptions{},
-		metav1.ListOptions{
-			LabelSelector: labelSelector,
-		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to delete IngressRoutes: %w", err)
+	// Delete wildcard route
+	wildcardRouteName := fmt.Sprintf("vibespace-%s-wildcard", projectName)
+	if err := client.Delete(ctx, wildcardRouteName, metav1.DeleteOptions{}); err != nil {
+		slog.Warn("failed to delete wildcard IngressRoute (may not exist)",
+			"route_name", wildcardRouteName,
+			"error", err)
 	}
+
+	slog.Info("IngressRoutes deleted successfully",
+		"project_name", projectName)
 
 	return nil
 }
 
-// ListIngressRoutes lists all IngressRoutes for vibespaces
-func (m *IngressRouteManager) ListIngressRoutes(ctx context.Context, namespace string) (*unstructured.UnstructuredList, error) {
-	if namespace == "" {
-		namespace = k8s.VibespaceNamespace
-	}
-
-	routes, err := m.dynamicClient.Resource(IngressRouteGVR).Namespace(namespace).List(
-		ctx,
-		metav1.ListOptions{
-			LabelSelector: "app.kubernetes.io/managed-by=vibespace",
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list IngressRoutes: %w", err)
-	}
-
-	return routes, nil
-}
-
-// GetIngressRoute retrieves a specific IngressRoute
-func (m *IngressRouteManager) GetIngressRoute(ctx context.Context, vibespaceID string, routeType string, namespace string) (*unstructured.Unstructured, error) {
-	if namespace == "" {
-		namespace = k8s.VibespaceNamespace
-	}
-
-	ingressRouteName := fmt.Sprintf("vibespace-%s-%s", vibespaceID, routeType)
-
-	route, err := m.dynamicClient.Resource(IngressRouteGVR).Namespace(namespace).Get(
-		ctx,
-		ingressRouteName,
-		metav1.GetOptions{},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get IngressRoute: %w", err)
-	}
-
-	return route, nil
-}
-
-// GetVibespaceURLs returns the 3 URLs for a vibespace
+// GetVibespaceURLs returns the URLs for a vibespace
 func (m *IngressRouteManager) GetVibespaceURLs(projectName string) map[string]string {
 	return map[string]string{
-		"code":    fmt.Sprintf("http://code.%s.%s", projectName, m.baseDomain),
-		"preview": fmt.Sprintf("http://preview.%s.%s", projectName, m.baseDomain),
-		"prod":    fmt.Sprintf("http://prod.%s.%s", projectName, m.baseDomain),
+		"main": fmt.Sprintf("https://%s.%s", projectName, m.baseDomain),
 	}
+}
+
+// GetServiceURL returns the URL for a specific port on a vibespace
+func (m *IngressRouteManager) GetServiceURL(projectName string, port int) string {
+	return fmt.Sprintf("https://%d.%s.%s", port, projectName, m.baseDomain)
 }

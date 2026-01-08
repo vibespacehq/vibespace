@@ -142,3 +142,39 @@
   margin: 0;
   line-height: 1.4;
 }
+
+/* Info box for built-in features */
+.config-info {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-8);
+}
+
+.config-info-icon {
+  flex-shrink: 0;
+}
+
+.config-info-icon .info-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.config-info-text h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0 0 var(--spacing-1) 0;
+  color: var(--text-primary);
+}
+
+.config-info-text p {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}

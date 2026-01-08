@@ -8,27 +8,19 @@ import type { Vibespace } from '../../../lib/types';
 const mockVibespaces: Vibespace[] = [
   {
     id: 'ws-1',
-    name: 'nextjs-app',
-    template: 'nextjs',
+    name: 'my-app',
+    project_name: 'brave-fox-42',
     status: 'running',
     resources: { cpu: '2', memory: '4Gi' },
-    urls: {
-      // Single-port architecture: All URLs point to Knative Service port 8080
-      // Caddy reverse proxy inside container routes based on Host header
-      code: 'http://code.example.vibe.space',       // → localhost:8081 (code-server)
-      preview: 'http://preview.example.vibe.space', // → localhost:3000 (preview)
-      prod: 'http://prod.example.vibe.space',       // → localhost:3001 (prod)
-    },
     persistent: true,
     created_at: '2025-01-15T10:00:00Z',
   },
   {
     id: 'ws-2',
-    name: 'python-ml',
-    template: 'jupyter',
+    name: 'ml-project',
+    project_name: 'swift-owl-13',
     status: 'stopped',
     resources: { cpu: '4', memory: '8Gi' },
-    urls: {},
     persistent: false,
     created_at: '2025-01-14T10:00:00Z',
   },
@@ -44,7 +36,7 @@ describe('VibespaceList', () => {
     deleteVibespace: vi.fn(),
     startVibespace: vi.fn(),
     stopVibespace: vi.fn(),
-    accessVibespace: vi.fn(),
+    accessVibespace: vi.fn().mockResolvedValue({ main: 'https://brave-fox-42.vibe.space' }),
   };
 
   beforeEach(() => {
@@ -154,8 +146,8 @@ describe('VibespaceList', () => {
     it('renders vibespace cards', () => {
       render(<VibespaceList onCreateNew={vi.fn()} />);
 
-      expect(screen.getByText('nextjs-app')).toBeInTheDocument();
-      expect(screen.getByText('python-ml')).toBeInTheDocument();
+      expect(screen.getByText('my-app')).toBeInTheDocument();
+      expect(screen.getByText('ml-project')).toBeInTheDocument();
     });
 
     it('shows vibespace count in header', () => {
@@ -192,23 +184,18 @@ describe('VibespaceList', () => {
       expect(onCreateNew).toHaveBeenCalledTimes(1);
     });
 
-    it('opens vibespace URL when code button is clicked', async () => {
-      const user = userEvent.setup();
-      const windowOpenSpy = vi.spyOn(window, 'open');
-
+    it('shows Open button for running vibespaces', () => {
       render(<VibespaceList onCreateNew={vi.fn()} />);
 
-      // Click the Code button (first vibespace, which has DNS URLs)
-      const codeButton = screen.getAllByLabelText('Open code-server in browser')[0];
-      await user.click(codeButton);
-
-      // Should use DNS URL directly (no /access call needed)
-      expect(windowOpenSpy).toHaveBeenCalledWith('http://code.example.vibe.space', '_blank');
+      // Running vibespace should have Open button
+      const openButtons = screen.getAllByLabelText('Open vibespace');
+      expect(openButtons.length).toBeGreaterThan(0);
     });
 
-    it('uses DNS URLs directly when available (no /access call)', async () => {
+    it('calls accessVibespace and opens URL when Open is clicked', async () => {
       const user = userEvent.setup();
-      const accessVibespace = vi.fn();
+      const accessVibespace = vi.fn().mockResolvedValue({ main: 'https://brave-fox-42.vibe.space' });
+      const windowOpenSpy = vi.spyOn(window, 'open');
 
       vi.spyOn(useVibespacesHook, 'useVibespaces').mockReturnValue({
         ...mockUseVibespaces,
@@ -217,31 +204,28 @@ describe('VibespaceList', () => {
 
       render(<VibespaceList onCreateNew={vi.fn()} />);
 
-      const codeButton = screen.getAllByLabelText('Open code-server in browser')[0];
-      await user.click(codeButton);
+      // Click the Open button for the running vibespace
+      const openButton = screen.getAllByLabelText('Open vibespace')[0];
+      await user.click(openButton);
 
-      // Should NOT call accessVibespace when DNS URLs are already available
-      expect(accessVibespace).not.toHaveBeenCalled();
+      // Should call accessVibespace to get the URL
+      expect(accessVibespace).toHaveBeenCalledWith('ws-1');
+
+      // Should open the URL in a new window
+      expect(windowOpenSpy).toHaveBeenCalledWith('https://brave-fox-42.vibe.space', '_blank');
     });
 
-    it('does not show buttons when vibespace has no URLs', () => {
-      // Mock vibespace without URLs (happens when vibespace is stopped or URLs not yet populated)
-      const vibespacesWithoutUrls = [{
-        ...mockVibespaces[0],
-        urls: {},
-      }];
-
+    it('does not show Open button for stopped vibespaces', () => {
+      // Only show stopped vibespace
       vi.spyOn(useVibespacesHook, 'useVibespaces').mockReturnValue({
         ...mockUseVibespaces,
-        vibespaces: vibespacesWithoutUrls,
+        vibespaces: [mockVibespaces[1]], // Stopped vibespace
       });
 
       render(<VibespaceList onCreateNew={vi.fn()} />);
 
-      // No buttons should be rendered when URLs are empty
-      expect(screen.queryByLabelText('Open code-server in browser')).not.toBeInTheDocument();
-      expect(screen.queryByLabelText('Open preview server in browser')).not.toBeInTheDocument();
-      expect(screen.queryByLabelText('Open production server in browser')).not.toBeInTheDocument();
+      // Stopped vibespace should not have Open button
+      expect(screen.queryByLabelText('Open vibespace')).not.toBeInTheDocument();
     });
   });
 });

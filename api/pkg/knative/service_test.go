@@ -2,57 +2,32 @@ package knative
 
 import (
 	"testing"
-
-	"vibespace/pkg/model"
 )
 
 func TestBuildInitContainers(t *testing.T) {
 	manager := &ServiceManager{}
 
 	tests := []struct {
-		name          string
-		req           *CreateServiceRequest
-		wantCount     int
-		wantNames     []string
-		checkGitClone bool
+		name      string
+		req       *CreateServiceRequest
+		wantCount int
+		wantNames []string
 	}{
 		{
 			name: "no init containers",
 			req: &CreateServiceRequest{
 				Persistent: false,
-				GithubRepo: "",
 			},
 			wantCount: 0,
 			wantNames: []string{},
 		},
 		{
-			name: "only fix-permissions",
+			name: "fix-permissions for persistent storage",
 			req: &CreateServiceRequest{
 				Persistent: true,
-				GithubRepo: "",
 			},
 			wantCount: 1,
 			wantNames: []string{"fix-permissions"},
-		},
-		{
-			name: "fix-permissions and git-clone",
-			req: &CreateServiceRequest{
-				Persistent: true,
-				GithubRepo: "https://github.com/user/repo.git",
-			},
-			wantCount:     2,
-			wantNames:     []string{"fix-permissions", "git-clone"},
-			checkGitClone: true,
-		},
-		{
-			name: "only git-clone",
-			req: &CreateServiceRequest{
-				Persistent: false,
-				GithubRepo: "https://github.com/user/repo.git",
-			},
-			wantCount:     1,
-			wantNames:     []string{"git-clone"},
-			checkGitClone: true,
 		},
 	}
 
@@ -84,32 +59,6 @@ func TestBuildInitContainers(t *testing.T) {
 
 				if gotName != wantName {
 					t.Errorf("buildInitContainers() container %d name = %q, want %q", i, gotName, wantName)
-				}
-			}
-
-			// Check git clone container if requested
-			if tt.checkGitClone {
-				foundGitClone := false
-				for _, c := range got {
-					container, ok := c.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					if name, ok := container["name"].(string); ok && name == "git-clone" {
-						foundGitClone = true
-
-						// Check args contain the repo URL
-						args, ok := container["args"].([]string)
-						if !ok || len(args) == 0 {
-							t.Errorf("git-clone container has no args")
-						} else if !contains(args[0], tt.req.GithubRepo) {
-							t.Errorf("git-clone container args don't contain repo URL: got %q, want to contain %q", args[0], tt.req.GithubRepo)
-						}
-					}
-				}
-
-				if !foundGitClone {
-					t.Errorf("buildInitContainers() did not create git-clone container")
 				}
 			}
 		})
@@ -211,11 +160,9 @@ func TestBuildEnvironment(t *testing.T) {
 	manager := &ServiceManager{}
 
 	tests := []struct {
-		name             string
-		req              *CreateServiceRequest
-		wantEnvVars      []string
-		checkAgentVar    bool
-		wantAgent        string
+		name        string
+		req         *CreateServiceRequest
+		wantEnvVars []string
 	}{
 		{
 			name: "minimal environment",
@@ -223,51 +170,15 @@ func TestBuildEnvironment(t *testing.T) {
 				VibespaceID: "abc123",
 				Name:        "My Vibespace",
 				ProjectName: "my-vibespace",
-				Template:    "nextjs",
-				Ports: model.Ports{
-					Code:    8080,
-					Preview: 3000,
-					Prod:    3001,
-				},
-				Env: map[string]string{},
+				ClaudeID:    "1",
+				Env:         map[string]string{},
 			},
 			wantEnvVars: []string{
 				"VIBESPACE_ID",
-				"VIBESPACE_NAME",
-				"VIBESPACE_PROJECT_NAME",
-				"VIBESPACE_TEMPLATE",
-				"VIBESPACE_CODE_PORT",
-				"VIBESPACE_PREVIEW_PORT",
-				"VIBESPACE_PROD_PORT",
+				"VIBESPACE_PROJECT",
+				"VIBESPACE_CLAUDE_ID",
+				"NATS_URL",
 			},
-		},
-		{
-			name: "with agent",
-			req: &CreateServiceRequest{
-				VibespaceID: "abc123",
-				Name:        "My Vibespace",
-				ProjectName: "my-vibespace",
-				Template:    "nextjs",
-				Agent:       "claude",
-				Ports: model.Ports{
-					Code:    8080,
-					Preview: 3000,
-					Prod:    3001,
-				},
-				Env: map[string]string{},
-			},
-			wantEnvVars: []string{
-				"VIBESPACE_ID",
-				"VIBESPACE_NAME",
-				"VIBESPACE_PROJECT_NAME",
-				"VIBESPACE_TEMPLATE",
-				"VIBESPACE_AGENT",
-				"VIBESPACE_CODE_PORT",
-				"VIBESPACE_PREVIEW_PORT",
-				"VIBESPACE_PROD_PORT",
-			},
-			checkAgentVar: true,
-			wantAgent:     "claude",
 		},
 		{
 			name: "with custom env vars",
@@ -275,27 +186,17 @@ func TestBuildEnvironment(t *testing.T) {
 				VibespaceID: "abc123",
 				Name:        "My Vibespace",
 				ProjectName: "my-vibespace",
-				Template:    "nextjs",
-				Ports: model.Ports{
-					Code:    8080,
-					Preview: 3000,
-					Prod:    3001,
-				},
+				ClaudeID:    "2",
 				Env: map[string]string{
-					"CUSTOM_VAR":    "value1",
-					"ANOTHER_VAR":   "value2",
+					"ANTHROPIC_API_KEY": "sk-xxx",
 				},
 			},
 			wantEnvVars: []string{
-				"CUSTOM_VAR",
-				"ANOTHER_VAR",
+				"ANTHROPIC_API_KEY",
 				"VIBESPACE_ID",
-				"VIBESPACE_NAME",
-				"VIBESPACE_PROJECT_NAME",
-				"VIBESPACE_TEMPLATE",
-				"VIBESPACE_CODE_PORT",
-				"VIBESPACE_PREVIEW_PORT",
-				"VIBESPACE_PROD_PORT",
+				"VIBESPACE_PROJECT",
+				"VIBESPACE_CLAUDE_ID",
+				"NATS_URL",
 			},
 		},
 	}
@@ -334,61 +235,7 @@ func TestBuildEnvironment(t *testing.T) {
 					t.Errorf("buildEnvironment() missing env var %q", wantVar)
 				}
 			}
-
-			// Check agent value if requested
-			if tt.checkAgentVar {
-				if agentValue, found := foundVars["VIBESPACE_AGENT"]; !found {
-					t.Errorf("buildEnvironment() missing VIBESPACE_AGENT")
-				} else if agentValue != tt.wantAgent {
-					t.Errorf("buildEnvironment() VIBESPACE_AGENT = %q, want %q", agentValue, tt.wantAgent)
-				}
-			}
-
-			// Verify port values (single-port Caddy architecture)
-			// Caddy listens on 8080, routes internally to code:8081, preview:3000, prod:3001
-			if caddyPort, found := foundVars["CADDY_PORT"]; found {
-				if caddyPort != "8080" {
-					t.Errorf("buildEnvironment() CADDY_PORT = %q, want %q", caddyPort, "8080")
-				}
-			}
-
-			if codePort, found := foundVars["VIBESPACE_CODE_PORT"]; found {
-				wantPort := "8081" // Internal code-server port (Caddy proxies 8080 → 8081)
-				if codePort != wantPort {
-					t.Errorf("buildEnvironment() VIBESPACE_CODE_PORT = %q, want %q", codePort, wantPort)
-				}
-			}
-
-			if previewPort, found := foundVars["VIBESPACE_PREVIEW_PORT"]; found {
-				wantPort := "3000" // Internal preview server port
-				if previewPort != wantPort {
-					t.Errorf("buildEnvironment() VIBESPACE_PREVIEW_PORT = %q, want %q", previewPort, wantPort)
-				}
-			}
-
-			if prodPort, found := foundVars["VIBESPACE_PROD_PORT"]; found {
-				wantPort := "3001" // Internal production server port
-				if prodPort != wantPort {
-					t.Errorf("buildEnvironment() VIBESPACE_PROD_PORT = %q, want %q", prodPort, wantPort)
-				}
-			}
 		})
 	}
 }
 
-// Helper function to check if a string contains a substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && s[:len(substr)] == substr) ||
-		(len(s) > len(substr) && s[len(s)-len(substr):] == substr) ||
-		hasSubstring(s, substr))
-}
-
-func hasSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

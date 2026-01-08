@@ -5,8 +5,6 @@ import '../styles/ConfigurationSetup.css';
 
 export interface VibespaceConfiguration {
   name: string;
-  template: string;
-  agent: string | null;
   githubRepo: string;
 }
 
@@ -14,41 +12,20 @@ interface ConfigurationSetupProps {
   onComplete: (config: VibespaceConfiguration) => void;
 }
 
+/**
+ * Configuration setup component for creating a new vibespace.
+ *
+ * With the simplified architecture (Multi-Claude + ttyd), this component
+ * only needs to collect:
+ * - Vibespace name
+ * - Optional GitHub repository to clone
+ *
+ * Templates and agent selection have been removed since all vibespaces
+ * now use the same unified image with Claude Code built-in.
+ */
 export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
   const [vibespaceName, setVibespaceName] = useState('');
-  const [selectedTemplate, setSelectedTemplate] = useState('nextjs');
-  const [selectedAgent, setSelectedAgent] = useState<string | null>('claude');
   const [githubRepo, setGithubRepo] = useState('');
-
-  const templates = [
-    { id: 'nextjs', name: 'Next.js', description: 'React framework for production', logo: '/logos/templates/nextjs.svg' },
-    { id: 'vue', name: 'Vue', description: 'Progressive JavaScript framework', logo: '/logos/templates/vue.svg' },
-    { id: 'jupyter', name: 'Jupyter', description: 'Interactive Python notebooks', logo: '/logos/templates/jupyter.svg' },
-  ];
-
-  const agents = [
-    {
-      id: 'claude',
-      name: 'Claude Code',
-      description: 'Anthropic\'s CLI coding agent',
-      logo: '/logos/agents/claude.svg',
-      configFile: 'CLAUDE.md'
-    },
-    {
-      id: 'codex',
-      name: 'OpenAI Codex',
-      description: 'Terminal coding assistant',
-      logo: '/logos/agents/codex.svg',
-      configFile: '.codex'
-    },
-    {
-      id: 'gemini',
-      name: 'Gemini CLI',
-      description: 'Google\'s AI coding agent',
-      logo: '/logos/agents/gemini.svg',
-      configFile: '.gemini'
-    },
-  ];
 
   const handleContinue = () => {
     if (!vibespaceName.trim()) {
@@ -58,8 +35,6 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
 
     onComplete({
       name: vibespaceName.trim(),
-      template: selectedTemplate,
-      agent: selectedAgent,
       githubRepo: githubRepo.trim(),
     });
   };
@@ -73,8 +48,8 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
             <span className="step-badge-number">3</span>
             <span>Step 3 of 4</span>
           </div>
-          <h1 className="brand-title">Configuration</h1>
-          <p className="brand-subtitle">Set up your vibespace preferences</p>
+          <h1 className="brand-title">Create Vibespace</h1>
+          <p className="brand-subtitle">Set up your development environment</p>
           <div className="progress-bar-container">
             <div className="progress-bar-fill" data-progress="50"></div>
           </div>
@@ -83,7 +58,7 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
         <div className="setup-required">
           <div className="config-section">
             <h3 className="config-section-title">Vibespace name</h3>
-            <p className="config-section-description">Choose a name for your first vibespace</p>
+            <p className="config-section-description">Choose a name for your vibespace</p>
             <input
               type="text"
               className="config-input"
@@ -92,43 +67,6 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
               onChange={(e) => setVibespaceName(e.target.value)}
               aria-label="Vibespace name"
             />
-          </div>
-
-          <div className="config-section">
-            <h3 className="config-section-title">Template</h3>
-            <p className="config-section-description">Select a development template</p>
-            <div className="template-grid">
-              {templates.map((template) => (
-                <button
-                  key={template.id}
-                  className={`template-card ${selectedTemplate === template.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedTemplate(template.id)}
-                >
-                  <img src={template.logo} alt={template.name} className="template-logo" />
-                  <h4 className="template-name">{template.name}</h4>
-                  <p className="template-description">{template.description}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="config-section">
-            <h3 className="config-section-title">AI Coding Agent</h3>
-            <p className="config-section-description">Select an AI agent to assist with development</p>
-            <div className="template-grid">
-              {agents.map((agent) => (
-                <button
-                  key={agent.id}
-                  className={`template-card agent-card ${selectedAgent === agent.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedAgent(agent.id)}
-                >
-                  <img src={agent.logo} alt={agent.name} className="template-logo agent-logo" />
-                  <h4 className="template-name">{agent.name}</h4>
-                  <p className="template-description">{agent.description}</p>
-                  <span className="agent-config-badge">{agent.configFile}</span>
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="config-section">
@@ -145,9 +83,19 @@ export function ConfigurationSetup({ onComplete }: ConfigurationSetupProps) {
             <p className="config-hint">Leave empty to start with a blank vibespace</p>
           </div>
 
+          <div className="config-info">
+            <div className="config-info-icon">
+              <img src="/logos/agents/claude.svg" alt="Claude Code" className="info-logo" />
+            </div>
+            <div className="config-info-text">
+              <h4>Claude Code Built-in</h4>
+              <p>Every vibespace includes Claude Code for AI-assisted development via ttyd terminal.</p>
+            </div>
+          </div>
+
           <div className="setup-actions">
             <button onClick={handleContinue} className="btn-primary">
-              Continue
+              Create Vibespace
             </button>
           </div>
         </div>

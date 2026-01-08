@@ -6,7 +6,7 @@ import '../styles/VibespaceCard.css';
 
 interface VibespaceCardProps {
   vibespace: Vibespace;
-  onOpen: (id: string, urlType?: string) => void;
+  onOpen: (id: string) => void;
   onStart: (id: string) => Promise<void>;
   onStop: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -14,7 +14,7 @@ interface VibespaceCardProps {
 
 /**
  * Vibespace card component displaying vibespace information and actions.
- * Shows status, template, resources, and provides controls for open/start/stop/delete.
+ * Shows status, resources, and provides controls for open/start/stop/delete.
  */
 export function VibespaceCard({
   vibespace,
@@ -81,9 +81,7 @@ export function VibespaceCard({
     setIsOperating(true);
     try {
       await onDelete(vibespace.id);
-      // Success - vibespace will be removed from list after API call
     } catch (error) {
-      // Error handling - show user-friendly message
       const message = error instanceof Error ? error.message : 'Unknown error occurred';
       alert(`Failed to delete vibespace: ${message}`);
     } finally {
@@ -127,11 +125,7 @@ export function VibespaceCard({
 
   const canStart = vibespace.status === 'stopped';
   const canStop = vibespace.status === 'running';
-
-  // Knative DNS URLs: code/preview/prod subdomains (single-port Caddy architecture)
-  const canOpenCode = vibespace.status === 'running' && (vibespace.urls?.code || vibespace.urls?.['code-server']);
-  const canOpenPreview = vibespace.status === 'running' && vibespace.urls?.preview;
-  const canOpenProd = vibespace.status === 'running' && vibespace.urls?.prod;
+  const canOpen = vibespace.status === 'running';
 
   return (
     <div className="vibespace-card">
@@ -193,10 +187,12 @@ export function VibespaceCard({
       </div>
 
       <div className="vibespace-card-body">
-        <div className="vibespace-meta">
-          <span className="meta-label">Template</span>
-          <span className="meta-value">{vibespace.template}</span>
-        </div>
+        {vibespace.project_name && (
+          <div className="vibespace-meta">
+            <span className="meta-label">Project</span>
+            <span className="meta-value">{vibespace.project_name}</span>
+          </div>
+        )}
         <div className="vibespace-meta">
           <span className="meta-label">CPU</span>
           <span className="meta-value">{vibespace.resources.cpu}</span>
@@ -217,37 +213,15 @@ export function VibespaceCard({
       </div>
 
       <div className="vibespace-card-footer">
-        {canOpenCode && (
+        {canOpen && (
           <button
             className="btn-open-vibespace"
-            onClick={() => onOpen(vibespace.id, 'code')}
+            onClick={() => onOpen(vibespace.id)}
             disabled={isOperating}
-            aria-label="Open code-server in browser"
+            aria-label="Open vibespace"
           >
             <ExternalLink size={16} />
-            Code
-          </button>
-        )}
-        {canOpenPreview && (
-          <button
-            className="btn-open-preview"
-            onClick={() => onOpen(vibespace.id, 'preview')}
-            disabled={isOperating}
-            aria-label="Open preview server in browser"
-          >
-            <ExternalLink size={16} />
-            Preview
-          </button>
-        )}
-        {canOpenProd && (
-          <button
-            className="btn-open-preview"
-            onClick={() => onOpen(vibespace.id, 'prod')}
-            disabled={isOperating}
-            aria-label="Open production server in browser"
-          >
-            <ExternalLink size={16} />
-            Production
+            Open
           </button>
         )}
       </div>

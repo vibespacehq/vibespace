@@ -18,12 +18,7 @@ var TraefikCRDs []byte
 //go:embed manifests/traefik/traefik.yaml
 var TraefikManifest []byte
 
-// BuildKit manifest
-//
-//go:embed manifests/buildkit/buildkit.yaml
-var BuildKitManifest []byte
-
-// Docker Registry manifest (simple registry for mirrored images and custom builds)
+// Docker Registry manifest
 //
 //go:embed manifests/registry/registry.yaml
 var RegistryManifest []byte

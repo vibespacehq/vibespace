@@ -9,9 +9,15 @@ import (
 	"vibespace/pkg/vibespace"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env file if it exists
+	if err := godotenv.Load(); err != nil {
+		slog.Debug("no .env file found, using environment variables")
+	}
+
 	slog.Info("initializing vibespaces api server",
 		"port", getPort())
 
@@ -30,7 +36,6 @@ func main() {
 
 	// Initialize handlers
 	vibespaceHandler := handler.NewVibespaceHandler(vibespaceService)
-	templateHandler := handler.NewTemplateHandler()
 	clusterHandler := handler.NewClusterHandler(k8sClient)
 
 	// Initialize Gin router
@@ -69,13 +74,11 @@ func main() {
 			vibespaces.POST("/:id/start", vibespaceHandler.Start)
 			vibespaces.POST("/:id/stop", vibespaceHandler.Stop)
 			vibespaces.GET("/:id/access", vibespaceHandler.Access)
-		}
 
-		// Templates
-		templates := v1.Group("/templates")
-		{
-			templates.GET("", templateHandler.List)
-			templates.GET("/:id", templateHandler.Get)
+			// Dynamic service registration (called by port detector in container)
+			vibespaces.POST("/:id/services", vibespaceHandler.RegisterService)
+			vibespaces.DELETE("/:id/services/:port", vibespaceHandler.UnregisterService)
+			vibespaces.GET("/:id/services/:port", vibespaceHandler.GetServiceURL)
 		}
 
 		// Cluster
@@ -84,12 +87,7 @@ func main() {
 			cluster.GET("/status", clusterHandler.GetStatus)
 			cluster.GET("/setup", clusterHandler.SetupCluster)  // GET for EventSource compatibility
 			cluster.POST("/setup", clusterHandler.SetupCluster) // POST for programmatic access
-			// NOTE: Context routes removed with ADR 0006 (bundled Kubernetes)
-			// Previously: GET /contexts, POST /contexts/:name/switch
 		}
-
-		// NOTE: Setup routes removed - Harbor replaced with simple Docker Registry
-		// Previously: GET /setup/harbor-ca
 	}
 
 	// Get port from environment or default to 8090
@@ -98,7 +96,7 @@ func main() {
 	slog.Info("api server starting",
 		"port", port,
 		"address", ":"+port,
-		"endpoints", []string{"/vibespaces", "/templates", "/cluster"})
+		"endpoints", []string{"/vibespaces", "/cluster"})
 
 	if err := r.Run(":" + port); err != nil {
 		slog.Error("failed to start api server",
