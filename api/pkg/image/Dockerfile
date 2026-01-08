@@ -67,9 +67,9 @@ COPY --chown=root:root port-detector /usr/bin/port-detector
 COPY --chown=root:root nats-bridge /usr/bin/nats-bridge
 RUN chmod +x /usr/bin/port-detector /usr/bin/nats-bridge
 
-# Copy supervisor configuration and create log directory
+# Copy supervisor configuration and create log directory (writable by user 1000)
 COPY supervisord.conf /etc/supervisor/conf.d/vibespace.conf
-RUN mkdir -p /var/log/supervisor && chmod 755 /var/log/supervisor
+RUN mkdir -p /var/log/supervisor && chown 1000:1000 /var/log/supervisor && chmod 755 /var/log/supervisor
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
