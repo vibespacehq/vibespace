@@ -38,12 +38,11 @@ func IngressRouteGVR() schema.GroupVersionResource {
 }
 
 // CreateVibespaceRoutes creates the IngressRoutes for a vibespace:
-// 1. Main route: {projectname}.vibe.space -> Knative service (port 8080)
-// 2. Wildcard route: *.{projectname}.vibe.space -> Knative service (port 8080)
+// 1. Main route: {projectname}.vibe.space -> Knative private service (port 80)
+// 2. Wildcard route: *.{projectname}.vibe.space -> Knative private service (port 80)
 //
-// Both routes go to port 8080 where Caddy runs. Caddy handles:
-// - Main route: serves the primary UI/application
-// - Wildcard route: parses subdomain to extract port, forwards to localhost:{port}
+// We use the Knative -private service to bypass the queue-proxy and avoid
+// .local domain resolution issues with Traefik. The first revision is -00001.
 func (m *IngressRouteManager) CreateVibespaceRoutes(ctx context.Context, projectName, serviceName, namespace string) error {
 	slog.Info("creating IngressRoutes for vibespace",
 		"project_name", projectName,
@@ -75,13 +74,19 @@ func (m *IngressRouteManager) CreateVibespaceRoutes(ctx context.Context, project
 func (m *IngressRouteManager) createIngressRoute(ctx context.Context, name, host, serviceName, namespace string, isWildcard bool) error {
 	routeName := fmt.Sprintf("vibespace-%s", name)
 
+	// Use the Knative -private service to avoid .local domain resolution issues
+	// The first revision is always -00001
+	privateServiceName := fmt.Sprintf("%s-00001-private", serviceName)
+
 	slog.Debug("creating IngressRoute",
 		"route_name", routeName,
 		"host", host,
 		"service_name", serviceName,
+		"private_service_name", privateServiceName,
 		"is_wildcard", isWildcard)
 
 	// Build the IngressRoute spec
+	// Use websecure (HTTPS) entrypoint with TLS using default store (mkcert certificates)
 	ingressRoute := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "traefik.io/v1alpha1",
@@ -102,18 +107,16 @@ func (m *IngressRouteManager) createIngressRoute(ctx context.Context, name, host
 						"kind":  "Rule",
 						"services": []interface{}{
 							map[string]interface{}{
-								// Knative creates a service with format: {ksvc-name}
-								// The private service is: {ksvc-name}-private
-								// We route to the main service which load balances
-								"name": serviceName,
-								"port": 80, // Knative service port
+								// Use the -private service to bypass queue-proxy
+								// This avoids .local domain resolution issues
+								"name": privateServiceName,
+								"port": 80, // Knative private service port
 							},
 						},
 					},
 				},
-				"tls": map[string]interface{}{
-					"certResolver": "le", // Let's Encrypt resolver configured in Traefik
-				},
+				// TLS enabled - uses default TLSStore with mkcert certificate
+				"tls": map[string]interface{}{},
 			},
 		},
 	}

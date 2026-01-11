@@ -162,6 +162,20 @@ vibespace.{project}.ports.unregister   # Port closed event
 - Docker
 - kubectl
 
+### Bundled Kubernetes Access
+
+Vibespace bundles its own Colima/Lima/kubectl in `~/.vibespace/`. Use these wrapper scripts (in `~/.local/bin/`) to access the cluster:
+
+- `vibectl` - kubectl with vibespace PATH
+- `vibecolima` - colima with vibespace PATH
+
+Examples:
+```bash
+vibectl get pods -A              # List all pods
+vibectl logs -n vibespace <pod>  # View pod logs
+vibecolima status                # Check VM status
+```
+
 ### Running Locally
 
 ```bash

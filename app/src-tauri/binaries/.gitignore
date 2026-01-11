@@ -15,6 +15,18 @@ kubectl-darwin-arm64
 kubectl-linux-amd64
 kubectl-linux-arm64
 
+# mkcert (downloaded during build)
+mkcert-darwin-amd64
+mkcert-darwin-arm64
+mkcert-linux-amd64
+mkcert-linux-arm64
+
+# portfwd (built during build)
+portfwd-darwin-amd64
+portfwd-darwin-arm64
+portfwd-linux-amd64
+portfwd-linux-arm64
+
 # Temporary download artifacts
 *.tar.gz
 *.zip

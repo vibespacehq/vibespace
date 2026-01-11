@@ -383,6 +383,49 @@ async fn cleanup_dns() -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn setup_port_forwarding() -> Result<(), String> {
+    println!("Setting up port forwarding...");
+
+    dns_manager::setup_port_forwarding()?;
+
+    println!("Port forwarding setup completed successfully");
+    Ok(())
+}
+
+#[tauri::command]
+async fn cleanup_port_forwarding() -> Result<(), String> {
+    println!("Cleaning up port forwarding...");
+
+    dns_manager::cleanup_port_forwarding()?;
+
+    println!("Port forwarding cleanup completed successfully");
+    Ok(())
+}
+
+#[tauri::command]
+async fn setup_tls_certificates() -> Result<(String, String), String> {
+    println!("Setting up TLS certificates...");
+
+    let (cert_path, key_path) = dns_manager::setup_tls_certificates()?;
+
+    println!("TLS certificates setup completed successfully");
+    Ok((
+        cert_path.to_string_lossy().to_string(),
+        key_path.to_string_lossy().to_string(),
+    ))
+}
+
+#[tauri::command]
+async fn get_tls_status() -> Result<bool, String> {
+    Ok(dns_manager::is_tls_configured())
+}
+
+#[tauri::command]
+async fn get_port_forwarding_status() -> Result<bool, String> {
+    Ok(dns_manager::is_port_forwarding_configured())
+}
+
 // ============================================================================
 // Tauri Commands - Credentials
 // ============================================================================
@@ -559,13 +602,28 @@ async fn update_hosts_file(entries: Vec<HostEntry>) -> Result<(), String> {
 
     let new_content = lines.join("\n");
 
-    // Write with sudo (requires user to enter password)
+    // Write with sudo using osascript for graphical password prompt (macOS)
     // Use secure random temp file to prevent race conditions
     let temp_file = format!("/tmp/vibespace_hosts_{}", uuid::Uuid::new_v4());
     fs::write(&temp_file, &new_content)
         .map_err(|e| format!("Failed to write temp hosts file: {}", e))?;
 
-    let output = Command::new("sudo")
+    // Use osascript for graphical sudo prompt on macOS
+    #[cfg(target_os = "macos")]
+    let output = {
+        let script = format!(
+            r#"do shell script "cp {} /etc/hosts" with administrator privileges"#,
+            temp_file
+        );
+        Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|e| format!("Failed to update /etc/hosts: {}", e))?
+    };
+
+    #[cfg(target_os = "linux")]
+    let output = Command::new("pkexec")
         .args(["cp", &temp_file, "/etc/hosts"])
         .output()
         .map_err(|e| format!("Failed to update /etc/hosts: {}", e))?;
@@ -731,6 +789,12 @@ fn main() {
             start_dns,
             stop_dns,
             cleanup_dns,
+            // Port Forwarding & TLS
+            setup_port_forwarding,
+            cleanup_port_forwarding,
+            get_port_forwarding_status,
+            setup_tls_certificates,
+            get_tls_status,
             // NOTE: Certificate Trust removed - using simple Docker Registry with HTTP (no TLS)
             // Credentials
             save_credential,

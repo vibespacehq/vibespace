@@ -16,7 +16,7 @@ metadata:
 rules:
 # Core Kubernetes resources
 - apiGroups: [""]
-  resources: ["services", "nodes", "pods", "secrets"]
+  resources: ["services", "nodes", "pods", "secrets", "configmaps"]
   verbs: ["get", "list", "watch"]
 # EndpointSlices (v3.1+ requirement - replaces endpoints)
 - apiGroups: ["discovery.k8s.io"]
@@ -77,6 +77,7 @@ spec:
         - --api.insecure=true
         - --providers.kubernetesingress
         - --providers.kubernetescrd
+        - --providers.kubernetescrd.allowExternalNameServices=true
         - --entrypoints.web.address=:80
         - --entrypoints.websecure.address=:443
         ports:
@@ -109,3 +110,14 @@ spec:
     nodePort: 30808
   selector:
     app: traefik
+---
+# Default TLS Store - uses vibespace-tls secret for HTTPS
+# The secret is created by EnsureTLSSecret() from mkcert certificates
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: traefik
+spec:
+  defaultCertificate:
+    secretName: vibespace-tls

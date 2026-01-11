@@ -62,10 +62,10 @@ RUN useradd -m -s /bin/bash -u 1000 user && \
     mkdir -p /home/user/.npm-global /home/user/.config/claude-code && \
     chown -R user:user /home/user
 
-# Copy port detector and nats-bridge binaries (built separately)
-COPY --chown=root:root port-detector /usr/bin/port-detector
-COPY --chown=root:root nats-bridge /usr/bin/nats-bridge
-RUN chmod +x /usr/bin/port-detector /usr/bin/nats-bridge
+# TODO: Uncomment when NATS is deployed (Phase 2)
+# COPY --chown=root:root port-detector /usr/bin/port-detector
+# COPY --chown=root:root nats-bridge /usr/bin/nats-bridge
+# RUN chmod +x /usr/bin/port-detector /usr/bin/nats-bridge
 
 # Copy supervisor configuration and create log directory (writable by user 1000)
 COPY supervisord.conf /etc/supervisor/conf.d/vibespace.conf
