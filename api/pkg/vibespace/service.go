@@ -202,6 +202,14 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		return nil, fmt.Errorf("failed to create Knative Service: %w", err)
 	}
 
+	// Ensure TLS secret exists (certificates may have been generated after initial Traefik install)
+	if err := s.k8sClient.EnsureTLSSecret(ctx); err != nil {
+		slog.Warn("failed to ensure TLS secret, HTTPS may not work",
+			"vibespace_id", id,
+			"error", err)
+		// Don't fail - TLS is optional
+	}
+
 	// Create IngressRoutes for dynamic port exposure
 	// This creates both main route ({project}.vibe.space) and wildcard route (*.{project}.vibe.space)
 	if s.ingressRouteManager != nil {

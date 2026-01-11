@@ -907,3 +907,419 @@ fn is_process_running(pid: u32) -> bool {
         .map(|output| output.status.success())
         .unwrap_or(false)
 }
+
+// ============================================================================
+// Port Forwarding - Forward 443 -> 30443 for HTTPS without port number
+// ============================================================================
+
+/// Setup port forwarding from privileged ports to NodePorts
+/// This allows users to access https://project.vibe.space without specifying a port
+///
+/// Uses socat to forward TCP connections: 443 -> 30443
+/// Runs as a background process with admin privileges
+pub fn setup_port_forwarding() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        setup_macos_port_forwarding()
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        setup_linux_port_forwarding()
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        Err("Port forwarding not supported on this platform".to_string())
+    }
+}
+
+/// Remove port forwarding configuration
+pub fn cleanup_port_forwarding() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        cleanup_macos_port_forwarding()
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        cleanup_linux_port_forwarding()
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        Ok(())
+    }
+}
+
+/// Check if port forwarding is running
+pub fn is_port_forwarding_configured() -> bool {
+    let home_dir = match dirs::home_dir() {
+        Some(d) => d,
+        None => return false,
+    };
+
+    let pid_file = home_dir.join(".vibespace").join("port-forward.pid");
+    if !pid_file.exists() {
+        return false;
+    }
+
+    // Check if process is still running
+    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
+        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+            return is_process_running(pid);
+        }
+    }
+
+    false
+}
+
+#[cfg(target_os = "macos")]
+fn setup_macos_port_forwarding() -> Result<(), String> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "Failed to determine home directory".to_string())?;
+
+    let vibespace_dir = home_dir.join(".vibespace");
+    fs::create_dir_all(&vibespace_dir)
+        .map_err(|e| format!("Failed to create vibespace dir: {}", e))?;
+
+    let pid_file = vibespace_dir.join("port-forward.pid");
+
+    // Check if already running
+    if is_port_forwarding_configured() {
+        println!("Port forwarding already running");
+        return Ok(());
+    }
+
+    // Get bundled portfwd binary path
+    let portfwd_path = get_portfwd_binary_path()
+        .ok_or_else(|| "Failed to locate bundled portfwd binary".to_string())?;
+
+    if !portfwd_path.exists() {
+        return Err(format!("portfwd binary not found at {:?}", portfwd_path));
+    }
+
+    // Copy portfwd to ~/.vibespace/bin/ to avoid path issues with osascript
+    let local_portfwd = vibespace_dir.join("bin").join("portfwd");
+    fs::create_dir_all(local_portfwd.parent().unwrap())
+        .map_err(|e| format!("Failed to create bin dir: {}", e))?;
+    fs::copy(&portfwd_path, &local_portfwd)
+        .map_err(|e| format!("Failed to copy portfwd: {}", e))?;
+
+    // Make executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&local_portfwd)
+            .map_err(|e| format!("Failed to get permissions: {}", e))?
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&local_portfwd, perms)
+            .map_err(|e| format!("Failed to set permissions: {}", e))?;
+    }
+
+    // Start portfwd in background with admin privileges
+    // Use nohup to keep it running after osascript exits
+    let script = format!(
+        r#"do shell script "nohup '{}' 443 127.0.0.1:30443 > /dev/null 2>&1 & echo $!" with administrator privileges"#,
+        local_portfwd.display()
+    );
+
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|e| format!("Failed to setup port forwarding: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to setup port forwarding: {}", stderr));
+    }
+
+    // Save the PID
+    let pid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !pid.is_empty() {
+        fs::write(&pid_file, &pid)
+            .map_err(|e| format!("Failed to save port forward PID: {}", e))?;
+    }
+
+    println!("Port forwarding started: 443 -> 30443 (PID: {})", pid);
+    Ok(())
+}
+
+/// Get the path to the bundled portfwd binary
+fn get_portfwd_binary_path() -> Option<PathBuf> {
+    let resource_dir = get_resource_dir()?;
+
+    // Detect OS and architecture
+    let os = if cfg!(target_os = "macos") {
+        "darwin"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        return None;
+    };
+
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "amd64"
+    };
+
+    Some(resource_dir.join(format!("binaries/portfwd-{}-{}", os, arch)))
+}
+
+#[cfg(target_os = "macos")]
+fn cleanup_macos_port_forwarding() -> Result<(), String> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "Failed to determine home directory".to_string())?;
+
+    let pid_file = home_dir.join(".vibespace").join("port-forward.pid");
+
+    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
+        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+            // Kill the socat process (requires admin)
+            let script = format!(
+                r#"do shell script "kill {} 2>/dev/null || true" with administrator privileges"#,
+                pid
+            );
+            let _ = Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output();
+        }
+    }
+
+    // Remove PID file
+    let _ = fs::remove_file(&pid_file);
+
+    println!("Port forwarding stopped");
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn setup_linux_port_forwarding() -> Result<(), String> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "Failed to determine home directory".to_string())?;
+
+    let vibespace_dir = home_dir.join(".vibespace");
+    let pid_file = vibespace_dir.join("port-forward.pid");
+
+    // Check if already running
+    if is_port_forwarding_configured() {
+        println!("Port forwarding already running");
+        return Ok(());
+    }
+
+    // Get bundled portfwd binary path
+    let portfwd_path = get_portfwd_binary_path()
+        .ok_or_else(|| "Failed to locate bundled portfwd binary".to_string())?;
+
+    if !portfwd_path.exists() {
+        return Err(format!("portfwd binary not found at {:?}", portfwd_path));
+    }
+
+    // Start portfwd in background with pkexec
+    let script = format!("{} 443 127.0.0.1:30443 & echo $!", portfwd_path.display());
+
+    let output = Command::new("pkexec")
+        .arg("sh")
+        .arg("-c")
+        .arg(&script)
+        .output()
+        .map_err(|e| format!("Failed to setup port forwarding: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to setup port forwarding: {}", stderr));
+    }
+
+    // Save the PID
+    let pid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !pid.is_empty() {
+        fs::write(&pid_file, &pid)
+            .map_err(|e| format!("Failed to save port forward PID: {}", e))?;
+    }
+
+    println!("Port forwarding started: 443 -> 30443 (PID: {})", pid);
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn cleanup_linux_port_forwarding() -> Result<(), String> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "Failed to determine home directory".to_string())?;
+
+    let pid_file = home_dir.join(".vibespace").join("port-forward.pid");
+
+    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
+        if let Ok(pid) = pid_str.trim().parse::<u32>() {
+            // Kill the socat process
+            let script = format!("kill {} 2>/dev/null || true", pid);
+            let _ = Command::new("pkexec")
+                .arg("sh")
+                .arg("-c")
+                .arg(&script)
+                .output();
+        }
+    }
+
+    // Remove PID file
+    let _ = fs::remove_file(&pid_file);
+
+    println!("Port forwarding stopped");
+    Ok(())
+}
+
+// ============================================================================
+// TLS Certificate Management (mkcert)
+// ============================================================================
+
+/// Setup TLS certificates using mkcert for locally-trusted HTTPS
+/// Creates wildcard cert for *.vibe.space
+pub fn setup_tls_certificates() -> Result<(PathBuf, PathBuf), String> {
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| "Failed to determine home directory".to_string())?;
+
+    let certs_dir = home_dir.join(".vibespace").join("certs");
+    fs::create_dir_all(&certs_dir)
+        .map_err(|e| format!("Failed to create certs directory: {}", e))?;
+
+    let cert_file = certs_dir.join("vibe.space.pem");
+    let key_file = certs_dir.join("vibe.space-key.pem");
+
+    // Check if certs already exist
+    if cert_file.exists() && key_file.exists() {
+        println!("TLS certificates already exist");
+        return Ok((cert_file, key_file));
+    }
+
+    // Get bundled mkcert binary path
+    let mkcert_path = get_mkcert_binary_path()
+        .ok_or_else(|| "Failed to locate bundled mkcert binary".to_string())?;
+
+    if !mkcert_path.exists() {
+        return Err(format!("mkcert binary not found at {:?}", mkcert_path));
+    }
+
+    // Install local CA if not already done (one-time operation)
+    // mkcert -install creates CA files and adds to trust store
+    // On macOS, mkcert calls sudo internally which hangs without TTY
+    // So we: 1) Set TRUST_STORES=nss to skip system trust, 2) Manually add CA via osascript
+    println!("Installing mkcert local CA...");
+
+    // First, run mkcert -install with TRUST_STORES=nss to skip system keychain
+    // This creates the CA files without needing sudo
+    let ca_output = Command::new(&mkcert_path)
+        .arg("-install")
+        .env("TRUST_STORES", "nss")
+        .output()
+        .map_err(|e| format!("Failed to create mkcert CA: {}", e))?;
+
+    // mkcert stores CA at ~/Library/Application Support/mkcert/rootCA.pem
+    let ca_root = home_dir.join("Library/Application Support/mkcert/rootCA.pem");
+
+    if ca_root.exists() {
+        println!("Adding CA to system trust store (requires admin)...");
+
+        #[cfg(target_os = "macos")]
+        {
+            // Use osascript to add CA to system keychain
+            let script = format!(
+                r#"do shell script "security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain '{}'" with administrator privileges"#,
+                ca_root.display()
+            );
+
+            let trust_output = Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output();
+
+            match trust_output {
+                Ok(output) if output.status.success() => {
+                    println!("CA added to system trust store");
+                }
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    // Don't fail if already trusted or user cancelled
+                    if !stderr.contains("SecTrustSettingsSetTrustSettings") && !stderr.contains("User canceled") {
+                        println!("Warning: Could not add CA to trust store: {}", stderr);
+                    }
+                }
+                Err(e) => {
+                    println!("Warning: Could not add CA to trust store: {}", e);
+                }
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // On Linux, mkcert handles trust stores differently (nss, etc.)
+            // Re-run with default trust stores
+            let _ = Command::new(&mkcert_path)
+                .arg("-install")
+                .output();
+        }
+    } else if !ca_output.status.success() {
+        let stderr = String::from_utf8_lossy(&ca_output.stderr);
+        println!("Warning: mkcert CA creation failed: {}", stderr);
+    }
+
+    // Generate wildcard certificate for *.vibe.space
+    println!("Generating TLS certificate for *.vibe.space...");
+    let cert_output = Command::new(&mkcert_path)
+        .current_dir(&certs_dir)
+        .args([
+            "-cert-file", "vibe.space.pem",
+            "-key-file", "vibe.space-key.pem",
+            "*.vibe.space",
+            "vibe.space",
+        ])
+        .output()
+        .map_err(|e| format!("Failed to generate certificate: {}", e))?;
+
+    if !cert_output.status.success() {
+        let stderr = String::from_utf8_lossy(&cert_output.stderr);
+        return Err(format!("Failed to generate certificate: {}", stderr));
+    }
+
+    println!("TLS certificate generated successfully");
+    Ok((cert_file, key_file))
+}
+
+/// Get the path to the bundled mkcert binary
+fn get_mkcert_binary_path() -> Option<PathBuf> {
+    let resource_dir = get_resource_dir()?;
+
+    // Detect OS and architecture
+    let os = if cfg!(target_os = "macos") {
+        "darwin"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        return None;
+    };
+
+    let arch = if cfg!(target_arch = "aarch64") {
+        "arm64"
+    } else {
+        "amd64"
+    };
+
+    Some(resource_dir.join(format!("binaries/mkcert-{}-{}", os, arch)))
+}
+
+/// Check if TLS certificates exist
+pub fn is_tls_configured() -> bool {
+    let home_dir = match dirs::home_dir() {
+        Some(d) => d,
+        None => return false,
+    };
+
+    let certs_dir = home_dir.join(".vibespace").join("certs");
+    let cert_file = certs_dir.join("vibe.space.pem");
+    let key_file = certs_dir.join("vibe.space-key.pem");
+
+    cert_file.exists() && key_file.exists()
+}
+

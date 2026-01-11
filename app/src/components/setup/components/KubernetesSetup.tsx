@@ -24,6 +24,8 @@ type SetupState =
   | 'starting-k8s'
   | 'installing-components'
   | 'installing-dns'
+  | 'installing-tls'
+  | 'installing-portforward'
   | 'ready'
   | 'error';
 
@@ -66,6 +68,8 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
   const [setupState, setSetupState] = useState<SetupState>('checking');
   const [setupProgress, setSetupProgress] = useState<Record<string, SetupProgress>>({});
   const [dnsProgress, setDnsProgress] = useState({ stage: '', progress: 0, message: '' });
+  const [tlsProgress, setTlsProgress] = useState({ message: '', progress: 0 });
+  const [portForwardProgress, setPortForwardProgress] = useState({ message: '', progress: 0 });
   const [error, setError] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const installInProgressRef = useRef(false);
@@ -343,13 +347,14 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
           // Check if DNS setup completed
           if (event.payload.stage === 'complete') {
             console.log('DNS setup completed successfully');
-            setSetupState('ready');
             // Cleanup listener immediately on success
             if (dnsUnlistenRef.current) {
               dnsUnlistenRef.current();
               dnsUnlistenRef.current = null;
             }
             dnsSetupInProgressRef.current = false;
+            // Continue to TLS setup
+            setupTLS();
           } else if (event.payload.stage === 'error') {
             console.error('DNS setup failed:', event.payload.message);
             setError(`DNS setup failed: ${event.payload.message}`);
@@ -392,6 +397,67 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
         dnsUnlistenRef.current = null;
       }
       dnsSetupInProgressRef.current = false;
+    }
+  };
+
+  /**
+   * Setup TLS certificates using mkcert for locally-trusted HTTPS.
+   * Generates wildcard certificate for *.vibe.space domain.
+   */
+  const setupTLS = async () => {
+    setSetupState('installing-tls');
+    setError(null);
+    setTlsProgress({ message: 'Checking for mkcert...', progress: 10 });
+
+    try {
+      console.log('Setting up TLS certificates...');
+      setTlsProgress({ message: 'Generating TLS certificates...', progress: 30 });
+
+      // This will generate certs using mkcert (requires mkcert to be installed)
+      await invoke('setup_tls_certificates');
+
+      setTlsProgress({ message: 'TLS certificates generated', progress: 100 });
+      console.log('TLS setup completed successfully');
+
+      // Continue to port forwarding setup
+      setupPortForward();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('TLS setup failed (continuing without HTTPS):', message);
+      // TLS is optional - continue to port forwarding even if it fails
+      // User can still access via HTTP or with browser cert warnings
+      setTlsProgress({ message: 'TLS setup skipped (mkcert not installed)', progress: 100 });
+      setupPortForward();
+    }
+  };
+
+  /**
+   * Setup port forwarding from privileged ports to NodePorts.
+   * Allows accessing vibespaces via https://project.vibe.space without port number.
+   * Uses pfctl on macOS, iptables on Linux.
+   */
+  const setupPortForward = async () => {
+    setSetupState('installing-portforward');
+    setError(null);
+    setPortForwardProgress({ message: 'Setting up port forwarding...', progress: 30 });
+
+    try {
+      console.log('Setting up port forwarding...');
+
+      // This will set up pfctl rules on macOS (requires sudo via osascript)
+      await invoke('setup_port_forwarding');
+
+      setPortForwardProgress({ message: 'Port forwarding configured', progress: 100 });
+      console.log('Port forwarding setup completed successfully');
+
+      // All setup complete
+      setSetupState('ready');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('Port forwarding setup failed (continuing without it):', message);
+      // Port forwarding is optional - user can still access with :30443
+      setPortForwardProgress({ message: 'Port forwarding skipped', progress: 100 });
+      setSetupState('ready');
     }
   };
 
@@ -673,6 +739,89 @@ export function KubernetesSetup({ onComplete }: KubernetesSetupProps) {
               <div className="installation-info">
                 <p className="installation-note">
                   You may be prompted for administrator access to configure system DNS
+                </p>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Installing TLS certificates
+  if (setupState === 'installing-tls') {
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Setting up HTTPS</h1>
+            <p className="brand-subtitle">Generating TLS certificates</p>
+            <div className="progress-bar-container">
+              <div
+                className="progress-bar-fill"
+                style={{ width: '93%' }}
+              ></div>
+            </div>
+          </header>
+          <div className="setup-required">
+            <div className="install-progress-container">
+              <div className="install-progress-header">
+                <span className="install-progress-message">{tlsProgress.message}</span>
+                <span className="install-progress-percentage">93%</span>
+              </div>
+              <div className="install-progress-bar">
+                <div
+                  className="install-progress-fill"
+                  style={{ width: '93%' }}
+                ></div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Setting up port forwarding
+  if (setupState === 'installing-portforward') {
+    return (
+      <div className="setup-container">
+        <ProgressSidebar currentStep={2} />
+        <main className="setup-main">
+          <header className="setup-header">
+            <div className="step-badge">
+              <span className="step-badge-number">2</span>
+              <span>Step 2 of 4</span>
+            </div>
+            <h1 className="brand-title">Configuring Network</h1>
+            <p className="brand-subtitle">Setting up port forwarding</p>
+            <div className="progress-bar-container">
+              <div
+                className="progress-bar-fill"
+                style={{ width: '97%' }}
+              ></div>
+            </div>
+          </header>
+          <div className="setup-required">
+            <div className="install-progress-container">
+              <div className="install-progress-header">
+                <span className="install-progress-message">{portForwardProgress.message}</span>
+                <span className="install-progress-percentage">97%</span>
+              </div>
+              <div className="install-progress-bar">
+                <div
+                  className="install-progress-fill"
+                  style={{ width: '97%' }}
+                ></div>
+              </div>
+              <div className="installation-info">
+                <p className="installation-note">
+                  You may be prompted for administrator access to configure network
                 </p>
               </div>
             </div>

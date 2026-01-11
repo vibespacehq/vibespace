@@ -36,6 +36,12 @@ fn download_kubernetes_binaries(target_os: &str) {
 
     // Check kubectl (shared across platforms)
     check_and_download_kubectl(binaries_dir, target_os);
+
+    // Check mkcert (for TLS certificate generation)
+    check_and_download_mkcert(binaries_dir, target_os);
+
+    // Build portfwd (for port forwarding)
+    check_and_build_portfwd(binaries_dir, target_os);
 }
 
 fn check_and_download_macos_binaries(binaries_dir: &Path) {
@@ -142,6 +148,96 @@ fn check_and_download_kubectl(binaries_dir: &Path, target_os: &str) {
     }
 }
 
+fn check_and_download_mkcert(binaries_dir: &Path, target_os: &str) {
+    // Download mkcert for ALL architectures of the target OS
+    let architectures = match target_os {
+        "macos" => vec![("amd64", "darwin"), ("arm64", "darwin")],
+        "linux" => vec![("amd64", "linux"), ("arm64", "linux")],
+        _ => {
+            println!("cargo:warning=Unsupported mkcert platform: {}", target_os);
+            return;
+        }
+    };
+
+    for (arch, os_name) in architectures {
+        let mkcert_filename = format!("mkcert-{}-{}", os_name, arch);
+        let mkcert = binaries_dir.join(&mkcert_filename);
+
+        if !mkcert.exists() {
+            println!("cargo:warning=Downloading {} for {}/{}...", mkcert_filename, target_os, arch);
+
+            let download_script = binaries_dir.join("download-mkcert.sh");
+            if !download_script.exists() {
+                panic!("Download script not found: {:?}", download_script);
+            }
+
+            let output = Command::new("bash")
+                .arg("download-mkcert.sh")
+                .current_dir(binaries_dir)
+                .env("MKCERT_OS", os_name)
+                .env("MKCERT_ARCH", arch)
+                .output()
+                .expect("Failed to run mkcert download script");
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                panic!("Failed to download {}:\n{}", mkcert_filename, stderr);
+            }
+
+            println!("cargo:warning=✓ {} downloaded successfully", mkcert_filename);
+        } else {
+            println!("cargo:warning=✓ {} already present", mkcert_filename);
+        }
+    }
+}
+
+fn check_and_build_portfwd(binaries_dir: &Path, target_os: &str) {
+    // Build portfwd for ALL architectures of the target OS
+    let architectures = match target_os {
+        "macos" => vec![("amd64", "darwin"), ("arm64", "darwin")],
+        "linux" => vec![("amd64", "linux"), ("arm64", "linux")],
+        _ => {
+            println!("cargo:warning=Unsupported portfwd platform: {}", target_os);
+            return;
+        }
+    };
+
+    // Check if any binary is missing
+    let mut needs_build = false;
+    for (arch, os_name) in &architectures {
+        let portfwd_filename = format!("portfwd-{}-{}", os_name, arch);
+        let portfwd = binaries_dir.join(&portfwd_filename);
+        if !portfwd.exists() {
+            needs_build = true;
+            break;
+        }
+    }
+
+    if needs_build {
+        println!("cargo:warning=Building portfwd binaries...");
+
+        let build_script = binaries_dir.join("portfwd").join("build.sh");
+        if !build_script.exists() {
+            panic!("Build script not found: {:?}", build_script);
+        }
+
+        let output = Command::new("bash")
+            .arg("build.sh")
+            .current_dir(binaries_dir.join("portfwd"))
+            .output()
+            .expect("Failed to run portfwd build script");
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            panic!("Failed to build portfwd:\n{}", stderr);
+        }
+
+        println!("cargo:warning=✓ portfwd binaries built successfully");
+    } else {
+        println!("cargo:warning=✓ portfwd binaries already present");
+    }
+}
+
 fn create_target_triple_symlinks(target_os: &str, target_triple: &str) {
     use std::fs;
 
@@ -191,6 +287,42 @@ fn create_target_triple_symlinks(target_os: &str, target_triple: &str) {
             fs::copy(&kubectl_src, &kubectl_dst)
                 .unwrap_or_else(|e| panic!("Failed to copy kubectl: {}", e));
             println!("cargo:warning=✓ Created {}-{}", kubectl_src_name, target_triple);
+        }
+    }
+
+    // Create symlinks for ALL mkcert architectures
+    let mkcert_files = match target_os {
+        "macos" => vec!["mkcert-darwin-amd64", "mkcert-darwin-arm64"],
+        "linux" => vec!["mkcert-linux-amd64", "mkcert-linux-arm64"],
+        _ => vec![],
+    };
+
+    for mkcert_src_name in mkcert_files {
+        let mkcert_src = binaries_dir.join(mkcert_src_name);
+        let mkcert_dst = binaries_dir.join(format!("{}-{}", mkcert_src_name, target_triple));
+
+        if mkcert_src.exists() && !mkcert_dst.exists() {
+            fs::copy(&mkcert_src, &mkcert_dst)
+                .unwrap_or_else(|e| panic!("Failed to copy mkcert: {}", e));
+            println!("cargo:warning=✓ Created {}-{}", mkcert_src_name, target_triple);
+        }
+    }
+
+    // Create symlinks for ALL portfwd architectures
+    let portfwd_files = match target_os {
+        "macos" => vec!["portfwd-darwin-amd64", "portfwd-darwin-arm64"],
+        "linux" => vec!["portfwd-linux-amd64", "portfwd-linux-arm64"],
+        _ => vec![],
+    };
+
+    for portfwd_src_name in portfwd_files {
+        let portfwd_src = binaries_dir.join(portfwd_src_name);
+        let portfwd_dst = binaries_dir.join(format!("{}-{}", portfwd_src_name, target_triple));
+
+        if portfwd_src.exists() && !portfwd_dst.exists() {
+            fs::copy(&portfwd_src, &portfwd_dst)
+                .unwrap_or_else(|e| panic!("Failed to copy portfwd: {}", e));
+            println!("cargo:warning=✓ Created {}-{}", portfwd_src_name, target_triple);
         }
     }
 }

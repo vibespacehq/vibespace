@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_ENDPOINTS, apiFetch } from '../lib/api-config';
+import { syncHostsFile } from '../lib/hosts';
 import type { Vibespace, CreateVibespaceRequest } from '../lib/types';
 
 interface UseVibespacesReturn {
@@ -100,6 +101,21 @@ export function useVibespaces(): UseVibespacesReturn {
         // Refresh vibespace list after creation
         await fetchWorkspaces();
 
+        // Sync /etc/hosts with all active vibespaces (including the new one)
+        // This requires sudo so user will be prompted for password
+        try {
+          const updatedVibespaces = await apiFetch<{ vibespaces: Vibespace[] }>(
+            `${API_ENDPOINTS.vibespaces}`
+          );
+          const projectNames = (updatedVibespaces.vibespaces || [])
+            .map(vs => vs.project_name)
+            .filter((name): name is string => !!name);
+          await syncHostsFile(projectNames);
+        } catch (hostsErr) {
+          // Don't fail vibespace creation if hosts update fails
+          console.warn('Failed to update /etc/hosts (vibespace still created):', hostsErr);
+        }
+
         return vibespace;
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
@@ -144,6 +160,19 @@ export function useVibespaces(): UseVibespacesReturn {
 
         // Remove vibespace from list after successful deletion
         setVibespaces((prev) => prev.filter((ws) => ws.id !== id));
+
+        // Sync /etc/hosts to remove deleted vibespace entries
+        try {
+          const updatedVibespaces = await apiFetch<{ vibespaces: Vibespace[] }>(
+            `${API_ENDPOINTS.vibespaces}`
+          );
+          const projectNames = (updatedVibespaces.vibespaces || [])
+            .map(vs => vs.project_name)
+            .filter((name): name is string => !!name);
+          await syncHostsFile(projectNames);
+        } catch (hostsErr) {
+          console.warn('Failed to update /etc/hosts after deletion:', hostsErr);
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error';
         console.error('Failed to delete vibespace:', err);
