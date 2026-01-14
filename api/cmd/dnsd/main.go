@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	defaultPort       = 5353
+	defaultPort       = 53535 // Unprivileged port, avoids mDNS (5353) conflict on macOS
 	defaultDomain     = "vibe.space"
 	defaultTargetIP   = "127.0.0.1"
 	defaultTargetIPv6 = "::1"
