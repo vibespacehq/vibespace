@@ -912,10 +912,19 @@ fn is_process_running(pid: u32) -> bool {
 // Port Forwarding - Forward 443 -> 30443 for HTTPS without port number
 // ============================================================================
 
+/// launchd label for the port forwarding daemon (macOS)
+#[cfg(target_os = "macos")]
+const LAUNCHD_LABEL: &str = "space.vibe.portfwd";
+
+/// Path to the launchd plist file (macOS)
+#[cfg(target_os = "macos")]
+const LAUNCHD_PLIST_PATH: &str = "/Library/LaunchDaemons/space.vibe.portfwd.plist";
+
 /// Setup port forwarding from privileged ports to NodePorts
 /// This allows users to access https://project.vibe.space without specifying a port
 ///
-/// Uses socat to forward TCP connections: 443 -> 30443
+/// On macOS: Uses launchd for process supervision (auto-restart on crash)
+/// On Linux: Uses systemd or direct process management
 /// Runs as a background process with admin privileges
 pub fn setup_port_forwarding() -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -954,24 +963,58 @@ pub fn cleanup_port_forwarding() -> Result<(), String> {
 
 /// Check if port forwarding is running
 pub fn is_port_forwarding_configured() -> bool {
-    let home_dir = match dirs::home_dir() {
-        Some(d) => d,
-        None => return false,
-    };
+    #[cfg(target_os = "macos")]
+    {
+        is_launchd_service_running()
+    }
 
-    let pid_file = home_dir.join(".vibespace").join("port-forward.pid");
-    if !pid_file.exists() {
+    #[cfg(target_os = "linux")]
+    {
+        // Linux still uses PID file approach
+        let home_dir = match dirs::home_dir() {
+            Some(d) => d,
+            None => return false,
+        };
+
+        let pid_file = home_dir.join(".vibespace").join("port-forward.pid");
+        if !pid_file.exists() {
+            return false;
+        }
+
+        if let Ok(pid_str) = fs::read_to_string(&pid_file) {
+            if let Ok(pid) = pid_str.trim().parse::<u32>() {
+                return is_process_running(pid);
+            }
+        }
+
+        false
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
+}
+
+/// Check if the launchd service is loaded and running (macOS)
+#[cfg(target_os = "macos")]
+fn is_launchd_service_running() -> bool {
+    // Check if the plist exists first
+    if !std::path::Path::new(LAUNCHD_PLIST_PATH).exists() {
         return false;
     }
 
-    // Check if process is still running
-    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
-        if let Ok(pid) = pid_str.trim().parse::<u32>() {
-            return is_process_running(pid);
-        }
-    }
+    // Check if the service is loaded using launchctl list
+    let output = Command::new("sudo")
+        .arg("launchctl")
+        .arg("list")
+        .arg(LAUNCHD_LABEL)
+        .output();
 
-    false
+    match output {
+        Ok(out) => out.status.success(),
+        Err(_) => false,
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -983,11 +1026,9 @@ fn setup_macos_port_forwarding() -> Result<(), String> {
     fs::create_dir_all(&vibespace_dir)
         .map_err(|e| format!("Failed to create vibespace dir: {}", e))?;
 
-    let pid_file = vibespace_dir.join("port-forward.pid");
-
     // Check if already running
     if is_port_forwarding_configured() {
-        println!("Port forwarding already running");
+        println!("Port forwarding already running via launchd");
         return Ok(());
     }
 
@@ -999,7 +1040,7 @@ fn setup_macos_port_forwarding() -> Result<(), String> {
         return Err(format!("portfwd binary not found at {:?}", portfwd_path));
     }
 
-    // Copy portfwd to ~/.vibespace/bin/ to avoid path issues with osascript
+    // Copy portfwd to ~/.vibespace/bin/ for launchd to use
     let local_portfwd = vibespace_dir.join("bin").join("portfwd");
     fs::create_dir_all(local_portfwd.parent().unwrap())
         .map_err(|e| format!("Failed to create bin dir: {}", e))?;
@@ -1018,11 +1059,21 @@ fn setup_macos_port_forwarding() -> Result<(), String> {
             .map_err(|e| format!("Failed to set permissions: {}", e))?;
     }
 
-    // Start portfwd in background with admin privileges
-    // Use nohup to keep it running after osascript exits
+    // Generate launchd plist
+    let plist_content = generate_launchd_plist(&local_portfwd)?;
+
+    // Write plist to temp location
+    let temp_plist = vibespace_dir.join("space.vibe.portfwd.plist");
+    fs::write(&temp_plist, &plist_content)
+        .map_err(|e| format!("Failed to write plist: {}", e))?;
+
+    // Install plist to /Library/LaunchDaemons/ and load it (requires admin)
+    // This single osascript call: copies plist, loads it, and starts the daemon
     let script = format!(
-        r#"do shell script "nohup '{}' 443 127.0.0.1:30443 > /dev/null 2>&1 & echo $!" with administrator privileges"#,
-        local_portfwd.display()
+        r#"do shell script "cp '{}' '{}' && launchctl load '{}'" with administrator privileges"#,
+        temp_plist.display(),
+        LAUNCHD_PLIST_PATH,
+        LAUNCHD_PLIST_PATH
     );
 
     let output = Command::new("osascript")
@@ -1033,18 +1084,53 @@ fn setup_macos_port_forwarding() -> Result<(), String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Failed to setup port forwarding: {}", stderr));
+        return Err(format!("Failed to install launchd service: {}", stderr));
     }
 
-    // Save the PID
-    let pid = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !pid.is_empty() {
-        fs::write(&pid_file, &pid)
-            .map_err(|e| format!("Failed to save port forward PID: {}", e))?;
-    }
+    // Clean up temp plist
+    let _ = fs::remove_file(&temp_plist);
 
-    println!("Port forwarding started: 443 -> 30443 (PID: {})", pid);
+    println!("Port forwarding installed via launchd: 443 -> 30443");
+    println!("Service will auto-restart if it crashes");
     Ok(())
+}
+
+/// Generate the launchd plist XML content for portfwd
+#[cfg(target_os = "macos")]
+fn generate_launchd_plist(portfwd_path: &std::path::Path) -> Result<String, String> {
+    let log_path = dirs::home_dir()
+        .ok_or_else(|| "Failed to determine home directory".to_string())?
+        .join(".vibespace")
+        .join("portfwd.log");
+
+    Ok(format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{}</string>
+        <string>443</string>
+        <string>127.0.0.1:30443</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{}</string>
+    <key>StandardErrorPath</key>
+    <string>{}</string>
+</dict>
+</plist>"#,
+        LAUNCHD_LABEL,
+        portfwd_path.display(),
+        log_path.display(),
+        log_path.display()
+    ))
 }
 
 /// Get the path to the bundled portfwd binary
@@ -1071,29 +1157,39 @@ fn get_portfwd_binary_path() -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 fn cleanup_macos_port_forwarding() -> Result<(), String> {
-    let home_dir = dirs::home_dir()
-        .ok_or_else(|| "Failed to determine home directory".to_string())?;
-
-    let pid_file = home_dir.join(".vibespace").join("port-forward.pid");
-
-    if let Ok(pid_str) = fs::read_to_string(&pid_file) {
-        if let Ok(pid) = pid_str.trim().parse::<u32>() {
-            // Kill the socat process (requires admin)
-            let script = format!(
-                r#"do shell script "kill {} 2>/dev/null || true" with administrator privileges"#,
-                pid
-            );
-            let _ = Command::new("osascript")
-                .arg("-e")
-                .arg(&script)
-                .output();
-        }
+    // Check if launchd service exists
+    if !std::path::Path::new(LAUNCHD_PLIST_PATH).exists() {
+        println!("Port forwarding launchd service not installed");
+        return Ok(());
     }
 
-    // Remove PID file
-    let _ = fs::remove_file(&pid_file);
+    // Unload and remove the launchd service (requires admin)
+    let script = format!(
+        r#"do shell script "launchctl unload '{}' 2>/dev/null || true; rm -f '{}'" with administrator privileges"#,
+        LAUNCHD_PLIST_PATH,
+        LAUNCHD_PLIST_PATH
+    );
 
-    println!("Port forwarding stopped");
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
+        .output()
+        .map_err(|e| format!("Failed to cleanup port forwarding: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Don't fail on cleanup errors, just log them
+        eprintln!("Warning: cleanup may have partially failed: {}", stderr);
+    }
+
+    // Also clean up any old PID file if it exists (from previous implementation)
+    let home_dir = dirs::home_dir();
+    if let Some(home) = home_dir {
+        let old_pid_file = home.join(".vibespace").join("port-forward.pid");
+        let _ = fs::remove_file(&old_pid_file);
+    }
+
+    println!("Port forwarding launchd service unloaded and removed");
     Ok(())
 }
 
