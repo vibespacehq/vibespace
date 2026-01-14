@@ -1320,9 +1320,15 @@ pub fn setup_tls_certificates() -> Result<(PathBuf, PathBuf), String> {
 
         #[cfg(target_os = "macos")]
         {
-            // Use osascript to add CA to system keychain
+            // First, remove any existing mkcert certificates to avoid conflicts
+            // Then add the new CA with trustAsRoot for proper root CA trust
             let script = format!(
-                r#"do shell script "security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain '{}'" with administrator privileges"#,
+                r#"do shell script "
+                    # Remove any existing mkcert certs (may fail if none exist, that's OK)
+                    security delete-certificate -c 'mkcert' /Library/Keychains/System.keychain 2>/dev/null || true
+                    # Add CA with trustAsRoot for proper SSL trust
+                    security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.keychain '{}'
+                " with administrator privileges"#,
                 ca_root.display()
             );
 
@@ -1333,13 +1339,21 @@ pub fn setup_tls_certificates() -> Result<(PathBuf, PathBuf), String> {
 
             match trust_output {
                 Ok(output) if output.status.success() => {
-                    println!("CA added to system trust store");
+                    println!("CA added to system trust store successfully");
                 }
                 Ok(output) => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    // Don't fail if already trusted or user cancelled
-                    if !stderr.contains("SecTrustSettingsSetTrustSettings") && !stderr.contains("User canceled") {
-                        println!("Warning: Could not add CA to trust store: {}", stderr);
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    // Log the actual error for debugging
+                    if !stderr.is_empty() {
+                        println!("Warning: Trust store stderr: {}", stderr);
+                    }
+                    if !stdout.is_empty() {
+                        println!("Trust store stdout: {}", stdout);
+                    }
+                    // Check if user cancelled the admin prompt
+                    if stderr.contains("User canceled") || stderr.contains("-128") {
+                        println!("Warning: User cancelled admin prompt - CA not trusted");
                     }
                 }
                 Err(e) => {
