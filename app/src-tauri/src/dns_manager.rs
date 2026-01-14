@@ -570,7 +570,7 @@ impl LinuxDnsProvider {
     /// Configure systemd-resolved to forward *.vibe.space to our DNS server
     /// Uses pkexec for PolicyKit graphical prompt
     fn configure_resolved(&self) -> Result<(), String> {
-        let resolved_content = "[Resolve]\nDNS=127.0.0.1:5353\nDomains=~vibe.space\n";
+        let resolved_content = "[Resolve]\nDNS=127.0.0.1:53535\nDomains=~vibe.space\n";
 
         // Create temp file
         let temp_file = format!("/tmp/vibespace_resolved_{}", uuid::Uuid::new_v4());

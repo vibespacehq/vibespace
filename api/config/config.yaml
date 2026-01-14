@@ -32,8 +32,8 @@ features:
 dns:
   # Base domain for vibespace subdomains (e.g., code.{project}.vibe.space)
   base_domain: vibe.space
-  # DNS server port (used by bundled dnsd)
-  server_port: 5353
+  # DNS server port (used by bundled dnsd) - uses 53535 to avoid mDNS conflict on macOS
+  server_port: 53535
 
 credential:
   storage_path: ~/.vibespace/credential

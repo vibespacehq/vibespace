@@ -527,6 +527,23 @@ func knativeStatusToVibespaceStatus(svc *unstructured.Unstructured) string {
 			if reason == "NoTraffic" {
 				return "stopped"
 			}
+			// We use Traefik for ingress, so IngressNotConfigured means
+			// Knative's native ingress isn't set up (expected). Check if
+			// the workload itself is ready via ConfigurationsReady.
+			if reason == "IngressNotConfigured" {
+				// Check ConfigurationsReady condition instead
+				for _, c2 := range conditions {
+					cond2, ok := c2.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if t, _, _ := unstructured.NestedString(cond2, "type"); t == "ConfigurationsReady" {
+						if s, _, _ := unstructured.NestedString(cond2, "status"); s == "True" {
+							return "running"
+						}
+					}
+				}
+			}
 			return "creating"
 		}
 	}
