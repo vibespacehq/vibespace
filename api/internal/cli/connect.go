@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	gottyclient "github.com/moul/gotty-client"
+	"golang.org/x/term"
 )
 
 // browserFlag tracks whether to open browser instead of terminal
@@ -64,6 +65,18 @@ func runConnect(vibespace string, args []string) error {
 
 // connectViaGottyClient connects to a GoTTY server using the gotty-client library
 func connectViaGottyClient(url string) error {
+	// Check if stdin is a terminal
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return fmt.Errorf("stdin is not a terminal - use --browser flag instead")
+	}
+
+	// Put terminal in raw mode for proper character handling
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		return fmt.Errorf("failed to set terminal to raw mode: %w", err)
+	}
+	defer term.Restore(int(os.Stdin.Fd()), oldState)
+
 	client, err := gottyclient.NewClient(url)
 	if err != nil {
 		return fmt.Errorf("failed to create gotty client: %w", err)
@@ -71,16 +84,15 @@ func connectViaGottyClient(url string) error {
 
 	// Configure client
 	client.SkipTLSVerify = true
+	client.V2 = true // Enable v2 protocol for sorenisanerd/gotty fork
 
 	// Connect to the server
 	if err := client.Connect(); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 
-	fmt.Println("Connected. Type 'exit' to disconnect.")
-	fmt.Println()
-
-	// Loop handles terminal I/O until connection closes
+	// Note: Message printed before raw mode since raw mode affects output
+	// The Loop() function handles all terminal I/O
 	if err := client.Loop(); err != nil {
 		// Check if this is a normal disconnect
 		if err.Error() == "websocket: close 1000 (normal)" {

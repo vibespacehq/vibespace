@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,8 +13,6 @@ import (
 	"vibespace/pkg/k8s"
 	"vibespace/pkg/model"
 	"vibespace/pkg/vibespace"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // Common error messages
@@ -63,36 +60,6 @@ func checkClusterRunning() error {
 	}
 
 	return nil
-}
-
-// checkClusterReachable does a quick connectivity test to the k8s API
-func checkClusterReachable() error {
-	if err := checkClusterRunning(); err != nil {
-		return err
-	}
-
-	// Try to create a k8s client and do a quick health check
-	client, err := k8s.NewClient()
-	if err != nil {
-		return fmt.Errorf(errClusterUnreachable)
-	}
-
-	// Quick timeout context for health check
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Try to list namespaces as a quick connectivity test
-	_, err = client.Clientset().CoreV1().Namespaces().List(ctx, k8sListOptions())
-	if err != nil {
-		return fmt.Errorf("%s: %w", errClusterUnreachable, err)
-	}
-
-	return nil
-}
-
-// k8sListOptions returns empty list options
-func k8sListOptions() metav1.ListOptions {
-	return metav1.ListOptions{}
 }
 
 // getVibespaceServiceWithCheck creates the vibespace service with prerequisite checks
@@ -153,94 +120,6 @@ func checkVibespaceRunning(ctx context.Context, svc *vibespace.Service, name str
 	}
 }
 
-// checkDaemonRunning checks if the daemon is running for a vibespace
-func checkDaemonRunning(name string) error {
-	if !daemon.IsRunning(name) {
-		return fmt.Errorf("port-forward daemon not running. Start it with: vibespace %s up", name)
-	}
-	return nil
-}
-
-// checkDaemonRunningWithHint checks daemon and suggests log location on failure
-func checkDaemonRunningWithHint(name string) error {
-	if !daemon.IsRunning(name) {
-		paths, _ := daemon.GetDaemonPaths(name)
-		logPath := filepath.Join(paths.Dir, name+".log")
-		return fmt.Errorf("port-forward daemon not running. Start it with: vibespace %s up\nIf it crashed, check logs: %s", name, logPath)
-	}
-	return nil
-}
-
-// wrapKubectlError wraps kubectl errors with helpful context
-func wrapKubectlError(err error, operation, vibespace string) error {
-	if err == nil {
-		return nil
-	}
-
-	errStr := err.Error()
-
-	// Connection refused - cluster not running
-	if strings.Contains(errStr, "connection refused") {
-		return fmt.Errorf("cannot %s: cluster not reachable. Check: vibespace status", operation)
-	}
-
-	// No resources found
-	if strings.Contains(errStr, "not found") || strings.Contains(errStr, "No resources") {
-		return fmt.Errorf("cannot %s: no pods found for '%s'. Check: vibespace %s agents", operation, vibespace, vibespace)
-	}
-
-	// Timeout
-	if strings.Contains(errStr, "timeout") || strings.Contains(errStr, "deadline exceeded") {
-		return fmt.Errorf("cannot %s: operation timed out. Cluster may be overloaded. Try again", operation)
-	}
-
-	// Default: wrap with context
-	return fmt.Errorf("failed to %s: %w", operation, err)
-}
-
-// findPodForVibespace finds a running pod for a vibespace with helpful errors
-// vibespaceID should be the internal ID (e.g., "0d93a21d"), not the user-friendly name
-func findPodForVibespace(ctx context.Context, vibespaceID string, vibespaceNameForErrors string) (string, error) {
-	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".kube", "config")
-	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
-
-	// Check kubectl exists
-	if _, err := os.Stat(kubectlBin); os.IsNotExist(err) {
-		return "", fmt.Errorf("kubectl not found. Run 'vibespace init' to install it")
-	}
-
-	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespaceID)
-
-	findCmd := exec.CommandContext(ctx, kubectlBin,
-		"--kubeconfig", kubeconfig,
-		"-n", "vibespace",
-		"get", "pod",
-		"-l", podSelector,
-		"-o", "jsonpath={.items[0].metadata.name}",
-	)
-
-	podNameBytes, err := findCmd.Output()
-	if err != nil {
-		return "", wrapKubectlError(err, "find pod", vibespaceNameForErrors)
-	}
-
-	podName := strings.TrimSpace(string(podNameBytes))
-	if podName == "" {
-		return "", fmt.Errorf("no running pod found for '%s'. The vibespace may be scaled to zero or starting up.\nCheck status: vibespace list\nStart it: vibespace %s start", vibespaceNameForErrors, vibespaceNameForErrors)
-	}
-
-	return podName, nil
-}
-
-// printErrorWithHint prints an error with a helpful hint
-func printErrorWithHint(err error, hint string) {
-	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-	if hint != "" {
-		fmt.Fprintf(os.Stderr, "Hint: %s\n", hint)
-	}
-}
-
 // ensureDaemonRunning ensures the daemon is running for a vibespace and returns the local port for an agent.
 // It will auto-start the daemon if it's not running.
 // Returns the local port for the agent's ttyd/gotty forward (port 7681).
@@ -281,8 +160,14 @@ func ensureDaemonRunning(ctx context.Context, vibespaceNameOrID string, agentNam
 		if agent.Name == agentName {
 			for _, fwd := range agent.Forwards {
 				if fwd.Type == "ttyd" {
+					// Auto-start stopped forwards
 					if fwd.Status != "active" {
-						return 0, fmt.Errorf("agent '%s' ttyd forward is not active (status: %s)", agentName, fwd.Status)
+						printStep("Restarting ttyd forward...")
+						if err := client.RestartForward(agentName, fwd.RemotePort); err != nil {
+							return 0, fmt.Errorf("failed to restart forward: %w", err)
+						}
+						// Give it a moment to start
+						time.Sleep(500 * time.Millisecond)
 					}
 					return fwd.LocalPort, nil
 				}

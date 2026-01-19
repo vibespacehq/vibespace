@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -67,12 +66,6 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("vibespace %s (%s)\n", Version, Commit)
 	},
-}
-
-// exitWithError prints an error and exits
-func exitWithError(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "Error: "+format+"\n", args...)
-	os.Exit(1)
 }
 
 // handleVibespaceCommand handles commands for a specific vibespace

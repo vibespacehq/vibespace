@@ -254,9 +254,20 @@ func (m *Manager) RestartAll() error {
 
 	var lastErr error
 	for _, key := range keys {
-		var agentName string
+		// Key format is "agentName:remotePort"
+		lastColon := -1
+		for i := len(key) - 1; i >= 0; i-- {
+			if key[i] == ':' {
+				lastColon = i
+				break
+			}
+		}
+		if lastColon == -1 {
+			continue
+		}
+		agentName := key[:lastColon]
 		var remotePort int
-		fmt.Sscanf(key, "%s:%d", &agentName, &remotePort)
+		fmt.Sscanf(key[lastColon+1:], "%d", &remotePort)
 
 		if err := m.RestartForward(agentName, remotePort); err != nil {
 			lastErr = err
@@ -330,9 +341,19 @@ func (m *Manager) ListAllForwards() map[string][]*ForwardInfo {
 	result := make(map[string][]*ForwardInfo)
 
 	for key, fwd := range m.forwarders {
-		var agentName string
-		var remotePort int
-		fmt.Sscanf(key, "%s:%d", &agentName, &remotePort)
+		// Key format is "agentName:remotePort"
+		// Find the last colon to split (agent names can contain colons)
+		lastColon := -1
+		for i := len(key) - 1; i >= 0; i-- {
+			if key[i] == ':' {
+				lastColon = i
+				break
+			}
+		}
+		if lastColon == -1 {
+			continue // Invalid key format
+		}
+		agentName := key[:lastColon]
 
 		result[agentName] = append(result[agentName], &ForwardInfo{
 			LocalPort:  fwd.LocalPort(),
