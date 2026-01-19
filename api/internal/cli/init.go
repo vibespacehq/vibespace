@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"vibespace/internal/platform"
@@ -86,7 +88,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if !installed {
 		printStep("Downloading required binaries...")
 		if err := manager.Install(ctx); err != nil {
-			return fmt.Errorf("failed to install: %w", err)
+			return fmt.Errorf("failed to install binaries: %w", err)
 		}
 		printSuccess("Binaries installed")
 	} else {
@@ -113,7 +115,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	printSuccess("Cluster is ready")
 
-	// Install cluster components (Knative, Traefik, etc.)
+	// Install cluster components (Knative)
 	printStep("Installing cluster components...")
 	if err := installClusterComponents(ctx, vibespaceHome); err != nil {
 		return fmt.Errorf("failed to install cluster components: %w", err)
@@ -192,9 +194,113 @@ func waitForCluster(ctx context.Context, manager platform.ClusterManager) error 
 }
 
 func installClusterComponents(ctx context.Context, vibespaceHome string) error {
-	// TODO: Install Knative, Traefik, create namespace
-	// For now, just ensure the vibespace namespace exists
-	// This will be implemented when we wire up the k8s client
+	home, _ := os.UserHomeDir()
+	kubeconfig := filepath.Join(home, ".kube", "config")
+	kubectlBin := filepath.Join(vibespaceHome, "bin", "kubectl")
+
+	// Helper to run kubectl commands
+	runKubectl := func(args ...string) error {
+		allArgs := append([]string{"--kubeconfig", kubeconfig}, args...)
+		cmd := exec.CommandContext(ctx, kubectlBin, allArgs...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
+	}
+
+	// Helper to apply manifests
+	applyManifest := func(path string) error {
+		return runKubectl("apply", "-f", path)
+	}
+
+	// 1. Create vibespace namespace
+	printStep("Creating vibespace namespace...")
+	namespaceYAML := `apiVersion: v1
+kind: Namespace
+metadata:
+  name: vibespace
+  labels:
+    app.kubernetes.io/name: vibespace`
+
+	cmd := exec.CommandContext(ctx, kubectlBin, "--kubeconfig", kubeconfig, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(namespaceYAML)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// 2. Get the manifest directory path
+	// First check if running from source (development)
+	manifestDir := ""
+
+	// Try relative to current working directory (development)
+	cwd, _ := os.Getwd()
+	devManifestDir := filepath.Join(cwd, "pkg", "k8s", "manifests")
+	if _, err := os.Stat(devManifestDir); err == nil {
+		manifestDir = devManifestDir
+	}
+
+	// Try relative to executable (installed binary)
+	if manifestDir == "" {
+		exePath, _ := os.Executable()
+		exeDir := filepath.Dir(exePath)
+		installedManifestDir := filepath.Join(exeDir, "manifests")
+		if _, err := os.Stat(installedManifestDir); err == nil {
+			manifestDir = installedManifestDir
+		}
+	}
+
+	// Try in vibespace home
+	if manifestDir == "" {
+		homeManifestDir := filepath.Join(vibespaceHome, "manifests")
+		if _, err := os.Stat(homeManifestDir); err == nil {
+			manifestDir = homeManifestDir
+		}
+	}
+
+	if manifestDir == "" {
+		printWarning("Manifests not found, skipping Knative installation")
+		printWarning("You can install them manually or run from the source directory")
+		return nil
+	}
+
+	// 3. Install Knative Serving CRDs
+	knativeCRDs := filepath.Join(manifestDir, "knative", "serving-crds.yaml")
+	if _, err := os.Stat(knativeCRDs); err == nil {
+		printStep("Installing Knative CRDs...")
+		if err := applyManifest(knativeCRDs); err != nil {
+			return fmt.Errorf("failed to install Knative CRDs: %w", err)
+		}
+	}
+
+	// 4. Install Knative Serving Core
+	knativeCore := filepath.Join(manifestDir, "knative", "serving-core.yaml")
+	if _, err := os.Stat(knativeCore); err == nil {
+		printStep("Installing Knative Serving...")
+		if err := applyManifest(knativeCore); err != nil {
+			return fmt.Errorf("failed to install Knative Serving: %w", err)
+		}
+	}
+
+	// 5. Wait for Knative to be ready
+	printStep("Waiting for Knative to be ready...")
+	for i := 0; i < 30; i++ {
+		cmd := exec.CommandContext(ctx, kubectlBin,
+			"--kubeconfig", kubeconfig,
+			"-n", "knative-serving",
+			"get", "deploy", "controller",
+			"-o", "jsonpath={.status.readyReplicas}",
+		)
+		output, err := cmd.Output()
+		if err == nil && strings.TrimSpace(string(output)) == "1" {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+	}
+
+	printWarning("Knative may still be starting up. Check with: kubectl -n knative-serving get pods")
 	return nil
 }
 

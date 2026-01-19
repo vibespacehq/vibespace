@@ -1,78 +1,83 @@
 # vibespace - AI Assistant Context
 
 **Project**: vibespace - multi-Claude development environments
-**Stack**: Tauri + React + Go + k3s + Knative + NATS
+**Stack**: Go CLI + Colima/k3s + Knative
 
 ---
 
 ## What This Project Does
 
-vibespace is a desktop app for managing AI-powered development environments. Each vibespace runs Claude Code instances that collaborate on the same codebase, with a real-time chat interface for communication.
+vibespace is a CLI tool for managing AI-powered development environments. Each vibespace runs Claude Code instances in Kubernetes pods, accessible via terminal or browser through port-forwarding.
 
 ```
-User creates vibespace "my-project"
-  → Container starts (ttyd + Claude Code + port detector)
-  → User chats with Claude through desktop app
-  → Claude writes code, starts dev servers
-  → Dev servers auto-exposed at https://3000.my-project.vibe.space
-  → User can spawn additional Claudes for parallel work
+vibespace init                        # Start local Kubernetes cluster
+vibespace create myproject            # Create a vibespace
+vibespace myproject up                # Start port-forward daemon
+vibespace myproject connect           # Connect to Claude in terminal
+vibespace myproject spawn             # Add another Claude agent
+vibespace multi myproject otherproj   # Multi-agent terminal UI
 ```
 
 **Key Features**:
-- Multi-Claude orchestration (multiple AI agents per project)
-- Real-time chat interface (adapted from demiurg codebase)
-- Dynamic port exposure (any port Claude starts becomes accessible)
-- NATS-based messaging (Claude ↔ API ↔ Frontend)
-- Scale-to-zero with Knative
+- **CLI-first**: No desktop app, pure terminal experience
+- **Multi-Claude orchestration**: Multiple AI agents per project, shared filesystem
+- **Terminal UI**: Talk to multiple Claudes with @mentions
+- **Port-forwarding**: Access dev servers via localhost (no DNS magic)
+- **Remote access**: Connect to another machine's cluster via WireGuard
+- **Scale-to-zero**: Knative-based, pods spin down when idle
 
 ---
 
 ## Architecture
 
+### Local Mode
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Tauri Desktop App                            │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Chat Interface (from demiurg) + Vibespace Management     │  │
-│  └─────────────────────────────────┬─────────────────────────┘  │
-│                                    │ WebSocket                   │
-└────────────────────────────────────┼────────────────────────────┘
-                                     │
-┌────────────────────────────────────┼────────────────────────────┐
-│                        Go API Server                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐ │
-│  │ REST API │  │ WebSocket│  │  NATS    │  │ K8s Client       │ │
-│  │ /api/v1  │  │   Hub    │  │ Subscriber│ │ (Knative, Traefik)│ │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘ │
-└────────────────────────────────────┼────────────────────────────┘
-                                     │
-┌────────────────────────────────────┼────────────────────────────┐
-│                    Local Kubernetes (k3s)                        │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                         NATS                              │   │
-│  │   vibespace.{project}.claude.{id}.in/out  (messages)     │   │
-│  │   vibespace.{project}.ports.register      (port events)  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │  Vibespace   │  │  Vibespace   │  │  Vibespace   │          │
-│  │  project-1   │  │  project-1   │  │  project-2   │          │
-│  │  claude-1    │  │  claude-2    │  │  claude-1    │          │
-│  │              │  │              │  │              │          │
-│  │ ttyd + Claude│  │ ttyd + Claude│  │ ttyd + Claude│          │
-│  │ Port Detector│  │ Port Detector│  │ Port Detector│          │
-│  └──────────────┘  └──────────────┘  └──────────────┘          │
-│         │                 │                                     │
-│         └────────┬────────┘                                     │
-│                  │ Shared PVC (/vibespace)                      │
-│                  ▼                                               │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                       Traefik                             │   │
-│  │  *.project-1.vibe.space → vibespace pods                 │   │
-│  │  3000.project-1.vibe.space → port 3000                   │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│  User Terminal                                                          │
+│  └── vibespace CLI                                                      │
+│       ├── Cluster mgmt (init, status, stop)                            │
+│       ├── Vibespace mgmt (create, list, delete)                        │
+│       ├── Port-forward daemon (background)                              │
+│       └── Multi-session TUI (ttyd websocket → Claude)                  │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ client-go / port-forward
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Colima VM (k3s on macOS) or native k3s (Linux)                        │
+│  ├── Knative Serving (scale-to-zero)                                   │
+│  └── vibespace namespace                                                │
+│       ├── vibespace-<id> (Knative Service)                             │
+│       │    ├── Pod: claude-1 (ttyd:7681 + Claude Code CLI)             │
+│       │    └── Pod: claude-2 (ttyd:7681 + Claude Code CLI)             │
+│       └── PVC: shared /vibespace directory                             │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Remote Mode (WireGuard)
+
+```
+Machine B (client)                    Machine A (server)
+├── vibespace CLI                     ├── vibespace CLI
+├── WireGuard tunnel    ──────────→   ├── vibespace serve (WireGuard server)
+└── kubeconfig → A's cluster          └── Colima/k3s cluster
+```
+
+### Multi-Session TUI
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│ vibespace multi projectA projectB                                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│ [claude-1@projectA] Working on the auth module...                       │
+│ [claude-2@projectA] Tests are passing now                               │
+│ [claude-1@projectB] Found the bug in line 42                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│ > @claude-1@projectA can you also add rate limiting?                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Commands: @agent message, @all broadcast, /add, /remove, /focus, /quit
 ```
 
 ---
@@ -81,26 +86,20 @@ User creates vibespace "my-project"
 
 ```
 vibespace/
-├── app/                    # Tauri desktop application
-│   ├── src-tauri/         # Rust backend
-│   └── src/               # React frontend
-│       ├── features/      # Feature modules
-│       │   ├── chat/      # Chat UI (from demiurg)
-│       │   └── vibespace/ # Vibespace management
-│       └── lib/           # Utilities
-├── api/                   # Go API server
-│   ├── cmd/server/        # Entry point
+├── api/                       # Go CLI and core packages
+│   ├── cmd/vibespace/         # CLI entry point
+│   ├── internal/
+│   │   ├── cli/               # Cobra commands
+│   │   └── platform/          # Colima/k3s management
 │   └── pkg/
-│       ├── handler/       # HTTP handlers
-│       ├── vibespace/     # Vibespace management
-│       ├── nats/          # NATS client
-│       ├── websocket/     # WebSocket hub
-│       ├── network/       # IngressRoute management
-│       ├── k8s/           # Kubernetes client
-│       └── image/         # Container image (ttyd + Claude Code)
-├── demiurg-backend/       # Reference: NATS patterns (to be refactored)
-├── demiurg-frontend-next/ # Reference: Chat UI (to be ported)
-└── docs/                  # Documentation
+│       ├── k8s/               # Kubernetes client
+│       ├── knative/           # Knative service management
+│       ├── vibespace/         # Vibespace business logic
+│       ├── model/             # Data models
+│       └── image/             # Container image (ttyd + Claude Code)
+├── docs/
+│   └── CLI_SPEC.md            # Complete CLI specification
+└── archive/                   # Old code (Tauri app, HTTP server, etc.)
 ```
 
 ---
@@ -109,34 +108,27 @@ vibespace/
 
 ### Vibespace
 A project environment running as Knative Service(s):
-- **ttyd**: Web terminal for direct access
+- **ttyd**: Terminal over websocket (port 7681)
 - **Claude Code CLI**: AI coding agent
-- **Port detector**: Monitors for new listening ports
-- **Persistent volume**: `/vibespace` directory shared across Claudes
+- **Persistent volume**: `/vibespace` directory shared across all agents
 
 ### Multi-Claude
-Multiple Claude instances can work on the same project:
+Multiple Claude instances work on the same project:
 - Each Claude runs in its own Kubernetes pod
 - All pods mount the same PVC (shared filesystem)
-- Communication happens via NATS message subjects
 - User can message specific Claudes or broadcast to all
 
-### Dynamic Port Exposure
-When Claude starts a dev server (e.g., `npm run dev` on port 3000):
-1. Port detector daemon notices new listening port via `/proc/net/tcp`
-2. Publishes event to NATS: `vibespace.{project}.ports.register`
-3. Go API receives event and creates Traefik IngressRoute
-4. Server becomes accessible at `https://3000.{project}.vibe.space`
+### Port-Forward Daemon
+Background process managing connections:
+- Auto-reconnects on connection drops
+- Handles multiple agents (port offset: claude-2 → 17681)
+- Detects and forwards dev server ports
 
-### NATS Subject Schema
-```
-vibespace.{project}.claude.{id}.in     # Messages TO a specific Claude
-vibespace.{project}.claude.{id}.out    # Messages FROM a specific Claude
-vibespace.{project}.claude.{id}.status # Claude status (thinking, idle, error)
-vibespace.{project}.claude.all         # Broadcast to all Claudes in project
-vibespace.{project}.ports.register     # Port opened event
-vibespace.{project}.ports.unregister   # Port closed event
-```
+### Sessions
+Group agents from multiple vibespaces:
+- Named sessions persist across restarts
+- Quick ad-hoc sessions with `vibespace multi`
+- @agent@vibespace addressing
 
 ---
 
@@ -144,62 +136,111 @@ vibespace.{project}.ports.unregister   # Port closed event
 
 | Component | Purpose |
 |-----------|---------|
+| **Colima** | Lima-based container runtime for macOS |
 | **k3s** | Lightweight Kubernetes |
 | **Knative Serving** | Scale-to-zero, serverless workloads |
-| **Traefik** | Ingress controller, wildcard routing |
-| **NATS** | Real-time pub/sub messaging |
-| **ttyd** | Share terminal over web |
+| **ttyd** | Share terminal over websocket |
 | **Claude Code** | AI coding agent CLI |
+| **WireGuard** | VPN for remote access |
 
 ---
 
 ## Development
 
 ### Prerequisites
-- Node.js 20+
 - Go 1.21+
-- Rust 1.70+
-- Docker
-- kubectl
+- Docker (for building container image)
 
-### Bundled Kubernetes Access
-
-Vibespace bundles its own Colima/Lima/kubectl in `~/.vibespace/`. Use these wrapper scripts (in `~/.local/bin/`) to access the cluster:
-
-- `vibectl` - kubectl with vibespace PATH
-- `vibecolima` - colima with vibespace PATH
-
-Examples:
-```bash
-vibectl get pods -A              # List all pods
-vibectl logs -n vibespace <pod>  # View pod logs
-vibecolima status                # Check VM status
-```
-
-### Running Locally
+### Building
 
 ```bash
-# Desktop app
-cd app && npm install && npm run dev
-
-# API server
-cd api && go run cmd/server/main.go
-
-# Build container image
-cd api/pkg/image && docker build -t vibespace:latest .
+cd api
+go build -o vibespace ./cmd/vibespace
 ```
 
 ### Testing
 
 ```bash
-# Go tests
 cd api && go test ./...
+```
 
-# Frontend tests
-cd app && npm run test:frontend
+### Installing Locally
 
-# Dead code check
-make deadcode
+```bash
+cd api
+go build -o vibespace ./cmd/vibespace
+sudo mv vibespace /usr/local/bin/
+```
+
+---
+
+## CLI Commands Overview
+
+See `docs/CLI_SPEC.md` for complete reference.
+
+### Cluster Management
+```bash
+vibespace init                   # Initialize cluster
+vibespace status                 # Show status
+vibespace stop                   # Stop cluster
+vibespace serve                  # Server mode for remote clients
+```
+
+### Vibespace Management
+```bash
+vibespace create <name>          # Create vibespace
+vibespace list                   # List all
+vibespace delete <name>          # Delete vibespace
+vibespace <name> start/stop      # Start/stop vibespace
+```
+
+### Agent Management
+```bash
+vibespace <name> agents          # List agents
+vibespace <name> spawn           # Add agent
+vibespace <name> kill <agent>    # Remove agent
+```
+
+### Connection
+```bash
+vibespace <name> up              # Start port-forward daemon
+vibespace <name> down            # Stop daemon
+vibespace <name> connect [agent] # Connect to agent terminal
+vibespace <name> forward list    # List forwards
+```
+
+### Multi-Session
+```bash
+vibespace session create <name>  # Create session
+vibespace session add <s> <v>    # Add vibespace to session
+vibespace session start <name>   # Launch TUI
+vibespace multi <v1> <v2>        # Quick ad-hoc session
+```
+
+### Remote
+```bash
+vibespace remote connect <host>  # Connect to remote
+vibespace remote disconnect      # Disconnect
+```
+
+---
+
+## State Files
+
+```
+~/.vibespace/
+├── bin/                         # Bundled binaries (colima, lima, kubectl)
+├── daemons/                     # Port-forward daemon state
+│   ├── <vibespace>.pid
+│   ├── <vibespace>.sock
+│   └── <vibespace>.json
+├── sessions/                    # Multi-session state
+│   └── <session>.json
+├── remote/                      # Remote connection config
+│   ├── kubeconfig
+│   ├── wireguard.conf
+│   └── connection.json
+└── config.json                  # Global config
 ```
 
 ---
@@ -207,50 +248,13 @@ make deadcode
 ## Naming Conventions
 
 ### Code Style
-- **Go**: Standard conventions, singular package names (`vibespace`, `nats`)
-- **TypeScript**: camelCase variables, PascalCase components
-- **Files**: kebab-case for non-components, PascalCase for React components
+- **Go**: Standard conventions, singular package names
 
 ### Kubernetes Resources
 - **Namespace**: `vibespace`
-- **Labels**: `vibespace.dev/id`, `vibespace.dev/project`
-- **Service names**: `vibespace-{project}-claude-{id}`
-- **PVC names**: `vibespace-{project}-pvc`
-
-### Domain Names
-- **Main access**: `{project}.vibe.space`
-- **Port-specific**: `{port}.{project}.vibe.space`
-- **Example**: `3000.brave-fox-42.vibe.space`
-
-### API Endpoints
-```
-GET    /api/v1/vibespaces
-POST   /api/v1/vibespaces
-GET    /api/v1/vibespaces/:id
-DELETE /api/v1/vibespaces/:id
-POST   /api/v1/vibespaces/:id/claudes
-DELETE /api/v1/vibespaces/:id/claudes/:claudeId
-POST   /api/v1/vibespaces/:id/services  (port registration)
-```
-
----
-
-## Design System
-
-**Philosophy**: Terminal-inspired, dark theme, vibrant accents
-
-**Colors**:
-- Background: Pure black (#000000)
-- Primary: Teal (#00ABAB)
-- Active: Pink (#F102F3)
-- Accent: Orange (#FF7D4B)
-- Highlight: Yellow (#F5F50A)
-
-**Typography**:
-- UI: Space Grotesk
-- Code: JetBrains Mono
-
-**Icons**: Lucide React
+- **Labels**: `vibespace.dev/id`, `vibespace.dev/project-name`
+- **Service names**: `vibespace-<id>`
+- **PVC names**: `vibespace-<project>-pvc`
 
 ---
 
@@ -260,174 +264,76 @@ POST   /api/v1/vibespaces/:id/services  (port registration)
 ```
 feature/#<issue>-<short-description>
 fix/#<issue>-<short-description>
-docs/#<issue>-<short-description>
-refactor/#<issue>-<short-description>
 ```
 
 ### Commit Message Format
 ```
 <type>(#<issue>): <description>
-
-[optional body]
 ```
 
 **Types**: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
-
-### Pull Request Process
-1. Create GitHub issue for the work
-2. Create branch referencing issue number
-3. Work in small, logical commits
-4. Push and create PR with description
-5. Address review feedback
-6. Squash merge when approved
-
-### Example Workflow
-```bash
-# Create issue
-gh issue create --title "Add NATS subscriber for port events" --label "feature"
-# Issue #42 created
-
-# Create branch
-git checkout -b feature/#42-nats-port-subscriber
-
-# Work in commits
-git commit -m "feat(#42): add NATS connection manager"
-git commit -m "feat(#42): implement port event subscriber"
-git commit -m "test(#42): add subscriber unit tests"
-
-# Push and create PR
-git push origin feature/#42-nats-port-subscriber
-gh pr create --title "feat: Add NATS subscriber for port events (#42)" --body "Closes #42"
-
-# After approval
-gh pr merge 42 --squash --delete-branch
-```
-
----
-
-## Testing Strategy
-
-### Frontend Testing (Vitest + React Testing Library)
-
-```bash
-npm run test:frontend          # Run all tests
-npm run test:frontend:watch    # Watch mode
-npm run test:frontend:coverage # Coverage report
-```
-
-**Test file location**: Co-located with component (`Component.test.tsx`)
-
-**What to test**:
-- Component rendering with different props
-- User interactions (clicks, typing)
-- State changes and async operations
-- Error handling and edge cases
-
-### Backend Testing (Go)
-
-```bash
-go test ./...                  # Run all tests
-go test -v ./pkg/nats          # Specific package
-go test -cover ./...           # With coverage
-```
-
-**What to test**:
-- API handler behavior
-- NATS message processing
-- Kubernetes resource creation
-- Service business logic
-
-### Dead Code Detection
-
-```bash
-make deadcode
-```
-
-Run before every commit. Removes unused exports, functions, and dependencies.
-
----
-
-## Reference Codebases
-
-### demiurg-backend (TypeScript/Node.js)
-Located at `demiurg-backend/` - patterns to adapt:
-- NATS integration: `src/core/nats/nats.service.ts`
-- WebSocket handlers: `src/core/websocket/`
-- Claude streaming: `src/features/claude-code/`
-- Message flow patterns
-
-### demiurg-frontend-next (Next.js/React)
-Located at `demiurg-frontend-next/` - components to port:
-- Chat UI: `src/features/chat/`
-- Zustand stores: `src/features/chat/store/`
-- WebSocket manager: `src/lib/websocket/`
-- Message rendering: `src/features/chat/components/`
-
-**Porting notes**:
-- Remove Clerk auth (not needed for local app)
-- Replace `next/navigation` with react-router or Tauri navigation
-- Connect WebSocket to Go backend instead of Node
-- Zustand/Immer work unchanged in Tauri
 
 ---
 
 ## Security Considerations
 
 1. **Local-first**: All components run on user's machine
-2. **No cloud auth**: No external authentication service
-3. **API keys**: User provides Claude API key, stored locally
-4. **Network isolation**: Vibespaces isolated via Kubernetes NetworkPolicy
-5. **Non-root containers**: Vibespace containers run as UID 1000
+2. **No cloud auth**: No external authentication
+3. **API keys**: User provides Claude API key, stored in container
+4. **Non-root containers**: Run as UID 1000
 
 ---
 
 ## Troubleshooting
 
-### Vibespace won't start
+### Cluster Issues
 ```bash
-kubectl get pods -n vibespace
-kubectl describe pod <pod-name> -n vibespace
-kubectl logs <pod-name> -n vibespace
+vibespace status                 # Check component status
+~/.vibespace/bin/kubectl get pods -n vibespace
 ```
 
-### Port not accessible
+### Port-Forward Issues
 ```bash
-# Check IngressRoute exists
-kubectl get ingressroute -n vibespace
-
-# Check Traefik logs
-kubectl logs -n traefik deployment/traefik
+vibespace <name> forward list    # Check forward status
+vibespace <name> forward restart-all
 ```
 
-### NATS connection issues
+### Connection Issues
 ```bash
-# Check NATS pod
-kubectl get pods -n default -l app=nats
-kubectl logs deployment/nats
+vibespace <name> down && vibespace <name> up  # Restart daemon
 ```
 
 ---
 
 ## Important Files
 
-- `docs/SPEC.md` - Complete technical specification
-- `docs/ROADMAP.md` - Product roadmap (4 phases)
-- `docs/adr/README.md` - Architecture Decision Records index
-- `docs/adr/0006-bundled-kubernetes-runtime.md` - Bundled k8s approach
-- `docs/adr/0013-multi-claude-architecture.md` - Multi-Claude decision
-- `docs/adr/0014-nats-messaging.md` - NATS choice rationale
-- `docs/adr/0015-dynamic-port-exposure.md` - Port exposure design
+- `docs/CLI_SPEC.md` - Complete CLI command reference
+- `api/internal/cli/` - All CLI command implementations
+- `api/pkg/vibespace/service.go` - Core vibespace logic
+- `api/pkg/knative/service.go` - Knative service management
+- `api/internal/platform/colima.go` - Colima VM management
 
 ---
 
-## Current Phase
+## Current Status
 
-**Phase 1: POC** - Prove the infrastructure works
+**Pivot in Progress**: Transitioning from Tauri desktop app to CLI-first approach.
 
-Goal: Create a vibespace and access it via browser with ttyd + Claude Code.
+Implemented:
+- Cluster management (init, status, stop)
+- Vibespace CRUD (create, list, delete, start, stop)
+- Basic connect command
+- Platform detection (Colima on macOS)
 
-See `docs/ROADMAP.md` for full phase breakdown and `docs/SPEC.md` Section 9 for implementation details.
+To Implement:
+- Port-forward daemon with auto-reconnect
+- Multi-agent spawning
+- Multi-session TUI
+- Remote mode (WireGuard)
+- Forward management commands
+
+See `docs/CLI_SPEC.md` for the full target feature set.
 
 ---
 
-**Last Updated**: 2026-01-08
+**Last Updated**: 2026-01-19

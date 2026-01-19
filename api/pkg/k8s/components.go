@@ -19,7 +19,6 @@ type ComponentStatus struct {
 // ClusterComponents represents all required components
 type ClusterComponents struct {
 	Knative  ComponentStatus `json:"knative"`
-	Traefik  ComponentStatus `json:"traefik"`
 	Registry ComponentStatus `json:"registry"`
 }
 
@@ -45,16 +44,12 @@ func (c *Client) CheckComponents(ctx context.Context) (*ClusterComponents, error
 	// Check Knative
 	components.Knative = c.checkKnative(ctx)
 
-	// Check Traefik
-	components.Traefik = c.checkTraefik(ctx)
-
 	// Check Registry
 	components.Registry = c.checkRegistry(ctx)
 
 	slog.Info("cluster component check completed",
 		"all_ready", components.AllComponentsReady(),
 		"knative_healthy", components.Knative.Healthy,
-		"traefik_healthy", components.Traefik.Healthy,
 		"registry_healthy", components.Registry.Healthy)
 
 	return components, nil
@@ -145,51 +140,6 @@ func (c *Client) checkKnative(ctx context.Context) ComponentStatus {
 	return status
 }
 
-// checkTraefik checks if Traefik is installed and healthy
-func (c *Client) checkTraefik(ctx context.Context) ComponentStatus {
-	slog.Debug("checking traefik component")
-
-	status := ComponentStatus{Installed: false, Healthy: false}
-
-	// Check if traefik namespace exists
-	_, err := c.clientset.CoreV1().Namespaces().Get(ctx, "traefik", metav1.GetOptions{})
-	if err != nil {
-		status.Error = "traefik namespace not found"
-		slog.Debug("traefik check failed", "reason", status.Error)
-		return status
-	}
-
-	status.Installed = true
-
-	// Check if traefik deployment is running
-	deployment, err := c.clientset.AppsV1().Deployments("traefik").Get(ctx, "traefik", metav1.GetOptions{})
-	if err != nil {
-		status.Error = "traefik deployment not found"
-		slog.Debug("traefik check failed", "reason", status.Error)
-		return status
-	}
-
-	// Check if deployment is ready
-	if deployment.Status.ReadyReplicas > 0 {
-		status.Healthy = true
-	} else {
-		status.Error = "traefik deployment not ready"
-		slog.Debug("traefik check failed", "reason", status.Error)
-	}
-
-	// Get version from image tag
-	if len(deployment.Spec.Template.Spec.Containers) > 0 {
-		image := deployment.Spec.Template.Spec.Containers[0].Image
-		status.Version = image
-	}
-
-	if status.Healthy {
-		slog.Debug("traefik component healthy", "version", status.Version)
-	}
-
-	return status
-}
-
 // checkRegistry checks if the local registry is installed and healthy
 func (c *Client) checkRegistry(ctx context.Context) ComponentStatus {
 	slog.Debug("checking registry component")
@@ -230,7 +180,6 @@ func (c *Client) checkRegistry(ctx context.Context) ComponentStatus {
 // AllComponentsReady checks if all components are installed and healthy
 func (c *ClusterComponents) AllComponentsReady() bool {
 	return c.Knative.Installed && c.Knative.Healthy &&
-		c.Traefik.Installed && c.Traefik.Healthy &&
 		c.Registry.Installed && c.Registry.Healthy
 }
 
@@ -240,9 +189,6 @@ func (c *ClusterComponents) GetMissingComponents() []string {
 
 	if !c.Knative.Installed || !c.Knative.Healthy {
 		missing = append(missing, "knative")
-	}
-	if !c.Traefik.Installed || !c.Traefik.Healthy {
-		missing = append(missing, "traefik")
 	}
 	if !c.Registry.Installed || !c.Registry.Healthy {
 		missing = append(missing, "registry")

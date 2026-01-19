@@ -32,9 +32,10 @@ func runConnect(vibespace string, args []string) error {
 		agentID = args[0]
 	}
 
-	// Get kubeconfig path
+	// Get paths
 	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
+	kubeconfig := filepath.Join(home, ".kube", "config")
+	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
 
 	// Build pod name
 	// Format: vibespace-<vibespace-name>-<agent-id>-<hash>
@@ -44,7 +45,7 @@ func runConnect(vibespace string, args []string) error {
 	printStep("Connecting to %s in %s...", agentID, vibespace)
 
 	// Find the pod
-	findCmd := exec.CommandContext(ctx, "kubectl",
+	findCmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,
 		"-n", "vibespace",
 		"get", "pod",
@@ -64,7 +65,7 @@ func runConnect(vibespace string, args []string) error {
 	fmt.Printf("Connected to %s. Type 'exit' to disconnect.\n", agentID)
 	fmt.Println()
 
-	cmd := exec.CommandContext(ctx, "kubectl",
+	cmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,
 		"-n", "vibespace",
 		"exec", "-it", podName,

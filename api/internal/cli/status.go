@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"vibespace/internal/platform"
@@ -80,13 +81,30 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func checkClusterComponents(ctx context.Context, vibespaceHome string) map[string]bool {
-	// TODO: Actually check component status via k8s client
-	// For now, return placeholder
-	return map[string]bool{
-		"Knative":   false,
-		"Traefik":   false,
+	home, _ := os.UserHomeDir()
+	kubeconfig := filepath.Join(home, ".kube", "config")
+	kubectlBin := filepath.Join(vibespaceHome, "bin", "kubectl")
+
+	result := map[string]bool{
 		"Namespace": false,
+		"Knative":   false,
 	}
+
+	// Check if vibespace namespace exists
+	cmd := exec.CommandContext(ctx, kubectlBin, "--kubeconfig", kubeconfig,
+		"get", "namespace", "vibespace", "-o", "name")
+	if err := cmd.Run(); err == nil {
+		result["Namespace"] = true
+	}
+
+	// Check if Knative controller is running
+	cmd = exec.CommandContext(ctx, kubectlBin, "--kubeconfig", kubeconfig,
+		"-n", "knative-serving", "get", "deploy", "controller", "-o", "name")
+	if err := cmd.Run(); err == nil {
+		result["Knative"] = true
+	}
+
+	return result
 }
 
 var stopCmd = &cobra.Command{
