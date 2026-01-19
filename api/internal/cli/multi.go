@@ -26,6 +26,7 @@ type AgentConnection struct {
 // MultiSession manages connections to multiple Claude agents
 type MultiSession struct {
 	vibespace    string
+	vibespaceID  string // Internal ID for pod selection
 	agents       map[string]*AgentConnection
 	kubeconfig   string
 	kubectlBin   string
@@ -58,10 +59,11 @@ func runMulti(vibespace string, args []string) error {
 	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
 
 	session := &MultiSession{
-		vibespace:  vibespace,
-		agents:     make(map[string]*AgentConnection),
-		kubeconfig: kubeconfig,
-		kubectlBin: kubectlBin,
+		vibespace:   vibespace,
+		vibespaceID: vs.ID,
+		agents:      make(map[string]*AgentConnection),
+		kubeconfig:  kubeconfig,
+		kubectlBin:  kubectlBin,
 		colorPalette: []*color.Color{
 			color.New(color.FgCyan),
 			color.New(color.FgMagenta),
@@ -80,8 +82,8 @@ func runMulti(vibespace string, args []string) error {
 }
 
 func (s *MultiSession) connectAgent(ctx context.Context, agentID string) error {
-	// Find the pod
-	podSelector := fmt.Sprintf("vibespace.dev/id=%s", s.vibespace)
+	// Find the pod using internal ID
+	podSelector := fmt.Sprintf("vibespace.dev/id=%s", s.vibespaceID)
 
 	findCmd := exec.CommandContext(ctx, s.kubectlBin,
 		"--kubeconfig", s.kubeconfig,

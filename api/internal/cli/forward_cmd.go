@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -45,10 +46,11 @@ func runForwardCmd(vibespace string, args []string) error {
 
 // runForwardList lists all port-forwards
 func runForwardList(vibespace string) error {
-	// Check if daemon is running
-	if err := checkDaemonRunning(vibespace); err != nil {
-		printWarning("Daemon not running. Start it with: vibespace %s up", vibespace)
-		return nil
+	ctx := context.Background()
+
+	// Ensure daemon is running (auto-start if needed)
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		return err
 	}
 
 	client, err := daemon.NewClient(vibespace)
@@ -124,8 +126,9 @@ func runForwardAdd(vibespace string, args []string) error {
 		}
 	}
 
-	// Check if daemon is running
-	if err := checkDaemonRunningWithHint(vibespace); err != nil {
+	// Ensure daemon is running (auto-start if needed)
+	ctx := context.Background()
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
 		return err
 	}
 
@@ -162,7 +165,9 @@ func runForwardRemove(vibespace string, args []string) error {
 		}
 	}
 
-	if err := checkDaemonRunning(vibespace); err != nil {
+	// Ensure daemon is running (auto-start if needed)
+	ctx := context.Background()
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
 		return err
 	}
 
@@ -198,7 +203,9 @@ func runForwardStop(vibespace string, args []string) error {
 		}
 	}
 
-	if err := checkDaemonRunning(vibespace); err != nil {
+	// Ensure daemon is running (auto-start if needed)
+	ctx := context.Background()
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
 		return err
 	}
 
@@ -234,7 +241,9 @@ func runForwardStart(vibespace string, args []string) error {
 		}
 	}
 
-	if err := checkDaemonRunning(vibespace); err != nil {
+	// Ensure daemon is running (auto-start if needed)
+	ctx := context.Background()
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
 		return err
 	}
 
@@ -270,7 +279,9 @@ func runForwardRestart(vibespace string, args []string) error {
 		}
 	}
 
-	if err := checkDaemonRunning(vibespace); err != nil {
+	// Ensure daemon is running (auto-start if needed)
+	ctx := context.Background()
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
 		return err
 	}
 
@@ -289,7 +300,9 @@ func runForwardRestart(vibespace string, args []string) error {
 
 // runForwardRestartAll restarts all port-forwards
 func runForwardRestartAll(vibespace string) error {
-	if err := checkDaemonRunning(vibespace); err != nil {
+	// Ensure daemon is running (auto-start if needed)
+	ctx := context.Background()
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
 		return err
 	}
 

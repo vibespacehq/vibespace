@@ -1,8 +1,8 @@
 # vibespace Container Image
-# Minimal image: ttyd web terminal + Claude Code CLI
+# Minimal image: GoTTY web terminal + Claude Code CLI
 #
 # Components:
-# - ttyd: Web terminal over websocket (port 7681)
+# - GoTTY: Web terminal over websocket (port 7681)
 # - Claude Code CLI: AI coding agent (user authenticates via /login)
 #
 # Environment variables (set by Knative):
@@ -36,17 +36,17 @@ RUN apt-get update && \
 # Upgrade Node.js to v20 LTS via n
 RUN npm install -g n && n lts && hash -r
 
-# Install ttyd for web terminal
-# Detect architecture and download appropriate binary
+# Install GoTTY for web terminal (Go-based, compatible with gotty-client)
 ARG TARGETARCH
-RUN case "${TARGETARCH:-amd64}" in \
-        amd64) TTYD_ARCH="x86_64" ;; \
-        arm64) TTYD_ARCH="aarch64" ;; \
+RUN GOTTY_VERSION="1.5.0" && \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) GOTTY_ARCH="amd64" ;; \
+        arm64) GOTTY_ARCH="arm64" ;; \
         *) echo "Unsupported architecture" && exit 1 ;; \
     esac && \
-    curl -L "https://github.com/tsl0922/ttyd/releases/download/1.7.4/ttyd.${TTYD_ARCH}" \
-        -o /usr/bin/ttyd && \
-    chmod +x /usr/bin/ttyd
+    curl -sL "https://github.com/sorenisanerd/gotty/releases/download/v${GOTTY_VERSION}/gotty_v${GOTTY_VERSION}_linux_${GOTTY_ARCH}.tar.gz" | \
+    tar xz -C /usr/bin gotty && \
+    chmod +x /usr/bin/gotty
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -75,7 +75,7 @@ WORKDIR /vibespace
 RUN npm config set prefix /home/user/.npm-global && \
     echo '{"autoApprove": true, "telemetry": false}' > /home/user/.config/claude-code/config.json
 
-# Expose ttyd port
+# Expose GoTTY port
 EXPOSE 7681
 
 # Switch back to root for supervisor

@@ -26,7 +26,12 @@ type DetectedPorts struct {
 func runPorts(vibespace string, args []string) error {
 	ctx := context.Background()
 
-	svc, err := getVibespaceService()
+	// Ensure daemon is running (auto-start if needed)
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		return err
+	}
+
+	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
 		return err
 	}
@@ -46,8 +51,8 @@ func runPorts(vibespace string, args []string) error {
 	kubeconfig := filepath.Join(home, ".kube", "config")
 	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
 
-	// Find the pod
-	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespace)
+	// Find the pod using internal ID
+	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vs.ID)
 
 	findCmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,
@@ -117,7 +122,12 @@ func runForward(vibespace string, args []string) error {
 
 	ctx := context.Background()
 
-	svc, err := getVibespaceService()
+	// Ensure daemon is running (auto-start if needed)
+	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		return err
+	}
+
+	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
 		return err
 	}
@@ -137,8 +147,8 @@ func runForward(vibespace string, args []string) error {
 	kubeconfig := filepath.Join(home, ".kube", "config")
 	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
 
-	// Find the pod
-	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespace)
+	// Find the pod using internal ID
+	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vs.ID)
 
 	findCmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,

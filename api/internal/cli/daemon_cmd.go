@@ -11,6 +11,7 @@ import (
 	"vibespace/pkg/daemon"
 	"vibespace/pkg/k8s"
 	"vibespace/pkg/portforward"
+	"vibespace/pkg/vibespace"
 
 	"github.com/spf13/cobra"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,6 +66,15 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create k8s client: %w", err)
 	}
 
+	// Resolve vibespace name to internal ID
+	svc := vibespace.NewService(k8sClient)
+	vs, err := svc.Get(ctx, daemonVibespace)
+	if err != nil {
+		return fmt.Errorf("failed to get vibespace: %w", err)
+	}
+	vibespaceID := vs.ID
+	slog.Info("resolved vibespace", "name", daemonVibespace, "id", vibespaceID)
+
 	// Create daemon state
 	state, err := daemon.NewDaemonState(daemonVibespace)
 	if err != nil {
@@ -84,8 +94,8 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	})
 
 	// Discover pods for this vibespace
-	slog.Info("discovering pods", "vibespace", daemonVibespace)
-	agents, err := discoverVibespaceAgents(ctx, k8sClient, daemonVibespace)
+	slog.Info("discovering pods", "vibespace", daemonVibespace, "id", vibespaceID)
+	agents, err := discoverVibespaceAgents(ctx, k8sClient, vibespaceID)
 	if err != nil {
 		slog.Warn("failed to discover agents", "error", err)
 	} else {
@@ -174,19 +184,31 @@ func setupDaemonLogging(vibespace string) (*os.File, error) {
 }
 
 // discoverVibespaceAgents discovers all agents (pods) for a vibespace
+// Uses the vibespace.dev/claude-id label to identify agents
 func discoverVibespaceAgents(ctx context.Context, k8sClient *k8s.Client, vibespaceID string) (map[string]string, error) {
-	// For now, assume single agent named "claude-1"
-	// TODO: Support multi-agent discovery using pod labels
-
 	pods, err := k8sClient.Clientset().CoreV1().Pods(k8s.VibespaceNamespace).List(ctx, listOptionsForVibespace(vibespaceID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list pods: %w", err)
 	}
 
 	agents := make(map[string]string)
-	for i, pod := range pods.Items {
-		// Name agents as claude-1, claude-2, etc.
-		agentName := fmt.Sprintf("claude-%d", i+1)
+	for _, pod := range pods.Items {
+		// Try to get claude-id from pod labels
+		claudeID := "1" // Default for backward compatibility
+		if labels := pod.Labels; labels != nil {
+			if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
+				claudeID = cid
+			}
+		}
+
+		agentName := fmt.Sprintf("claude-%s", claudeID)
+
+		// Skip if we already have this agent (shouldn't happen, but be defensive)
+		if _, exists := agents[agentName]; exists {
+			slog.Warn("duplicate agent discovered", "agent", agentName, "pod", pod.Name)
+			continue
+		}
+
 		agents[agentName] = pod.Name
 	}
 

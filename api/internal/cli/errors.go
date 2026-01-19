@@ -199,7 +199,8 @@ func wrapKubectlError(err error, operation, vibespace string) error {
 }
 
 // findPodForVibespace finds a running pod for a vibespace with helpful errors
-func findPodForVibespace(ctx context.Context, vibespace string) (string, error) {
+// vibespaceID should be the internal ID (e.g., "0d93a21d"), not the user-friendly name
+func findPodForVibespace(ctx context.Context, vibespaceID string, vibespaceNameForErrors string) (string, error) {
 	home, _ := os.UserHomeDir()
 	kubeconfig := filepath.Join(home, ".kube", "config")
 	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
@@ -209,7 +210,7 @@ func findPodForVibespace(ctx context.Context, vibespace string) (string, error) 
 		return "", fmt.Errorf("kubectl not found. Run 'vibespace init' to install it")
 	}
 
-	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespace)
+	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespaceID)
 
 	findCmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,
@@ -221,12 +222,12 @@ func findPodForVibespace(ctx context.Context, vibespace string) (string, error) 
 
 	podNameBytes, err := findCmd.Output()
 	if err != nil {
-		return "", wrapKubectlError(err, "find pod", vibespace)
+		return "", wrapKubectlError(err, "find pod", vibespaceNameForErrors)
 	}
 
 	podName := strings.TrimSpace(string(podNameBytes))
 	if podName == "" {
-		return "", fmt.Errorf("no running pod found for '%s'. The vibespace may be scaled to zero or starting up.\nCheck status: vibespace list\nStart it: vibespace %s start", vibespace, vibespace)
+		return "", fmt.Errorf("no running pod found for '%s'. The vibespace may be scaled to zero or starting up.\nCheck status: vibespace list\nStart it: vibespace %s start", vibespaceNameForErrors, vibespaceNameForErrors)
 	}
 
 	return podName, nil
@@ -238,4 +239,95 @@ func printErrorWithHint(err error, hint string) {
 	if hint != "" {
 		fmt.Fprintf(os.Stderr, "Hint: %s\n", hint)
 	}
+}
+
+// ensureDaemonRunning ensures the daemon is running for a vibespace and returns the local port for an agent.
+// It will auto-start the daemon if it's not running.
+// Returns the local port for the agent's ttyd/gotty forward (port 7681).
+func ensureDaemonRunning(ctx context.Context, vibespaceNameOrID string, agentName string) (int, error) {
+	// Get vibespace service with checks
+	svc, err := getVibespaceServiceWithCheck()
+	if err != nil {
+		return 0, err
+	}
+
+	// Verify vibespace exists and is running
+	_, err = checkVibespaceRunning(ctx, svc, vibespaceNameOrID)
+	if err != nil {
+		return 0, err
+	}
+
+	// Ensure daemon is running (auto-start if needed)
+	if !daemon.IsRunning(vibespaceNameOrID) {
+		printStep("Starting port-forward daemon...")
+		if err := daemon.SpawnDaemon(vibespaceNameOrID); err != nil {
+			return 0, fmt.Errorf("failed to start daemon: %w", err)
+		}
+	}
+
+	// Query daemon for the agent's ttyd local port
+	client, err := daemon.NewClient(vibespaceNameOrID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to connect to daemon: %w", err)
+	}
+
+	result, err := client.ListForwards()
+	if err != nil {
+		return 0, fmt.Errorf("failed to list forwards: %w", err)
+	}
+
+	// Find the agent's ttyd forward
+	for _, agent := range result.Agents {
+		if agent.Name == agentName {
+			for _, fwd := range agent.Forwards {
+				if fwd.Type == "ttyd" {
+					if fwd.Status != "active" {
+						return 0, fmt.Errorf("agent '%s' ttyd forward is not active (status: %s)", agentName, fwd.Status)
+					}
+					return fwd.LocalPort, nil
+				}
+			}
+			return 0, fmt.Errorf("agent '%s' has no ttyd forward", agentName)
+		}
+	}
+
+	return 0, fmt.Errorf("agent '%s' not found. Available agents: %s", agentName, formatAvailableAgents(result.Agents))
+}
+
+// formatAvailableAgents formats a list of agent names for error messages
+func formatAvailableAgents(agents []daemon.AgentStatus) string {
+	if len(agents) == 0 {
+		return "(none)"
+	}
+	names := make([]string, len(agents))
+	for i, a := range agents {
+		names[i] = a.Name
+	}
+	return strings.Join(names, ", ")
+}
+
+// ensureDaemonRunningSimple ensures the daemon is running for a vibespace (auto-starts if needed).
+// This is a simpler version that doesn't return the local port.
+func ensureDaemonRunningSimple(ctx context.Context, vibespaceNameOrID string) error {
+	// Get vibespace service with checks
+	svc, err := getVibespaceServiceWithCheck()
+	if err != nil {
+		return err
+	}
+
+	// Verify vibespace exists and is running
+	_, err = checkVibespaceRunning(ctx, svc, vibespaceNameOrID)
+	if err != nil {
+		return err
+	}
+
+	// Ensure daemon is running (auto-start if needed)
+	if !daemon.IsRunning(vibespaceNameOrID) {
+		printStep("Starting port-forward daemon...")
+		if err := daemon.SpawnDaemon(vibespaceNameOrID); err != nil {
+			return fmt.Errorf("failed to start daemon: %w", err)
+		}
+	}
+
+	return nil
 }
