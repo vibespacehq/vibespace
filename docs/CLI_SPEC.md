@@ -34,8 +34,11 @@ VIBESPACE OPERATIONS (vibespace <name> ...)
 AGENT MANAGEMENT (vibespace <name> ...)
 ──────────────────────────────────────────────────────────────────────────
   vibespace <name> agents            List Claude agents in vibespace
-  vibespace <name> spawn             Create additional Claude agent
+  vibespace <name> spawn             Create additional Claude agent (shared filesystem)
       --name <agent-name>            Custom agent name (default: claude-N)
+  vibespace <name> fork              Fork vibespace with cloned filesystem (independent copy)
+      --name <fork-name>             Name for the forked vibespace
+                                     Agent works on snapshot of current state
   vibespace <name> kill <agent>      Remove a Claude agent
 
 CONNECTION (vibespace <name> ...)
@@ -436,4 +439,29 @@ vibespace session start fullstack
 # > @claude-1@frontend build the login page
 # > @claude-1@backend create the auth API
 # > @all@frontend @all@backend coordinate on the API contract
+```
+
+### Forking for Parallel Exploration
+
+```bash
+# Fork a vibespace to explore different approaches independently
+vibespace myproject fork --name myproject-experiment
+# ✓ Snapshot created from myproject
+# ✓ Created vibespace 'myproject-experiment' with cloned filesystem
+
+# Now two independent vibespaces exist:
+vibespace list
+# NAME                   STATUS    AGENTS
+# myproject              running   1
+# myproject-experiment   running   1
+
+# Work on original
+vibespace myproject connect
+# > Try approach A...
+
+# Work on fork (completely independent filesystem)
+vibespace myproject-experiment connect
+# > Try approach B...
+
+# If experiment succeeds, can merge changes back via git
 ```

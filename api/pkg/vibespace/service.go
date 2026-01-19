@@ -247,7 +247,7 @@ func (s *Service) Delete(ctx context.Context, nameOrID string) error {
 }
 
 // Start starts a stopped vibespace
-func (s *Service) Start(ctx context.Context, id string) error {
+func (s *Service) Start(ctx context.Context, nameOrID string) error {
 	if err := s.ensureClients(); err != nil {
 		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
@@ -256,25 +256,31 @@ func (s *Service) Start(ctx context.Context, id string) error {
 		return fmt.Errorf("knative manager is not initialized")
 	}
 
-	slog.Info("starting vibespace", "vibespace_id", id)
+	// Resolve name to internal ID
+	vibespace, err := s.Get(ctx, nameOrID)
+	if err != nil {
+		return fmt.Errorf("vibespace not found: %w", err)
+	}
+
+	slog.Info("starting vibespace", "vibespace_id", vibespace.ID, "name", vibespace.Name)
 
 	// Set minScale=1 to ensure at least 1 replica is running
 	annotations := map[string]string{
 		"autoscaling.knative.dev/minScale": "1",
 	}
 
-	err := s.knativeManager.PatchService(ctx, id, annotations)
+	err = s.knativeManager.PatchService(ctx, vibespace.ID, annotations)
 	if err != nil {
-		slog.Error("failed to start vibespace", "vibespace_id", id, "error", err)
+		slog.Error("failed to start vibespace", "vibespace_id", vibespace.ID, "error", err)
 		return fmt.Errorf("failed to start vibespace: %w", err)
 	}
 
-	slog.Info("vibespace started successfully", "vibespace_id", id, "minScale", "1")
+	slog.Info("vibespace started successfully", "vibespace_id", vibespace.ID, "minScale", "1")
 	return nil
 }
 
 // Stop stops a running vibespace
-func (s *Service) Stop(ctx context.Context, id string) error {
+func (s *Service) Stop(ctx context.Context, nameOrID string) error {
 	if err := s.ensureClients(); err != nil {
 		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
@@ -283,20 +289,26 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 		return fmt.Errorf("knative manager is not initialized")
 	}
 
-	slog.Info("stopping vibespace", "vibespace_id", id)
+	// Resolve name to internal ID
+	vibespace, err := s.Get(ctx, nameOrID)
+	if err != nil {
+		return fmt.Errorf("vibespace not found: %w", err)
+	}
+
+	slog.Info("stopping vibespace", "vibespace_id", vibespace.ID, "name", vibespace.Name)
 
 	// Set minScale=0 to allow scaling to zero replicas
 	annotations := map[string]string{
 		"autoscaling.knative.dev/minScale": "0",
 	}
 
-	err := s.knativeManager.PatchService(ctx, id, annotations)
+	err = s.knativeManager.PatchService(ctx, vibespace.ID, annotations)
 	if err != nil {
-		slog.Error("failed to stop vibespace", "vibespace_id", id, "error", err)
+		slog.Error("failed to stop vibespace", "vibespace_id", vibespace.ID, "error", err)
 		return fmt.Errorf("failed to stop vibespace: %w", err)
 	}
 
-	slog.Info("vibespace stopped successfully", "vibespace_id", id, "minScale", "0")
+	slog.Info("vibespace stopped successfully", "vibespace_id", vibespace.ID, "minScale", "0")
 	return nil
 }
 
@@ -492,4 +504,142 @@ func isValidGitURL(url string) bool {
 	}
 
 	return strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "git@")
+}
+
+// AgentInfo contains information about an agent
+type AgentInfo struct {
+	ClaudeID  string // "1", "2", etc.
+	AgentName string // "claude-1", "claude-2", etc.
+	Status    string // running, stopped, creating
+}
+
+// SpawnAgent creates a new Claude agent in a vibespace
+// Returns the agent name (e.g., "claude-2")
+func (s *Service) SpawnAgent(ctx context.Context, nameOrID string) (string, error) {
+	if err := s.ensureClients(); err != nil {
+		return "", fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+	}
+
+	if s.knativeManager == nil {
+		return "", fmt.Errorf("knative manager is not initialized")
+	}
+
+	// Get the vibespace
+	vs, err := s.Get(ctx, nameOrID)
+	if err != nil {
+		return "", fmt.Errorf("vibespace not found: %w", err)
+	}
+
+	// Get next available claude ID
+	nextID, err := s.knativeManager.GetNextAgentID(ctx, vs.ID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get next agent ID: %w", err)
+	}
+
+	slog.Info("spawning agent", "vibespace_id", vs.ID, "name", vs.Name, "claude_id", nextID)
+
+	// Get the image
+	image := getVibespaceImage()
+
+	// Create the agent service
+	pvcName := ""
+	if vs.Persistent {
+		pvcName = fmt.Sprintf("vibespace-%s-pvc", vs.ID)
+	}
+
+	err = s.knativeManager.CreateAgentService(ctx, &knative.CreateAgentServiceRequest{
+		VibespaceID: vs.ID,
+		Name:        vs.Name,
+		ProjectName: vs.ProjectName,
+		ClaudeID:    nextID,
+		Image:       image,
+		Resources:   vs.Resources,
+		Env:         nil,
+		PVCName:     pvcName,
+	})
+	if err != nil {
+		slog.Error("failed to spawn agent", "vibespace_id", vs.ID, "claude_id", nextID, "error", err)
+		return "", fmt.Errorf("failed to spawn agent: %w", err)
+	}
+
+	agentName := fmt.Sprintf("claude-%s", nextID)
+	slog.Info("agent spawned successfully", "vibespace_id", vs.ID, "agent", agentName)
+
+	return agentName, nil
+}
+
+// KillAgent removes a Claude agent from a vibespace
+// Cannot kill claude-1 (the main agent)
+func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentID string) error {
+	if err := s.ensureClients(); err != nil {
+		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+	}
+
+	if s.knativeManager == nil {
+		return fmt.Errorf("knative manager is not initialized")
+	}
+
+	// Parse agent name to get claude ID
+	claudeID := agentID
+	if strings.HasPrefix(agentID, "claude-") {
+		claudeID = strings.TrimPrefix(agentID, "claude-")
+	}
+
+	// Cannot kill claude-1
+	if claudeID == "1" {
+		return fmt.Errorf("cannot kill claude-1: it is the main agent. Delete the vibespace to remove it")
+	}
+
+	// Get the vibespace
+	vs, err := s.Get(ctx, nameOrID)
+	if err != nil {
+		return fmt.Errorf("vibespace not found: %w", err)
+	}
+
+	slog.Info("killing agent", "vibespace_id", vs.ID, "name", vs.Name, "claude_id", claudeID)
+
+	// Delete the agent service
+	err = s.knativeManager.DeleteAgentService(ctx, vs.ID, claudeID)
+	if err != nil {
+		slog.Error("failed to kill agent", "vibespace_id", vs.ID, "claude_id", claudeID, "error", err)
+		return fmt.Errorf("failed to kill agent: %w", err)
+	}
+
+	slog.Info("agent killed successfully", "vibespace_id", vs.ID, "claude_id", claudeID)
+	return nil
+}
+
+// ListAgents returns all agents in a vibespace
+func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo, error) {
+	if err := s.ensureClients(); err != nil {
+		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+	}
+
+	if s.knativeManager == nil {
+		return nil, fmt.Errorf("knative manager is not initialized")
+	}
+
+	// Get the vibespace
+	vs, err := s.Get(ctx, nameOrID)
+	if err != nil {
+		return nil, fmt.Errorf("vibespace not found: %w", err)
+	}
+
+	// List agents from Knative
+	knativeAgents, err := s.knativeManager.ListAgentsForVibespace(ctx, vs.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	// Convert to our AgentInfo type
+	agents := make([]AgentInfo, len(knativeAgents))
+	for i, ka := range knativeAgents {
+		agents[i] = AgentInfo{
+			ClaudeID:  ka.ClaudeID,
+			AgentName: ka.AgentName,
+			Status:    ka.Status,
+		}
+	}
+
+	return agents, nil
 }

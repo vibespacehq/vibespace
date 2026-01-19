@@ -369,3 +369,276 @@ func (m *ServiceManager) PatchService(ctx context.Context, vibespaceID string, a
 
 	return nil
 }
+
+// CreateAgentServiceRequest contains parameters for creating an agent service
+type CreateAgentServiceRequest struct {
+	VibespaceID string
+	Name        string
+	ProjectName string
+	ClaudeID    string // Claude instance ID (2, 3, 4, etc.)
+	Image       string
+	Resources   model.Resources
+	Env         map[string]string
+	PVCName     string // Shared PVC name for all agents
+}
+
+// CreateAgentService creates a Knative Service for an additional agent in a vibespace
+// Service naming: vibespace-<id>-claude-<N>
+func (m *ServiceManager) CreateAgentService(ctx context.Context, req *CreateAgentServiceRequest) error {
+	serviceName := fmt.Sprintf("vibespace-%s-claude-%s", req.VibespaceID, req.ClaudeID)
+
+	// Build volumes and volume mounts (share the same PVC)
+	var volumes, volumeMounts []interface{}
+	if req.PVCName != "" {
+		volumes = []interface{}{
+			map[string]interface{}{
+				"name": "vibespace-data",
+				"persistentVolumeClaim": map[string]interface{}{
+					"claimName": req.PVCName,
+				},
+			},
+		}
+		volumeMounts = []interface{}{
+			map[string]interface{}{
+				"name":      "vibespace-data",
+				"mountPath": "/vibespace",
+			},
+		}
+	}
+
+	// Build environment variables
+	env := []interface{}{}
+	for key, value := range req.Env {
+		env = append(env, map[string]interface{}{
+			"name":  key,
+			"value": value,
+		})
+	}
+	env = append(env, map[string]interface{}{
+		"name":  "VIBESPACE_ID",
+		"value": req.VibespaceID,
+	})
+	env = append(env, map[string]interface{}{
+		"name":  "VIBESPACE_PROJECT",
+		"value": req.ProjectName,
+	})
+	env = append(env, map[string]interface{}{
+		"name":  "VIBESPACE_CLAUDE_ID",
+		"value": req.ClaudeID,
+	})
+
+	// Single port for gotty web terminal
+	ports := []map[string]interface{}{
+		{
+			"containerPort": 7681,
+			"name":          "http1",
+			"protocol":      "TCP",
+		},
+	}
+
+	// Build Knative Service manifest
+	service := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "serving.knative.dev/v1",
+			"kind":       "Service",
+			"metadata": map[string]interface{}{
+				"name":      serviceName,
+				"namespace": k8s.VibespaceNamespace,
+				"labels": map[string]string{
+					"app.kubernetes.io/name":       req.Name,
+					"app.kubernetes.io/managed-by": "vibespace",
+					"vibespace.dev/id":             req.VibespaceID,
+					"vibespace.dev/project-name":   req.ProjectName,
+					"vibespace.dev/claude-id":      req.ClaudeID,
+					"vibespace.dev/is-agent":       "true",
+				},
+				"annotations": map[string]string{
+					"vibespace.dev/created-at": metav1.Now().Format("2006-01-02T15:04:05Z"),
+				},
+			},
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"metadata": map[string]interface{}{
+						"labels": map[string]string{
+							"app.kubernetes.io/name":     req.Name,
+							"vibespace.dev/id":           req.VibespaceID,
+							"vibespace.dev/project-name": req.ProjectName,
+							"vibespace.dev/claude-id":    req.ClaudeID,
+						},
+						"annotations": map[string]string{
+							"autoscaling.knative.dev/minScale":       "1", // Agents start immediately
+							"autoscaling.knative.dev/maxScale":       "1",
+							"autoscaling.knative.dev/scaleDownDelay": "10m",
+							"autoscaling.knative.dev/target":         "1",
+						},
+					},
+					"spec": map[string]interface{}{
+						"containerConcurrency": 1,
+						"timeoutSeconds":       600,
+						"containers": []interface{}{
+							map[string]interface{}{
+								"name":  "vibespace",
+								"image": req.Image,
+								"ports": ports,
+								"env":   env,
+								"resources": map[string]interface{}{
+									"requests": map[string]interface{}{
+										"cpu":    req.Resources.CPU,
+										"memory": req.Resources.Memory,
+									},
+									"limits": map[string]interface{}{
+										"cpu":    req.Resources.CPU,
+										"memory": req.Resources.Memory,
+									},
+								},
+								"volumeMounts": volumeMounts,
+							},
+						},
+						"volumes": volumes,
+					},
+				},
+			},
+		},
+	}
+
+	// Create the Knative Service
+	_, err := m.dynamicClient.Resource(KnativeGVR).Namespace(k8s.VibespaceNamespace).Create(
+		ctx,
+		service,
+		metav1.CreateOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create agent service: %w", err)
+	}
+
+	return nil
+}
+
+// AgentInfo contains information about an agent
+type AgentInfo struct {
+	ClaudeID    string // "1", "2", etc.
+	AgentName   string // "claude-1", "claude-2", etc.
+	ServiceName string // Knative service name
+	Status      string // running, stopped, creating, etc.
+}
+
+// ListAgentsForVibespace lists all agents (Knative services) for a vibespace
+func (m *ServiceManager) ListAgentsForVibespace(ctx context.Context, vibespaceID string) ([]AgentInfo, error) {
+	services, err := m.dynamicClient.Resource(KnativeGVR).Namespace(k8s.VibespaceNamespace).List(
+		ctx,
+		metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list services: %w", err)
+	}
+
+	agents := make([]AgentInfo, 0, len(services.Items))
+	for _, svc := range services.Items {
+		metadata, _ := svc.Object["metadata"].(map[string]interface{})
+		labels, _ := metadata["labels"].(map[string]interface{})
+		name, _ := metadata["name"].(string)
+
+		claudeID := "1" // Default for main service
+		if cid, ok := labels["vibespace.dev/claude-id"].(string); ok {
+			claudeID = cid
+		}
+
+		status := knativeStatusToString(&svc)
+
+		agents = append(agents, AgentInfo{
+			ClaudeID:    claudeID,
+			AgentName:   fmt.Sprintf("claude-%s", claudeID),
+			ServiceName: name,
+			Status:      status,
+		})
+	}
+
+	return agents, nil
+}
+
+// knativeStatusToString converts Knative status to a string
+func knativeStatusToString(svc *unstructured.Unstructured) string {
+	status, found, _ := unstructured.NestedMap(svc.Object, "status")
+	if !found {
+		return "creating"
+	}
+
+	conditions, found, _ := unstructured.NestedSlice(status, "conditions")
+	if !found {
+		return "creating"
+	}
+
+	for _, c := range conditions {
+		condition, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		condType, _, _ := unstructured.NestedString(condition, "type")
+		if condType == "Ready" {
+			condStatus, _, _ := unstructured.NestedString(condition, "status")
+			if condStatus == "True" {
+				return "running"
+			}
+			reason, _, _ := unstructured.NestedString(condition, "reason")
+			if reason == "NoTraffic" {
+				return "stopped"
+			}
+			if reason == "IngressNotConfigured" {
+				// Check ConfigurationsReady
+				for _, c2 := range conditions {
+					cond2, ok := c2.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if t, _, _ := unstructured.NestedString(cond2, "type"); t == "ConfigurationsReady" {
+						if s, _, _ := unstructured.NestedString(cond2, "status"); s == "True" {
+							return "running"
+						}
+					}
+				}
+			}
+			return "creating"
+		}
+	}
+
+	return "creating"
+}
+
+// DeleteAgentService deletes an agent's Knative Service
+func (m *ServiceManager) DeleteAgentService(ctx context.Context, vibespaceID string, claudeID string) error {
+	serviceName := fmt.Sprintf("vibespace-%s-claude-%s", vibespaceID, claudeID)
+	err := m.dynamicClient.Resource(KnativeGVR).Namespace(k8s.VibespaceNamespace).Delete(
+		ctx,
+		serviceName,
+		metav1.DeleteOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete agent service: %w", err)
+	}
+
+	return nil
+}
+
+// GetNextAgentID returns the next available claude ID for a vibespace
+func (m *ServiceManager) GetNextAgentID(ctx context.Context, vibespaceID string) (string, error) {
+	agents, err := m.ListAgentsForVibespace(ctx, vibespaceID)
+	if err != nil {
+		return "", err
+	}
+
+	// Find the highest existing ID
+	maxID := 0
+	for _, agent := range agents {
+		var id int
+		if _, err := fmt.Sscanf(agent.ClaudeID, "%d", &id); err == nil {
+			if id > maxID {
+				maxID = id
+			}
+		}
+	}
+
+	return fmt.Sprintf("%d", maxID+1), nil
+}

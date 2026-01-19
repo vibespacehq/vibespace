@@ -5,75 +5,115 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"runtime"
+
+	gottyclient "github.com/moul/gotty-client"
 )
+
+// browserFlag tracks whether to open browser instead of terminal
+var connectBrowserFlag bool
 
 func runConnect(vibespace string, args []string) error {
 	ctx := context.Background()
 
-	svc, err := getVibespaceService()
+	// Parse flags from args
+	browser := false
+	agent := "claude-1"
+
+	filteredArgs := []string{}
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--browser", "-b":
+			browser = true
+		case "--agent", "-a":
+			if i+1 < len(args) {
+				agent = args[i+1]
+				i++
+			}
+		default:
+			// If arg doesn't start with -, treat as agent name
+			if len(args[i]) > 0 && args[i][0] != '-' {
+				agent = args[i]
+			} else {
+				filteredArgs = append(filteredArgs, args[i])
+			}
+		}
+	}
+
+	// Also check global flag if set
+	if connectBrowserFlag {
+		browser = true
+	}
+
+	// Ensure daemon is running and get the local port for this agent
+	localPort, err := ensureDaemonRunning(ctx, vibespace, agent)
 	if err != nil {
 		return err
 	}
 
-	// Verify vibespace exists and is running
-	vs, err := svc.Get(ctx, vibespace)
+	url := fmt.Sprintf("http://localhost:%d", localPort)
+
+	if browser {
+		printStep("Opening browser for %s in %s...", agent, vibespace)
+		return openBrowser(url)
+	}
+
+	printStep("Connecting to %s in %s...", agent, vibespace)
+	return connectViaGottyClient(url)
+}
+
+// connectViaGottyClient connects to a GoTTY server using the gotty-client library
+func connectViaGottyClient(url string) error {
+	client, err := gottyclient.NewClient(url)
 	if err != nil {
-		return fmt.Errorf("vibespace '%s' not found", vibespace)
+		return fmt.Errorf("failed to create gotty client: %w", err)
 	}
 
-	if vs.Status != "running" {
-		return fmt.Errorf("vibespace '%s' is not running. Start it with: vibespace %s start", vibespace, vibespace)
+	// Configure client
+	client.SkipTLSVerify = true
+
+	// Connect to the server
+	if err := client.Connect(); err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 
-	// Determine which agent to connect to
-	agentID := "claude-1" // Default
-	if len(args) > 0 {
-		agentID = args[0]
-	}
-
-	// Get paths
-	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".kube", "config")
-	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
-
-	// Build pod name
-	// Format: vibespace-<vibespace-name>-<agent-id>-<hash>
-	// For now, we use a simplified approach
-	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespace)
-
-	printStep("Connecting to %s in %s...", agentID, vibespace)
-
-	// Find the pod
-	findCmd := exec.CommandContext(ctx, kubectlBin,
-		"--kubeconfig", kubeconfig,
-		"-n", "vibespace",
-		"get", "pod",
-		"-l", podSelector,
-		"-o", "jsonpath={.items[0].metadata.name}",
-	)
-	podNameBytes, err := findCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to find pod: %w", err)
-	}
-	podName := string(podNameBytes)
-	if podName == "" {
-		return fmt.Errorf("no running pod found for vibespace '%s'", vibespace)
-	}
-
-	// Connect to the pod
-	fmt.Printf("Connected to %s. Type 'exit' to disconnect.\n", agentID)
+	fmt.Println("Connected. Type 'exit' to disconnect.")
 	fmt.Println()
 
-	cmd := exec.CommandContext(ctx, kubectlBin,
-		"--kubeconfig", kubeconfig,
-		"-n", "vibespace",
-		"exec", "-it", podName,
-		"--", "/bin/bash",
-	)
-	cmd.Stdin = os.Stdin
+	// Loop handles terminal I/O until connection closes
+	if err := client.Loop(); err != nil {
+		// Check if this is a normal disconnect
+		if err.Error() == "websocket: close 1000 (normal)" {
+			return nil
+		}
+		return fmt.Errorf("connection error: %w", err)
+	}
+
+	return nil
+}
+
+// openBrowser opens the URL in the default browser
+func openBrowser(url string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to open browser: %w", err)
+	}
+
+	printSuccess("Browser opened: %s", url)
+	return nil
 }
