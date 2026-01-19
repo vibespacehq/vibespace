@@ -45,7 +45,7 @@ RUN GOTTY_VERSION="1.5.0" && \
         *) echo "Unsupported architecture" && exit 1 ;; \
     esac && \
     curl -sL "https://github.com/sorenisanerd/gotty/releases/download/v${GOTTY_VERSION}/gotty_v${GOTTY_VERSION}_linux_${GOTTY_ARCH}.tar.gz" | \
-    tar xz -C /usr/bin gotty && \
+    tar xz --strip-components=0 -C /usr/bin && \
     chmod +x /usr/bin/gotty
 
 # Install Claude Code CLI globally
