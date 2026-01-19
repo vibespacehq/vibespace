@@ -10,6 +10,16 @@ mkdir -p /var/log/supervisor
 # Ensure /vibespace is writable
 chown -R user:user /vibespace 2>/dev/null || true
 
+# Set up SSH authorized_keys if AUTHORIZED_KEYS env var is set
+if [ -n "$AUTHORIZED_KEYS" ]; then
+    echo "Setting up SSH authorized_keys..."
+    mkdir -p /home/user/.ssh
+    echo "$AUTHORIZED_KEYS" > /home/user/.ssh/authorized_keys
+    chmod 700 /home/user/.ssh
+    chmod 600 /home/user/.ssh/authorized_keys
+    chown -R user:user /home/user/.ssh
+fi
+
 # Set up Claude Code configuration if ANTHROPIC_API_KEY is set
 if [ -n "$ANTHROPIC_API_KEY" ]; then
     su - user -c "mkdir -p /home/user/.config/claude-code"

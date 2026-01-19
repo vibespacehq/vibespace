@@ -25,7 +25,9 @@ const (
 type ForwardType string
 
 const (
-	// TypeTTYD is the ttyd terminal forward (always present)
+	// TypeSSH is the SSH terminal forward (primary, fast)
+	TypeSSH ForwardType = "ssh"
+	// TypeTTYD is the ttyd terminal forward (browser fallback)
 	TypeTTYD ForwardType = "ttyd"
 	// TypeManual is a manually added forward
 	TypeManual ForwardType = "manual"
@@ -61,7 +63,10 @@ type AgentState struct {
 	Forwards []ForwardState `json:"forwards"`
 }
 
-// DefaultTTYDPort is the default port for ttyd
+// DefaultSSHPort is the default port for SSH
+const DefaultSSHPort = 22
+
+// DefaultTTYDPort is the default port for ttyd (browser fallback)
 const DefaultTTYDPort = 7681
 
 // CalculateLocalPort calculates the local port based on agent number and remote port

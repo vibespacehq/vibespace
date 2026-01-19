@@ -120,10 +120,22 @@ func checkVibespaceRunning(ctx context.Context, svc *vibespace.Service, name str
 	}
 }
 
-// ensureDaemonRunning ensures the daemon is running for a vibespace and returns the local port for an agent.
+// ensureDaemonRunningSSH ensures the daemon is running and returns the local SSH port for an agent.
 // It will auto-start the daemon if it's not running.
-// Returns the local port for the agent's ttyd/gotty forward (port 7681).
-func ensureDaemonRunning(ctx context.Context, vibespaceNameOrID string, agentName string) (int, error) {
+// Returns the local port for the agent's SSH forward (port 22).
+func ensureDaemonRunningSSH(ctx context.Context, vibespaceNameOrID string, agentName string) (int, error) {
+	return ensureDaemonRunningForType(ctx, vibespaceNameOrID, agentName, "ssh")
+}
+
+// ensureDaemonRunningTTYD ensures the daemon is running and returns the local ttyd port for an agent.
+// It will auto-start the daemon if it's not running.
+// Returns the local port for the agent's ttyd forward (port 7681).
+func ensureDaemonRunningTTYD(ctx context.Context, vibespaceNameOrID string, agentName string) (int, error) {
+	return ensureDaemonRunningForType(ctx, vibespaceNameOrID, agentName, "ttyd")
+}
+
+// ensureDaemonRunningForType ensures the daemon is running and returns the local port for an agent's forward of the given type.
+func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, agentName string, forwardType string) (int, error) {
 	// Get vibespace service with checks
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -144,7 +156,7 @@ func ensureDaemonRunning(ctx context.Context, vibespaceNameOrID string, agentNam
 		}
 	}
 
-	// Query daemon for the agent's ttyd local port
+	// Query daemon for the agent's forward
 	client, err := daemon.NewClient(vibespaceNameOrID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to connect to daemon: %w", err)
@@ -155,14 +167,14 @@ func ensureDaemonRunning(ctx context.Context, vibespaceNameOrID string, agentNam
 		return 0, fmt.Errorf("failed to list forwards: %w", err)
 	}
 
-	// Find the agent's ttyd forward
+	// Find the agent's forward of the requested type
 	for _, agent := range result.Agents {
 		if agent.Name == agentName {
 			for _, fwd := range agent.Forwards {
-				if fwd.Type == "ttyd" {
+				if fwd.Type == forwardType {
 					// Auto-start stopped forwards
 					if fwd.Status != "active" {
-						printStep("Restarting ttyd forward...")
+						printStep("Restarting %s forward...", forwardType)
 						if err := client.RestartForward(agentName, fwd.RemotePort); err != nil {
 							return 0, fmt.Errorf("failed to restart forward: %w", err)
 						}
@@ -172,7 +184,7 @@ func ensureDaemonRunning(ctx context.Context, vibespaceNameOrID string, agentNam
 					return fwd.LocalPort, nil
 				}
 			}
-			return 0, fmt.Errorf("agent '%s' has no ttyd forward", agentName)
+			return 0, fmt.Errorf("agent '%s' has no %s forward", agentName, forwardType)
 		}
 	}
 
