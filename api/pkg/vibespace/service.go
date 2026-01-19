@@ -147,11 +147,12 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		"pvc_name", pvcName)
 
 	// Set default resources if not provided
+	// Keep these low for local development - can run multiple vibespaces
 	resources := req.Resources
 	if resources == nil {
 		resources = &model.Resources{
-			CPU:     "1",
-			Memory:  "2Gi",
+			CPU:     "250m",
+			Memory:  "512Mi",
 			Storage: "10Gi",
 		}
 	}

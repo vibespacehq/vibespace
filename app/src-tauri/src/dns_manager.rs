@@ -40,6 +40,13 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 
+#[cfg(target_os = "macos")]
+use security_framework::certificate::SecCertificate;
+#[cfg(target_os = "macos")]
+use security_framework::trust_settings::{Domain, TrustSettings};
+#[cfg(target_os = "macos")]
+use dispatch::Queue;
+
 // ============================================================================
 // Common Types
 // ============================================================================
@@ -263,6 +270,7 @@ impl MacOsDnsProvider {
         );
 
         let output = Command::new("osascript")
+            .current_dir("/tmp")  // Avoid getcwd errors from invalid working directory
             .arg("-e")
             .arg(&script)
             .output()
@@ -288,6 +296,7 @@ impl MacOsDnsProvider {
         let script = "do shell script \"rm -f /etc/resolver/vibe.space\" with administrator privileges";
 
         let output = Command::new("osascript")
+            .current_dir("/tmp")  // Avoid getcwd errors from invalid working directory
             .arg("-e")
             .arg(script)
             .output()
@@ -1077,6 +1086,7 @@ fn setup_macos_port_forwarding() -> Result<(), String> {
     );
 
     let output = Command::new("osascript")
+        .current_dir("/tmp")  // Avoid getcwd errors from invalid working directory
         .arg("-e")
         .arg(&script)
         .output()
@@ -1171,6 +1181,7 @@ fn cleanup_macos_port_forwarding() -> Result<(), String> {
     );
 
     let output = Command::new("osascript")
+        .current_dir("/tmp")  // Avoid getcwd errors from invalid working directory
         .arg("-e")
         .arg(&script)
         .output()
@@ -1316,48 +1327,36 @@ pub fn setup_tls_certificates() -> Result<(PathBuf, PathBuf), String> {
     let ca_root = home_dir.join("Library/Application Support/mkcert/rootCA.pem");
 
     if ca_root.exists() {
-        println!("Adding CA to system trust store (requires admin)...");
-
         #[cfg(target_os = "macos")]
         {
-            // First, remove any existing mkcert certificates to avoid conflicts
-            // Then add the new CA with trustAsRoot for proper root CA trust
-            let script = format!(
-                r#"do shell script "
-                    # Remove any existing mkcert certs (may fail if none exist, that's OK)
-                    security delete-certificate -c 'mkcert' /Library/Keychains/System.keychain 2>/dev/null || true
-                    # Add CA with trustAsRoot for proper SSL trust
-                    security add-trusted-cert -d -r trustAsRoot -k /Library/Keychains/System.keychain '{}'
-                " with administrator privileges"#,
-                ca_root.display()
-            );
-
-            let trust_output = Command::new("osascript")
-                .arg("-e")
-                .arg(&script)
+            // Check if mkcert CA is already in the System keychain
+            let check_output = Command::new("security")
+                .current_dir("/tmp")
+                .args([
+                    "find-certificate",
+                    "-c",
+                    "mkcert",
+                    "/Library/Keychains/System.keychain",
+                ])
                 .output();
 
-            match trust_output {
-                Ok(output) if output.status.success() => {
-                    println!("CA added to system trust store successfully");
-                }
-                Ok(output) => {
-                    let stderr = String::from_utf8_lossy(&output.stderr);
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    // Log the actual error for debugging
-                    if !stderr.is_empty() {
-                        println!("Warning: Trust store stderr: {}", stderr);
+            let already_trusted = check_output.map(|o| o.status.success()).unwrap_or(false);
+
+            if already_trusted {
+                println!("CA already in system trust store, skipping...");
+            } else {
+                println!("Adding CA to system trust store (requires admin)...");
+
+                // Use security-framework crate to set trust settings directly
+                // This runs in the app's process which has GUI access, so the
+                // macOS trust dialog can appear natively
+                match set_certificate_trust(&ca_root) {
+                    Ok(()) => {
+                        println!("CA added to system trust store successfully");
                     }
-                    if !stdout.is_empty() {
-                        println!("Trust store stdout: {}", stdout);
+                    Err(e) => {
+                        println!("Warning: Could not add CA to trust store: {}", e);
                     }
-                    // Check if user cancelled the admin prompt
-                    if stderr.contains("User canceled") || stderr.contains("-128") {
-                        println!("Warning: User cancelled admin prompt - CA not trusted");
-                    }
-                }
-                Err(e) => {
-                    println!("Warning: Could not add CA to trust store: {}", e);
                 }
             }
         }
@@ -1366,9 +1365,7 @@ pub fn setup_tls_certificates() -> Result<(PathBuf, PathBuf), String> {
         {
             // On Linux, mkcert handles trust stores differently (nss, etc.)
             // Re-run with default trust stores
-            let _ = Command::new(&mkcert_path)
-                .arg("-install")
-                .output();
+            let _ = Command::new(&mkcert_path).arg("-install").output();
         }
     } else if !ca_output.status.success() {
         let stderr = String::from_utf8_lossy(&ca_output.stderr);
@@ -1431,5 +1428,105 @@ pub fn is_tls_configured() -> bool {
     let key_file = certs_dir.join("vibe.space-key.pem");
 
     cert_file.exists() && key_file.exists()
+}
+
+/// Set trust settings for a certificate using the macOS Security framework.
+/// This function shows the native macOS trust dialog to the user.
+/// IMPORTANT: Must run on main thread for macOS Security dialogs to work.
+#[cfg(target_os = "macos")]
+fn set_certificate_trust(cert_path: &Path) -> Result<(), String> {
+    println!("[TLS Trust] Reading cert from: {:?}", cert_path);
+
+    // Read the PEM certificate file
+    let cert_data = fs::read(cert_path)
+        .map_err(|e| format!("Failed to read certificate file: {}", e))?;
+
+    println!("[TLS Trust] Cert file size: {} bytes", cert_data.len());
+
+    // Parse PEM to DER format (exactly like test)
+    let pem_str = String::from_utf8_lossy(&cert_data);
+    let der_data: Vec<u8> = if pem_str.contains("-----BEGIN CERTIFICATE-----") {
+        println!("[TLS Trust] Parsing PEM format...");
+        // Extract base64 content between markers
+        let start = pem_str
+            .find("-----BEGIN CERTIFICATE-----")
+            .ok_or("Invalid PEM: missing BEGIN marker")?
+            + 27;
+        let end = pem_str
+            .find("-----END CERTIFICATE-----")
+            .ok_or("Invalid PEM: missing END marker")?;
+        let b64 = pem_str[start..end].replace('\n', "").replace('\r', "");
+        println!("[TLS Trust] Base64 content length: {}", b64.len());
+        pem_base64_decode(&b64)
+    } else {
+        println!("[TLS Trust] Assuming DER format");
+        cert_data
+    };
+
+    println!("[TLS Trust] DER data size: {} bytes", der_data.len());
+
+    // Create SecCertificate from DER data
+    let cert = SecCertificate::from_der(&der_data)
+        .map_err(|e| format!("Failed to parse certificate: {}", e))?;
+
+    println!("[TLS Trust] Certificate parsed successfully");
+    println!("[TLS Trust] Dispatching to main thread for Security dialog...");
+
+    // macOS Security dialogs MUST run on the main thread to show the authorization UI
+    // Tauri commands run on a background thread pool, so we dispatch to main queue
+    use std::sync::mpsc;
+    let (tx, rx) = mpsc::channel();
+
+    Queue::main().exec_sync(move || {
+        println!("[TLS Trust] Now on main thread, setting trust settings...");
+
+        let trust_settings = TrustSettings::new(Domain::Admin);
+        let result = trust_settings.set_trust_settings_always(&cert);
+
+        match &result {
+            Ok(()) => println!("[TLS Trust] Success!"),
+            Err(e) => {
+                println!("[TLS Trust] Error code: {}", e.code());
+                println!("[TLS Trust] Error message: {}", e.message().unwrap_or_else(|| "no message".to_string()));
+                println!("[TLS Trust] Error debug: {:?}", e);
+            }
+        }
+
+        let _ = tx.send(result.map_err(|e| format!(
+            "Failed to set trust settings: code={}, message={:?}, debug={:?}",
+            e.code(),
+            e.message(),
+            e
+        )));
+    });
+
+    // Wait for the result from the main thread
+    rx.recv()
+        .map_err(|e| format!("Failed to receive result from main thread: {}", e))?
+        .map(|_| {
+            println!("[TLS Trust] Trust settings applied successfully");
+        })
+}
+
+/// Decode base64 to bytes (matches test implementation exactly)
+#[cfg(target_os = "macos")]
+fn pem_base64_decode(input: &str) -> Vec<u8> {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut output = Vec::new();
+    let mut buf = 0u32;
+    let mut bits = 0;
+    for c in input.bytes() {
+        if let Some(val) = TABLE.iter().position(|&x| x == c) {
+            buf = (buf << 6) | val as u32;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                output.push((buf >> bits) as u8);
+            }
+        } else if c == b'=' {
+            break;
+        }
+    }
+    output
 }
 
