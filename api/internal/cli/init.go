@@ -280,8 +280,9 @@ metadata:
 		}
 	}
 
-	// 5. Wait for Knative to be ready
+	// 5. Wait for Knative controller to be ready
 	printStep("Waiting for Knative to be ready...")
+	knativeReady := false
 	for i := 0; i < 30; i++ {
 		cmd := exec.CommandContext(ctx, kubectlBin,
 			"--kubeconfig", kubeconfig,
@@ -291,7 +292,8 @@ metadata:
 		)
 		output, err := cmd.Output()
 		if err == nil && strings.TrimSpace(string(output)) == "1" {
-			return nil
+			knativeReady = true
+			break
 		}
 		select {
 		case <-ctx.Done():
@@ -300,7 +302,60 @@ metadata:
 		}
 	}
 
-	printWarning("Knative may still be starting up. Check with: kubectl -n knative-serving get pods")
+	if !knativeReady {
+		printWarning("Knative may still be starting up. Check with: kubectl -n knative-serving get pods")
+		return nil
+	}
+
+	// 6. Wait for webhook to be ready (required for ConfigMap validation)
+	printStep("Waiting for Knative webhook...")
+	for i := 0; i < 30; i++ {
+		cmd := exec.CommandContext(ctx, kubectlBin,
+			"--kubeconfig", kubeconfig,
+			"-n", "knative-serving",
+			"get", "deploy", "webhook",
+			"-o", "jsonpath={.status.readyReplicas}",
+		)
+		output, err := cmd.Output()
+		if err == nil && strings.TrimSpace(string(output)) == "1" {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+	}
+
+	// 7. Configure Knative features for vibespace (PVC support, init containers)
+	printStep("Configuring Knative features...")
+	featuresPatch := `{"data":{"kubernetes.podspec-persistent-volume-claim":"enabled","kubernetes.podspec-persistent-volume-write":"enabled","kubernetes.podspec-init-containers":"enabled"}}`
+	cmd = exec.CommandContext(ctx, kubectlBin,
+		"--kubeconfig", kubeconfig,
+		"-n", "knative-serving",
+		"patch", "configmap", "config-features",
+		"--type", "merge",
+		"-p", featuresPatch,
+	)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to configure Knative features: %w", err)
+	}
+
+	// 8. Configure Knative defaults (revision timeout)
+	defaultsPatch := `{"data":{"revision-timeout-seconds":"600"}}`
+	cmd = exec.CommandContext(ctx, kubectlBin,
+		"--kubeconfig", kubeconfig,
+		"-n", "knative-serving",
+		"patch", "configmap", "config-defaults",
+		"--type", "merge",
+		"-p", defaultsPatch,
+	)
+	if err := cmd.Run(); err != nil {
+		printWarning("Failed to configure Knative defaults: %v", err)
+	}
+
 	return nil
 }
 

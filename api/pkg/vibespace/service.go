@@ -144,12 +144,12 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		"pvc_name", pvcName)
 
 	// Set default resources if not provided
-	// Keep these low for local development - can run multiple vibespaces
+	// Keep these minimal for local development - allows multiple agents on limited resources
 	resources := req.Resources
 	if resources == nil {
 		resources = &model.Resources{
-			CPU:     "250m",
-			Memory:  "512Mi",
+			CPU:     "100m",
+			Memory:  "256Mi",
 			Storage: "10Gi",
 		}
 	}
@@ -383,8 +383,8 @@ func knativeServiceToVibespace(svc *unstructured.Unstructured) *model.Vibespace 
 		ProjectName: projectName,
 		Status:      status,
 		Resources: model.Resources{
-			CPU:     "1",
-			Memory:  "2Gi",
+			CPU:     "100m",
+			Memory:  "256Mi",
 			Storage: "10Gi",
 		},
 		Persistent: true,

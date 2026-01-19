@@ -29,11 +29,17 @@ Examples:
 }
 
 var (
-	createRepo string
+	createRepo    string
+	createCPU     string
+	createMemory  string
+	createStorage string
 )
 
 func init() {
 	createCmd.Flags().StringVar(&createRepo, "repo", "", "GitHub repository to clone")
+	createCmd.Flags().StringVar(&createCPU, "cpu", "100m", "CPU request/limit (e.g., 100m, 250m, 1)")
+	createCmd.Flags().StringVar(&createMemory, "memory", "256Mi", "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
+	createCmd.Flags().StringVar(&createStorage, "storage", "10Gi", "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
@@ -46,7 +52,14 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build create request
-	req := &model.CreateVibespaceRequest{}
+	req := &model.CreateVibespaceRequest{
+		Persistent: true, // Always use persistent storage for shared filesystem between agents
+		Resources: &model.Resources{
+			CPU:     createCPU,
+			Memory:  createMemory,
+			Storage: createStorage,
+		},
+	}
 	if len(args) > 0 {
 		req.Name = args[0]
 	}
