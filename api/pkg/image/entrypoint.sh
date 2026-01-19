@@ -39,16 +39,15 @@ echo "  Project: ${VIBESPACE_PROJECT:-unknown}"
 echo "  Claude ID: ${VIBESPACE_CLAUDE_ID:-1}"
 echo ""
 echo "  Commands:"
-echo "    claude      - Start Claude Code AI assistant"
-echo "    claude ask  - Ask a quick question"
+echo "    claude        - Start Claude Code AI assistant"
+echo "    claude /login - Authenticate with your Anthropic account"
 echo ""
 EOF
 
 # Log startup info
 echo "vibespace container starting..."
+echo "  VIBESPACE_ID: ${VIBESPACE_ID:-not set}"
 echo "  VIBESPACE_PROJECT: ${VIBESPACE_PROJECT:-not set}"
 echo "  VIBESPACE_CLAUDE_ID: ${VIBESPACE_CLAUDE_ID:-not set}"
-echo "  NATS_URL: ${NATS_URL:-not set}"
-echo "  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+[set]}"
 
 exec "$@"

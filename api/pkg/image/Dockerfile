@@ -1,17 +1,14 @@
 # vibespace Container Image
-# Single minimal image: ttyd + Claude Code + port detector
+# Minimal image: ttyd web terminal + Claude Code CLI
 #
 # Components:
-# - ttyd: Web terminal (port 7681)
-# - Claude Code CLI: AI coding agent
-# - port-detector: Monitors listening ports, publishes to NATS
-# - nats-bridge: Routes messages between Claude CLI and NATS
+# - ttyd: Web terminal over websocket (port 7681)
+# - Claude Code CLI: AI coding agent (user authenticates via /login)
 #
 # Environment variables (set by Knative):
-# - VIBESPACE_PROJECT: Project identifier
-# - VIBESPACE_CLAUDE_ID: Claude instance ID
-# - NATS_URL: NATS server URL (nats://nats.default.svc.cluster.local:4222)
-# - ANTHROPIC_API_KEY: Claude API key (from Kubernetes Secret)
+# - VIBESPACE_ID: Vibespace identifier
+# - VIBESPACE_PROJECT: Project name
+# - VIBESPACE_CLAUDE_ID: Claude instance ID (1, 2, 3, ...)
 
 FROM ubuntu:22.04
 
@@ -61,11 +58,6 @@ RUN useradd -m -s /bin/bash -u 1000 user && \
     # Create npm global directory and config (as root, then chown)
     mkdir -p /home/user/.npm-global /home/user/.config/claude-code && \
     chown -R user:user /home/user
-
-# TODO: Uncomment when NATS is deployed (Phase 2)
-# COPY --chown=root:root port-detector /usr/bin/port-detector
-# COPY --chown=root:root nats-bridge /usr/bin/nats-bridge
-# RUN chmod +x /usr/bin/port-detector /usr/bin/nats-bridge
 
 # Copy supervisor configuration and create log directory (writable by user 1000)
 COPY supervisord.conf /etc/supervisor/conf.d/vibespace.conf
