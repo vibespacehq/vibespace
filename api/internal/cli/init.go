@@ -31,11 +31,17 @@ Use --external to skip cluster installation and use an existing kubeconfig.`,
 var (
 	initExternal   bool
 	initKubeconfig string
+	initCPU        int
+	initMemory     int
+	initDisk       int
 )
 
 func init() {
 	initCmd.Flags().BoolVar(&initExternal, "external", false, "Use an external Kubernetes cluster")
 	initCmd.Flags().StringVar(&initKubeconfig, "kubeconfig", "", "Path to external kubeconfig")
+	initCmd.Flags().IntVar(&initCPU, "cpu", 2, "Number of CPU cores for the cluster VM")
+	initCmd.Flags().IntVar(&initMemory, "memory", 4, "Memory in GB for the cluster VM")
+	initCmd.Flags().IntVar(&initDisk, "disk", 60, "Disk size in GB for the cluster VM")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -102,8 +108,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	if !running {
-		printStep("Starting cluster...")
-		if err := manager.Start(ctx); err != nil {
+		printStep("Starting cluster (CPU: %d, Memory: %dGB, Disk: %dGB)...", initCPU, initMemory, initDisk)
+		config := platform.ClusterConfig{
+			CPU:    initCPU,
+			Memory: initMemory,
+			Disk:   initDisk,
+		}
+		if err := manager.Start(ctx, config); err != nil {
 			return fmt.Errorf("failed to start cluster: %w", err)
 		}
 	}

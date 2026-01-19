@@ -25,9 +25,10 @@ Get started:
   vibespace create myproject  Create a new vibespace
   vibespace myproject agents  List Claude instances
   vibespace myproject connect Connect to a Claude instance`,
-	SilenceUsage:  true,
-	SilenceErrors: true,
-	Args:          cobra.ArbitraryArgs,
+	SilenceUsage:       true,
+	SilenceErrors:      true,
+	Args:               cobra.ArbitraryArgs,
+	DisableFlagParsing: true, // Let subcommands handle their own flags
 	// Handle unknown commands as vibespace names
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
