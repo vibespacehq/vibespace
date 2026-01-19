@@ -223,6 +223,18 @@ func (m *ServiceManager) buildEnvironment(req *CreateServiceRequest) []interface
 		"value": req.ClaudeID,
 	})
 
+	// SSH authorized keys from secret (optional - allows SSH access)
+	env = append(env, map[string]interface{}{
+		"name": "AUTHORIZED_KEYS",
+		"valueFrom": map[string]interface{}{
+			"secretKeyRef": map[string]interface{}{
+				"name":     fmt.Sprintf("vibespace-%s-ssh-keys", req.VibespaceID),
+				"key":      "authorized_keys",
+				"optional": true,
+			},
+		},
+	})
+
 	return env
 }
 
@@ -427,7 +439,19 @@ func (m *ServiceManager) CreateAgentService(ctx context.Context, req *CreateAgen
 		"value": req.ClaudeID,
 	})
 
-	// Single port for gotty web terminal
+	// SSH authorized keys from secret (optional - allows SSH access)
+	env = append(env, map[string]interface{}{
+		"name": "AUTHORIZED_KEYS",
+		"valueFrom": map[string]interface{}{
+			"secretKeyRef": map[string]interface{}{
+				"name":     fmt.Sprintf("vibespace-%s-ssh-keys", req.VibespaceID),
+				"key":      "authorized_keys",
+				"optional": true,
+			},
+		},
+	})
+
+	// Single port for ttyd web terminal
 	ports := []map[string]interface{}{
 		{
 			"containerPort": 7681,

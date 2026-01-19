@@ -6,9 +6,9 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 
-	gottyclient "github.com/moul/gotty-client"
-	"golang.org/x/term"
+	"vibespace/pkg/vibespace"
 )
 
 // browserFlag tracks whether to open browser instead of terminal
@@ -46,62 +46,50 @@ func runConnect(vibespace string, args []string) error {
 		browser = true
 	}
 
-	// Ensure daemon is running and get the local port for this agent
-	localPort, err := ensureDaemonRunning(ctx, vibespace, agent)
-	if err != nil {
-		return err
-	}
-
-	url := fmt.Sprintf("http://localhost:%d", localPort)
-
 	if browser {
+		// For browser access, use ttyd port
+		localPort, err := ensureDaemonRunningTTYD(ctx, vibespace, agent)
+		if err != nil {
+			return err
+		}
+		url := fmt.Sprintf("http://localhost:%d", localPort)
 		printStep("Opening browser for %s in %s...", agent, vibespace)
 		return openBrowser(url)
 	}
 
-	printStep("Connecting to %s in %s...", agent, vibespace)
-	return connectViaGottyClient(url)
+	// For CLI access, use SSH port
+	localPort, err := ensureDaemonRunningSSH(ctx, vibespace, agent)
+	if err != nil {
+		return err
+	}
+
+	printStep("Connecting to %s in %s via SSH...", agent, vibespace)
+	return connectViaSSH(localPort)
 }
 
-// connectViaGottyClient connects to a GoTTY server using the gotty-client library
-func connectViaGottyClient(url string) error {
-	// Check if stdin is a terminal
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return fmt.Errorf("stdin is not a terminal - use --browser flag instead")
+// connectViaSSH connects to the vibespace via native SSH
+func connectViaSSH(localPort int) error {
+	// Get the dedicated vibespace private key
+	privateKeyPath := vibespace.GetSSHPrivateKeyPath()
+	if privateKeyPath == "" {
+		return fmt.Errorf("no SSH key found - run 'vibespace create' first to generate keys")
 	}
 
-	// Put terminal in raw mode for proper character handling
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		return fmt.Errorf("failed to set terminal to raw mode: %w", err)
-	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
-
-	client, err := gottyclient.NewClient(url)
-	if err != nil {
-		return fmt.Errorf("failed to create gotty client: %w", err)
+	sshArgs := []string{
+		"-i", privateKeyPath,
+		"-p", strconv.Itoa(localPort),
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
+		"user@localhost",
 	}
 
-	// Configure client
-	client.SkipTLSVerify = true
-	client.V2 = true // Enable v2 protocol for sorenisanerd/gotty fork
+	cmd := exec.Command("ssh", sshArgs...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	// Connect to the server
-	if err := client.Connect(); err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
-	}
-
-	// Note: Message printed before raw mode since raw mode affects output
-	// The Loop() function handles all terminal I/O
-	if err := client.Loop(); err != nil {
-		// Check if this is a normal disconnect
-		if err.Error() == "websocket: close 1000 (normal)" {
-			return nil
-		}
-		return fmt.Errorf("connection error: %w", err)
-	}
-
-	return nil
+	return cmd.Run()
 }
 
 // openBrowser opens the URL in the default browser

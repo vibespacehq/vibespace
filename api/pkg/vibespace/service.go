@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -170,6 +171,20 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		slog.Info("pvc created successfully", "vibespace_id", id, "pvc_name", pvcName)
 	}
 
+	// Create SSH key secret for terminal access
+	// Uses dedicated vibespace keypair (generates if needed)
+	pubKey, err := EnsureSSHKey()
+	if err != nil {
+		slog.Warn("failed to ensure SSH key - SSH access will not work",
+			"error", err)
+	} else {
+		if err := s.createSSHKeySecret(ctx, id, pubKey); err != nil {
+			slog.Warn("failed to create SSH key secret", "error", err)
+		} else {
+			slog.Info("SSH key secret created", "vibespace_id", id)
+		}
+	}
+
 	// Validate GitHub repo URL if provided
 	if req.GithubRepo != "" && !isValidGitURL(req.GithubRepo) {
 		return nil, fmt.Errorf("invalid GitHub repository URL: must be a valid HTTPS or SSH Git URL")
@@ -184,7 +199,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		"image", image)
 
 	// Create Knative Service
-	err := s.knativeManager.CreateService(ctx, &knative.CreateServiceRequest{
+	err = s.knativeManager.CreateService(ctx, &knative.CreateServiceRequest{
 		VibespaceID: id,
 		Name:        req.Name,
 		ProjectName: projectName,
@@ -642,4 +657,43 @@ func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo,
 	}
 
 	return agents, nil
+}
+
+// createSSHKeySecret creates a Kubernetes Secret containing the SSH public key
+func (s *Service) createSSHKeySecret(ctx context.Context, vibespaceID string, pubKey string) error {
+	secretName := fmt.Sprintf("vibespace-%s-ssh-keys", vibespaceID)
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: k8s.VibespaceNamespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "vibespace",
+				"vibespace.dev/id":             vibespaceID,
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			"authorized_keys": pubKey,
+		},
+	}
+
+	_, err := s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Create(ctx, secret, metav1.CreateOptions{})
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
+			// Update existing secret
+			_, err = s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Update(ctx, secret, metav1.UpdateOptions{})
+		}
+	}
+	return err
+}
+
+// deleteSSHKeySecret deletes the SSH key secret for a vibespace
+func (s *Service) deleteSSHKeySecret(ctx context.Context, vibespaceID string) error {
+	secretName := fmt.Sprintf("vibespace-%s-ssh-keys", vibespaceID)
+	err := s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Delete(ctx, secretName, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	return nil
 }

@@ -1,14 +1,16 @@
 # vibespace Container Image
-# Minimal image: GoTTY web terminal + Claude Code CLI
+# Minimal image: SSH + ttyd web terminal + Claude Code CLI
 #
 # Components:
-# - GoTTY: Web terminal over websocket (port 7681)
+# - SSH: Primary terminal access (port 22) - fast, native terminal
+# - ttyd: Web terminal fallback (port 7681) - browser access
 # - Claude Code CLI: AI coding agent (user authenticates via /login)
 #
 # Environment variables (set by Knative):
 # - VIBESPACE_ID: Vibespace identifier
 # - VIBESPACE_PROJECT: Project name
 # - VIBESPACE_CLAUDE_ID: Claude instance ID (1, 2, 3, ...)
+# - AUTHORIZED_KEYS: SSH public key for authentication (from secret)
 
 FROM ubuntu:22.04
 
@@ -23,6 +25,8 @@ RUN apt-get update && \
     curl wget git vim nano less \
     # Build essentials for npm packages
     build-essential ca-certificates openssh-client \
+    # SSH server for terminal access
+    openssh-server \
     # Node.js (LTS)
     nodejs npm \
     # Python (for misc tooling)
@@ -31,22 +35,26 @@ RUN apt-get update && \
     supervisor \
     # Network tools for debugging
     net-tools procps \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # Configure sshd
+    && mkdir -p /run/sshd \
+    && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config \
+    && sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config \
+    && echo "AllowUsers user" >> /etc/ssh/sshd_config
 
 # Upgrade Node.js to v20 LTS via n
 RUN npm install -g n && n lts && hash -r
 
-# Install GoTTY for web terminal (Go-based, compatible with gotty-client)
+# Install ttyd for web terminal (browser access fallback)
 ARG TARGETARCH
-RUN GOTTY_VERSION="1.5.0" && \
+RUN TTYD_VERSION="1.7.7" && \
     case "${TARGETARCH:-amd64}" in \
-        amd64) GOTTY_ARCH="amd64" ;; \
-        arm64) GOTTY_ARCH="arm64" ;; \
+        amd64) TTYD_ARCH="x86_64" ;; \
+        arm64) TTYD_ARCH="aarch64" ;; \
         *) echo "Unsupported architecture" && exit 1 ;; \
     esac && \
-    curl -sL "https://github.com/sorenisanerd/gotty/releases/download/v${GOTTY_VERSION}/gotty_v${GOTTY_VERSION}_linux_${GOTTY_ARCH}.tar.gz" | \
-    tar xz --strip-components=0 -C /usr/bin && \
-    chmod +x /usr/bin/gotty
+    curl -sL "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.${TTYD_ARCH}" -o /usr/bin/ttyd && \
+    chmod +x /usr/bin/ttyd
 
 # Install Claude Code CLI globally
 RUN npm install -g @anthropic-ai/claude-code
@@ -57,6 +65,9 @@ RUN useradd -m -s /bin/bash -u 1000 user && \
     chown user:user /vibespace && \
     # Create npm global directory and config (as root, then chown)
     mkdir -p /home/user/.npm-global /home/user/.config/claude-code && \
+    # Create .ssh directory for SSH key auth
+    mkdir -p /home/user/.ssh && \
+    chmod 700 /home/user/.ssh && \
     chown -R user:user /home/user
 
 # Copy supervisor configuration and create log directory (writable by user 1000)
@@ -75,8 +86,8 @@ WORKDIR /vibespace
 RUN npm config set prefix /home/user/.npm-global && \
     echo '{"autoApprove": true, "telemetry": false}' > /home/user/.config/claude-code/config.json
 
-# Expose GoTTY port
-EXPOSE 7681
+# Expose SSH and ttyd ports
+EXPOSE 22 7681
 
 # Switch back to root for supervisor
 USER root

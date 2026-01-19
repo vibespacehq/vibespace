@@ -104,18 +104,32 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 			manager.SetAgentPod(agentName, podName)
 			state.SetAgentPod(agentName, podName)
 
-			// Start default ttyd forward for each agent
-			localPort, err := manager.AddForward(agentName, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
+			// Start SSH forward (primary - for CLI terminal access)
+			sshLocalPort, err := manager.AddForward(agentName, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
+			if err != nil {
+				slog.Error("failed to add SSH forward", "agent", agentName, "error", err)
+			} else {
+				state.AddForward(agentName, &daemon.ForwardState{
+					LocalPort:  sshLocalPort,
+					RemotePort: portforward.DefaultSSHPort,
+					Type:       portforward.TypeSSH,
+					Status:     portforward.StatusActive,
+				})
+				slog.Info("SSH forward started", "agent", agentName, "local_port", sshLocalPort)
+			}
+
+			// Start ttyd forward (fallback - for browser terminal access)
+			ttydLocalPort, err := manager.AddForward(agentName, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
 			if err != nil {
 				slog.Error("failed to add ttyd forward", "agent", agentName, "error", err)
 			} else {
 				state.AddForward(agentName, &daemon.ForwardState{
-					LocalPort:  localPort,
+					LocalPort:  ttydLocalPort,
 					RemotePort: portforward.DefaultTTYDPort,
 					Type:       portforward.TypeTTYD,
 					Status:     portforward.StatusActive,
 				})
-				slog.Info("ttyd forward started", "agent", agentName, "local_port", localPort)
+				slog.Info("ttyd forward started", "agent", agentName, "local_port", ttydLocalPort)
 			}
 		}
 	}
