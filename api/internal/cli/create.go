@@ -37,7 +37,7 @@ var (
 
 func init() {
 	createCmd.Flags().StringVar(&createRepo, "repo", "", "GitHub repository to clone")
-	createCmd.Flags().StringVar(&createCPU, "cpu", "100m", "CPU request/limit (e.g., 100m, 250m, 1)")
+	createCmd.Flags().StringVar(&createCPU, "cpu", "400m", "CPU request/limit (e.g., 400m, 500m, 1)")
 	createCmd.Flags().StringVar(&createMemory, "memory", "256Mi", "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
 	createCmd.Flags().StringVar(&createStorage, "storage", "10Gi", "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
 }

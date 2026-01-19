@@ -149,7 +149,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	resources := req.Resources
 	if resources == nil {
 		resources = &model.Resources{
-			CPU:     "100m",
+			CPU:     "400m",
 			Memory:  "256Mi",
 			Storage: "10Gi",
 		}
@@ -398,7 +398,7 @@ func knativeServiceToVibespace(svc *unstructured.Unstructured) *model.Vibespace 
 		ProjectName: projectName,
 		Status:      status,
 		Resources: model.Resources{
-			CPU:     "100m",
+			CPU:     "400m",
 			Memory:  "256Mi",
 			Storage: "10Gi",
 		},
