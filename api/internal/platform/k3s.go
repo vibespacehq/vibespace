@@ -55,18 +55,15 @@ func (m *K3sManager) Install(ctx context.Context) error {
 
 func (m *K3sManager) downloadK3s(ctx context.Context) error {
 	// k3s releases: https://github.com/k3s-io/k3s/releases
-	version := "1.29.0+k3s1"
-	arch := m.platform.Arch
+	// Asset naming: k3s (amd64), k3s-arm64
+	assetName := "k3s"
+	if m.platform.Arch == "arm64" {
+		assetName = "k3s-arm64"
+	}
 
-	url := fmt.Sprintf(
-		"https://github.com/k3s-io/k3s/releases/download/v%s/k3s",
-		strings.ReplaceAll(version, "+", "%%2B"),
-	)
-	if arch == "arm64" {
-		url = fmt.Sprintf(
-			"https://github.com/k3s-io/k3s/releases/download/v%s/k3s-arm64",
-			strings.ReplaceAll(version, "+", "%%2B"),
-		)
+	url, err := getGitHubReleaseAssetURL(ctx, "k3s-io", "k3s", assetName)
+	if err != nil {
+		return fmt.Errorf("failed to get k3s download URL: %w", err)
 	}
 
 	return downloadBinary(ctx, url, m.k3sBin())

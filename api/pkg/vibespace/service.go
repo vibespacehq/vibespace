@@ -11,7 +11,6 @@ import (
 	"vibespace/pkg/k8s"
 	"vibespace/pkg/knative"
 	"vibespace/pkg/model"
-	"vibespace/pkg/network"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -26,15 +25,13 @@ const DefaultImage = "ghcr.io/yagizdagabak/vibespace/claude:latest"
 
 // Service handles vibespace operations
 type Service struct {
-	k8sClient            *k8s.Client
-	knativeManager       *knative.ServiceManager
-	ingressRouteManager  *network.IngressRouteManager
+	k8sClient      *k8s.Client
+	knativeManager *knative.ServiceManager
 }
 
 // NewService creates a new vibespace service
 func NewService(k8sClient *k8s.Client) *Service {
 	var knativeMgr *knative.ServiceManager
-	var ingressMgr *network.IngressRouteManager
 
 	if k8sClient != nil {
 		var err error
@@ -43,16 +40,11 @@ func NewService(k8sClient *k8s.Client) *Service {
 			slog.Warn("failed to initialize Knative Service manager",
 				"error", err)
 		}
-
-		// Initialize IngressRoute manager for dynamic port exposure
-		baseDomain := getBaseDomain()
-		ingressMgr = network.NewIngressRouteManager(k8sClient.DynamicClient(), baseDomain)
 	}
 
 	return &Service{
-		k8sClient:           k8sClient,
-		knativeManager:      knativeMgr,
-		ingressRouteManager: ingressMgr,
+		k8sClient:      k8sClient,
+		knativeManager: knativeMgr,
 	}
 }
 
@@ -83,8 +75,8 @@ func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
 	return vibespaces, nil
 }
 
-// Get returns a vibespace by ID
-func (s *Service) Get(ctx context.Context, id string) (*model.Vibespace, error) {
+// Get returns a vibespace by name or ID
+func (s *Service) Get(ctx context.Context, nameOrID string) (*model.Vibespace, error) {
 	if err := s.ensureClients(); err != nil {
 		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
@@ -93,16 +85,21 @@ func (s *Service) Get(ctx context.Context, id string) (*model.Vibespace, error) 
 		return nil, fmt.Errorf("knative manager is not initialized")
 	}
 
-	slog.Info("getting vibespace", "vibespace_id", id)
+	slog.Info("getting vibespace", "vibespace_id", nameOrID)
 
-	service, err := s.knativeManager.GetService(ctx, id)
+	// First try to find by name (label selector)
+	service, err := s.knativeManager.GetServiceByName(ctx, nameOrID)
 	if err != nil {
-		slog.Warn("vibespace not found", "vibespace_id", id, "error", err)
-		return nil, fmt.Errorf("vibespace not found: %w", err)
+		// Fall back to lookup by ID
+		service, err = s.knativeManager.GetService(ctx, nameOrID)
+		if err != nil {
+			slog.Warn("vibespace not found", "vibespace_id", nameOrID, "error", err)
+			return nil, fmt.Errorf("vibespace not found: %w", err)
+		}
 	}
 
 	vibespace := knativeServiceToVibespace(service)
-	slog.Info("got vibespace successfully", "vibespace_id", id, "status", vibespace.Status)
+	slog.Info("got vibespace successfully", "vibespace_id", nameOrID, "status", vibespace.Status)
 
 	return vibespace, nil
 }
@@ -203,27 +200,6 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		return nil, fmt.Errorf("failed to create Knative Service: %w", err)
 	}
 
-	// Ensure TLS secret exists (certificates may have been generated after initial Traefik install)
-	if err := s.k8sClient.EnsureTLSSecret(ctx); err != nil {
-		slog.Warn("failed to ensure TLS secret, HTTPS may not work",
-			"vibespace_id", id,
-			"error", err)
-		// Don't fail - TLS is optional
-	}
-
-	// Create IngressRoutes for dynamic port exposure
-	// This creates both main route ({project}.vibe.space) and wildcard route (*.{project}.vibe.space)
-	if s.ingressRouteManager != nil {
-		serviceName := fmt.Sprintf("vibespace-%s", id)
-		if err := s.ingressRouteManager.CreateVibespaceRoutes(ctx, projectName, serviceName, k8s.VibespaceNamespace); err != nil {
-			slog.Warn("failed to create IngressRoutes (vibespace still functional)",
-				"vibespace_id", id,
-				"project_name", projectName,
-				"error", err)
-			// Don't fail the creation - vibespace is still usable via port-forward
-		}
-	}
-
 	vibespace := &model.Vibespace{
 		ID:          id,
 		Name:        req.Name,
@@ -241,8 +217,8 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	return vibespace, nil
 }
 
-// Delete deletes a vibespace
-func (s *Service) Delete(ctx context.Context, id string) error {
+// Delete deletes a vibespace by name or ID
+func (s *Service) Delete(ctx context.Context, nameOrID string) error {
 	if err := s.ensureClients(); err != nil {
 		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
@@ -251,27 +227,20 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("knative manager is not initialized")
 	}
 
-	slog.Info("deleting vibespace", "vibespace_id", id)
+	slog.Info("deleting vibespace", "vibespace_id", nameOrID)
 
-	// Get vibespace to retrieve project name for IngressRoute cleanup
-	vibespace, err := s.Get(ctx, id)
+	// Get vibespace to retrieve the internal ID and project name
+	vibespace, err := s.Get(ctx, nameOrID)
 	if err != nil {
-		slog.Warn("could not get vibespace details for cleanup", "vibespace_id", id, "error", err)
+		return fmt.Errorf("vibespace not found: %w", err)
 	}
 
-	// Delete IngressRoutes first
-	if s.ingressRouteManager != nil && vibespace != nil && vibespace.ProjectName != "" {
-		if err := s.ingressRouteManager.DeleteVibespaceRoutes(ctx, vibespace.ProjectName, k8s.VibespaceNamespace); err != nil {
-			slog.Warn("failed to delete IngressRoutes", "vibespace_id", id, "error", err)
-			// Continue with Knative Service deletion
-		}
-	}
-
-	if err := s.knativeManager.DeleteService(ctx, id); err != nil {
+	// Use the internal ID for deletion
+	if err := s.knativeManager.DeleteService(ctx, vibespace.ID); err != nil {
 		return fmt.Errorf("failed to delete Knative Service: %w", err)
 	}
 
-	slog.Info("vibespace deleted successfully", "vibespace_id", id)
+	slog.Info("vibespace deleted successfully", "vibespace_id", vibespace.ID, "name", vibespace.Name)
 
 	// Note: PVCs are left for manual cleanup to prevent accidental data loss
 	return nil
@@ -331,90 +300,6 @@ func (s *Service) Stop(ctx context.Context, id string) error {
 	return nil
 }
 
-// Access returns the URL where the vibespace can be accessed
-func (s *Service) Access(ctx context.Context, id string) (map[string]string, error) {
-	if err := s.ensureClients(); err != nil {
-		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
-	}
-
-	slog.Info("getting vibespace access URL", "vibespace_id", id)
-
-	vibespace, err := s.Get(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get vibespace: %w", err)
-	}
-
-	baseDomain := getBaseDomain()
-	urls := map[string]string{
-		"main": fmt.Sprintf("https://%s.%s", vibespace.ProjectName, baseDomain),
-	}
-
-	slog.Info("vibespace access URL generated",
-		"vibespace_id", id,
-		"project_name", vibespace.ProjectName,
-		"url", urls["main"])
-
-	return urls, nil
-}
-
-// RegisterService registers a dynamically detected service for a vibespace.
-// Called by the port detector daemon in the container when it detects a new listening port.
-// Returns the URL where the service can be accessed.
-func (s *Service) RegisterService(ctx context.Context, id string, service *model.ExposedService) (string, error) {
-	if err := s.ensureClients(); err != nil {
-		return "", fmt.Errorf("kubernetes is not available: %w", err)
-	}
-
-	slog.Info("registering service for vibespace",
-		"vibespace_id", id,
-		"service_name", service.Name,
-		"port", service.Port)
-
-	// Get vibespace to retrieve project name
-	vibespace, err := s.Get(ctx, id)
-	if err != nil {
-		return "", fmt.Errorf("failed to get vibespace: %w", err)
-	}
-
-	// Generate URL for the service
-	baseDomain := getBaseDomain()
-	url := fmt.Sprintf("https://%d.%s.%s", service.Port, vibespace.ProjectName, baseDomain)
-
-	slog.Info("service registered successfully",
-		"vibespace_id", id,
-		"project_name", vibespace.ProjectName,
-		"port", service.Port,
-		"url", url)
-
-	return url, nil
-}
-
-// UnregisterService unregisters a service from a vibespace.
-// Called by the port detector daemon when a service stops listening.
-func (s *Service) UnregisterService(ctx context.Context, id string, port int) error {
-	if err := s.ensureClients(); err != nil {
-		return fmt.Errorf("kubernetes is not available: %w", err)
-	}
-
-	slog.Info("unregistering service from vibespace",
-		"vibespace_id", id,
-		"port", port)
-
-	// Currently just logging - could be extended to update state or notify clients
-	return nil
-}
-
-// GetServiceURL returns the URL for a specific port on a vibespace
-func (s *Service) GetServiceURL(ctx context.Context, id string, port int) (string, error) {
-	vibespace, err := s.Get(ctx, id)
-	if err != nil {
-		return "", fmt.Errorf("failed to get vibespace: %w", err)
-	}
-
-	baseDomain := getBaseDomain()
-	return fmt.Sprintf("https://%d.%s.%s", port, vibespace.ProjectName, baseDomain), nil
-}
-
 // Helper functions
 
 // ensureClients attempts to initialize k8s client if not already done
@@ -436,11 +321,6 @@ func (s *Service) ensureClients() error {
 			s.knativeManager = knativeMgr
 			slog.Info("knative manager initialized successfully")
 		}
-
-		// Initialize IngressRoute manager for dynamic port exposure
-		baseDomain := getBaseDomain()
-		s.ingressRouteManager = network.NewIngressRouteManager(newClient.DynamicClient(), baseDomain)
-		slog.Info("ingress route manager initialized successfully")
 	}
 	return nil
 }
@@ -528,9 +408,8 @@ func knativeStatusToVibespaceStatus(svc *unstructured.Unstructured) string {
 			if reason == "NoTraffic" {
 				return "stopped"
 			}
-			// We use Traefik for ingress, so IngressNotConfigured means
-			// Knative's native ingress isn't set up (expected). Check if
-			// the workload itself is ready via ConfigurationsReady.
+			// We use port-forwarding, so IngressNotConfigured is expected.
+			// Check if the workload itself is ready via ConfigurationsReady.
 			if reason == "IngressNotConfigured" {
 				// Check ConfigurationsReady condition instead
 				for _, c2 := range conditions {
@@ -572,15 +451,6 @@ func getVibespaceImage() string {
 		return DefaultImage
 	}
 	return image
-}
-
-// getBaseDomain returns the base domain for vibespace URLs
-func getBaseDomain() string {
-	domain := os.Getenv("DNS_BASE_DOMAIN")
-	if domain == "" {
-		return "vibe.space"
-	}
-	return domain
 }
 
 // generateUniqueProjectName generates a unique project name not in existingNames

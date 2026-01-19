@@ -1,73 +1,93 @@
-# Vibespace API Server
+# vibespace
 
-Go backend API for managing Kubernetes vibespaces.
-
-## Prerequisites
-
-- Go 1.24+
-- Access to a Kubernetes cluster (k3s recommended)
-- `KUBECONFIG` set to your Kubernetes config file
+Multi-Claude development environments via CLI.
 
 ## Quick Start
 
 ```bash
-# Install dependencies
-go mod download
+# Build
+go build -o vibespace ./cmd/vibespace
 
-# Run the server
-go run cmd/server/main.go
+# Initialize cluster (downloads Colima, k3s, kubectl)
+./vibespace init
 
-# Or build and run
-go build -o server cmd/server/main.go
-./server
+# Create a vibespace
+./vibespace create myproject
+
+# Start port-forwarding and connect
+./vibespace myproject up
+./vibespace myproject connect
 ```
 
-The API server will start on port `8090` by default. Override with `PORT` environment variable.
-
-## API Endpoints
-
-### Health
-
-- `GET /api/v1/health` - Health check
-
-### Vibespaces
-
-- `GET /api/v1/vibespaces` - List all vibespaces
-- `POST /api/v1/vibespaces` - Create a new vibespace
-- `GET /api/v1/vibespaces/:id` - Get vibespace details
-- `DELETE /api/v1/vibespaces/:id` - Delete a vibespace
-- `POST /api/v1/vibespaces/:id/start` - Start a vibespace
-- `POST /api/v1/vibespaces/:id/stop` - Stop a vibespace
-
-### Templates
-
-- `GET /api/v1/templates` - List available templates
-- `GET /api/v1/templates/:id` - Get template details
-
-## Example Requests
-
-### Create a vibespace
+## Installation
 
 ```bash
-curl -X POST http://localhost:8090/api/v1/vibespaces \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "my-project",
-    "template": "nextjs",
-    "persistent": true
-  }'
+# Build and install
+go build -o vibespace ./cmd/vibespace
+sudo mv vibespace /usr/local/bin/
+
+# Or run directly
+go run ./cmd/vibespace <command>
 ```
 
-### List vibespaces
+## Commands
 
+### Cluster Management
 ```bash
-curl http://localhost:8090/api/v1/vibespaces
+vibespace init          # Initialize local Kubernetes cluster
+vibespace status        # Show cluster status
+vibespace stop          # Stop the cluster
 ```
 
-### List templates
-
+### Vibespace Management
 ```bash
-curl http://localhost:8090/api/v1/templates
+vibespace create <name>     # Create a vibespace
+vibespace list              # List all vibespaces
+vibespace delete <name>     # Delete a vibespace
+vibespace <name> start      # Start a vibespace
+vibespace <name> stop       # Stop a vibespace
+```
+
+### Agent Management
+```bash
+vibespace <name> agents         # List Claude agents
+vibespace <name> spawn          # Add another Claude agent
+vibespace <name> kill <agent>   # Remove an agent
+```
+
+### Connection
+```bash
+vibespace <name> up             # Start port-forward daemon
+vibespace <name> down           # Stop port-forward daemon
+vibespace <name> connect        # Connect to Claude terminal
+vibespace <name> ports          # List detected ports
+vibespace <name> forward list   # List active forwards
+```
+
+### Multi-Session
+```bash
+vibespace multi <v1> <v2>       # Quick multi-vibespace TUI
+vibespace session create <name> # Create named session
+vibespace session start <name>  # Start session TUI
+```
+
+See `docs/CLI_SPEC.md` for complete command reference.
+
+## Project Structure
+
+```
+api/
+├── cmd/vibespace/       # CLI entry point
+├── internal/
+│   ├── cli/             # Cobra command implementations
+│   └── platform/        # Colima/k3s management
+├── pkg/
+│   ├── k8s/             # Kubernetes client
+│   ├── knative/         # Knative service management
+│   ├── vibespace/       # Vibespace business logic
+│   ├── model/           # Data models
+│   └── image/           # Container image (ttyd + Claude)
+└── README.md
 ```
 
 ## Development
@@ -77,36 +97,24 @@ curl http://localhost:8090/api/v1/templates
 go test ./...
 
 # Build
-go build ./cmd/server
+go build ./cmd/vibespace
 
-# Run with auto-reload (install air first: go install github.com/air-verse/air@latest)
-air
+# Run directly
+go run ./cmd/vibespace init
 ```
 
-## Project Structure
+## State Files
 
 ```
-api/
-├── cmd/
-│   └── server/          # Main entry point
-├── pkg/
-│   ├── handler/         # HTTP handlers
-│   ├── vibespace/       # Vibespace service
-│   ├── k8s/             # Kubernetes client wrapper
-│   └── model/           # Data models
-├── go.mod
-└── README.md
+~/.vibespace/
+├── bin/           # Bundled binaries (colima, lima, kubectl)
+├── daemons/       # Port-forward daemon state
+├── sessions/      # Multi-session state
+└── config.json    # Global config
 ```
 
-## Configuration
+## Requirements
 
-The API server can be configured via environment variables:
-
-- `PORT` - Server port (default: 8090)
-- `KUBECONFIG` - Path to Kubernetes config file (default: `~/.kube/config`)
-
-## Notes
-
-- The API will run in limited mode if Kubernetes is not available (for development)
-- Vibespace persistence and auto-scaling features require Knative (will be implemented in Phase 2)
-- Template images must be available in the local registry or Kubernetes cluster
+- Go 1.21+
+- macOS (Colima) or Linux (native k3s)
+- Docker (for building container images)

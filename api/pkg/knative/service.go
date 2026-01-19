@@ -233,16 +233,10 @@ func (m *ServiceManager) buildEnvironment(req *CreateServiceRequest) []interface
 		"value": req.ClaudeID,
 	})
 
-	// NATS configuration
-	env = append(env, map[string]interface{}{
-		"name":  "NATS_URL",
-		"value": "nats://nats.default.svc.cluster.local:4222",
-	})
-
 	return env
 }
 
-// GetService retrieves a Knative Service
+// GetService retrieves a Knative Service by ID
 func (m *ServiceManager) GetService(ctx context.Context, vibespaceID string) (*unstructured.Unstructured, error) {
 	serviceName := fmt.Sprintf("vibespace-%s", vibespaceID)
 	service, err := m.dynamicClient.Resource(KnativeGVR).Namespace(k8s.VibespaceNamespace).Get(
@@ -255,6 +249,25 @@ func (m *ServiceManager) GetService(ctx context.Context, vibespaceID string) (*u
 	}
 
 	return service, nil
+}
+
+// GetServiceByName retrieves a Knative Service by user-friendly name (using label selector)
+func (m *ServiceManager) GetServiceByName(ctx context.Context, name string) (*unstructured.Unstructured, error) {
+	services, err := m.dynamicClient.Resource(KnativeGVR).Namespace(k8s.VibespaceNamespace).List(
+		ctx,
+		metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("app.kubernetes.io/name=%s", name),
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Knative Services: %w", err)
+	}
+
+	if len(services.Items) == 0 {
+		return nil, fmt.Errorf("vibespace '%s' not found", name)
+	}
+
+	return &services.Items[0], nil
 }
 
 // ListServices lists all Knative Services for vibespaces

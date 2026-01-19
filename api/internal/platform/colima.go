@@ -2,7 +2,10 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,11 +53,16 @@ func (m *ColimaManager) IsInstalled() (bool, error) {
 	return true, nil
 }
 
-// Install downloads Colima and kubectl
+// Install downloads Colima, Lima, and kubectl
 func (m *ColimaManager) Install(ctx context.Context) error {
 	// Ensure bin directory exists
 	if err := os.MkdirAll(m.binDir, 0755); err != nil {
 		return fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	// Download Lima first (Colima depends on it)
+	if err := m.downloadLima(ctx); err != nil {
+		return fmt.Errorf("failed to download Lima: %w", err)
 	}
 
 	// Download Colima
@@ -70,31 +78,100 @@ func (m *ColimaManager) Install(ctx context.Context) error {
 	return nil
 }
 
-func (m *ColimaManager) downloadColima(ctx context.Context) error {
-	// Colima releases: https://github.com/abiosoft/colima/releases
-	version := "0.8.1"
+func (m *ColimaManager) downloadLima(ctx context.Context) error {
+	// Lima releases: https://github.com/lima-vm/lima/releases
+	// Asset naming: lima-X.Y.Z-Darwin-arm64.tar.gz, lima-X.Y.Z-Darwin-x86_64.tar.gz
 	arch := m.platform.Arch
 	if arch == "amd64" {
 		arch = "x86_64"
-	} else if arch == "arm64" {
-		arch = "aarch64"
 	}
 
-	url := fmt.Sprintf(
-		"https://github.com/abiosoft/colima/releases/download/v%s/colima-Darwin-%s",
-		version, arch,
-	)
+	// Get the latest release to find the version number (needed for asset name)
+	apiURL := "https://api.github.com/repos/lima-vm/lima/releases/latest"
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch Lima release info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return fmt.Errorf("failed to parse Lima release info: %w", err)
+	}
+
+	// Version from tag (e.g., "v2.0.3" -> "2.0.3")
+	version := strings.TrimPrefix(release.TagName, "v")
+	assetName := fmt.Sprintf("lima-%s-Darwin-%s.tar.gz", version, arch)
+
+	// Find the asset URL
+	var assetURL string
+	for _, asset := range release.Assets {
+		if asset.Name == assetName {
+			assetURL = asset.BrowserDownloadURL
+			break
+		}
+	}
+	if assetURL == "" {
+		return fmt.Errorf("Lima asset '%s' not found in release %s", assetName, release.TagName)
+	}
+
+	// Download and extract to ~/.vibespace/lima/
+	// This matches the Tauri app structure where Lima lives in its own subdirectory
+	limaDir := filepath.Join(m.vibespaceHome, "lima")
+	if err := os.MkdirAll(limaDir, 0755); err != nil {
+		return fmt.Errorf("failed to create lima directory: %w", err)
+	}
+
+	if err := downloadAndExtractTarGz(ctx, assetURL, limaDir); err != nil {
+		return fmt.Errorf("failed to download and extract Lima: %w", err)
+	}
+
+	return nil
+}
+
+// limaBinDir returns the path to Lima's bin directory
+func (m *ColimaManager) limaBinDir() string {
+	return filepath.Join(m.vibespaceHome, "lima", "bin")
+}
+
+func (m *ColimaManager) downloadColima(ctx context.Context) error {
+	// Colima releases: https://github.com/abiosoft/colima/releases
+	arch := m.platform.Arch
+	if arch == "amd64" {
+		arch = "x86_64"
+	}
+	// arm64 stays as arm64 for macOS
+
+	assetName := fmt.Sprintf("colima-Darwin-%s", arch)
+	url, err := getGitHubReleaseAssetURL(ctx, "abiosoft", "colima", assetName)
+	if err != nil {
+		return fmt.Errorf("failed to get Colima download URL: %w", err)
+	}
 
 	return downloadBinary(ctx, url, m.colimaBin())
 }
 
 func (m *ColimaManager) downloadKubectl(ctx context.Context) error {
 	// kubectl releases: https://dl.k8s.io
-	version := "1.29.0"
+	// Fetch latest stable version dynamically
+	version, err := getLatestKubectlVersion(ctx)
+	if err != nil {
+		// Fallback to known good version
+		version = "v1.29.0"
+	}
+	// version comes with newline, trim it
+	version = strings.TrimSpace(version)
+
 	arch := m.platform.Arch
 
 	url := fmt.Sprintf(
-		"https://dl.k8s.io/release/v%s/bin/darwin/%s/kubectl",
+		"https://dl.k8s.io/release/%s/bin/darwin/%s/kubectl",
 		version, arch,
 	)
 
@@ -103,30 +180,38 @@ func (m *ColimaManager) downloadKubectl(ctx context.Context) error {
 
 // IsRunning checks if the Colima VM is running
 func (m *ColimaManager) IsRunning() (bool, error) {
-	cmd := exec.Command(m.colimaBin(), "status", "--profile", "vibespace")
+	// Build PATH with lima/bin and bin directories
+	currentPath := os.Getenv("PATH")
+	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+
+	cmd := exec.Command(m.colimaBin(), "status")
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// "colima status" returns non-zero if not running
 		return false, nil
 	}
-	return strings.Contains(string(output), "Running"), nil
+	// Colima outputs to stderr, check for "colima is running"
+	return strings.Contains(string(output), "is running"), nil
 }
 
 // Start starts the Colima VM with k3s
 func (m *ColimaManager) Start(ctx context.Context) error {
-	args := []string{
-		"start",
-		"--profile", "vibespace",
-		"--kubernetes",
-		"--kubernetes-version", "v1.29.0+k3s1",
-		"--cpu", "2",
-		"--memory", "4",
-		"--disk", "20",
-		"--network-address", // Enable network access
-	}
+	// Build PATH with lima/bin and bin directories
+	// This matches the Tauri app approach
+	currentPath := os.Getenv("PATH")
+	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
 
-	cmd := exec.CommandContext(ctx, m.colimaBin(), args...)
-	cmd.Env = append(os.Environ(), "PATH="+m.binDir+":"+os.Getenv("PATH"))
+	// Use bash -c to run colima with PATH set
+	// This ensures the environment is properly inherited by Colima's subprocesses (like limactl)
+	// Note: We use the default profile (no --profile flag) and Colima updates ~/.kube/config automatically
+	commandStr := fmt.Sprintf(
+		"PATH='%s' '%s' start --kubernetes --cpu 2 --memory 4 --disk 60",
+		newPath,
+		m.colimaBin(),
+	)
+
+	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -134,39 +219,17 @@ func (m *ColimaManager) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start Colima: %w", err)
 	}
 
-	// Copy kubeconfig to vibespace location
-	return m.copyKubeconfig()
-}
-
-func (m *ColimaManager) copyKubeconfig() error {
-	// Colima stores kubeconfig in ~/.colima/vibespace/kubeconfig.yaml
-	home, _ := os.UserHomeDir()
-	colimaKubeconfig := filepath.Join(home, ".colima", "vibespace", "kubeconfig.yaml")
-
-	// Wait for kubeconfig to exist
-	for i := 0; i < 30; i++ {
-		if _, err := os.Stat(colimaKubeconfig); err == nil {
-			break
-		}
-		time.Sleep(time.Second)
-	}
-
-	data, err := os.ReadFile(colimaKubeconfig)
-	if err != nil {
-		return fmt.Errorf("failed to read Colima kubeconfig: %w", err)
-	}
-
-	vibespaceKubeconfig := m.KubeconfigPath()
-	if err := os.WriteFile(vibespaceKubeconfig, data, 0600); err != nil {
-		return fmt.Errorf("failed to write kubeconfig: %w", err)
-	}
-
 	return nil
 }
 
 // Stop stops the Colima VM
 func (m *ColimaManager) Stop(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, m.colimaBin(), "stop", "--profile", "vibespace")
+	// Build PATH with lima/bin and bin directories
+	currentPath := os.Getenv("PATH")
+	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+
+	cmd := exec.CommandContext(ctx, m.colimaBin(), "stop")
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -197,22 +260,83 @@ func (m *ColimaManager) WaitReady(ctx context.Context) error {
 
 // Uninstall removes Colima and all data
 func (m *ColimaManager) Uninstall(ctx context.Context) error {
+	// Build PATH with lima/bin and bin directories
+	currentPath := os.Getenv("PATH")
+	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+
 	// Stop if running
 	_ = m.Stop(ctx)
 
-	// Delete the Colima profile
-	cmd := exec.CommandContext(ctx, m.colimaBin(), "delete", "--profile", "vibespace", "--force")
+	// Delete the Colima VM (default profile)
+	cmd := exec.CommandContext(ctx, m.colimaBin(), "delete", "--force")
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
 	_ = cmd.Run()
 
 	// Remove binaries
 	_ = os.Remove(m.colimaBin())
 	_ = os.Remove(m.kubectlBin())
-	_ = os.Remove(m.KubeconfigPath())
+	// Note: We don't remove ~/.kube/config as it may contain other contexts
 
 	return nil
 }
 
 // KubeconfigPath returns the path to the kubeconfig file
+// Colima automatically updates ~/.kube/config with the "colima" context
 func (m *ColimaManager) KubeconfigPath() string {
-	return filepath.Join(m.vibespaceHome, "kubeconfig")
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".kube", "config")
+}
+
+// copyFileBinary copies a binary file preserving executable permissions
+func copyFileBinary(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	return os.Chmod(dst, 0755)
+}
+
+// copyDir recursively copies a directory
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Calculate destination path
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		dstPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, 0755)
+		}
+
+		// Skip non-regular files (symlinks, etc.)
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
+		// Ensure parent directory exists
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return err
+		}
+
+		// Copy file
+		return copyFileBinary(path, dstPath)
+	})
 }

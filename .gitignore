@@ -66,3 +66,4 @@ kubeconfig
 
 # DNS binaries (built by CI or locally)
 app/src-tauri/binaries/dnsd-*
+archive/

@@ -41,14 +41,15 @@ func runPorts(vibespace string, args []string) error {
 		return fmt.Errorf("vibespace '%s' is not running", vibespace)
 	}
 
-	// Get kubeconfig path
+	// Get paths
 	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
+	kubeconfig := filepath.Join(home, ".kube", "config")
+	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
 
 	// Find the pod
 	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespace)
 
-	findCmd := exec.CommandContext(ctx, "kubectl",
+	findCmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,
 		"-n", "vibespace",
 		"get", "pod",
@@ -65,7 +66,7 @@ func runPorts(vibespace string, args []string) error {
 	}
 
 	// Read detected ports from container
-	readCmd := exec.CommandContext(ctx, "kubectl",
+	readCmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,
 		"-n", "vibespace",
 		"exec", podName,
@@ -131,14 +132,15 @@ func runForward(vibespace string, args []string) error {
 		return fmt.Errorf("vibespace '%s' is not running", vibespace)
 	}
 
-	// Get kubeconfig path
+	// Get paths
 	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
+	kubeconfig := filepath.Join(home, ".kube", "config")
+	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
 
 	// Find the pod
 	podSelector := fmt.Sprintf("vibespace.dev/id=%s", vibespace)
 
-	findCmd := exec.CommandContext(ctx, "kubectl",
+	findCmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,
 		"-n", "vibespace",
 		"get", "pod",
@@ -159,7 +161,7 @@ func runForward(vibespace string, args []string) error {
 	fmt.Println()
 
 	// Run kubectl port-forward
-	cmd := exec.CommandContext(ctx, "kubectl",
+	cmd := exec.CommandContext(ctx, kubectlBin,
 		"--kubeconfig", kubeconfig,
 		"-n", "vibespace",
 		"port-forward", podName,
