@@ -1,0 +1,72 @@
+package cli
+
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+// vibespaceCmd is a dynamic command that represents a specific vibespace
+// Usage: vibespace <name> <subcommand>
+func init() {
+	// Register a catch-all for vibespace-specific commands
+	// This handles: vibespace <name> agents|connect|multi|ports|forward
+	rootCmd.AddCommand(vibespaceCmd)
+}
+
+var vibespaceCmd = &cobra.Command{
+	Use:                "VIBESPACE",
+	Short:              "Commands for a specific vibespace",
+	Hidden:             true, // Hide from help since it's dynamic
+	DisableFlagParsing: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("vibespace name required")
+		}
+
+		vibespace := args[0]
+		subArgs := args[1:]
+
+		if len(subArgs) == 0 {
+			// Show help for this vibespace
+			fmt.Printf("Vibespace: %s\n\n", vibespace)
+			fmt.Println("Available commands:")
+			fmt.Println("  agents     List Claude instances")
+			fmt.Println("  spawn      Create a new Claude instance")
+			fmt.Println("  kill       Remove a Claude instance")
+			fmt.Println("  connect    Connect to a Claude instance")
+			fmt.Println("  multi      Multi-agent terminal mode")
+			fmt.Println("  ports      List detected ports")
+			fmt.Println("  forward    Forward a port to localhost")
+			fmt.Println("  start      Start the vibespace")
+			fmt.Println("  stop       Stop the vibespace")
+			return nil
+		}
+
+		subCmd := subArgs[0]
+		cmdArgs := subArgs[1:]
+
+		switch subCmd {
+		case "agents":
+			return runAgents(vibespace, cmdArgs)
+		case "spawn":
+			return runSpawn(vibespace, cmdArgs)
+		case "kill":
+			return runKill(vibespace, cmdArgs)
+		case "connect":
+			return runConnect(vibespace, cmdArgs)
+		case "multi":
+			return runMulti(vibespace, cmdArgs)
+		case "ports":
+			return runPorts(vibespace, cmdArgs)
+		case "forward":
+			return runForward(vibespace, cmdArgs)
+		case "start":
+			return runStartVibespace(vibespace)
+		case "stop":
+			return runStopVibespace(vibespace)
+		default:
+			return fmt.Errorf("unknown command: %s", subCmd)
+		}
+	},
+}
