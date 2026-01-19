@@ -111,11 +111,6 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 					"spec": map[string]interface{}{
 						"containerConcurrency": 1,   // Single user per pod
 						"timeoutSeconds":       600, // 10 minutes (Knative maximum)
-						"imagePullSecrets": []interface{}{
-							map[string]interface{}{
-								"name": "ghcr-secret",
-							},
-						},
 						"containers": []interface{}{
 							map[string]interface{}{
 								"name":  "vibespace",
@@ -133,11 +128,6 @@ func (m *ServiceManager) CreateService(ctx context.Context, req *CreateServiceRe
 									},
 								},
 								"volumeMounts": volumeMounts,
-								"securityContext": map[string]interface{}{
-									"runAsUser":  1000,
-									"runAsGroup": 1000,
-									"fsGroup":    1000,
-								},
 							},
 						},
 						"initContainers": initContainers,

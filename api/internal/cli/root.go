@@ -42,7 +42,7 @@ Get started:
 func Execute() error {
 	err := rootCmd.Execute()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		printError("%v", err)
 	}
 	return err
 }
@@ -55,6 +55,7 @@ func init() {
 	rootCmd.AddCommand(createCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(deleteCmd)
+	rootCmd.AddCommand(daemonCmd) // Hidden daemon command
 
 	// Global flags
 	rootCmd.PersistentFlags().String("kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config)")
@@ -94,7 +95,9 @@ func handleVibespaceCommand(args []string) error {
 		fmt.Println("  connect    Connect to a Claude instance")
 		fmt.Println("  multi      Multi-agent terminal mode")
 		fmt.Println("  ports      List detected ports")
-		fmt.Println("  forward    Forward a port to localhost")
+		fmt.Println("  up         Start port-forward daemon")
+		fmt.Println("  down       Stop port-forward daemon")
+		fmt.Println("  forward    Manage port-forwards (list, add, remove, ...)")
 		fmt.Println("  start      Start the vibespace")
 		fmt.Println("  stop       Stop the vibespace")
 		return nil
@@ -116,8 +119,12 @@ func handleVibespaceCommand(args []string) error {
 		return runMulti(vibespace, cmdArgs)
 	case "ports":
 		return runPorts(vibespace, cmdArgs)
+	case "up":
+		return runUp(vibespace, cmdArgs)
+	case "down":
+		return runDown(vibespace, cmdArgs)
 	case "forward":
-		return runForward(vibespace, cmdArgs)
+		return runForwardCmd(vibespace, cmdArgs)
 	case "start":
 		return runStartVibespace(vibespace)
 	case "stop":

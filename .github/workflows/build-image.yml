@@ -4,11 +4,11 @@ on:
   push:
     branches:
       - main
-      - 'feature/#52-*'
-      - 'feature/multi-claude-pivot'
+      - vibespace-cli-pivot
     paths:
       - 'api/pkg/image/**'
       - '.github/workflows/build-image.yml'
+  workflow_dispatch: # Allow manual trigger
 
 env:
   REGISTRY: ghcr.io
@@ -24,19 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.21'
-
-      - name: Build Go binaries
-        working-directory: api/pkg/image
-        run: |
-          # Build port-detector
-          CGO_ENABLED=0 GOOS=linux go build -o port-detector ./cmd/port-detector
-          # Build nats-bridge
-          CGO_ENABLED=0 GOOS=linux go build -o nats-bridge ./cmd/nats-bridge
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

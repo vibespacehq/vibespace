@@ -308,6 +308,7 @@ metadata:
 var (
 	green  = color.New(color.FgGreen).SprintFunc()
 	yellow = color.New(color.FgYellow).SprintFunc()
+	red    = color.New(color.FgRed).SprintFunc()
 	cyan   = color.New(color.FgCyan).SprintFunc()
 )
 
@@ -320,5 +321,9 @@ func printSuccess(format string, args ...interface{}) {
 }
 
 func printWarning(format string, args ...interface{}) {
-	fmt.Printf("%s %s\n", yellow("!"), fmt.Sprintf(format, args...))
+	fmt.Printf("%s %s\n", yellow("⚠"), fmt.Sprintf(format, args...))
+}
+
+func printError(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "%s %s\n", red("✗"), fmt.Sprintf(format, args...))
 }
