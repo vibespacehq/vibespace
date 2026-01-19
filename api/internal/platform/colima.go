@@ -196,7 +196,7 @@ func (m *ColimaManager) IsRunning() (bool, error) {
 }
 
 // Start starts the Colima VM with k3s
-func (m *ColimaManager) Start(ctx context.Context) error {
+func (m *ColimaManager) Start(ctx context.Context, config ClusterConfig) error {
 	// Build PATH with lima/bin and bin directories
 	// This matches the Tauri app approach
 	currentPath := os.Getenv("PATH")
@@ -206,9 +206,12 @@ func (m *ColimaManager) Start(ctx context.Context) error {
 	// This ensures the environment is properly inherited by Colima's subprocesses (like limactl)
 	// Note: We use the default profile (no --profile flag) and Colima updates ~/.kube/config automatically
 	commandStr := fmt.Sprintf(
-		"PATH='%s' '%s' start --kubernetes --cpu 2 --memory 4 --disk 60",
+		"PATH='%s' '%s' start --kubernetes --cpu %d --memory %d --disk %d",
 		newPath,
 		m.colimaBin(),
+		config.CPU,
+		config.Memory,
+		config.Disk,
 	)
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)

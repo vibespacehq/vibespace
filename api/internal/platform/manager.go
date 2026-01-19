@@ -5,6 +5,22 @@ import (
 	"fmt"
 )
 
+// ClusterConfig contains configuration for cluster resources
+type ClusterConfig struct {
+	CPU    int // Number of CPU cores
+	Memory int // Memory in GB
+	Disk   int // Disk size in GB
+}
+
+// DefaultClusterConfig returns the default cluster configuration
+func DefaultClusterConfig() ClusterConfig {
+	return ClusterConfig{
+		CPU:    2,
+		Memory: 4,
+		Disk:   60,
+	}
+}
+
 // ClusterManager defines the interface for managing the local Kubernetes cluster
 type ClusterManager interface {
 	// IsInstalled checks if the required binaries are installed
@@ -16,8 +32,8 @@ type ClusterManager interface {
 	// IsRunning checks if the cluster is currently running
 	IsRunning() (bool, error)
 
-	// Start starts the cluster
-	Start(ctx context.Context) error
+	// Start starts the cluster with the given configuration
+	Start(ctx context.Context, config ClusterConfig) error
 
 	// Stop stops the cluster (preserves data)
 	Stop(ctx context.Context) error

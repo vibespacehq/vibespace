@@ -88,7 +88,8 @@ func (m *K3sManager) IsRunning() (bool, error) {
 }
 
 // Start starts k3s server
-func (m *K3sManager) Start(ctx context.Context) error {
+// Note: config is ignored for k3s as it runs directly on the host
+func (m *K3sManager) Start(ctx context.Context, config ClusterConfig) error {
 	// Create data directory
 	dataDir := filepath.Join(m.vibespaceHome, "k3s-data")
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
