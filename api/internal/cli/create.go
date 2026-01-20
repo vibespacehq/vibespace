@@ -37,8 +37,8 @@ var (
 
 // Default resource values - can be overridden via environment variables
 const (
-	DefaultCPU     = "400m"
-	DefaultMemory  = "256Mi"
+	DefaultCPU     = "1000m"
+	DefaultMemory  = "1Gi"
 	DefaultStorage = "10Gi"
 )
 

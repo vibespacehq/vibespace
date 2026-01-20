@@ -227,8 +227,13 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	return vibespace, nil
 }
 
+// DeleteOptions configures vibespace deletion behavior
+type DeleteOptions struct {
+	KeepData bool // If true, preserve PVC (storage data)
+}
+
 // Delete deletes a vibespace by name or ID
-func (s *Service) Delete(ctx context.Context, nameOrID string) error {
+func (s *Service) Delete(ctx context.Context, nameOrID string, opts *DeleteOptions) error {
 	if err := s.ensureClients(); err != nil {
 		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
@@ -237,7 +242,11 @@ func (s *Service) Delete(ctx context.Context, nameOrID string) error {
 		return fmt.Errorf("knative manager is not initialized")
 	}
 
-	slog.Info("deleting vibespace", "vibespace_id", nameOrID)
+	if opts == nil {
+		opts = &DeleteOptions{}
+	}
+
+	slog.Info("deleting vibespace", "vibespace_id", nameOrID, "keep_data", opts.KeepData)
 
 	// Get vibespace to retrieve the internal ID and project name
 	vibespace, err := s.Get(ctx, nameOrID)
@@ -252,7 +261,43 @@ func (s *Service) Delete(ctx context.Context, nameOrID string) error {
 
 	slog.Info("vibespace deleted successfully", "vibespace_id", vibespace.ID, "name", vibespace.Name)
 
-	// Note: PVCs are left for manual cleanup to prevent accidental data loss
+	// Clean up associated resources unless --keep-data is specified
+	if !opts.KeepData {
+		// Delete PVC
+		pvcName := fmt.Sprintf("vibespace-%s-pvc", vibespace.ID)
+		if err := s.deletePVC(ctx, pvcName); err != nil {
+			slog.Warn("failed to delete PVC", "pvc", pvcName, "error", err)
+		} else {
+			slog.Info("PVC deleted", "pvc", pvcName)
+		}
+
+		// Delete SSH key secret
+		secretName := fmt.Sprintf("vibespace-%s-ssh-keys", vibespace.ID)
+		if err := s.deleteSecret(ctx, secretName); err != nil {
+			slog.Warn("failed to delete SSH key secret", "secret", secretName, "error", err)
+		} else {
+			slog.Info("SSH key secret deleted", "secret", secretName)
+		}
+	}
+
+	return nil
+}
+
+// deletePVC deletes a PersistentVolumeClaim
+func (s *Service) deletePVC(ctx context.Context, name string) error {
+	err := s.k8sClient.Clientset().CoreV1().PersistentVolumeClaims(k8s.VibespaceNamespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
+// deleteSecret deletes a Secret
+func (s *Service) deleteSecret(ctx context.Context, name string) error {
+	err := s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Delete(ctx, name, metav1.DeleteOptions{})
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
 	return nil
 }
 

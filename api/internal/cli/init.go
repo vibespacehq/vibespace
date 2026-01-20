@@ -39,8 +39,8 @@ var (
 
 // Default cluster resource values - can be overridden via environment variables
 const (
-	DefaultClusterCPU    = 2
-	DefaultClusterMemory = 4
+	DefaultClusterCPU    = 4
+	DefaultClusterMemory = 8
 	DefaultClusterDisk   = 60
 )
 

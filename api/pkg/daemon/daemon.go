@@ -58,7 +58,8 @@ func SpawnDaemon(vibespace string) error {
 	}
 
 	// Poll until daemon is ready or timeout
-	deadline := time.Now().Add(10 * time.Second)
+	// Daemon may take a while to start if it needs to wake up scaled-down pods
+	deadline := time.Now().Add(45 * time.Second)
 	for time.Now().Before(deadline) {
 		if client.IsRunning() {
 			return nil

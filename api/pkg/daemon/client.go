@@ -232,6 +232,20 @@ func (c *Client) RestartAll() error {
 	return nil
 }
 
+// Refresh re-discovers pods for agents (useful when Knative scales)
+func (c *Client) Refresh() error {
+	resp, err := c.sendRequest(Request{Type: RequestRefresh})
+	if err != nil {
+		return err
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("refresh failed: %s", resp.Error)
+	}
+
+	return nil
+}
+
 // Shutdown requests daemon shutdown
 func (c *Client) Shutdown() error {
 	resp, err := c.sendRequest(Request{Type: RequestShutdown})

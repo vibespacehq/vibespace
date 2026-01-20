@@ -19,9 +19,9 @@ func runConnect(vibespace string, args []string) error {
 
 	// Parse flags from args
 	browser := false
-	agent := "claude-1"
+	agent := ""           // Empty = shell only, specified = run claude
+	agentSpecified := false // Track if agent was explicitly specified
 
-	filteredArgs := []string{}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--browser", "-b":
@@ -29,14 +29,14 @@ func runConnect(vibespace string, args []string) error {
 		case "--agent", "-a":
 			if i+1 < len(args) {
 				agent = args[i+1]
+				agentSpecified = true
 				i++
 			}
 		default:
 			// If arg doesn't start with -, treat as agent name
 			if len(args[i]) > 0 && args[i][0] != '-' {
 				agent = args[i]
-			} else {
-				filteredArgs = append(filteredArgs, args[i])
+				agentSpecified = true
 			}
 		}
 	}
@@ -44,6 +44,11 @@ func runConnect(vibespace string, args []string) error {
 	// Also check global flag if set
 	if connectBrowserFlag {
 		browser = true
+	}
+
+	// For browser, default to claude-1
+	if browser && agent == "" {
+		agent = "claude-1"
 	}
 
 	if browser {
@@ -58,17 +63,33 @@ func runConnect(vibespace string, args []string) error {
 	}
 
 	// For CLI access, use SSH port
-	localPort, err := ensureDaemonRunningSSH(ctx, vibespace, agent)
+	// All agents share the same PVC, so we can use any available agent for shell access
+	containerAgent := agent
+	if containerAgent == "" {
+		// No specific agent requested - use first available
+		containerAgent = "" // Will be resolved by ensureDaemonRunningSSH
+	}
+
+	localPort, err := ensureDaemonRunningSSHAnyAgent(ctx, vibespace, containerAgent)
 	if err != nil {
 		return err
 	}
 
-	printStep("Connecting to %s in %s via SSH...", agent, vibespace)
-	return connectViaSSH(localPort)
+	// If agent was specified, run claude interactively
+	// If no agent specified, just give a shell
+	if agentSpecified {
+		printStep("Connecting to %s in %s...", agent, vibespace)
+		// Use login shell to ensure PATH and environment are set up
+		return connectViaSSH(localPort, "bash -l -c claude")
+	}
+
+	printStep("Connecting to shell in %s...", vibespace)
+	return connectViaSSH(localPort, "")
 }
 
 // connectViaSSH connects to the vibespace via native SSH
-func connectViaSSH(localPort int) error {
+// If remoteCmd is non-empty, it runs that command instead of a shell
+func connectViaSSH(localPort int, remoteCmd string) error {
 	// Get the dedicated vibespace private key
 	privateKeyPath := vibespace.GetSSHPrivateKeyPath()
 	if privateKeyPath == "" {
@@ -81,7 +102,13 @@ func connectViaSSH(localPort int) error {
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "LogLevel=ERROR",
+		"-t", // Force pseudo-terminal allocation for interactive commands
 		"user@localhost",
+	}
+
+	// Append remote command if specified
+	if remoteCmd != "" {
+		sshArgs = append(sshArgs, remoteCmd)
 	}
 
 	cmd := exec.Command("ssh", sshArgs...)

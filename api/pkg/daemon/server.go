@@ -14,6 +14,9 @@ import (
 	"vibespace/pkg/portforward"
 )
 
+// RefreshCallback is called to re-discover pods when Knative scales
+type RefreshCallback func() (map[string]string, error)
+
 // Server is the daemon server that listens on a Unix socket
 type Server struct {
 	vibespace string
@@ -21,6 +24,7 @@ type Server struct {
 	listener  net.Listener
 	manager   *portforward.Manager
 	state     *DaemonState
+	onRefresh RefreshCallback
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -32,6 +36,7 @@ type ServerConfig struct {
 	Vibespace string
 	Manager   *portforward.Manager
 	State     *DaemonState
+	OnRefresh RefreshCallback
 }
 
 // NewServer creates a new daemon server
@@ -56,6 +61,7 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 		sockPath:  paths.SockFile,
 		manager:   cfg.Manager,
 		state:     cfg.State,
+		onRefresh: cfg.OnRefresh,
 		ctx:       ctx,
 		cancel:    cancel,
 	}, nil
@@ -188,6 +194,8 @@ func (s *Server) handleRequest(req Request) Response {
 		return s.handleRestartForward(req)
 	case RequestRestartAll:
 		return s.handleRestartAll()
+	case RequestRefresh:
+		return s.handleRefresh()
 	case RequestShutdown:
 		return s.handleShutdown()
 	default:
@@ -391,6 +399,40 @@ func (s *Server) handleRestartAll() Response {
 	if err := s.manager.RestartAll(); err != nil {
 		return NewErrorResponse(err)
 	}
+
+	return NewSuccessResponse(nil)
+}
+
+// handleRefresh handles a refresh request - re-discovers pods and restarts forwards
+func (s *Server) handleRefresh() Response {
+	if s.onRefresh == nil {
+		return NewErrorResponse(fmt.Errorf("refresh not configured"))
+	}
+
+	slog.Info("refreshing pods", "vibespace", s.vibespace)
+
+	// Re-discover pods
+	agents, err := s.onRefresh()
+	if err != nil {
+		return NewErrorResponse(fmt.Errorf("failed to discover pods: %w", err))
+	}
+
+	// Update pod mappings and restart forwards
+	for agentName, podName := range agents {
+		oldPod, exists := s.manager.GetAgentPod(agentName)
+		if !exists || oldPod != podName {
+			slog.Info("updating agent pod", "agent", agentName, "old_pod", oldPod, "new_pod", podName)
+			s.manager.SetAgentPod(agentName, podName)
+			s.state.SetAgentPod(agentName, podName)
+		}
+	}
+
+	// Restart all forwards with new pod mappings
+	if err := s.manager.RestartAll(); err != nil {
+		slog.Error("failed to restart forwards after refresh", "error", err)
+	}
+
+	s.state.Save()
 
 	return NewSuccessResponse(nil)
 }

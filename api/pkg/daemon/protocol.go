@@ -28,6 +28,8 @@ const (
 	RequestShutdown RequestType = "shutdown"
 	// RequestPing checks if daemon is alive
 	RequestPing RequestType = "ping"
+	// RequestRefresh re-discovers pods for agents (useful when Knative scales)
+	RequestRefresh RequestType = "refresh"
 )
 
 // Request is an IPC request from client to daemon
