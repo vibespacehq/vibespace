@@ -234,7 +234,8 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 
 // DeleteOptions configures vibespace deletion behavior
 type DeleteOptions struct {
-	KeepData bool // If true, preserve PVC (storage data)
+	KeepData  bool              // If true, preserve PVC (storage data)
+	Vibespace *model.Vibespace  // If provided, skip lookup (avoids redundant API call)
 }
 
 // Delete deletes a vibespace by name or ID
@@ -253,10 +254,14 @@ func (s *Service) Delete(ctx context.Context, nameOrID string, opts *DeleteOptio
 
 	slog.Info("deleting vibespace", "vibespace_id", nameOrID, "keep_data", opts.KeepData)
 
-	// Get vibespace to retrieve the internal ID and project name
-	vibespace, err := s.Get(ctx, nameOrID)
-	if err != nil {
-		return fmt.Errorf("vibespace not found: %w", err)
+	// Use provided vibespace or look it up
+	vibespace := opts.Vibespace
+	if vibespace == nil {
+		var err error
+		vibespace, err = s.Get(ctx, nameOrID)
+		if err != nil {
+			return fmt.Errorf("vibespace not found: %w", err)
+		}
 	}
 
 	// Delete all agent deployments first

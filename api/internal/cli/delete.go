@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -43,14 +44,18 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	name := args[0]
 
+	slog.Info("delete command started", "name", name, "force", deleteForce, "keep_data", deleteKeepData)
+
 	svc, err := getVibespaceService()
 	if err != nil {
+		slog.Error("failed to get vibespace service", "error", err)
 		return err
 	}
 
 	// Check if vibespace exists
 	vs, err := svc.Get(ctx, name)
 	if err != nil {
+		slog.Error("vibespace not found", "name", name, "error", err)
 		return fmt.Errorf("vibespace '%s' not found", name)
 	}
 
@@ -77,13 +82,16 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	printStep("Deleting vibespace '%s'...", name)
 
 	opts := &vibespace.DeleteOptions{
-		KeepData: deleteKeepData,
+		KeepData:  deleteKeepData,
+		Vibespace: vs, // Pass the already-fetched vibespace to avoid redundant lookup
 	}
 
 	if err := svc.Delete(ctx, name, opts); err != nil {
+		slog.Error("failed to delete vibespace", "name", name, "error", err)
 		return fmt.Errorf("failed to delete vibespace: %w", err)
 	}
 
+	slog.Info("delete command completed", "name", name)
 	printSuccess("Vibespace '%s' deleted", name)
 	if deleteKeepData {
 		printStep("Storage data preserved. Clean up manually if needed.")

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -65,23 +66,28 @@ func init() {
 func runCreate(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
+	name := ""
+	if len(args) > 0 {
+		name = args[0]
+	}
+	slog.Info("create command started", "name", name, "repo", createRepo)
+
 	// Get vibespace service
 	svc, err := getVibespaceService()
 	if err != nil {
+		slog.Error("failed to get vibespace service", "error", err)
 		return err
 	}
 
 	// Build create request
 	req := &model.CreateVibespaceRequest{
+		Name:       name,
 		Persistent: true, // Always use persistent storage for shared filesystem between agents
 		Resources: &model.Resources{
 			CPU:     createCPU,
 			Memory:  createMemory,
 			Storage: createStorage,
 		},
-	}
-	if len(args) > 0 {
-		req.Name = args[0]
 	}
 	if createRepo != "" {
 		req.GithubRepo = createRepo
@@ -91,9 +97,11 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	vs, err := svc.Create(ctx, req)
 	if err != nil {
+		slog.Error("failed to create vibespace", "error", err)
 		return fmt.Errorf("failed to create vibespace: %w", err)
 	}
 
+	slog.Info("create command completed", "name", vs.Name, "id", vs.ID)
 	printSuccess("Vibespace created: %s", vs.Name)
 	fmt.Println()
 	fmt.Println("Next steps:")

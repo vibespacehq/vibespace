@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
@@ -51,14 +52,22 @@ func runConnect(vibespace string, args []string) error {
 		agent = "claude-1"
 	}
 
+	mode := "ssh"
+	if browser {
+		mode = "browser"
+	}
+	slog.Info("connect command started", "vibespace", vibespace, "mode", mode, "agent", agent)
+
 	if browser {
 		// For browser access, use ttyd port
 		localPort, err := ensureDaemonRunningTTYD(ctx, vibespace, agent)
 		if err != nil {
+			slog.Error("failed to ensure daemon running for ttyd", "vibespace", vibespace, "agent", agent, "error", err)
 			return err
 		}
 		url := fmt.Sprintf("http://localhost:%d", localPort)
 		printStep("Opening browser for %s in %s...", agent, vibespace)
+		slog.Info("connect command completed", "vibespace", vibespace, "mode", "browser", "url", url)
 		return openBrowser(url)
 	}
 
@@ -72,6 +81,7 @@ func runConnect(vibespace string, args []string) error {
 
 	localPort, err := ensureDaemonRunningSSHAnyAgent(ctx, vibespace, containerAgent)
 	if err != nil {
+		slog.Error("failed to ensure daemon running for ssh", "vibespace", vibespace, "agent", containerAgent, "error", err)
 		return err
 	}
 
@@ -79,11 +89,13 @@ func runConnect(vibespace string, args []string) error {
 	// If no agent specified, just give a shell
 	if agentSpecified {
 		printStep("Connecting to %s in %s...", agent, vibespace)
+		slog.Info("connect command completed", "vibespace", vibespace, "mode", "ssh", "agent", agent, "local_port", localPort)
 		// Use login shell to ensure PATH and environment are set up
 		return connectViaSSH(localPort, "bash -l -c claude")
 	}
 
 	printStep("Connecting to shell in %s...", vibespace)
+	slog.Info("connect command completed", "vibespace", vibespace, "mode", "ssh-shell", "local_port", localPort)
 	return connectViaSSH(localPort, "")
 }
 

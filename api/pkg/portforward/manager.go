@@ -337,7 +337,7 @@ func (m *Manager) StopAll() {
 		fwd.Stop()
 	}
 
-	slog.Info("all forwards stopped", "vibespace", m.vibespace)
+	slog.Info("all forwards stopped")
 }
 
 // handleForwarderStopped is called when a forwarder stops unexpectedly
