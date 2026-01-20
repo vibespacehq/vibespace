@@ -144,16 +144,11 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		"project_name", projectName,
 		"pvc_name", pvcName)
 
-	// Set default resources if not provided
-	// Keep these minimal for local development - allows multiple agents on limited resources
-	resources := req.Resources
-	if resources == nil {
-		resources = &model.Resources{
-			CPU:     "400m",
-			Memory:  "256Mi",
-			Storage: "10Gi",
-		}
+	// Resources must be provided by the CLI
+	if req.Resources == nil {
+		return nil, fmt.Errorf("resources are required")
 	}
+	resources := req.Resources
 
 	// Create PVC for persistent storage if requested
 	if req.Persistent {
@@ -392,18 +387,51 @@ func knativeServiceToVibespace(svc *unstructured.Unstructured) *model.Vibespace 
 
 	status := knativeStatusToVibespaceStatus(svc)
 
+	// Extract resources from the Knative service spec
+	resources := extractResourcesFromKnativeService(svc)
+
 	return &model.Vibespace{
 		ID:          id,
 		Name:        name,
 		ProjectName: projectName,
 		Status:      status,
-		Resources: model.Resources{
-			CPU:     "400m",
-			Memory:  "256Mi",
-			Storage: "10Gi",
-		},
-		Persistent: true,
-		CreatedAt:  createdAt,
+		Resources:   resources,
+		Persistent:  true,
+		CreatedAt:   createdAt,
+	}
+}
+
+// extractResourcesFromKnativeService extracts CPU and memory from Knative service spec
+func extractResourcesFromKnativeService(svc *unstructured.Unstructured) model.Resources {
+	// Navigate: spec.template.spec.containers[0].resources.requests
+	containers, found, _ := unstructured.NestedSlice(svc.Object, "spec", "template", "spec", "containers")
+	if !found || len(containers) == 0 {
+		return model.Resources{}
+	}
+
+	container, ok := containers[0].(map[string]interface{})
+	if !ok {
+		return model.Resources{}
+	}
+
+	resources, ok := container["resources"].(map[string]interface{})
+	if !ok {
+		return model.Resources{}
+	}
+
+	requests, ok := resources["requests"].(map[string]interface{})
+	if !ok {
+		return model.Resources{}
+	}
+
+	cpu, _ := requests["cpu"].(string)
+	memory, _ := requests["memory"].(string)
+
+	return model.Resources{
+		CPU:    cpu,
+		Memory: memory,
+		// Storage is not stored in Knative spec - it's in the PVC
+		// We don't need it after creation anyway
 	}
 }
 

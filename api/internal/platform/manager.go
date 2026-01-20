@@ -12,15 +12,6 @@ type ClusterConfig struct {
 	Disk   int // Disk size in GB
 }
 
-// DefaultClusterConfig returns the default cluster configuration
-func DefaultClusterConfig() ClusterConfig {
-	return ClusterConfig{
-		CPU:    2,
-		Memory: 4,
-		Disk:   60,
-	}
-}
-
 // ClusterManager defines the interface for managing the local Kubernetes cluster
 type ClusterManager interface {
 	// IsInstalled checks if the required binaries are installed

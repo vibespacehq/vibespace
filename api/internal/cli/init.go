@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -36,12 +37,34 @@ var (
 	initDisk       int
 )
 
+// Default cluster resource values - can be overridden via environment variables
+const (
+	DefaultClusterCPU    = 2
+	DefaultClusterMemory = 4
+	DefaultClusterDisk   = 60
+)
+
+// getEnvOrDefaultInt returns the environment variable as int or a default
+func getEnvOrDefaultInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
+		}
+	}
+	return defaultValue
+}
+
 func init() {
+	// Read defaults from environment variables, falling back to constants
+	cpuDefault := getEnvOrDefaultInt("VIBESPACE_CLUSTER_CPU", DefaultClusterCPU)
+	memoryDefault := getEnvOrDefaultInt("VIBESPACE_CLUSTER_MEMORY", DefaultClusterMemory)
+	diskDefault := getEnvOrDefaultInt("VIBESPACE_CLUSTER_DISK", DefaultClusterDisk)
+
 	initCmd.Flags().BoolVar(&initExternal, "external", false, "Use an external Kubernetes cluster")
 	initCmd.Flags().StringVar(&initKubeconfig, "kubeconfig", "", "Path to external kubeconfig")
-	initCmd.Flags().IntVar(&initCPU, "cpu", 2, "Number of CPU cores for the cluster VM")
-	initCmd.Flags().IntVar(&initMemory, "memory", 4, "Memory in GB for the cluster VM")
-	initCmd.Flags().IntVar(&initDisk, "disk", 60, "Disk size in GB for the cluster VM")
+	initCmd.Flags().IntVar(&initCPU, "cpu", cpuDefault, "Number of CPU cores for the cluster VM")
+	initCmd.Flags().IntVar(&initMemory, "memory", memoryDefault, "Memory in GB for the cluster VM")
+	initCmd.Flags().IntVar(&initDisk, "disk", diskDefault, "Disk size in GB for the cluster VM")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
