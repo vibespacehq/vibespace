@@ -83,7 +83,7 @@ api/
 │   └── platform/        # Colima/k3s management
 ├── pkg/
 │   ├── k8s/             # Kubernetes client
-│   ├── knative/         # Knative service management
+│   ├── deployment/      # Deployment management
 │   ├── vibespace/       # Vibespace business logic
 │   ├── model/           # Data models
 │   └── image/           # Container image (ttyd + Claude)

@@ -14,7 +14,7 @@ import (
 	"vibespace/pkg/portforward"
 )
 
-// RefreshCallback is called to re-discover pods when Knative scales
+// RefreshCallback is called to re-discover pods when deployments scale
 type RefreshCallback func() (map[string]string, error)
 
 // Server is the daemon server that listens on a Unix socket

@@ -6,7 +6,7 @@
 # - ttyd: Web terminal fallback (port 7681) - browser access
 # - Claude Code CLI: AI coding agent (user authenticates via /login)
 #
-# Environment variables (set by Knative):
+# Environment variables (set by Kubernetes):
 # - VIBESPACE_ID: Vibespace identifier
 # - VIBESPACE_PROJECT: Project name
 # - VIBESPACE_CLAUDE_ID: Claude instance ID (1, 2, 3, ...)

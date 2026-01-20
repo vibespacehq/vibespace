@@ -206,19 +206,19 @@ func setupDaemonLogging(vibespace string) (*os.File, error) {
 
 // discoverVibespaceAgents discovers all agents (pods) for a vibespace
 // Uses the vibespace.dev/claude-id label to identify agents
-// This also wakes up any scaled-down Knative services
+// Scales up any deployments with replicas=0
 func discoverVibespaceAgents(ctx context.Context, k8sClient *k8s.Client, vibespaceID string) (map[string]string, error) {
-	// First, wake up any scaled-down Knative services and get the expected count
-	expectedCount, err := wakeKnativeServices(ctx, k8sClient, vibespaceID)
+	// First, scale up any stopped deployments
+	expectedCount, err := scaleUpDeployments(ctx, k8sClient, vibespaceID)
 	if err != nil {
-		slog.Warn("failed to wake Knative services", "error", err)
+		slog.Warn("failed to scale up deployments", "error", err)
 	}
 	if expectedCount == 0 {
 		expectedCount = 1 // At least expect one agent
 	}
 	slog.Info("expecting agents", "count", expectedCount)
 
-	// Wait a bit for pods to start scaling up
+	// Wait a bit for pods to start
 	time.Sleep(2 * time.Second)
 
 	// Poll for pods to be ready (up to 30 seconds)
@@ -286,10 +286,9 @@ func discoverVibespaceAgents(ctx context.Context, k8sClient *k8s.Client, vibespa
 	return nil, fmt.Errorf("no running pods found for vibespace %s after waiting", vibespaceID)
 }
 
-// wakeKnativeServices triggers scale-up for any scaled-down Knative services
+// scaleUpDeployments scales up any deployments with replicas=0
 // Returns the total number of deployments (expected agent count)
-func wakeKnativeServices(ctx context.Context, k8sClient *k8s.Client, vibespaceID string) (int, error) {
-	// Get deployments to find scaled-down ones and count total
+func scaleUpDeployments(ctx context.Context, k8sClient *k8s.Client, vibespaceID string) (int, error) {
 	deployments, err := k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
 	})
@@ -297,8 +296,7 @@ func wakeKnativeServices(ctx context.Context, k8sClient *k8s.Client, vibespaceID
 		return 0, fmt.Errorf("failed to list deployments: %w", err)
 	}
 
-	// Find scaled-down deployments and scale them up
-	// Knative will eventually take over, but this gives us the initial scale-up
+	// Scale up any stopped deployments
 	scaledUp := 0
 	for _, deploy := range deployments.Items {
 		if deploy.Spec.Replicas != nil && *deploy.Spec.Replicas == 0 {
@@ -314,7 +312,9 @@ func wakeKnativeServices(ctx context.Context, k8sClient *k8s.Client, vibespaceID
 		}
 	}
 
-	slog.Info("woke up deployments", "scaled_up", scaledUp, "total", len(deployments.Items))
+	if scaledUp > 0 {
+		slog.Info("scaled up deployments", "count", scaledUp, "total", len(deployments.Items))
+	}
 	return len(deployments.Items), nil
 }
 

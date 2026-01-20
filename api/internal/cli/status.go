@@ -87,7 +87,6 @@ func checkClusterComponents(ctx context.Context, vibespaceHome string) map[strin
 
 	result := map[string]bool{
 		"Namespace": false,
-		"Knative":   false,
 	}
 
 	// Check if vibespace namespace exists
@@ -95,13 +94,6 @@ func checkClusterComponents(ctx context.Context, vibespaceHome string) map[strin
 		"get", "namespace", "vibespace", "-o", "name")
 	if err := cmd.Run(); err == nil {
 		result["Namespace"] = true
-	}
-
-	// Check if Knative controller is running
-	cmd = exec.CommandContext(ctx, kubectlBin, "--kubeconfig", kubeconfig,
-		"-n", "knative-serving", "get", "deploy", "controller", "-o", "name")
-	if err := cmd.Run(); err == nil {
-		result["Knative"] = true
 	}
 
 	return result

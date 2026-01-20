@@ -126,7 +126,7 @@ func getVibespaceService() (*vibespace.Service, error) {
 		return nil, fmt.Errorf("failed to create k8s client: %w", err)
 	}
 
-	// Create vibespace service (it creates knative and network managers internally)
+	// Create vibespace service (it creates deployment and network managers internally)
 	svc := vibespace.NewService(k8sClient)
 	return svc, nil
 }
