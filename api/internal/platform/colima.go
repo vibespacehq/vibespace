@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -213,14 +215,19 @@ func (m *ColimaManager) Start(ctx context.Context, config ClusterConfig) error {
 		config.Disk,
 	)
 
+	slog.Debug("executing colima start", "command", commandStr)
+
 	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	stdout, stderr := subprocessWriters("colima start")
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 
 	if err := cmd.Run(); err != nil {
+		slog.Error("colima start failed", "error", err)
 		return fmt.Errorf("failed to start Colima: %w", err)
 	}
 
+	slog.Debug("colima start completed")
 	return nil
 }
 
@@ -230,11 +237,21 @@ func (m *ColimaManager) Stop(ctx context.Context) error {
 	currentPath := os.Getenv("PATH")
 	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
 
+	slog.Debug("executing colima stop")
+
 	cmd := exec.CommandContext(ctx, m.colimaBin(), "stop")
 	cmd.Env = append(os.Environ(), "PATH="+newPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	stdout, stderr := subprocessWriters("colima stop")
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	if err := cmd.Run(); err != nil {
+		slog.Error("colima stop failed", "error", err)
+		return err
+	}
+
+	slog.Debug("colima stop completed")
+	return nil
 }
 
 // WaitReady waits for kubectl to be able to connect
@@ -287,5 +304,58 @@ func (m *ColimaManager) Uninstall(ctx context.Context) error {
 func (m *ColimaManager) KubeconfigPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".kube", "config")
+}
+
+// subprocessWriters returns writers for subprocess stdout/stderr
+// When debug mode is enabled, output is teed to slog
+func subprocessWriters(prefix string) (io.Writer, io.Writer) {
+	if os.Getenv("VIBESPACE_DEBUG") == "" {
+		return os.Stdout, os.Stderr
+	}
+
+	// In debug mode, tee output to both terminal and log
+	stdoutWriter := &logTeeWriter{w: os.Stdout, prefix: prefix, stream: "stdout"}
+	stderrWriter := &logTeeWriter{w: os.Stderr, prefix: prefix, stream: "stderr"}
+	return stdoutWriter, stderrWriter
+}
+
+// logTeeWriter writes to both an underlying writer and slog
+type logTeeWriter struct {
+	w      io.Writer
+	prefix string
+	stream string
+	buf    []byte
+}
+
+func (w *logTeeWriter) Write(p []byte) (n int, err error) {
+	// Write to underlying writer first
+	n, err = w.w.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	// Buffer and log complete lines
+	w.buf = append(w.buf, p...)
+	for {
+		idx := -1
+		for i, b := range w.buf {
+			if b == '\n' {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			break
+		}
+
+		line := strings.TrimSpace(string(w.buf[:idx]))
+		w.buf = w.buf[idx+1:]
+
+		if line != "" {
+			slog.Debug(w.prefix, "stream", w.stream, "line", line)
+		}
+	}
+
+	return n, nil
 }
 

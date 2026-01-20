@@ -1,7 +1,7 @@
 # vibespace - AI Assistant Context
 
 **Project**: vibespace - multi-Claude development environments
-**Stack**: Go CLI + Colima/k3s + Knative
+**Stack**: Go CLI + Colima/k3s + plain Kubernetes Deployments
 
 ---
 
@@ -24,7 +24,6 @@ vibespace multi myproject otherproj   # Multi-agent terminal UI
 - **Terminal UI**: Talk to multiple Claudes with @mentions
 - **Port-forwarding**: Access dev servers via localhost (no DNS magic)
 - **Remote access**: Connect to another machine's cluster via WireGuard
-- **Scale-to-zero**: Knative-based, pods spin down when idle
 
 ---
 
@@ -38,19 +37,18 @@ vibespace multi myproject otherproj   # Multi-agent terminal UI
 │  └── vibespace CLI                                                      │
 │       ├── Cluster mgmt (init, status, stop)                            │
 │       ├── Vibespace mgmt (create, list, delete)                        │
-│       ├── Port-forward daemon (background)                              │
-│       └── Multi-session TUI (ttyd websocket → Claude)                  │
+│       ├── Port-forward daemon (background, forwards SSH + ttyd)        │
+│       └── Multi-session TUI (SSH → Claude print mode)                  │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ client-go / port-forward
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  Colima VM (k3s on macOS) or native k3s (Linux)                        │
-│  ├── Knative Serving (scale-to-zero)                                   │
 │  └── vibespace namespace                                                │
-│       ├── vibespace-<id> (Knative Service)                             │
-│       │    ├── Pod: claude-1 (ttyd:7681 + Claude Code CLI)             │
-│       │    └── Pod: claude-2 (ttyd:7681 + Claude Code CLI)             │
+│       ├── vibespace-<id> (Deployment)                                  │
+│       │    ├── Pod: claude-1 (SSH:22 + ttyd:7681 + Claude Code CLI)   │
+│       │    └── Pod: claude-2 (SSH:22 + ttyd:7681 + Claude Code CLI)   │
 │       └── PVC: shared /vibespace directory                             │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -89,13 +87,14 @@ vibespace/
 ├── api/                       # Go CLI and core packages
 │   ├── cmd/vibespace/         # CLI entry point
 │   ├── internal/
-│   │   ├── cli/               # Cobra commands
+│   │   ├── cli/               # Cobra commands + logging setup
 │   │   └── platform/          # Colima/k3s management
 │   └── pkg/
 │       ├── k8s/               # Kubernetes client
-│       ├── knative/           # Knative service management
 │       ├── vibespace/         # Vibespace business logic
 │       ├── model/             # Data models
+│       ├── session/           # Multi-session management
+│       ├── tui/               # Terminal UI (bubbletea)
 │       └── image/             # Container image (ttyd + Claude Code)
 ├── docs/
 │   └── CLI_SPEC.md            # Complete CLI specification
@@ -107,8 +106,9 @@ vibespace/
 ## Key Concepts
 
 ### Vibespace
-A project environment running as Knative Service(s):
-- **ttyd**: Terminal over websocket (port 7681)
+A project environment running as Kubernetes Deployment(s):
+- **SSH (port 22)**: Primary access for CLI and TUI (Claude print mode)
+- **ttyd (port 7681)**: Browser terminal access (fallback)
 - **Claude Code CLI**: AI coding agent
 - **Persistent volume**: `/vibespace` directory shared across all agents
 
@@ -117,11 +117,14 @@ Multiple Claude instances work on the same project:
 - Each Claude runs in its own Kubernetes pod
 - All pods mount the same PVC (shared filesystem)
 - User can message specific Claudes or broadcast to all
+- TUI uses Claude's print mode (`claude -p --output-format stream-json`)
+- `/focus` command switches to interactive Claude session
 
 ### Port-Forward Daemon
 Background process managing connections:
+- Forwards both SSH (primary) and ttyd (browser fallback)
 - Auto-reconnects on connection drops
-- Handles multiple agents (port offset: claude-2 → 17681)
+- Handles multiple agents (port offset: claude-2 → 10022 for SSH, 17681 for ttyd)
 - Detects and forwards dev server ports
 
 ### Sessions
@@ -138,10 +141,10 @@ Group agents from multiple vibespaces:
 |-----------|---------|
 | **Colima** | Lima-based container runtime for macOS |
 | **k3s** | Lightweight Kubernetes |
-| **Knative Serving** | Scale-to-zero, serverless workloads |
 | **ttyd** | Share terminal over websocket |
 | **Claude Code** | AI coding agent CLI |
 | **WireGuard** | VPN for remote access |
+| **lumberjack** | Log rotation for daemon and debug logs |
 
 ---
 
@@ -230,16 +233,20 @@ vibespace remote disconnect      # Disconnect
 ```
 ~/.vibespace/
 ├── bin/                         # Bundled binaries (colima, lima, kubectl)
-├── daemons/                     # Port-forward daemon state
+├── lima/                        # Lima binaries (limactl, etc.)
+├── daemons/                     # Port-forward daemon state and logs
 │   ├── <vibespace>.pid
 │   ├── <vibespace>.sock
-│   └── <vibespace>.json
+│   ├── <vibespace>.json
+│   └── <vibespace>.log          # Daemon logs (JSON, rotated)
 ├── sessions/                    # Multi-session state
 │   └── <session>.json
 ├── remote/                      # Remote connection config
 │   ├── kubeconfig
 │   ├── wireguard.conf
 │   └── connection.json
+├── debug.log                    # CLI debug log (when VIBESPACE_DEBUG=1)
+├── tui-debug.log                # TUI debug log (when VIBESPACE_DEBUG=1)
 └── config.json                  # Global config
 ```
 
@@ -286,6 +293,14 @@ fix/#<issue>-<short-description>
 
 ## Troubleshooting
 
+### Debug Mode
+```bash
+VIBESPACE_DEBUG=1 vibespace init          # Enable debug logging
+VIBESPACE_LOG_LEVEL=debug vibespace init  # Set log level explicitly
+```
+
+Debug logs are written to `~/.vibespace/debug.log` (CLI) or `~/.vibespace/tui-debug.log` (TUI).
+
 ### Cluster Issues
 ```bash
 vibespace status                 # Check component status
@@ -303,37 +318,56 @@ vibespace <name> forward restart-all
 vibespace <name> down && vibespace <name> up  # Restart daemon
 ```
 
+### Viewing Daemon Logs
+```bash
+tail -f ~/.vibespace/daemons/<name>.log  # Follow daemon logs (JSON format)
+```
+
 ---
 
 ## Important Files
 
 - `docs/CLI_SPEC.md` - Complete CLI command reference
 - `api/internal/cli/` - All CLI command implementations
+- `api/internal/cli/logging.go` - Centralized logging configuration
 - `api/pkg/vibespace/service.go` - Core vibespace logic
-- `api/pkg/knative/service.go` - Knative service management
 - `api/internal/platform/colima.go` - Colima VM management
 
 ---
 
 ## Current Status
 
-**Pivot in Progress**: Transitioning from Tauri desktop app to CLI-first approach.
+**CLI-first approach**: Transitioned from Tauri desktop app to pure CLI.
 
-Implemented:
-- Cluster management (init, status, stop)
-- Vibespace CRUD (create, list, delete, start, stop)
-- Basic connect command
-- Platform detection (Colima on macOS)
+### Implemented
+- **Cluster management**: init, status, stop (Colima on macOS)
+- **Vibespace CRUD**: create, list, delete, start, stop
+- **Basic connect command**: SSH (primary) or ttyd browser (with `--browser` flag)
+- **Platform detection**: Colima on macOS, k3s on Linux
+- **Production-ready logging**:
+  - Centralized `slog` configuration in `logging.go`
+  - Three modes: CLI (discard by default), TUI (discard by default), Daemon (always log)
+  - Debug mode via `VIBESPACE_DEBUG=1` environment variable
+  - Log level config via `VIBESPACE_LOG_LEVEL` (debug/info/warn/error)
+  - JSON format for daemon logs, text format for CLI/TUI debug logs
+  - Log rotation via lumberjack (10MB max, 3 backups, 7 days retention)
+  - Request ID correlation for tracing operations
+  - Subprocess output capture in debug mode
+- **Multi-session TUI**: Basic bubbletea UI with input parsing
 
-To Implement:
+### To Implement
 - Port-forward daemon with auto-reconnect
 - Multi-agent spawning
-- Multi-session TUI
+- TUI command handlers (currently parsed but not wired up)
 - Remote mode (WireGuard)
 - Forward management commands
+
+### Log Locations
+- **CLI/TUI debug logs**: `~/.vibespace/debug.log` or `~/.vibespace/tui-debug.log`
+- **Daemon logs**: `~/.vibespace/daemons/<vibespace-name>.log`
 
 See `docs/CLI_SPEC.md` for the full target feature set.
 
 ---
 
-**Last Updated**: 2026-01-19
+**Last Updated**: 2026-01-20

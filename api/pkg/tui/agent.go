@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strconv"
 	"sync"
@@ -284,31 +283,4 @@ func (c *AgentConn) Reconnect() error {
 	c.outputCh = make(chan string, 100)
 
 	return c.Connect()
-}
-
-// ConnectInteractive opens an interactive Claude session (for /focus mode)
-// This hands over terminal control completely
-func ConnectInteractive(localPort int) error {
-	keyPath := vibespace.GetSSHPrivateKeyPath()
-	if keyPath == "" {
-		return fmt.Errorf("SSH key not found")
-	}
-
-	sshArgs := []string{
-		"-i", keyPath,
-		"-p", strconv.Itoa(localPort),
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
-		"-o", "LogLevel=ERROR",
-		"-t", // Force PTY for interactive mode
-		"user@localhost",
-		"bash", "-l", "-c", "claude", // Run interactive Claude with login shell
-	}
-
-	cmd := exec.Command("ssh", sshArgs...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
 }

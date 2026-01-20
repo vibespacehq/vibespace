@@ -40,6 +40,9 @@ Get started:
 }
 
 func Execute() error {
+	cleanup := setupLogging(LogConfig{Mode: LogModeCLI})
+	defer cleanup()
+
 	err := rootCmd.Execute()
 	if err != nil {
 		printError("%v", err)
