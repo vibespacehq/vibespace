@@ -35,11 +35,31 @@ var (
 	createStorage string
 )
 
+// Default resource values - can be overridden via environment variables
+const (
+	DefaultCPU     = "400m"
+	DefaultMemory  = "256Mi"
+	DefaultStorage = "10Gi"
+)
+
+// getEnvOrDefault returns the environment variable value or a default
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
 func init() {
+	// Read defaults from environment variables, falling back to constants
+	cpuDefault := getEnvOrDefault("VIBESPACE_DEFAULT_CPU", DefaultCPU)
+	memoryDefault := getEnvOrDefault("VIBESPACE_DEFAULT_MEMORY", DefaultMemory)
+	storageDefault := getEnvOrDefault("VIBESPACE_DEFAULT_STORAGE", DefaultStorage)
+
 	createCmd.Flags().StringVar(&createRepo, "repo", "", "GitHub repository to clone")
-	createCmd.Flags().StringVar(&createCPU, "cpu", "400m", "CPU request/limit (e.g., 400m, 500m, 1)")
-	createCmd.Flags().StringVar(&createMemory, "memory", "256Mi", "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
-	createCmd.Flags().StringVar(&createStorage, "storage", "10Gi", "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
+	createCmd.Flags().StringVar(&createCPU, "cpu", cpuDefault, "CPU request/limit (e.g., 400m, 500m, 1)")
+	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
+	createCmd.Flags().StringVar(&createStorage, "storage", storageDefault, "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
