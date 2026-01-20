@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"vibespace/pkg/vibespace"
+
 	"github.com/spf13/cobra"
 )
 
@@ -17,8 +19,10 @@ var deleteCmd = &cobra.Command{
 
 This will remove:
   - All Claude instances
-  - Persistent storage
-  - Network routes
+  - Persistent storage (PVC)
+  - SSH key secrets
+
+Use --keep-data to preserve the persistent volume claim (PVC) for data recovery.
 
 This action cannot be undone.`,
 	Args: cobra.ExactArgs(1),
@@ -26,11 +30,13 @@ This action cannot be undone.`,
 }
 
 var (
-	deleteForce bool
+	deleteForce    bool
+	deleteKeepData bool
 )
 
 func init() {
 	deleteCmd.Flags().BoolVarP(&deleteForce, "force", "f", false, "Skip confirmation prompt")
+	deleteCmd.Flags().BoolVar(&deleteKeepData, "keep-data", false, "Preserve persistent storage (PVC) for data recovery")
 }
 
 func runDelete(cmd *cobra.Command, args []string) error {
@@ -50,7 +56,14 @@ func runDelete(cmd *cobra.Command, args []string) error {
 
 	// Confirm deletion unless --force
 	if !deleteForce {
-		fmt.Printf("Delete vibespace '%s'? This cannot be undone. [y/N] ", vs.Name)
+		msg := fmt.Sprintf("Delete vibespace '%s'?", vs.Name)
+		if deleteKeepData {
+			msg += " (data will be preserved)"
+		} else {
+			msg += " All data will be deleted."
+		}
+		msg += " [y/N] "
+		fmt.Print(msg)
 		reader := bufio.NewReader(os.Stdin)
 		response, _ := reader.ReadString('\n')
 		response = strings.TrimSpace(strings.ToLower(response))
@@ -63,10 +76,17 @@ func runDelete(cmd *cobra.Command, args []string) error {
 
 	printStep("Deleting vibespace '%s'...", name)
 
-	if err := svc.Delete(ctx, name); err != nil {
+	opts := &vibespace.DeleteOptions{
+		KeepData: deleteKeepData,
+	}
+
+	if err := svc.Delete(ctx, name, opts); err != nil {
 		return fmt.Errorf("failed to delete vibespace: %w", err)
 	}
 
 	printSuccess("Vibespace '%s' deleted", name)
+	if deleteKeepData {
+		printStep("Storage data preserved. Clean up manually if needed.")
+	}
 	return nil
 }

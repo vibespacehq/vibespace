@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"vibespace/pkg/daemon"
 	"vibespace/pkg/k8s"
@@ -139,11 +140,17 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		slog.Error("failed to save state", "error", err)
 	}
 
+	// Create refresh callback that re-discovers pods
+	refreshCallback := func() (map[string]string, error) {
+		return discoverVibespaceAgents(ctx, k8sClient, vibespaceID)
+	}
+
 	// Create and start server
 	server, err := daemon.NewServer(daemon.ServerConfig{
 		Vibespace: daemonVibespace,
 		Manager:   manager,
 		State:     state,
+		OnRefresh: refreshCallback,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
@@ -199,38 +206,116 @@ func setupDaemonLogging(vibespace string) (*os.File, error) {
 
 // discoverVibespaceAgents discovers all agents (pods) for a vibespace
 // Uses the vibespace.dev/claude-id label to identify agents
+// This also wakes up any scaled-down Knative services
 func discoverVibespaceAgents(ctx context.Context, k8sClient *k8s.Client, vibespaceID string) (map[string]string, error) {
-	pods, err := k8sClient.Clientset().CoreV1().Pods(k8s.VibespaceNamespace).List(ctx, listOptionsForVibespace(vibespaceID))
+	// First, wake up any scaled-down Knative services and get the expected count
+	expectedCount, err := wakeKnativeServices(ctx, k8sClient, vibespaceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list pods: %w", err)
+		slog.Warn("failed to wake Knative services", "error", err)
 	}
+	if expectedCount == 0 {
+		expectedCount = 1 // At least expect one agent
+	}
+	slog.Info("expecting agents", "count", expectedCount)
 
-	agents := make(map[string]string)
-	for _, pod := range pods.Items {
-		// Try to get claude-id from pod labels
-		claudeID := "1" // Default for backward compatibility
-		if labels := pod.Labels; labels != nil {
-			if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
-				claudeID = cid
-			}
-		}
+	// Wait a bit for pods to start scaling up
+	time.Sleep(2 * time.Second)
 
-		agentName := fmt.Sprintf("claude-%s", claudeID)
-
-		// Skip if we already have this agent (shouldn't happen, but be defensive)
-		if _, exists := agents[agentName]; exists {
-			slog.Warn("duplicate agent discovered", "agent", agentName, "pod", pod.Name)
+	// Poll for pods to be ready (up to 30 seconds)
+	var agents map[string]string
+	var lastErr error
+	for i := 0; i < 15; i++ {
+		pods, err := k8sClient.Clientset().CoreV1().Pods(k8s.VibespaceNamespace).List(ctx, listOptionsForVibespace(vibespaceID))
+		if err != nil {
+			lastErr = fmt.Errorf("failed to list pods: %w", err)
+			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		agents[agentName] = pod.Name
+		agents = make(map[string]string)
+		for _, pod := range pods.Items {
+			// Skip pods that aren't running
+			if pod.Status.Phase != "Running" {
+				continue
+			}
+
+			// Try to get claude-id from pod labels
+			claudeID := "1" // Default for backward compatibility
+			if labels := pod.Labels; labels != nil {
+				if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
+					claudeID = cid
+				}
+			}
+
+			agentName := fmt.Sprintf("claude-%s", claudeID)
+
+			// Skip if we already have this agent (shouldn't happen, but be defensive)
+			if _, exists := agents[agentName]; exists {
+				slog.Warn("duplicate agent discovered", "agent", agentName, "pod", pod.Name)
+				continue
+			}
+
+			agents[agentName] = pod.Name
+		}
+
+		// Wait until we have all expected agents (or at least some if we've waited long enough)
+		if len(agents) >= expectedCount {
+			slog.Info("all expected agents found", "count", len(agents))
+			return agents, nil
+		}
+
+		// After 10 attempts (20 seconds), return what we have if we found any
+		if i >= 10 && len(agents) > 0 {
+			slog.Info("returning partial agents after timeout", "found", len(agents), "expected", expectedCount)
+			return agents, nil
+		}
+
+		slog.Info("waiting for pods to be ready", "attempt", i+1, "found", len(agents), "expected", expectedCount)
+		time.Sleep(2 * time.Second)
 	}
 
-	if len(agents) == 0 {
-		return nil, fmt.Errorf("no pods found for vibespace %s", vibespaceID)
+	// Return whatever we found, even if incomplete
+	if len(agents) > 0 {
+		slog.Info("returning agents after max attempts", "found", len(agents), "expected", expectedCount)
+		return agents, nil
 	}
 
-	return agents, nil
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("no running pods found for vibespace %s after waiting", vibespaceID)
+}
+
+// wakeKnativeServices triggers scale-up for any scaled-down Knative services
+// Returns the total number of deployments (expected agent count)
+func wakeKnativeServices(ctx context.Context, k8sClient *k8s.Client, vibespaceID string) (int, error) {
+	// Get deployments to find scaled-down ones and count total
+	deployments, err := k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list deployments: %w", err)
+	}
+
+	// Find scaled-down deployments and scale them up
+	// Knative will eventually take over, but this gives us the initial scale-up
+	scaledUp := 0
+	for _, deploy := range deployments.Items {
+		if deploy.Spec.Replicas != nil && *deploy.Spec.Replicas == 0 {
+			slog.Info("scaling up deployment", "name", deploy.Name)
+			one := int32(1)
+			deploy.Spec.Replicas = &one
+			_, err := k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, &deploy, metav1.UpdateOptions{})
+			if err != nil {
+				slog.Warn("failed to scale deployment", "name", deploy.Name, "error", err)
+			} else {
+				scaledUp++
+			}
+		}
+	}
+
+	slog.Info("woke up deployments", "scaled_up", scaledUp, "total", len(deployments.Items))
+	return len(deployments.Items), nil
 }
 
 // listOptionsForVibespace creates a list options with label selector for vibespace

@@ -55,7 +55,9 @@ func init() {
 	rootCmd.AddCommand(createCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(deleteCmd)
-	rootCmd.AddCommand(daemonCmd) // Hidden daemon command
+	rootCmd.AddCommand(daemonCmd)  // Hidden daemon command
+	rootCmd.AddCommand(sessionCmd) // Multi-agent session management
+	rootCmd.AddCommand(multiCmd)   // Quick ad-hoc multi-agent sessions
 
 	// Global flags
 	rootCmd.PersistentFlags().String("kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config)")
