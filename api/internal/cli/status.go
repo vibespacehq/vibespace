@@ -17,10 +17,13 @@ var statusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show cluster status",
 	Long:  `Display the current status of the vibespace cluster and its components.`,
-	RunE:  runStatus,
+	Example: `  vibespace status
+  vibespace status --json`,
+	RunE: runStatus,
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
+	out := getOutput()
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get home directory: %w", err)
@@ -40,6 +43,38 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	installed, err := manager.IsInstalled()
 	if err != nil {
 		return fmt.Errorf("failed to check installation: %w", err)
+	}
+
+	// JSON output mode - gather all data first
+	if out.IsJSONMode() {
+		statusOut := StatusOutput{
+			Cluster: ClusterStatus{
+				Installed: installed,
+				Running:   false,
+				Platform:  p.OS,
+			},
+		}
+
+		if installed {
+			running, _ := manager.IsRunning()
+			statusOut.Cluster.Running = running
+
+			if running {
+				ctx := context.Background()
+				components := checkClusterComponents(ctx, vibespaceHome)
+				for name, ready := range components {
+					statusOut.Components = append(statusOut.Components, ComponentStatus{
+						Name:  name,
+						Ready: ready,
+					})
+				}
+			}
+		}
+
+		return out.JSON(JSONOutput{
+			Success: true,
+			Data:    statusOut,
+		})
 	}
 
 	if !installed {
@@ -104,7 +139,8 @@ var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the cluster",
 	Long:  `Stop the vibespace cluster. Data is preserved and can be started again with 'vibespace init'.`,
-	RunE:  runStop,
+	Example: `  vibespace stop`,
+	RunE: runStop,
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
@@ -142,15 +178,17 @@ func runStop(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	printStep("Stopping cluster...")
+	spinner := NewSpinner("Stopping cluster...")
+	spinner.Start()
 	slog.Info("stopping cluster")
 	ctx := context.Background()
 	if err := manager.Stop(ctx); err != nil {
+		spinner.Fail("Failed to stop cluster")
 		slog.Error("failed to stop cluster", "error", err)
 		return fmt.Errorf("failed to stop cluster: %w", err)
 	}
 
 	slog.Info("stop completed successfully")
-	printSuccess("Cluster stopped")
+	spinner.Success("Cluster stopped")
 	return nil
 }

@@ -13,7 +13,6 @@ import (
 
 	"vibespace/internal/platform"
 
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -27,6 +26,9 @@ On macOS: Downloads and starts Colima (Lima VM with k3s)
 On Linux: Downloads and starts k3s directly
 
 Use --external to skip cluster installation and use an existing kubeconfig.`,
+	Example: `  vibespace init
+  vibespace init --cpu 4 --memory 8 --disk 60
+  vibespace init --external --kubeconfig ~/.kube/config`,
 	RunE: runInit,
 }
 
@@ -127,14 +129,16 @@ func runInit(cmd *cobra.Command, args []string) error {
 	slog.Debug("installation check complete", "installed", installed)
 
 	if !installed {
-		printStep("Downloading required binaries...")
+		spinner := NewSpinner("Downloading required binaries...")
+		spinner.Start()
 		slog.Debug("downloading binaries")
 		if err := manager.Install(ctx); err != nil {
+			spinner.Fail("Failed to install binaries")
 			slog.Error("failed to install binaries", "error", err)
 			return fmt.Errorf("failed to install binaries: %w", err)
 		}
 		slog.Debug("binaries installed")
-		printSuccess("Binaries installed")
+		spinner.Success("Binaries installed")
 	} else {
 		slog.Debug("binaries already installed")
 		printSuccess("Binaries already installed")
@@ -149,7 +153,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	slog.Debug("cluster status check", "running", running)
 
 	if !running {
-		printStep("Starting cluster (CPU: %d, Memory: %dGB, Disk: %dGB)...", initCPU, initMemory, initDisk)
+		spinner := NewSpinner(fmt.Sprintf("Starting cluster (CPU: %d, Memory: %dGB, Disk: %dGB)...", initCPU, initMemory, initDisk))
+		spinner.Start()
 		slog.Info("starting cluster", "cpu", initCPU, "memory_gb", initMemory, "disk_gb", initDisk)
 		config := platform.ClusterConfig{
 			CPU:    initCPU,
@@ -157,23 +162,27 @@ func runInit(cmd *cobra.Command, args []string) error {
 			Disk:   initDisk,
 		}
 		if err := manager.Start(ctx, config); err != nil {
+			spinner.Fail("Failed to start cluster")
 			slog.Error("failed to start cluster", "error", err)
 			return fmt.Errorf("failed to start cluster: %w", err)
 		}
+		spinner.Success("Cluster started")
 		slog.Debug("cluster start command completed")
 	} else {
 		slog.Debug("cluster already running")
 	}
 
 	// Wait for cluster to be ready
-	printStep("Waiting for cluster to be ready...")
+	spinner := NewSpinner("Waiting for cluster to be ready...")
+	spinner.Start()
 	slog.Debug("waiting for cluster readiness")
 	if err := waitForCluster(ctx, manager); err != nil {
+		spinner.Fail("Cluster failed to become ready")
 		slog.Error("cluster failed to become ready", "error", err)
 		return fmt.Errorf("cluster failed to become ready: %w", err)
 	}
 	slog.Debug("cluster ready")
-	printSuccess("Cluster is ready")
+	spinner.Success("Cluster is ready")
 
 	// Install cluster components (namespace)
 	printStep("Installing cluster components...")
@@ -280,26 +289,8 @@ metadata:
 	return nil
 }
 
-// Output helpers
-var (
-	green  = color.New(color.FgGreen).SprintFunc()
-	yellow = color.New(color.FgYellow).SprintFunc()
-	red    = color.New(color.FgRed).SprintFunc()
-	cyan   = color.New(color.FgCyan).SprintFunc()
-)
-
-func printStep(format string, args ...interface{}) {
-	fmt.Printf("%s %s\n", cyan("→"), fmt.Sprintf(format, args...))
-}
-
-func printSuccess(format string, args ...interface{}) {
-	fmt.Printf("%s %s\n", green("✓"), fmt.Sprintf(format, args...))
-}
-
-func printWarning(format string, args ...interface{}) {
-	fmt.Printf("%s %s\n", yellow("⚠"), fmt.Sprintf(format, args...))
-}
-
-func printError(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "%s %s\n", red("✗"), fmt.Sprintf(format, args...))
-}
+// Color helper functions for formatted output in tables, etc.
+// These are aliases to the global Output instance methods
+func green(s string) string  { return getOutput().Green(s) }
+func yellow(s string) string { return getOutput().Yellow(s) }
+func red(s string) string    { return getOutput().Red(s) }
