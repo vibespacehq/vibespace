@@ -53,16 +53,6 @@ func (a *PortAllocator) AllocatePort(agentName string, remotePort int) (int, err
 	return localPort, nil
 }
 
-// GetAllocatedPort returns the allocated local port for an agent's remote port, if any
-func (a *PortAllocator) GetAllocatedPort(agentName string, remotePort int) (int, bool) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	key := fmt.Sprintf("%s:%d", agentName, remotePort)
-	localPort, exists := a.allocatedPorts[key]
-	return localPort, exists
-}
-
 // ReleasePort releases an allocated port
 func (a *PortAllocator) ReleasePort(agentName string, remotePort int) {
 	a.mu.Lock()
@@ -70,41 +60,6 @@ func (a *PortAllocator) ReleasePort(agentName string, remotePort int) {
 
 	key := fmt.Sprintf("%s:%d", agentName, remotePort)
 	delete(a.allocatedPorts, key)
-}
-
-// ReleaseAllForAgent releases all ports allocated for an agent
-func (a *PortAllocator) ReleaseAllForAgent(agentName string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	prefix := agentName + ":"
-	for key := range a.allocatedPorts {
-		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
-			delete(a.allocatedPorts, key)
-		}
-	}
-}
-
-// GetAllAllocations returns a copy of all allocations
-func (a *PortAllocator) GetAllAllocations() map[string]int {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	result := make(map[string]int, len(a.allocatedPorts))
-	for k, v := range a.allocatedPorts {
-		result[k] = v
-	}
-	return result
-}
-
-// RestoreAllocations restores previously saved allocations
-func (a *PortAllocator) RestoreAllocations(allocations map[string]int) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	for k, v := range allocations {
-		a.allocatedPorts[k] = v
-	}
 }
 
 // isPortAvailable checks if a port is available for binding

@@ -185,12 +185,3 @@ func WaitForReady(vibespace string, timeout time.Duration) error {
 
 	return fmt.Errorf("daemon not ready within timeout")
 }
-
-// EnsureRunning ensures a daemon is running, starting it if necessary
-func EnsureRunning(vibespace string) error {
-	if IsRunning(vibespace) {
-		return nil
-	}
-
-	return SpawnDaemon(vibespace)
-}

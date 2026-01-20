@@ -1,7 +1,6 @@
 package portforward
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -281,26 +280,6 @@ func (m *Manager) RestartAll() error {
 	return lastErr
 }
 
-// GetForward returns information about a forward
-func (m *Manager) GetForward(agentName string, remotePort int) (*ForwardInfo, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	key := fmt.Sprintf("%s:%d", agentName, remotePort)
-	fwd, exists := m.forwarders[key]
-	if !exists {
-		return nil, false
-	}
-
-	return &ForwardInfo{
-		LocalPort:  fwd.LocalPort(),
-		RemotePort: fwd.RemotePort(),
-		Status:     fwd.Status(),
-		Reconnects: fwd.Reconnects(),
-		Error:      fwd.LastError(),
-	}, true
-}
-
 // ForwardInfo contains information about a forward
 type ForwardInfo struct {
 	LocalPort  int
@@ -308,29 +287,6 @@ type ForwardInfo struct {
 	Status     ForwardStatus
 	Reconnects int
 	Error      error
-}
-
-// ListForwards returns all forwards for an agent
-func (m *Manager) ListForwards(agentName string) []*ForwardInfo {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	prefix := agentName + ":"
-	var result []*ForwardInfo
-
-	for key, fwd := range m.forwarders {
-		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
-			result = append(result, &ForwardInfo{
-				LocalPort:  fwd.LocalPort(),
-				RemotePort: fwd.RemotePort(),
-				Status:     fwd.Status(),
-				Reconnects: fwd.Reconnects(),
-				Error:      fwd.LastError(),
-			})
-		}
-	}
-
-	return result
 }
 
 // ListAllForwards returns all forwards for all agents
@@ -384,37 +340,6 @@ func (m *Manager) StopAll() {
 	slog.Info("all forwards stopped", "vibespace", m.vibespace)
 }
 
-// UpdateAgentPod updates the pod name for an agent and reconnects active forwards
-func (m *Manager) UpdateAgentPod(agentName, newPodName string) {
-	m.mu.Lock()
-	oldPodName := m.agents[agentName]
-	m.agents[agentName] = newPodName
-
-	// Find all forwarders for this agent
-	prefix := agentName + ":"
-	var toReconnect []*Forwarder
-	for key, fwd := range m.forwarders {
-		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
-			fwd.UpdatePod(newPodName)
-			if fwd.Status() == StatusActive || fwd.Status() == StatusReconnecting {
-				toReconnect = append(toReconnect, fwd)
-			}
-		}
-	}
-	m.mu.Unlock()
-
-	slog.Info("agent pod updated",
-		"agent", agentName,
-		"old_pod", oldPodName,
-		"new_pod", newPodName,
-		"reconnecting", len(toReconnect))
-
-	// Reconnect active forwarders
-	for _, fwd := range toReconnect {
-		go m.reconnectForwarder(fwd)
-	}
-}
-
 // handleForwarderStopped is called when a forwarder stops unexpectedly
 func (m *Manager) handleForwarderStopped(fwd *Forwarder) {
 	if !m.reconnectEnabled {
@@ -462,18 +387,4 @@ func (m *Manager) reconnectForwarder(fwd *Forwarder) {
 			"error", err)
 		// The forwarder will call handleForwarderStopped again, triggering another reconnect
 	}
-}
-
-// DiscoverPods discovers pods for a vibespace using the provided function
-func (m *Manager) DiscoverPods(ctx context.Context, discoverFn func(ctx context.Context) (map[string]string, error)) error {
-	agents, err := discoverFn(ctx)
-	if err != nil {
-		return err
-	}
-
-	for agentName, podName := range agents {
-		m.SetAgentPod(agentName, podName)
-	}
-
-	return nil
 }

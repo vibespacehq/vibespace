@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -290,56 +289,3 @@ func (m *ColimaManager) KubeconfigPath() string {
 	return filepath.Join(home, ".kube", "config")
 }
 
-// copyFileBinary copies a binary file preserving executable permissions
-func copyFileBinary(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-
-	return os.Chmod(dst, 0755)
-}
-
-// copyDir recursively copies a directory
-func copyDir(src, dst string) error {
-	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Calculate destination path
-		relPath, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		dstPath := filepath.Join(dst, relPath)
-
-		if info.IsDir() {
-			return os.MkdirAll(dstPath, 0755)
-		}
-
-		// Skip non-regular files (symlinks, etc.)
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-
-		// Ensure parent directory exists
-		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
-			return err
-		}
-
-		// Copy file
-		return copyFileBinary(path, dstPath)
-	})
-}

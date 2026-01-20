@@ -233,11 +233,6 @@ func (f *Forwarder) PodName() string {
 	return f.podName
 }
 
-// Namespace returns the namespace
-func (f *Forwarder) Namespace() string {
-	return f.namespace
-}
-
 // IncrementReconnects increments the reconnect counter
 func (f *Forwarder) IncrementReconnects() int {
 	f.mu.Lock()
@@ -263,11 +258,4 @@ func (f *Forwarder) Reset() {
 	f.doneChan = make(chan struct{})
 	f.status = StatusPending
 	f.lastError = nil
-}
-
-// UpdatePod updates the pod name (used when pod restarts with new name)
-func (f *Forwarder) UpdatePod(newPodName string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.podName = newPodName
 }
