@@ -13,6 +13,7 @@ import (
 
 func runAgents(vibespace string, args []string) error {
 	ctx := context.Background()
+	out := getOutput()
 
 	slog.Debug("agents command started", "vibespace", vibespace)
 
@@ -29,6 +30,30 @@ func runAgents(vibespace string, args []string) error {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
+	// Sort agents by claude ID
+	sort.Slice(agents, func(i, j int) bool {
+		return agents[i].ClaudeID < agents[j].ClaudeID
+	})
+
+	// JSON output mode
+	if out.IsJSONMode() {
+		items := make([]AgentListItem, len(agents))
+		for i, agent := range agents {
+			items[i] = AgentListItem{
+				Name:   agent.AgentName,
+				Status: agent.Status,
+			}
+		}
+		return out.JSON(JSONOutput{
+			Success: true,
+			Data: AgentsOutput{
+				Vibespace: vibespace,
+				Agents:    items,
+				Count:     len(items),
+			},
+		})
+	}
+
 	if len(agents) == 0 {
 		fmt.Printf("No agents in vibespace '%s'\n", vibespace)
 		fmt.Println()
@@ -36,10 +61,13 @@ func runAgents(vibespace string, args []string) error {
 		return nil
 	}
 
-	// Sort agents by claude ID
-	sort.Slice(agents, func(i, j int) bool {
-		return agents[i].ClaudeID < agents[j].ClaudeID
-	})
+	// Plain output mode
+	if out.IsPlainMode() {
+		for _, agent := range agents {
+			fmt.Printf("%s\t%s\n", agent.AgentName, agent.Status)
+		}
+		return nil
+	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "AGENT\tSTATUS")

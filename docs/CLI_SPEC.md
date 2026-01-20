@@ -156,6 +156,30 @@ SESSION CONTROL
   /help                              Show TUI help
 ```
 
+## Global Flags
+
+These flags work with any command:
+
+| Flag | Description |
+|------|-------------|
+| `--json` | Output in JSON format (for scripting) |
+| `--plain` | Plain tab-separated output (for scripting) |
+| `--quiet`, `-q` | Suppress non-essential output |
+| `--verbose`, `-v` | Enable verbose output |
+| `--no-color` | Disable colored output |
+
+```bash
+# JSON output for scripting
+vibespace --json list
+vibespace --json status
+
+# Plain output for parsing
+vibespace --plain list | awk -F'\t' '{print $1}'
+
+# Quiet mode
+vibespace --quiet create myproject
+```
+
 ## Environment Variables
 
 | Variable | Description | Values |
@@ -165,6 +189,7 @@ SESSION CONTROL
 | `VIBESPACE_CLUSTER_CPU` | Default CPU cores for cluster | Integer (default: 4) |
 | `VIBESPACE_CLUSTER_MEMORY` | Default memory (GB) for cluster | Integer (default: 8) |
 | `VIBESPACE_CLUSTER_DISK` | Default disk (GB) for cluster | Integer (default: 60) |
+| `NO_COLOR` | Disable colored output | Any non-empty value |
 
 ### Debug Mode
 

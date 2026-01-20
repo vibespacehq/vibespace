@@ -330,6 +330,10 @@ tail -f ~/.vibespace/daemons/<name>.log  # Follow daemon logs (JSON format)
 - `docs/CLI_SPEC.md` - Complete CLI command reference
 - `api/internal/cli/` - All CLI command implementations
 - `api/internal/cli/logging.go` - Centralized logging configuration
+- `api/internal/cli/output.go` - Output handling (TTY, colors, JSON, verbosity)
+- `api/internal/cli/spinner.go` - Progress spinners for long operations
+- `api/internal/cli/json_types.go` - JSON output type definitions
+- `api/internal/cli/suggestions.go` - Typo suggestions (Levenshtein distance)
 - `api/pkg/vibespace/service.go` - Core vibespace logic
 - `api/internal/platform/colima.go` - Colima VM management
 
@@ -354,6 +358,14 @@ tail -f ~/.vibespace/daemons/<name>.log  # Follow daemon logs (JSON format)
   - Request ID correlation for tracing operations
   - Subprocess output capture in debug mode
 - **Multi-session TUI**: Basic bubbletea UI with input parsing
+- **CLI UX improvements** (clig.dev guidelines):
+  - Global flags: --json, --plain, --quiet, --verbose, --no-color
+  - JSON output for scripting (list, status, agents, forward list, session)
+  - Spinners for long operations (init, create, delete, stop)
+  - Typo suggestions for mistyped commands
+  - TTY detection (disables colors when piping, refuses prompts without TTY)
+  - Double Ctrl-C handling in daemon (graceful then force quit)
+  - Examples in all command help text
 
 ### To Implement
 - Port-forward daemon with auto-reconnect

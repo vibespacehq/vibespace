@@ -19,12 +19,11 @@ var createCmd = &cobra.Command{
 	Short: "Create a new vibespace",
 	Long: `Create a new vibespace with a Claude Code instance.
 
-If no name is provided, a random name will be generated.
-
-Examples:
-  vibespace create
+If no name is provided, a random name will be generated.`,
+	Example: `  vibespace create
   vibespace create myproject
-  vibespace create myproject --repo https://github.com/user/repo`,
+  vibespace create myproject --repo https://github.com/user/repo
+  vibespace create myproject --cpu 500m --memory 512Mi`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runCreate,
 }
@@ -93,16 +92,18 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		req.GithubRepo = createRepo
 	}
 
-	printStep("Creating vibespace...")
+	spinner := NewSpinner("Creating vibespace...")
+	spinner.Start()
 
 	vs, err := svc.Create(ctx, req)
 	if err != nil {
+		spinner.Fail("Failed to create vibespace")
 		slog.Error("failed to create vibespace", "error", err)
 		return fmt.Errorf("failed to create vibespace: %w", err)
 	}
 
 	slog.Info("create command completed", "name", vs.Name, "id", vs.ID)
-	printSuccess("Vibespace created: %s", vs.Name)
+	spinner.Success(fmt.Sprintf("Vibespace created: %s", vs.Name))
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Printf("  vibespace %s agents    List Claude instances\n", vs.Name)

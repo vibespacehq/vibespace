@@ -160,22 +160,46 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 
 	slog.Info("daemon ready")
 
-	// Wait for shutdown signal
+	// Wait for shutdown signal with double Ctrl-C support
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
 	case sig := <-sigChan:
-		slog.Info("received signal", "signal", sig)
+		slog.Info("received signal, starting graceful shutdown", "signal", sig)
+		fmt.Fprintln(os.Stderr, "Shutting down gracefully... (press Ctrl-C again to force)")
+
+		// Start graceful shutdown with timeout
+		shutdownDone := make(chan struct{})
+		go func() {
+			// Cleanup
+			slog.Info("shutting down daemon")
+			manager.StopAll()
+			server.Stop()
+			daemon.CleanupDaemonFiles(daemonVibespace)
+			close(shutdownDone)
+		}()
+
+		// Wait for graceful shutdown or second signal
+		select {
+		case <-shutdownDone:
+			slog.Info("daemon stopped gracefully")
+		case sig := <-sigChan:
+			slog.Warn("received second signal, forcing shutdown", "signal", sig)
+			fmt.Fprintln(os.Stderr, "Forcing shutdown...")
+			daemon.CleanupDaemonFiles(daemonVibespace)
+		case <-time.After(10 * time.Second):
+			slog.Warn("graceful shutdown timeout, forcing")
+			daemon.CleanupDaemonFiles(daemonVibespace)
+		}
 	case <-ctx.Done():
 		slog.Info("context cancelled")
+		// Cleanup
+		slog.Info("shutting down daemon")
+		manager.StopAll()
+		server.Stop()
+		daemon.CleanupDaemonFiles(daemonVibespace)
 	}
-
-	// Cleanup
-	slog.Info("shutting down daemon")
-	manager.StopAll()
-	server.Stop()
-	daemon.CleanupDaemonFiles(daemonVibespace)
 
 	slog.Info("daemon stopped")
 	return nil

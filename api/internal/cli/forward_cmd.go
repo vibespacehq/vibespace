@@ -48,6 +48,7 @@ func runForwardCmd(vibespace string, args []string) error {
 // runForwardList lists all port-forwards
 func runForwardList(vibespace string) error {
 	ctx := context.Background()
+	out := getOutput()
 
 	slog.Debug("forward list command started", "vibespace", vibespace)
 
@@ -69,8 +70,53 @@ func runForwardList(vibespace string) error {
 		return fmt.Errorf("failed to list forwards: %w", err)
 	}
 
+	// JSON output mode
+	if out.IsJSONMode() {
+		jsonOut := ForwardsOutput{
+			Vibespace: vibespace,
+			Agents:    make([]AgentForwardInfo, len(result.Agents)),
+		}
+		for i, agent := range result.Agents {
+			jsonOut.Agents[i] = AgentForwardInfo{
+				Name:     agent.Name,
+				PodName:  agent.PodName,
+				Forwards: make([]ForwardInfo, len(agent.Forwards)),
+			}
+			for j, fwd := range agent.Forwards {
+				jsonOut.Agents[i].Forwards[j] = ForwardInfo{
+					LocalPort:  fwd.LocalPort,
+					RemotePort: fwd.RemotePort,
+					Type:       fwd.Type,
+					Status:     fwd.Status,
+					Error:      fwd.Error,
+					Reconnects: fwd.Reconnects,
+				}
+			}
+		}
+		return out.JSON(JSONOutput{
+			Success: true,
+			Data:    jsonOut,
+		})
+	}
+
 	if len(result.Agents) == 0 {
 		fmt.Println("No port-forwards active")
+		return nil
+	}
+
+	// Plain output mode
+	if out.IsPlainMode() {
+		for _, agent := range result.Agents {
+			for _, fwd := range agent.Forwards {
+				fmt.Printf("%s\t%d\t%d\t%s\t%s\n",
+					agent.Name,
+					fwd.LocalPort,
+					fwd.RemotePort,
+					fwd.Type,
+					fwd.Status,
+				)
+			}
+		}
 		return nil
 	}
 
