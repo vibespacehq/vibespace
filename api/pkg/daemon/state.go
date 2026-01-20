@@ -90,31 +90,6 @@ func NewDaemonState(vibespace string) (*DaemonState, error) {
 	}, nil
 }
 
-// LoadDaemonState loads daemon state from file
-func LoadDaemonState(vibespace string) (*DaemonState, error) {
-	paths, err := GetDaemonPaths(vibespace)
-	if err != nil {
-		return nil, err
-	}
-
-	data, err := os.ReadFile(paths.JsonFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read state file: %w", err)
-	}
-
-	var state DaemonState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("failed to parse state file: %w", err)
-	}
-
-	state.filePath = paths.JsonFile
-	if state.Agents == nil {
-		state.Agents = make(map[string]*AgentState)
-	}
-
-	return &state, nil
-}
-
 // Save persists the daemon state to file
 func (s *DaemonState) Save() error {
 	s.mu.RLock()

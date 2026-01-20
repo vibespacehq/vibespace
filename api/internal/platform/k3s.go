@@ -31,11 +31,6 @@ func (m *K3sManager) k3sBin() string {
 	return filepath.Join(m.binDir, "k3s")
 }
 
-func (m *K3sManager) kubectlBin() string {
-	// k3s includes kubectl as "k3s kubectl"
-	return m.k3sBin()
-}
-
 // IsInstalled checks if k3s is installed
 func (m *K3sManager) IsInstalled() (bool, error) {
 	if _, err := os.Stat(m.k3sBin()); os.IsNotExist(err) {

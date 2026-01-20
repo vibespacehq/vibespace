@@ -715,13 +715,3 @@ func (s *Service) createSSHKeySecret(ctx context.Context, vibespaceID string, pu
 	}
 	return err
 }
-
-// deleteSSHKeySecret deletes the SSH key secret for a vibespace
-func (s *Service) deleteSSHKeySecret(ctx context.Context, vibespaceID string) error {
-	secretName := fmt.Sprintf("vibespace-%s-ssh-keys", vibespaceID)
-	err := s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Delete(ctx, secretName, metav1.DeleteOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		return err
-	}
-	return nil
-}

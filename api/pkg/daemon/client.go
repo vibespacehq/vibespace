@@ -29,11 +29,6 @@ func NewClient(vibespace string) (*Client, error) {
 	}, nil
 }
 
-// SetTimeout sets the request timeout
-func (c *Client) SetTimeout(timeout time.Duration) {
-	c.timeout = timeout
-}
-
 // sendRequest sends a request to the daemon and returns the response
 func (c *Client) sendRequest(req Request) (Response, error) {
 	conn, err := net.DialTimeout("unix", c.sockPath, c.timeout)

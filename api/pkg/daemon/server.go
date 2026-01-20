@@ -410,13 +410,3 @@ func (s *Server) handleShutdown() Response {
 
 	return NewSuccessResponse(nil)
 }
-
-// Manager returns the port-forward manager
-func (s *Server) Manager() *portforward.Manager {
-	return s.manager
-}
-
-// State returns the daemon state
-func (s *Server) State() *DaemonState {
-	return s.state
-}

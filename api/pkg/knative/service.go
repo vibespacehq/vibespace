@@ -302,46 +302,6 @@ func (m *ServiceManager) DeleteService(ctx context.Context, vibespaceID string) 
 	return nil
 }
 
-// GetServiceStatus retrieves the status of a Knative Service
-// Returns: ready (bool), reason (string), url (string)
-func (m *ServiceManager) GetServiceStatus(ctx context.Context, vibespaceID string) (bool, string, string, error) {
-	service, err := m.GetService(ctx, vibespaceID)
-	if err != nil {
-		return false, "", "", err
-	}
-
-	// Extract status from the unstructured object
-	status, found, err := unstructured.NestedMap(service.Object, "status")
-	if err != nil || !found {
-		return false, "Unknown", "", nil
-	}
-
-	// Check conditions
-	conditions, found, err := unstructured.NestedSlice(status, "conditions")
-	if err != nil || !found {
-		return false, "Unknown", "", nil
-	}
-
-	// Find Ready condition
-	for _, c := range conditions {
-		condition, ok := c.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		condType, _, _ := unstructured.NestedString(condition, "type")
-		if condType == "Ready" {
-			condStatus, _, _ := unstructured.NestedString(condition, "status")
-			condReason, _, _ := unstructured.NestedString(condition, "reason")
-
-			ready := condStatus == "True"
-			return ready, condReason, "", nil
-		}
-	}
-
-	return false, "Unknown", "", nil
-}
-
 // PatchService patches a Knative Service with new annotations
 // Used primarily for scaling operations (minScale/maxScale)
 func (m *ServiceManager) PatchService(ctx context.Context, vibespaceID string, annotations map[string]string) error {
