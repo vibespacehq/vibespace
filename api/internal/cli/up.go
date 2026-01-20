@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"vibespace/pkg/daemon"
@@ -13,15 +14,19 @@ import (
 func runUp(vibespace string, args []string) error {
 	ctx := context.Background()
 
+	slog.Info("up command started", "vibespace", vibespace)
+
 	// Check cluster is running first
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
+		slog.Error("failed to get vibespace service", "error", err)
 		return err
 	}
 
 	// Check vibespace exists and is running
 	_, err = checkVibespaceRunning(ctx, svc, vibespace)
 	if err != nil {
+		slog.Error("vibespace not running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
@@ -29,6 +34,7 @@ func runUp(vibespace string, args []string) error {
 	if daemon.IsRunning(vibespace) {
 		status, err := daemon.GetStatus(vibespace)
 		if err == nil {
+			slog.Debug("daemon already running", "vibespace", vibespace)
 			printSuccess("Daemon already running")
 			printDaemonStatus(status)
 			return nil
@@ -41,6 +47,7 @@ func runUp(vibespace string, args []string) error {
 	if err := daemon.SpawnDaemon(vibespace); err != nil {
 		paths, _ := daemon.GetDaemonPaths(vibespace)
 		logPath := filepath.Join(paths.Dir, vibespace+".log")
+		slog.Error("failed to spawn daemon", "vibespace", vibespace, "error", err, "log_path", logPath)
 		return fmt.Errorf("failed to start daemon: %w\nCheck logs: %s", err, logPath)
 	}
 
@@ -48,15 +55,18 @@ func runUp(vibespace string, args []string) error {
 	if err := daemon.WaitForReady(vibespace, 10e9); err != nil {
 		paths, _ := daemon.GetDaemonPaths(vibespace)
 		logPath := filepath.Join(paths.Dir, vibespace+".log")
+		slog.Error("daemon failed to become ready", "vibespace", vibespace, "error", err, "log_path", logPath)
 		return fmt.Errorf("daemon failed to become ready: %w\nCheck logs: %s\nTry: vibespace %s down && vibespace %s up", err, logPath, vibespace, vibespace)
 	}
 
 	status, err := daemon.GetStatus(vibespace)
 	if err != nil {
+		slog.Info("up command completed", "vibespace", vibespace)
 		printSuccess("Daemon started")
 		return nil
 	}
 
+	slog.Info("up command completed", "vibespace", vibespace, "active_ports", status.ActivePorts, "total_ports", status.TotalPorts)
 	printSuccess("Daemon started")
 	printDaemonStatus(status)
 

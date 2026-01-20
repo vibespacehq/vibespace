@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"text/tabwriter"
@@ -13,14 +14,18 @@ import (
 func runAgents(vibespace string, args []string) error {
 	ctx := context.Background()
 
+	slog.Debug("agents command started", "vibespace", vibespace)
+
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
+		slog.Error("failed to get vibespace service", "error", err)
 		return err
 	}
 
 	// List agents using the service method
 	agents, err := svc.ListAgents(ctx, vibespace)
 	if err != nil {
+		slog.Error("failed to list agents", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
@@ -53,20 +58,25 @@ func runAgents(vibespace string, args []string) error {
 	}
 
 	w.Flush()
+	slog.Debug("agents command completed", "vibespace", vibespace, "count", len(agents))
 	return nil
 }
 
 func runSpawn(vibespace string, args []string) error {
 	ctx := context.Background()
 
+	slog.Info("spawn command started", "vibespace", vibespace)
+
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
+		slog.Error("failed to get vibespace service", "error", err)
 		return err
 	}
 
 	// Verify vibespace exists and is running
 	vs, err := checkVibespaceRunning(ctx, svc, vibespace)
 	if err != nil {
+		slog.Error("vibespace not running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
@@ -75,9 +85,11 @@ func runSpawn(vibespace string, args []string) error {
 	// Spawn the agent
 	agentName, err := svc.SpawnAgent(ctx, vs.ID)
 	if err != nil {
+		slog.Error("failed to spawn agent", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to spawn agent: %w", err)
 	}
 
+	slog.Info("spawn command completed", "vibespace", vibespace, "agent", agentName)
 	printSuccess("Agent '%s' created", agentName)
 	fmt.Println()
 
@@ -100,14 +112,18 @@ func runKill(vibespace string, args []string) error {
 	agentID := args[0]
 	ctx := context.Background()
 
+	slog.Info("kill command started", "vibespace", vibespace, "agent", agentID)
+
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
+		slog.Error("failed to get vibespace service", "error", err)
 		return err
 	}
 
 	// Verify vibespace exists
 	vs, err := checkVibespaceExists(ctx, svc, vibespace)
 	if err != nil {
+		slog.Error("vibespace not found", "vibespace", vibespace, "error", err)
 		return err
 	}
 
@@ -115,9 +131,11 @@ func runKill(vibespace string, args []string) error {
 
 	// Kill the agent
 	if err := svc.KillAgent(ctx, vs.ID, agentID); err != nil {
+		slog.Error("failed to kill agent", "vibespace", vibespace, "agent", agentID, "error", err)
 		return fmt.Errorf("failed to kill agent: %w", err)
 	}
 
+	slog.Info("kill command completed", "vibespace", vibespace, "agent", agentID)
 	printSuccess("Agent '%s' removed", agentID)
 
 	// If daemon is running, suggest restarting it
@@ -133,17 +151,22 @@ func runKill(vibespace string, args []string) error {
 func runStartVibespace(vibespace string) error {
 	ctx := context.Background()
 
+	slog.Info("start command started", "vibespace", vibespace)
+
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
+		slog.Error("failed to get vibespace service", "error", err)
 		return err
 	}
 
 	printStep("Starting vibespace '%s'...", vibespace)
 
 	if err := svc.Start(ctx, vibespace); err != nil {
+		slog.Error("failed to start vibespace", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to start vibespace: %w", err)
 	}
 
+	slog.Info("start command completed", "vibespace", vibespace)
 	printSuccess("Vibespace '%s' started", vibespace)
 	return nil
 }
@@ -151,17 +174,22 @@ func runStartVibespace(vibespace string) error {
 func runStopVibespace(vibespace string) error {
 	ctx := context.Background()
 
+	slog.Info("stop command started", "vibespace", vibespace)
+
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
+		slog.Error("failed to get vibespace service", "error", err)
 		return err
 	}
 
 	printStep("Stopping vibespace '%s'...", vibespace)
 
 	if err := svc.Stop(ctx, vibespace); err != nil {
+		slog.Error("failed to stop vibespace", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to stop vibespace: %w", err)
 	}
 
+	slog.Info("stop command completed", "vibespace", vibespace)
 	printSuccess("Vibespace '%s' stopped", vibespace)
 	return nil
 }

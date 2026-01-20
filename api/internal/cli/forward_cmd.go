@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"text/tabwriter"
@@ -48,18 +49,23 @@ func runForwardCmd(vibespace string, args []string) error {
 func runForwardList(vibespace string) error {
 	ctx := context.Background()
 
+	slog.Debug("forward list command started", "vibespace", vibespace)
+
 	// Ensure daemon is running (auto-start if needed)
 	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		slog.Error("failed to ensure daemon running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
 	client, err := daemon.NewClient(vibespace)
 	if err != nil {
+		slog.Error("failed to create daemon client", "vibespace", vibespace, "error", err)
 		return err
 	}
 
 	result, err := client.ListForwards()
 	if err != nil {
+		slog.Error("failed to list forwards", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to list forwards: %w", err)
 	}
 
@@ -92,6 +98,7 @@ func runForwardList(vibespace string) error {
 	}
 
 	w.Flush()
+	slog.Debug("forward list command completed", "vibespace", vibespace, "agent_count", len(result.Agents))
 	return nil
 }
 
@@ -126,22 +133,28 @@ func runForwardAdd(vibespace string, args []string) error {
 		}
 	}
 
+	slog.Info("forward add command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "local_port", localPort)
+
 	// Ensure daemon is running (auto-start if needed)
 	ctx := context.Background()
 	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		slog.Error("failed to ensure daemon running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
 	client, err := daemon.NewClient(vibespace)
 	if err != nil {
+		slog.Error("failed to connect to daemon", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 
 	result, err := client.AddForward(agent, remotePort, localPort)
 	if err != nil {
+		slog.Error("failed to add forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
 		return fmt.Errorf("failed to add forward: %w\nCheck daemon status: vibespace %s forward list", err, vibespace)
 	}
 
+	slog.Info("forward add command completed", "vibespace", vibespace, "agent", agent, "local_port", result.LocalPort, "remote_port", result.RemotePort)
 	printSuccess("Forward added: localhost:%d → %d", result.LocalPort, result.RemotePort)
 	return nil
 }
@@ -165,21 +178,27 @@ func runForwardRemove(vibespace string, args []string) error {
 		}
 	}
 
+	slog.Info("forward remove command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
+
 	// Ensure daemon is running (auto-start if needed)
 	ctx := context.Background()
 	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		slog.Error("failed to ensure daemon running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
 	client, err := daemon.NewClient(vibespace)
 	if err != nil {
+		slog.Error("failed to connect to daemon", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 
 	if err := client.RemoveForward(agent, remotePort); err != nil {
+		slog.Error("failed to remove forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
 		return fmt.Errorf("failed to remove forward: %w", err)
 	}
 
+	slog.Info("forward remove command completed", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
 	printSuccess("Forward removed: port %d", remotePort)
 	return nil
 }
@@ -203,21 +222,27 @@ func runForwardStop(vibespace string, args []string) error {
 		}
 	}
 
+	slog.Info("forward stop command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
+
 	// Ensure daemon is running (auto-start if needed)
 	ctx := context.Background()
 	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		slog.Error("failed to ensure daemon running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
 	client, err := daemon.NewClient(vibespace)
 	if err != nil {
+		slog.Error("failed to connect to daemon", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 
 	if err := client.StopForward(agent, remotePort); err != nil {
+		slog.Error("failed to stop forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
 		return fmt.Errorf("failed to stop forward: %w", err)
 	}
 
+	slog.Info("forward stop command completed", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
 	printSuccess("Forward stopped: port %d", remotePort)
 	return nil
 }
@@ -241,21 +266,27 @@ func runForwardStart(vibespace string, args []string) error {
 		}
 	}
 
+	slog.Info("forward start command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
+
 	// Ensure daemon is running (auto-start if needed)
 	ctx := context.Background()
 	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		slog.Error("failed to ensure daemon running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
 	client, err := daemon.NewClient(vibespace)
 	if err != nil {
+		slog.Error("failed to connect to daemon", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 
 	if err := client.StartForward(agent, remotePort); err != nil {
+		slog.Error("failed to start forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
 		return fmt.Errorf("failed to start forward: %w", err)
 	}
 
+	slog.Info("forward start command completed", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
 	printSuccess("Forward started: port %d", remotePort)
 	return nil
 }
@@ -279,44 +310,56 @@ func runForwardRestart(vibespace string, args []string) error {
 		}
 	}
 
+	slog.Info("forward restart command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
+
 	// Ensure daemon is running (auto-start if needed)
 	ctx := context.Background()
 	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		slog.Error("failed to ensure daemon running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
 	client, err := daemon.NewClient(vibespace)
 	if err != nil {
+		slog.Error("failed to connect to daemon", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 
 	if err := client.RestartForward(agent, remotePort); err != nil {
+		slog.Error("failed to restart forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
 		return fmt.Errorf("failed to restart forward: %w", err)
 	}
 
+	slog.Info("forward restart command completed", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
 	printSuccess("Forward restarted: port %d", remotePort)
 	return nil
 }
 
 // runForwardRestartAll restarts all port-forwards
 func runForwardRestartAll(vibespace string) error {
+	slog.Info("forward restart-all command started", "vibespace", vibespace)
+
 	// Ensure daemon is running (auto-start if needed)
 	ctx := context.Background()
 	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
+		slog.Error("failed to ensure daemon running", "vibespace", vibespace, "error", err)
 		return err
 	}
 
 	client, err := daemon.NewClient(vibespace)
 	if err != nil {
+		slog.Error("failed to connect to daemon", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 
 	printStep("Restarting all port-forwards...")
 
 	if err := client.RestartAll(); err != nil {
+		slog.Error("failed to restart all forwards", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to restart forwards: %w", err)
 	}
 
+	slog.Info("forward restart-all command completed", "vibespace", vibespace)
 	printSuccess("All forwards restarted")
 	return nil
 }

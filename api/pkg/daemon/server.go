@@ -81,9 +81,7 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to set socket permissions: %w", err)
 	}
 
-	slog.Info("daemon server started",
-		"vibespace", s.vibespace,
-		"socket", s.sockPath)
+	slog.Info("daemon server started", "socket", s.sockPath)
 
 	s.wg.Add(1)
 	go s.acceptLoop()
@@ -93,7 +91,7 @@ func (s *Server) Start() error {
 
 // Stop stops the server
 func (s *Server) Stop() {
-	slog.Info("stopping daemon server", "vibespace", s.vibespace)
+	slog.Info("stopping daemon server")
 
 	s.cancel()
 
@@ -107,7 +105,7 @@ func (s *Server) Stop() {
 	// Cleanup socket file
 	os.Remove(s.sockPath)
 
-	slog.Info("daemon server stopped", "vibespace", s.vibespace)
+	slog.Info("daemon server stopped")
 }
 
 // acceptLoop accepts incoming connections
@@ -409,7 +407,7 @@ func (s *Server) handleRefresh() Response {
 		return NewErrorResponse(fmt.Errorf("refresh not configured"))
 	}
 
-	slog.Info("refreshing pods", "vibespace", s.vibespace)
+	slog.Info("refreshing pods")
 
 	// Re-discover pods
 	agents, err := s.onRefresh()
@@ -439,7 +437,7 @@ func (s *Server) handleRefresh() Response {
 
 // handleShutdown handles a shutdown request
 func (s *Server) handleShutdown() Response {
-	slog.Info("shutdown requested", "vibespace", s.vibespace)
+	slog.Info("shutdown requested")
 
 	// Stop all forwards
 	s.manager.StopAll()
