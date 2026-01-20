@@ -9,7 +9,7 @@ vibespace - Multi-Claude Development Environments
 
 CLUSTER MANAGEMENT
 ──────────────────────────────────────────────────────────────────────────
-  vibespace init                     Initialize local cluster (Colima/k3s + Knative)
+  vibespace init                     Initialize local cluster (Colima/k3s)
   vibespace status                   Show cluster and component status
   vibespace stop                     Stop the local cluster
   vibespace serve                    Start server mode for remote clients
@@ -27,8 +27,8 @@ VIBESPACE MANAGEMENT
 
 VIBESPACE OPERATIONS (vibespace <name> ...)
 ──────────────────────────────────────────────────────────────────────────
-  vibespace <name> start             Start vibespace (wake from scale-to-zero)
-  vibespace <name> stop              Stop vibespace (scale to zero)
+  vibespace <name> start             Start vibespace
+  vibespace <name> stop              Stop vibespace
   vibespace <name> status            Show vibespace status and details
 
 AGENT MANAGEMENT (vibespace <name> ...)
@@ -43,9 +43,9 @@ AGENT MANAGEMENT (vibespace <name> ...)
 
 CONNECTION (vibespace <name> ...)
 ──────────────────────────────────────────────────────────────────────────
-  vibespace <name> connect [agent]   Connect to agent's terminal (ttyd websocket)
+  vibespace <name> connect [agent]   Connect to agent's terminal via SSH
                                      Default: claude-1
-      --browser                      Open in browser instead of terminal
+      --browser                      Open in browser via ttyd instead of SSH
 
   vibespace <name> ports             List detected dev server ports
 
@@ -156,19 +156,47 @@ SESSION CONTROL
   /help                              Show TUI help
 ```
 
+## Environment Variables
+
+| Variable | Description | Values |
+|----------|-------------|--------|
+| `VIBESPACE_DEBUG` | Enable debug logging for CLI/TUI | Any non-empty value |
+| `VIBESPACE_LOG_LEVEL` | Set log level | `debug`, `info`, `warn`, `error` |
+| `VIBESPACE_CLUSTER_CPU` | Default CPU cores for cluster | Integer (default: 4) |
+| `VIBESPACE_CLUSTER_MEMORY` | Default memory (GB) for cluster | Integer (default: 8) |
+| `VIBESPACE_CLUSTER_DISK` | Default disk (GB) for cluster | Integer (default: 60) |
+
+### Debug Mode
+
+```bash
+# Enable debug logging
+VIBESPACE_DEBUG=1 vibespace init
+
+# Set specific log level
+VIBESPACE_LOG_LEVEL=debug vibespace status
+```
+
+Debug logs are written to:
+- CLI: `~/.vibespace/debug.log`
+- TUI: `~/.vibespace/tui-debug.log`
+- Daemon: `~/.vibespace/daemons/<name>.log` (always logged, JSON format)
+
 ## State Files
 
 ```
 ~/.vibespace/
 ├── bin/                             # Bundled binaries
 │   ├── colima
-│   ├── lima
 │   └── kubectl
+│
+├── lima/                            # Lima binaries (limactl, etc.)
+│   └── bin/
 │
 ├── daemons/                         # Port-forward daemons (per vibespace)
 │   ├── <vibespace>.pid              # Daemon process ID
 │   ├── <vibespace>.sock             # Unix socket for IPC
-│   └── <vibespace>.json             # Forward state and config
+│   ├── <vibespace>.json             # Forward state and config
+│   └── <vibespace>.log              # Daemon logs (JSON, rotated)
 │
 ├── sessions/                        # Multi-session state
 │   └── <session-name>.json          # Session config (vibespaces, agents, layout)
@@ -177,6 +205,9 @@ SESSION CONTROL
 │   ├── kubeconfig                   # Remote cluster kubeconfig
 │   ├── wireguard.conf               # WireGuard client config
 │   └── connection.json              # Remote server info (host, token, status)
+│
+├── debug.log                        # CLI debug log (when VIBESPACE_DEBUG=1)
+├── tui-debug.log                    # TUI debug log (when VIBESPACE_DEBUG=1)
 │
 └── config.json                      # Global config
                                      # - mode (local/remote)
@@ -194,21 +225,22 @@ SESSION CONTROL
 │  └── vibespace CLI                                                      │
 │       ├── Cluster mgmt (init, status, stop)                            │
 │       ├── Vibespace mgmt (create, list, delete)                        │
-│       └── Port-forward daemon (background)                              │
-│            └── Manages websocket connections to ttyd                   │
+│       ├── Port-forward daemon (background)                              │
+│       │    └── Forwards SSH (primary) + ttyd (browser fallback)        │
+│       └── Multi-session TUI                                             │
+│            └── SSH → Claude print mode (stream-json output)            │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ kubectl / client-go
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  Colima VM (k3s)                                                        │
-│  ├── Knative Serving                                                    │
 │  └── vibespace namespace                                                │
-│       ├── vibespace-abc123 (Knative Service)                           │
+│       ├── vibespace-abc123 (Deployment)                                │
 │       │    ├── Pod: claude-1                                           │
-│       │    │    └── Container: ttyd + Claude Code CLI                  │
+│       │    │    └── Container: SSH:22 + ttyd:7681 + Claude Code CLI   │
 │       │    └── Pod: claude-2                                           │
-│       │         └── Container: ttyd + Claude Code CLI                  │
+│       │         └── Container: SSH:22 + ttyd:7681 + Claude Code CLI   │
 │       └── PVC: shared /vibespace directory                             │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -237,30 +269,32 @@ SESSION CONTROL
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  Multi-Session TUI                                                      │
+│  Multi-Session TUI (bubbletea)                                          │
 │  ├── Session Manager                                                    │
 │  │    └── Tracks agents, vibespaces, addressing                        │
 │  ├── Connection Pool                                                    │
-│  │    └── WebSocket connections to each agent's ttyd                   │
+│  │    └── SSH connections running Claude in print mode                 │
 │  ├── Input Router                                                       │
-│  │    └── Parses @mentions, routes messages                            │
+│  │    └── Parses @mentions, routes messages to agent stdin             │
 │  └── Output Multiplexer                                                 │
-│       └── Aggregates output, applies colors/prefixes                   │
+│       └── Parses stream-json output, applies colors/prefixes           │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                     ┌───────────────┼───────────────┐
                     ▼               ▼               ▼
             ┌───────────┐   ┌───────────┐   ┌───────────┐
-            │ WebSocket │   │ WebSocket │   │ WebSocket │
+            │    SSH    │   │    SSH    │   │    SSH    │
             │ claude-1  │   │ claude-2  │   │ claude-1  │
             │ @projectA │   │ @projectA │   │ @projectB │
             └───────────┘   └───────────┘   └───────────┘
                     │               │               │
                     ▼               ▼               ▼
             ┌───────────┐   ┌───────────┐   ┌───────────┐
-            │   ttyd    │   │   ttyd    │   │   ttyd    │
-            │  :7681    │   │  :7681    │   │  :7681    │
+            │  claude   │   │  claude   │   │  claude   │
+            │ -p (JSON) │   │ -p (JSON) │   │ -p (JSON) │
             └───────────┘   └───────────┘   └───────────┘
+
+/focus mode: Exits TUI, launches interactive SSH session with `claude`
 ```
 
 ## Port Forward State File Format
@@ -275,6 +309,13 @@ SESSION CONTROL
     "claude-1": {
       "pod_name": "vibespace-abc123-xxx",
       "forwards": [
+        {
+          "local_port": 10022,
+          "remote_port": 22,
+          "type": "ssh",
+          "status": "active",
+          "started_at": "2024-01-15T10:30:00Z"
+        },
         {
           "local_port": 7681,
           "remote_port": 7681,
@@ -295,6 +336,13 @@ SESSION CONTROL
     "claude-2": {
       "pod_name": "vibespace-abc123-yyy",
       "forwards": [
+        {
+          "local_port": 20022,
+          "remote_port": 22,
+          "type": "ssh",
+          "status": "active",
+          "started_at": "2024-01-15T10:30:00Z"
+        },
         {
           "local_port": 17681,
           "remote_port": 7681,
@@ -342,20 +390,20 @@ SESSION CONTROL
 To avoid conflicts when forwarding multiple agents:
 
 ```
-Agent         ttyd Port    Dev Ports (offset)
-────────────────────────────────────────────
-claude-1      7681         3000, 8080, ...
-claude-2      17681        13000, 18080, ...
-claude-3      27681        23000, 28080, ...
-claude-N      N*10000+7681 N*10000+port
+Agent         SSH Port    ttyd Port    Dev Ports (offset)
+─────────────────────────────────────────────────────────
+claude-1      10022       7681         3000, 8080, ...
+claude-2      20022       17681        13000, 18080, ...
+claude-3      30022       27681        23000, 28080, ...
+claude-N      N*10000+22  N*10000+7681 N*10000+port
 ```
 
 For cross-vibespace sessions, vibespace index is added:
 
 ```
-projectA/claude-1    7681         3000
-projectA/claude-2    17681        13000
-projectB/claude-1    100007681    100003000  (vibespace offset: 100000000)
+projectA/claude-1    10022        7681         3000
+projectA/claude-2    20022        17681        13000
+projectB/claude-1    110022       107681       103000  (vibespace offset: 100000)
 ```
 
 Or use dynamic allocation with user-configurable local ports.
@@ -368,7 +416,7 @@ Or use dynamic allocation with user-configurable local ports.
 # First time setup
 vibespace init
 # ✓ Colima started
-# ✓ Knative installed
+# ✓ Cluster ready
 # ✓ Ready
 
 # Create a vibespace

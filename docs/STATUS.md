@@ -11,8 +11,8 @@
 
 | Command | Status | Notes |
 |---------|--------|-------|
-| `vibespace init` | Done | Downloads Colima/Lima/kubectl, starts cluster, installs Knative. Supports `--cpu`, `--memory`, `--disk` flags. Configurable via `VIBESPACE_CLUSTER_*` env vars. |
-| `vibespace status` | Done | Shows Colima, Knative, namespace status |
+| `vibespace init` | Done | Downloads Colima/Lima/kubectl, starts cluster, creates namespace. Supports `--cpu`, `--memory`, `--disk` flags. Configurable via `VIBESPACE_CLUSTER_*` env vars. |
+| `vibespace status` | Done | Shows Colima and namespace status |
 | `vibespace stop` | Done | Stops Colima |
 | `vibespace serve` | TODO | WireGuard server mode for remote clients |
 
@@ -20,11 +20,11 @@
 
 | Command | Status | Notes |
 |---------|--------|-------|
-| `vibespace create <name>` | Done | Creates Knative service + PVC + SSH key secret. Supports `--cpu`, `--memory`, `--storage` flags. Configurable via `VIBESPACE_DEFAULT_*` env vars. |
+| `vibespace create <name>` | Done | Creates Deployment + Service + PVC + SSH key secret. Supports `--cpu`, `--memory`, `--storage` flags. Configurable via `VIBESPACE_DEFAULT_*` env vars. |
 | `vibespace list` | Done | Lists all vibespaces |
-| `vibespace delete <name>` | Done | Deletes Knative service + PVC |
-| `vibespace <name> start` | Done | Sets minScale=1 |
-| `vibespace <name> stop` | Done | Sets minScale=0 |
+| `vibespace delete <name>` | Done | Deletes Deployment + Service + PVC |
+| `vibespace <name> start` | Done | Scales deployment to 1 replica |
+| `vibespace <name> stop` | Done | Scales deployment to 0 replicas |
 | `vibespace <name> status` | TODO | Per-vibespace detailed status |
 
 ## Agent Management
@@ -32,8 +32,8 @@
 | Command | Status | Notes |
 |---------|--------|-------|
 | `vibespace <name> agents` | Done | Lists all agents with status from Kubernetes |
-| `vibespace <name> spawn` | Done | Creates additional Knative service for new agent (shared PVC) |
-| `vibespace <name> kill <agent>` | Done | Deletes agent's Knative service |
+| `vibespace <name> spawn` | Done | Creates additional Deployment for new agent (shared PVC) |
+| `vibespace <name> kill <agent>` | Done | Deletes agent's Deployment |
 | `vibespace <name> fork` | TODO | Fork vibespace with cloned filesystem |
 
 ## Connection
@@ -61,7 +61,7 @@
 
 | Command | Status | Notes |
 |---------|--------|-------|
-| `vibespace multi <vibespace>` | Partial | Basic TUI structure exists. Uses kubectl exec (not SSH/ttyd websocket). Single vibespace only. |
+| `vibespace multi <vibespace>` | Partial | TUI with SSH + Claude print mode (`claude -p --output-format stream-json`). Implements `/focus` for interactive mode. Single vibespace only, multi-vibespace support pending. |
 | `vibespace session create` | TODO | |
 | `vibespace session list` | TODO | |
 | `vibespace session delete` | TODO | |
@@ -92,15 +92,15 @@
 | Package | Status | Notes |
 |---------|--------|-------|
 | `pkg/k8s` | Done | Kubernetes client wrapper |
-| `pkg/knative` | Done | Knative service CRUD |
 | `pkg/vibespace` | Done | Business logic, SSH key management |
 | `pkg/model` | Done | Data models |
 | `pkg/image` | Done | Container image (sshd + ttyd + Claude Code) |
 | `internal/platform` | Done | Colima/k3s management with configurable resources |
+| `internal/cli/logging.go` | Done | Centralized slog config, rotation, debug mode |
 | `pkg/portforward` | Done | client-go based port-forward manager with auto-reconnect |
 | `pkg/daemon` | Done | Background daemon with Unix socket IPC |
-| `pkg/session` | TODO | Multi-session state management |
-| `pkg/tui` | TODO | Terminal UI with SSH/websocket connections |
+| `pkg/session` | Partial | Session state management, needs multi-vibespace support |
+| `pkg/tui` | Partial | bubbletea TUI with SSH + Claude print mode, `/focus` for interactive |
 | `pkg/wireguard` | TODO | WireGuard integration |
 
 ---
@@ -121,6 +121,12 @@ SSH keys are:
 
 ## Environment Variables
 
+### Logging
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VIBESPACE_DEBUG` | (unset) | Enable debug logging (any non-empty value) |
+| `VIBESPACE_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
+
 ### Vibespace Pod Resources
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -131,8 +137,8 @@ SSH keys are:
 ### Cluster VM Resources (Colima)
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VIBESPACE_CLUSTER_CPU` | `2` | CPU cores |
-| `VIBESPACE_CLUSTER_MEMORY` | `4` | Memory in GB |
+| `VIBESPACE_CLUSTER_CPU` | `4` | CPU cores |
+| `VIBESPACE_CLUSTER_MEMORY` | `8` | Memory in GB |
 | `VIBESPACE_CLUSTER_DISK` | `60` | Disk in GB |
 
 ---
@@ -143,9 +149,9 @@ SSH keys are:
    - Show detailed status, resource usage, agents
 
 2. **Multi-session TUI improvements**
-   - Replace kubectl exec with SSH connections
-   - Support multiple vibespaces
-   - Implement session persistence
+   - Support multiple vibespaces in single TUI session
+   - Implement session persistence (session create/list/delete/add/remove)
+   - Wire up remaining TUI commands (/add runtime support)
 
 3. **Fork command**
    - Snapshot PVC and create new vibespace

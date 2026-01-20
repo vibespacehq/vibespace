@@ -69,6 +69,10 @@ func runMultiCmd(cmd *cobra.Command, args []string) error {
 		})
 	}
 
+	// Setup TUI logging before launching (cleanup happens when TUI exits)
+	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
+	defer cleanup()
+
 	// Launch TUI
 	return tui.Run(sess, true /* isAdHoc */)
 }
@@ -99,6 +103,10 @@ func runMulti(vibespace string, args []string) error {
 			Mode: session.LayoutModeSplit,
 		},
 	}
+
+	// Setup TUI logging before launching (cleanup happens when TUI exits)
+	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
+	defer cleanup()
 
 	// Launch TUI
 	return tui.Run(sess, true /* isAdHoc */)

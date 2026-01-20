@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -107,38 +108,49 @@ var stopCmd = &cobra.Command{
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
+	slog.Info("stop command started")
+
 	home, err := os.UserHomeDir()
 	if err != nil {
+		slog.Error("failed to get home directory", "error", err)
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 	vibespaceHome := filepath.Join(home, ".vibespace")
 
 	// Detect platform
 	p := platform.Detect()
+	slog.Debug("platform detected", "os", p.OS, "arch", p.Arch)
 
 	// Get cluster manager
 	manager, err := platform.NewClusterManager(p, vibespaceHome)
 	if err != nil {
+		slog.Error("failed to create cluster manager", "error", err)
 		return fmt.Errorf("failed to create cluster manager: %w", err)
 	}
 
 	// Check if running
 	running, err := manager.IsRunning()
 	if err != nil {
+		slog.Error("failed to check cluster status", "error", err)
 		return fmt.Errorf("failed to check cluster status: %w", err)
 	}
+	slog.Debug("cluster status check", "running", running)
 
 	if !running {
+		slog.Debug("cluster already stopped")
 		fmt.Println("Cluster is already stopped")
 		return nil
 	}
 
 	printStep("Stopping cluster...")
+	slog.Info("stopping cluster")
 	ctx := context.Background()
 	if err := manager.Stop(ctx); err != nil {
+		slog.Error("failed to stop cluster", "error", err)
 		return fmt.Errorf("failed to stop cluster: %w", err)
 	}
 
+	slog.Info("stop completed successfully")
 	printSuccess("Cluster stopped")
 	return nil
 }

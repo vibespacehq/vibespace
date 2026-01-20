@@ -37,16 +37,14 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--vibespace is required")
 	}
 
-	// Setup logging to file
-	logFile, err := setupDaemonLogging(daemonVibespace)
-	if err != nil {
-		return fmt.Errorf("failed to setup logging: %w", err)
-	}
-	if logFile != nil {
-		defer logFile.Close()
-	}
+	// Setup logging with rotation (JSON format for daemon)
+	cleanup := setupLogging(LogConfig{
+		Mode: LogModeDaemon,
+		Name: daemonVibespace,
+	})
+	defer cleanup()
 
-	slog.Info("daemon starting", "vibespace", daemonVibespace, "pid", os.Getpid())
+	slog.Info("daemon starting", "pid", os.Getpid())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -95,7 +93,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	})
 
 	// Discover pods for this vibespace
-	slog.Info("discovering pods", "vibespace", daemonVibespace, "id", vibespaceID)
+	slog.Info("discovering pods", "id", vibespaceID)
 	agents, err := discoverVibespaceAgents(ctx, k8sClient, vibespaceID)
 	if err != nil {
 		slog.Warn("failed to discover agents", "error", err)
@@ -160,7 +158,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start server: %w", err)
 	}
 
-	slog.Info("daemon ready", "vibespace", daemonVibespace)
+	slog.Info("daemon ready")
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
@@ -179,29 +177,8 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	server.Stop()
 	daemon.CleanupDaemonFiles(daemonVibespace)
 
-	slog.Info("daemon stopped", "vibespace", daemonVibespace)
+	slog.Info("daemon stopped")
 	return nil
-}
-
-// setupDaemonLogging sets up logging for the daemon
-func setupDaemonLogging(vibespace string) (*os.File, error) {
-	paths, err := daemon.GetDaemonPaths(vibespace)
-	if err != nil {
-		return nil, err
-	}
-
-	logPath := paths.Dir + "/" + vibespace + ".log"
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return nil, err
-	}
-
-	handler := slog.NewTextHandler(logFile, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})
-	slog.SetDefault(slog.New(handler))
-
-	return logFile, nil
 }
 
 // discoverVibespaceAgents discovers all agents (pods) for a vibespace
