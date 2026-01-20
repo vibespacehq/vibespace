@@ -8,15 +8,15 @@ import (
 	"strings"
 	"time"
 
+	"vibespace/pkg/deployment"
 	"vibespace/pkg/k8s"
-	"vibespace/pkg/knative"
 	"vibespace/pkg/model"
 
 	"github.com/google/uuid"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -26,26 +26,21 @@ const DefaultImage = "ghcr.io/yagizdagabak/vibespace/claude:latest"
 
 // Service handles vibespace operations
 type Service struct {
-	k8sClient      *k8s.Client
-	knativeManager *knative.ServiceManager
+	k8sClient         *k8s.Client
+	deploymentManager *deployment.DeploymentManager
 }
 
 // NewService creates a new vibespace service
 func NewService(k8sClient *k8s.Client) *Service {
-	var knativeMgr *knative.ServiceManager
+	var deployMgr *deployment.DeploymentManager
 
 	if k8sClient != nil {
-		var err error
-		knativeMgr, err = knative.NewServiceManager(k8sClient)
-		if err != nil {
-			slog.Warn("failed to initialize Knative Service manager",
-				"error", err)
-		}
+		deployMgr = deployment.NewDeploymentManager(k8sClient)
 	}
 
 	return &Service{
-		k8sClient:      k8sClient,
-		knativeManager: knativeMgr,
+		k8sClient:         k8sClient,
+		deploymentManager: deployMgr,
 	}
 }
 
@@ -56,20 +51,26 @@ func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
 		return []*model.Vibespace{}, nil
 	}
 
-	if s.knativeManager == nil {
-		slog.Warn("knative manager is nil, returning empty list")
+	if s.deploymentManager == nil {
+		slog.Warn("deployment manager is nil, returning empty list")
 		return []*model.Vibespace{}, nil
 	}
 
-	services, err := s.knativeManager.ListServices(ctx)
+	deployments, err := s.deploymentManager.ListDeployments(ctx)
 	if err != nil {
-		slog.Error("failed to list Knative Services", "error", err)
-		return nil, fmt.Errorf("failed to list Knative Services: %w", err)
+		slog.Error("failed to list Deployments", "error", err)
+		return nil, fmt.Errorf("failed to list Deployments: %w", err)
 	}
 
-	vibespaces := make([]*model.Vibespace, 0, len(services.Items))
-	for i := range services.Items {
-		vibespace := knativeServiceToVibespace(&services.Items[i])
+	// Filter to only include main deployments (not agent deployments)
+	// Main deployments don't have the "is-agent" label
+	vibespaces := make([]*model.Vibespace, 0)
+	for i := range deployments {
+		// Skip agent deployments
+		if deployments[i].Labels["vibespace.dev/is-agent"] == "true" {
+			continue
+		}
+		vibespace := deploymentToVibespace(&deployments[i])
 		vibespaces = append(vibespaces, vibespace)
 	}
 
@@ -82,24 +83,24 @@ func (s *Service) Get(ctx context.Context, nameOrID string) (*model.Vibespace, e
 		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
-	if s.knativeManager == nil {
-		return nil, fmt.Errorf("knative manager is not initialized")
+	if s.deploymentManager == nil {
+		return nil, fmt.Errorf("deployment manager is not initialized")
 	}
 
 	slog.Info("getting vibespace", "vibespace_id", nameOrID)
 
 	// First try to find by name (label selector)
-	service, err := s.knativeManager.GetServiceByName(ctx, nameOrID)
+	deploy, err := s.deploymentManager.GetDeploymentByName(ctx, nameOrID)
 	if err != nil {
 		// Fall back to lookup by ID
-		service, err = s.knativeManager.GetService(ctx, nameOrID)
+		deploy, err = s.deploymentManager.GetDeployment(ctx, nameOrID)
 		if err != nil {
 			slog.Warn("vibespace not found", "vibespace_id", nameOrID, "error", err)
 			return nil, fmt.Errorf("vibespace not found: %w", err)
 		}
 	}
 
-	vibespace := knativeServiceToVibespace(service)
+	vibespace := deploymentToVibespace(deploy)
 	slog.Info("got vibespace successfully", "vibespace_id", nameOrID, "status", vibespace.Status)
 
 	return vibespace, nil
@@ -111,8 +112,8 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
-	if s.knativeManager == nil {
-		return nil, fmt.Errorf("knative manager is not initialized")
+	if s.deploymentManager == nil {
+		return nil, fmt.Errorf("deployment manager is not initialized")
 	}
 
 	slog.Info("creating vibespace",
@@ -188,26 +189,30 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	// Get image from environment or use default
 	image := getVibespaceImage()
 
-	slog.Info("creating vibespace with Knative Service",
+	slog.Info("creating vibespace with Deployment",
 		"vibespace_id", id,
 		"project_name", projectName,
 		"image", image)
 
-	// Create Knative Service
-	err = s.knativeManager.CreateService(ctx, &knative.CreateServiceRequest{
+	// Create Deployment
+	err = s.deploymentManager.CreateDeployment(ctx, &deployment.CreateDeploymentRequest{
 		VibespaceID: id,
 		Name:        req.Name,
 		ProjectName: projectName,
 		ClaudeID:    "1", // First Claude instance
 		Image:       image,
-		Resources:   *resources,
-		Env:         req.Env,
-		Persistent:  req.Persistent,
-		PVCName:     pvcName,
+		Resources: deployment.Resources{
+			CPU:     resources.CPU,
+			Memory:  resources.Memory,
+			Storage: resources.Storage,
+		},
+		Env:        req.Env,
+		Persistent: req.Persistent,
+		PVCName:    pvcName,
 	})
 	if err != nil {
-		slog.Error("failed to create Knative Service", "vibespace_id", id, "error", err)
-		return nil, fmt.Errorf("failed to create Knative Service: %w", err)
+		slog.Error("failed to create Deployment", "vibespace_id", id, "error", err)
+		return nil, fmt.Errorf("failed to create Deployment: %w", err)
 	}
 
 	vibespace := &model.Vibespace{
@@ -238,8 +243,8 @@ func (s *Service) Delete(ctx context.Context, nameOrID string, opts *DeleteOptio
 		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
-	if s.knativeManager == nil {
-		return fmt.Errorf("knative manager is not initialized")
+	if s.deploymentManager == nil {
+		return fmt.Errorf("deployment manager is not initialized")
 	}
 
 	if opts == nil {
@@ -254,9 +259,21 @@ func (s *Service) Delete(ctx context.Context, nameOrID string, opts *DeleteOptio
 		return fmt.Errorf("vibespace not found: %w", err)
 	}
 
+	// Delete all agent deployments first
+	agents, err := s.deploymentManager.ListAgentsForVibespace(ctx, vibespace.ID)
+	if err == nil {
+		for _, agent := range agents {
+			if agent.ClaudeID != "1" {
+				if err := s.deploymentManager.DeleteAgentDeployment(ctx, vibespace.ID, agent.ClaudeID); err != nil {
+					slog.Warn("failed to delete agent deployment", "agent", agent.AgentName, "error", err)
+				}
+			}
+		}
+	}
+
 	// Use the internal ID for deletion
-	if err := s.knativeManager.DeleteService(ctx, vibespace.ID); err != nil {
-		return fmt.Errorf("failed to delete Knative Service: %w", err)
+	if err := s.deploymentManager.DeleteDeployment(ctx, vibespace.ID); err != nil {
+		return fmt.Errorf("failed to delete Deployment: %w", err)
 	}
 
 	slog.Info("vibespace deleted successfully", "vibespace_id", vibespace.ID, "name", vibespace.Name)
@@ -307,8 +324,8 @@ func (s *Service) Start(ctx context.Context, nameOrID string) error {
 		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
-	if s.knativeManager == nil {
-		return fmt.Errorf("knative manager is not initialized")
+	if s.deploymentManager == nil {
+		return fmt.Errorf("deployment manager is not initialized")
 	}
 
 	// Resolve name to internal ID
@@ -319,18 +336,14 @@ func (s *Service) Start(ctx context.Context, nameOrID string) error {
 
 	slog.Info("starting vibespace", "vibespace_id", vibespace.ID, "name", vibespace.Name)
 
-	// Set minScale=1 to ensure at least 1 replica is running
-	annotations := map[string]string{
-		"autoscaling.knative.dev/minScale": "1",
-	}
-
-	err = s.knativeManager.PatchService(ctx, vibespace.ID, annotations)
+	// Scale all deployments for this vibespace to 1 replica
+	err = s.deploymentManager.ScaleAllDeploymentsForVibespace(ctx, vibespace.ID, 1)
 	if err != nil {
 		slog.Error("failed to start vibespace", "vibespace_id", vibespace.ID, "error", err)
 		return fmt.Errorf("failed to start vibespace: %w", err)
 	}
 
-	slog.Info("vibespace started successfully", "vibespace_id", vibespace.ID, "minScale", "1")
+	slog.Info("vibespace started successfully", "vibespace_id", vibespace.ID, "replicas", "1")
 	return nil
 }
 
@@ -340,8 +353,8 @@ func (s *Service) Stop(ctx context.Context, nameOrID string) error {
 		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
-	if s.knativeManager == nil {
-		return fmt.Errorf("knative manager is not initialized")
+	if s.deploymentManager == nil {
+		return fmt.Errorf("deployment manager is not initialized")
 	}
 
 	// Resolve name to internal ID
@@ -352,18 +365,14 @@ func (s *Service) Stop(ctx context.Context, nameOrID string) error {
 
 	slog.Info("stopping vibespace", "vibespace_id", vibespace.ID, "name", vibespace.Name)
 
-	// Set minScale=0 to allow scaling to zero replicas
-	annotations := map[string]string{
-		"autoscaling.knative.dev/minScale": "0",
-	}
-
-	err = s.knativeManager.PatchService(ctx, vibespace.ID, annotations)
+	// Scale all deployments for this vibespace to 0 replicas
+	err = s.deploymentManager.ScaleAllDeploymentsForVibespace(ctx, vibespace.ID, 0)
 	if err != nil {
 		slog.Error("failed to stop vibespace", "vibespace_id", vibespace.ID, "error", err)
 		return fmt.Errorf("failed to stop vibespace: %w", err)
 	}
 
-	slog.Info("vibespace stopped successfully", "vibespace_id", vibespace.ID, "minScale", "0")
+	slog.Info("vibespace stopped successfully", "vibespace_id", vibespace.ID, "replicas", "0")
 	return nil
 }
 
@@ -380,14 +389,9 @@ func (s *Service) ensureClients() error {
 		s.k8sClient = newClient
 		slog.Info("k8s client initialized successfully")
 
-		// Also initialize Knative manager
-		knativeMgr, err := knative.NewServiceManager(newClient)
-		if err != nil {
-			slog.Warn("failed to initialize Knative Service manager", "error", err)
-		} else {
-			s.knativeManager = knativeMgr
-			slog.Info("knative manager initialized successfully")
-		}
+		// Also initialize Deployment manager
+		s.deploymentManager = deployment.NewDeploymentManager(newClient)
+		slog.Info("deployment manager initialized successfully")
 	}
 	return nil
 }
@@ -419,21 +423,23 @@ func (s *Service) createPVC(ctx context.Context, name string, storage string) er
 	return err
 }
 
-// knativeServiceToVibespace converts a Knative Service to Vibespace model
-func knativeServiceToVibespace(svc *unstructured.Unstructured) *model.Vibespace {
-	metadata, _ := svc.Object["metadata"].(map[string]interface{})
-	labels, _ := metadata["labels"].(map[string]interface{})
-	annotations, _ := metadata["annotations"].(map[string]interface{})
+// deploymentToVibespace converts a Deployment to Vibespace model
+func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
+	labels := deploy.Labels
+	annotations := deploy.Annotations
 
-	id, _ := labels["vibespace.dev/id"].(string)
-	name, _ := labels["app.kubernetes.io/name"].(string)
-	projectName, _ := labels["vibespace.dev/project-name"].(string)
-	createdAt, _ := annotations["vibespace.dev/created-at"].(string)
+	id := labels["vibespace.dev/id"]
+	name := labels["app.kubernetes.io/name"]
+	projectName := labels["vibespace.dev/project-name"]
+	createdAt := ""
+	if annotations != nil {
+		createdAt = annotations["vibespace.dev/created-at"]
+	}
 
-	status := knativeStatusToVibespaceStatus(svc)
+	status := deploymentStatusToVibespaceStatus(deploy)
 
-	// Extract resources from the Knative service spec
-	resources := extractResourcesFromKnativeService(svc)
+	// Extract resources from the Deployment spec
+	resources := extractResourcesFromDeployment(deploy)
 
 	return &model.Vibespace{
 		ID:          id,
@@ -446,89 +452,49 @@ func knativeServiceToVibespace(svc *unstructured.Unstructured) *model.Vibespace 
 	}
 }
 
-// extractResourcesFromKnativeService extracts CPU and memory from Knative service spec
-func extractResourcesFromKnativeService(svc *unstructured.Unstructured) model.Resources {
-	// Navigate: spec.template.spec.containers[0].resources.requests
-	containers, found, _ := unstructured.NestedSlice(svc.Object, "spec", "template", "spec", "containers")
-	if !found || len(containers) == 0 {
+// extractResourcesFromDeployment extracts CPU and memory from Deployment spec
+func extractResourcesFromDeployment(deploy *appsv1.Deployment) model.Resources {
+	containers := deploy.Spec.Template.Spec.Containers
+	if len(containers) == 0 {
 		return model.Resources{}
 	}
 
-	container, ok := containers[0].(map[string]interface{})
-	if !ok {
-		return model.Resources{}
-	}
+	requests := containers[0].Resources.Requests
+	cpu := ""
+	memory := ""
 
-	resources, ok := container["resources"].(map[string]interface{})
-	if !ok {
-		return model.Resources{}
+	if cpuQty, ok := requests[corev1.ResourceCPU]; ok {
+		cpu = cpuQty.String()
 	}
-
-	requests, ok := resources["requests"].(map[string]interface{})
-	if !ok {
-		return model.Resources{}
+	if memQty, ok := requests[corev1.ResourceMemory]; ok {
+		memory = memQty.String()
 	}
-
-	cpu, _ := requests["cpu"].(string)
-	memory, _ := requests["memory"].(string)
 
 	return model.Resources{
 		CPU:    cpu,
 		Memory: memory,
-		// Storage is not stored in Knative spec - it's in the PVC
-		// We don't need it after creation anyway
+		// Storage is not stored in Deployment spec - it's in the PVC
 	}
 }
 
-// knativeStatusToVibespaceStatus maps Knative Ready condition to vibespace status
-func knativeStatusToVibespaceStatus(svc *unstructured.Unstructured) string {
-	status, found, _ := unstructured.NestedMap(svc.Object, "status")
-	if !found {
+// deploymentStatusToVibespaceStatus maps Deployment status to vibespace status
+func deploymentStatusToVibespaceStatus(deploy *appsv1.Deployment) string {
+	// If replicas is set to 0, the vibespace is stopped
+	if deploy.Spec.Replicas != nil && *deploy.Spec.Replicas == 0 {
+		return "stopped"
+	}
+
+	// If we have ready replicas, the vibespace is running
+	if deploy.Status.ReadyReplicas > 0 {
+		return "running"
+	}
+
+	// If there are replicas but none ready yet, it's still creating
+	if deploy.Status.Replicas > 0 {
 		return "creating"
 	}
 
-	conditions, found, _ := unstructured.NestedSlice(status, "conditions")
-	if !found {
-		return "creating"
-	}
-
-	for _, c := range conditions {
-		condition, ok := c.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		condType, _, _ := unstructured.NestedString(condition, "type")
-		if condType == "Ready" {
-			condStatus, _, _ := unstructured.NestedString(condition, "status")
-			if condStatus == "True" {
-				return "running"
-			}
-			reason, _, _ := unstructured.NestedString(condition, "reason")
-			if reason == "NoTraffic" {
-				return "stopped"
-			}
-			// We use port-forwarding, so IngressNotConfigured is expected.
-			// Check if the workload itself is ready via ConfigurationsReady.
-			if reason == "IngressNotConfigured" {
-				// Check ConfigurationsReady condition instead
-				for _, c2 := range conditions {
-					cond2, ok := c2.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					if t, _, _ := unstructured.NestedString(cond2, "type"); t == "ConfigurationsReady" {
-						if s, _, _ := unstructured.NestedString(cond2, "status"); s == "True" {
-							return "running"
-						}
-					}
-				}
-			}
-			return "creating"
-		}
-	}
-
-	return "creating"
+	return "stopped"
 }
 
 // parseQuantity converts string storage size to Kubernetes resource.Quantity
@@ -608,8 +574,8 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string) (string, erro
 		return "", fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
-	if s.knativeManager == nil {
-		return "", fmt.Errorf("knative manager is not initialized")
+	if s.deploymentManager == nil {
+		return "", fmt.Errorf("deployment manager is not initialized")
 	}
 
 	// Get the vibespace
@@ -619,7 +585,7 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string) (string, erro
 	}
 
 	// Get next available claude ID
-	nextID, err := s.knativeManager.GetNextAgentID(ctx, vs.ID)
+	nextID, err := s.deploymentManager.GetNextAgentID(ctx, vs.ID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get next agent ID: %w", err)
 	}
@@ -629,21 +595,25 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string) (string, erro
 	// Get the image
 	image := getVibespaceImage()
 
-	// Create the agent service
+	// Create the agent deployment
 	pvcName := ""
 	if vs.Persistent {
 		pvcName = fmt.Sprintf("vibespace-%s-pvc", vs.ID)
 	}
 
-	err = s.knativeManager.CreateAgentService(ctx, &knative.CreateAgentServiceRequest{
+	err = s.deploymentManager.CreateAgentDeployment(ctx, &deployment.CreateAgentRequest{
 		VibespaceID: vs.ID,
 		Name:        vs.Name,
 		ProjectName: vs.ProjectName,
 		ClaudeID:    nextID,
 		Image:       image,
-		Resources:   vs.Resources,
-		Env:         nil,
-		PVCName:     pvcName,
+		Resources: deployment.Resources{
+			CPU:     vs.Resources.CPU,
+			Memory:  vs.Resources.Memory,
+			Storage: vs.Resources.Storage,
+		},
+		Env:     nil,
+		PVCName: pvcName,
 	})
 	if err != nil {
 		slog.Error("failed to spawn agent", "vibespace_id", vs.ID, "claude_id", nextID, "error", err)
@@ -663,8 +633,8 @@ func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentID string
 		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
-	if s.knativeManager == nil {
-		return fmt.Errorf("knative manager is not initialized")
+	if s.deploymentManager == nil {
+		return fmt.Errorf("deployment manager is not initialized")
 	}
 
 	// Parse agent name to get claude ID
@@ -686,8 +656,8 @@ func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentID string
 
 	slog.Info("killing agent", "vibespace_id", vs.ID, "name", vs.Name, "claude_id", claudeID)
 
-	// Delete the agent service
-	err = s.knativeManager.DeleteAgentService(ctx, vs.ID, claudeID)
+	// Delete the agent deployment
+	err = s.deploymentManager.DeleteAgentDeployment(ctx, vs.ID, claudeID)
 	if err != nil {
 		slog.Error("failed to kill agent", "vibespace_id", vs.ID, "claude_id", claudeID, "error", err)
 		return fmt.Errorf("failed to kill agent: %w", err)
@@ -703,8 +673,8 @@ func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo,
 		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
-	if s.knativeManager == nil {
-		return nil, fmt.Errorf("knative manager is not initialized")
+	if s.deploymentManager == nil {
+		return nil, fmt.Errorf("deployment manager is not initialized")
 	}
 
 	// Get the vibespace
@@ -713,19 +683,19 @@ func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo,
 		return nil, fmt.Errorf("vibespace not found: %w", err)
 	}
 
-	// List agents from Knative
-	knativeAgents, err := s.knativeManager.ListAgentsForVibespace(ctx, vs.ID)
+	// List agents from Deployments
+	deploymentAgents, err := s.deploymentManager.ListAgentsForVibespace(ctx, vs.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list agents: %w", err)
 	}
 
 	// Convert to our AgentInfo type
-	agents := make([]AgentInfo, len(knativeAgents))
-	for i, ka := range knativeAgents {
+	agents := make([]AgentInfo, len(deploymentAgents))
+	for i, da := range deploymentAgents {
 		agents[i] = AgentInfo{
-			ClaudeID:  ka.ClaudeID,
-			AgentName: ka.AgentName,
-			Status:    ka.Status,
+			ClaudeID:  da.ClaudeID,
+			AgentName: da.AgentName,
+			Status:    da.Status,
 		}
 	}
 

@@ -2,7 +2,7 @@ package model
 
 // Vibespace represents an isolated development environment with Claude Code.
 //
-// Each vibespace runs as a Knative Service in Kubernetes with:
+// Each vibespace runs as a Kubernetes Deployment with:
 // - A minimal Linux container with Claude Code CLI pre-installed
 // - Persistent storage for project files
 // - Dynamic port detection and exposure

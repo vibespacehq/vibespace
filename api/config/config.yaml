@@ -21,10 +21,8 @@ vibespace:
     memory: "4Gi"
     storage: "10Gi"
 
-# Feature flags for Knative migration
+# Feature flags
 features:
-  # Enable Knative Services (scale-to-zero) instead of direct Pods
-  enable_knative_routing: true
   # Enable custom DNS resolution with .vibe.space subdomains
   enable_dns: true
 

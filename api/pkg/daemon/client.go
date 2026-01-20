@@ -232,7 +232,7 @@ func (c *Client) RestartAll() error {
 	return nil
 }
 
-// Refresh re-discovers pods for agents (useful when Knative scales)
+// Refresh re-discovers pods for agents (useful when deployments scale)
 func (c *Client) Refresh() error {
 	resp, err := c.sendRequest(Request{Type: RequestRefresh})
 	if err != nil {

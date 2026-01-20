@@ -120,13 +120,6 @@ func checkVibespaceRunning(ctx context.Context, svc *vibespace.Service, name str
 	}
 }
 
-// ensureDaemonRunningSSH ensures the daemon is running and returns the local SSH port for an agent.
-// It will auto-start the daemon if it's not running.
-// Returns the local port for the agent's SSH forward (port 22).
-func ensureDaemonRunningSSH(ctx context.Context, vibespaceNameOrID string, agentName string) (int, error) {
-	return ensureDaemonRunningForType(ctx, vibespaceNameOrID, agentName, "ssh")
-}
-
 // ensureDaemonRunningSSHAnyAgent ensures the daemon is running and returns the local SSH port.
 // If agentName is empty, it uses the first available agent (all agents share the same PVC).
 func ensureDaemonRunningSSHAnyAgent(ctx context.Context, vibespaceNameOrID string, agentName string) (int, error) {
@@ -249,9 +242,9 @@ func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, a
 					if fwd.Status != "active" {
 						printStep("Restarting %s forward...", forwardType)
 						if err := client.RestartForward(agentName, fwd.RemotePort); err != nil {
-							// Restart failed - pod may have been scaled down by Knative
+							// Restart failed - pod may have been scaled down
 							// Try refreshing pods and restarting
-							printStep("Refreshing pods (Knative may have scaled down)...")
+							printStep("Refreshing pods (deployment may be scaled down)...")
 							if refreshErr := client.Refresh(); refreshErr != nil {
 								return 0, fmt.Errorf("failed to refresh: %w (original error: %v)", refreshErr, err)
 							}
@@ -272,7 +265,7 @@ func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, a
 		}
 	}
 
-	// Agent not found - try refreshing pods (Knative may have scaled it down)
+	// Agent not found - try refreshing pods (deployment may be scaled down)
 	printStep("Agent '%s' not found, refreshing pods...", agentName)
 	if err := client.Refresh(); err != nil {
 		return 0, fmt.Errorf("agent '%s' not found and refresh failed: %w", agentName, err)

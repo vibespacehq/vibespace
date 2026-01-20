@@ -4,7 +4,7 @@
 # 2. Storing custom template images built via BuildKit
 #
 # Note: No TLS or authentication needed - cluster-internal only
-# Knative pulls images from this registry at: registry.default.svc.cluster.local:5000
+# Images are pulled from this registry at: registry.default.svc.cluster.local:5000
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
