@@ -120,88 +120,9 @@ func checkVibespaceRunning(ctx context.Context, svc *vibespace.Service, name str
 	}
 }
 
-// ensureDaemonRunningSSHAnyAgent ensures the daemon is running and returns the local SSH port.
-// If agentName is empty, it uses the first available agent (all agents share the same PVC).
-func ensureDaemonRunningSSHAnyAgent(ctx context.Context, vibespaceNameOrID string, agentName string) (int, error) {
-	if agentName != "" {
-		return ensureDaemonRunningForType(ctx, vibespaceNameOrID, agentName, "ssh")
-	}
-
-	// No agent specified - find first available
-	// Get vibespace service with checks
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		return 0, err
-	}
-
-	// Verify vibespace exists and is running
-	_, err = checkVibespaceRunning(ctx, svc, vibespaceNameOrID)
-	if err != nil {
-		return 0, err
-	}
-
-	// Ensure daemon is running
-	if !daemon.IsRunning(vibespaceNameOrID) {
-		printStep("Starting port-forward daemon...")
-		if err := daemon.SpawnDaemon(vibespaceNameOrID); err != nil {
-			return 0, fmt.Errorf("failed to start daemon: %w", err)
-		}
-	}
-
-	// Query daemon for available agents
-	client, err := daemon.NewClient(vibespaceNameOrID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to connect to daemon: %w", err)
-	}
-
-	result, err := client.ListForwards()
-	if err != nil {
-		return 0, fmt.Errorf("failed to list forwards: %w", err)
-	}
-
-	// Find first agent with active SSH forward
-	for _, agent := range result.Agents {
-		for _, fwd := range agent.Forwards {
-			if fwd.Type == "ssh" && fwd.Status == "active" {
-				return fwd.LocalPort, nil
-			}
-		}
-	}
-
-	// No active SSH forward found - try to restart first available agent's SSH
-	for _, agent := range result.Agents {
-		for _, fwd := range agent.Forwards {
-			if fwd.Type == "ssh" {
-				printStep("Restarting ssh forward for %s...", agent.Name)
-				if err := client.RestartForward(agent.Name, fwd.RemotePort); err != nil {
-					// Try refresh
-					printStep("Refreshing pods...")
-					if refreshErr := client.Refresh(); refreshErr != nil {
-						continue // Try next agent
-					}
-					time.Sleep(2 * time.Second)
-					if err := client.RestartForward(agent.Name, fwd.RemotePort); err != nil {
-						continue // Try next agent
-					}
-				}
-				time.Sleep(500 * time.Millisecond)
-				return fwd.LocalPort, nil
-			}
-		}
-	}
-
-	return 0, fmt.Errorf("no agents available. Create a vibespace first")
-}
-
-// ensureDaemonRunningTTYD ensures the daemon is running and returns the local ttyd port for an agent.
-// It will auto-start the daemon if it's not running.
-// Returns the local port for the agent's ttyd forward (port 7681).
-func ensureDaemonRunningTTYD(ctx context.Context, vibespaceNameOrID string, agentName string) (int, error) {
-	return ensureDaemonRunningForType(ctx, vibespaceNameOrID, agentName, "ttyd")
-}
-
-// ensureDaemonRunningForType ensures the daemon is running and returns the local port for an agent's forward of the given type.
-func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, agentName string, forwardType string) (int, error) {
+// ensureDaemonRunningForAgent ensures the daemon is running and returns the local port for an agent's forward.
+// If the daemon has stale state (pod doesn't exist), it will rediscover agents.
+func ensureDaemonRunningForAgent(ctx context.Context, vibespaceNameOrID string, agentName string, forwardType string) (int, error) {
 	// Get vibespace service with checks
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -220,6 +141,8 @@ func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, a
 		if err := daemon.SpawnDaemon(vibespaceNameOrID); err != nil {
 			return 0, fmt.Errorf("failed to start daemon: %w", err)
 		}
+		// Wait for daemon to be ready
+		time.Sleep(time.Second)
 	}
 
 	// Query daemon for the agent's forward
@@ -238,26 +161,25 @@ func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, a
 		if agent.Name == agentName {
 			for _, fwd := range agent.Forwards {
 				if fwd.Type == forwardType {
-					// Auto-start stopped forwards
-					if fwd.Status != "active" {
-						printStep("Restarting %s forward...", forwardType)
-						if err := client.RestartForward(agentName, fwd.RemotePort); err != nil {
-							// Restart failed - pod may have been scaled down
-							// Try refreshing pods and restarting
-							printStep("Refreshing pods (deployment may be scaled down)...")
-							if refreshErr := client.Refresh(); refreshErr != nil {
-								return 0, fmt.Errorf("failed to refresh: %w (original error: %v)", refreshErr, err)
-							}
-							// Give pods time to start
-							time.Sleep(2 * time.Second)
-							// Try restart again
-							if err := client.RestartForward(agentName, fwd.RemotePort); err != nil {
-								return 0, fmt.Errorf("failed to restart forward after refresh: %w", err)
-							}
-						}
-						// Give it a moment to start
-						time.Sleep(500 * time.Millisecond)
+					// If forward is active, use it
+					if fwd.Status == "active" {
+						return fwd.LocalPort, nil
 					}
+					// Try to restart the forward
+					printStep("Restarting %s forward for %s...", forwardType, agentName)
+					if err := client.RestartForward(agentName, fwd.RemotePort); err != nil {
+						// Forward failed - daemon may have stale state, rediscover
+						printStep("Rediscovering agents...")
+						if refreshErr := client.Refresh(); refreshErr != nil {
+							return 0, fmt.Errorf("failed to rediscover agents: %w", refreshErr)
+						}
+						time.Sleep(2 * time.Second)
+						// Try restart again after rediscovery
+						if err := client.RestartForward(agentName, fwd.RemotePort); err != nil {
+							return 0, fmt.Errorf("failed to restart forward: %w", err)
+						}
+					}
+					time.Sleep(500 * time.Millisecond)
 					return fwd.LocalPort, nil
 				}
 			}
@@ -265,19 +187,17 @@ func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, a
 		}
 	}
 
-	// Agent not found - try refreshing pods (deployment may be scaled down)
-	printStep("Agent '%s' not found, refreshing pods...", agentName)
+	// Agent not found in daemon state - rediscover
+	printStep("Agent '%s' not found, rediscovering...", agentName)
 	if err := client.Refresh(); err != nil {
-		return 0, fmt.Errorf("agent '%s' not found and refresh failed: %w", agentName, err)
+		return 0, fmt.Errorf("failed to rediscover agents: %w", err)
 	}
+	time.Sleep(2 * time.Second)
 
-	// Wait for pod to be ready
-	time.Sleep(3 * time.Second)
-
-	// Try again
+	// Try again after rediscovery
 	result, err = client.ListForwards()
 	if err != nil {
-		return 0, fmt.Errorf("failed to list forwards after refresh: %w", err)
+		return 0, fmt.Errorf("failed to list forwards: %w", err)
 	}
 
 	for _, agent := range result.Agents {
@@ -285,7 +205,6 @@ func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, a
 			for _, fwd := range agent.Forwards {
 				if fwd.Type == forwardType {
 					if fwd.Status != "active" {
-						printStep("Starting %s forward...", forwardType)
 						if err := client.RestartForward(agentName, fwd.RemotePort); err != nil {
 							return 0, fmt.Errorf("failed to start forward: %w", err)
 						}
@@ -297,7 +216,7 @@ func ensureDaemonRunningForType(ctx context.Context, vibespaceNameOrID string, a
 		}
 	}
 
-	return 0, fmt.Errorf("agent '%s' not found. Available agents: %s", agentName, formatAvailableAgents(result.Agents))
+	return 0, fmt.Errorf("agent '%s' not found. Available: %s", agentName, formatAvailableAgents(result.Agents))
 }
 
 // formatAvailableAgents formats a list of agent names for error messages

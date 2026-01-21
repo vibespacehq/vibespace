@@ -186,3 +186,38 @@ func WaitForReady(vibespace string, timeout time.Duration) error {
 
 	return fmt.Errorf("daemon not ready within timeout")
 }
+
+// StopAllDaemons stops all running daemons and cleans up state files
+func StopAllDaemons() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	daemonDir := fmt.Sprintf("%s/.vibespace/daemons", home)
+
+	// Find all .pid files in the daemon directory
+	entries, err := os.ReadDir(daemonDir)
+	if err != nil {
+		return
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		// Look for .pid files to identify vibespaces with daemons
+		if len(name) > 4 && name[len(name)-4:] == ".pid" {
+			vibespace := name[:len(name)-4]
+			StopDaemon(vibespace)
+		}
+	}
+
+	// Also clean up any orphaned state files
+	for _, entry := range entries {
+		name := entry.Name()
+		if len(name) > 5 && (name[len(name)-5:] == ".sock" || name[len(name)-5:] == ".json") {
+			os.Remove(fmt.Sprintf("%s/%s", daemonDir, name))
+		}
+		if len(name) > 4 && name[len(name)-4:] == ".log" {
+			// Keep log files for debugging
+		}
+	}
+}
