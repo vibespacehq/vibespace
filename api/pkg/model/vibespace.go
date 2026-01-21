@@ -7,16 +7,15 @@ package model
 // - Persistent storage for project files
 // - Dynamic port detection and exposure
 type Vibespace struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	ProjectName string            `json:"project_name"` // DNS-friendly name for subdomain
-	Status      string            `json:"status"`       // creating, running, stopped, error
-	Resources   Resources         `json:"resources"`
-	Services    []ExposedService  `json:"services,omitempty"` // Dynamically detected services
-	Persistent  bool              `json:"persistent"`
-	CreatedAt   string            `json:"created_at"`
-	UpdatedAt   string            `json:"updated_at,omitempty"`
-	DeletedAt   string            `json:"deleted_at,omitempty"`
+	ID         string           `json:"id"`
+	Name       string           `json:"name"`
+	Status     string           `json:"status"` // creating, running, stopped, error
+	Resources  Resources        `json:"resources"`
+	Services   []ExposedService `json:"services,omitempty"` // Dynamically detected services
+	Persistent bool             `json:"persistent"`
+	CreatedAt  string           `json:"created_at"`
+	UpdatedAt  string           `json:"updated_at,omitempty"`
+	DeletedAt  string           `json:"deleted_at,omitempty"`
 }
 
 // ExposedService represents a dynamically detected service running in the vibespace.

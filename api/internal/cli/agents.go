@@ -95,13 +95,24 @@ func runSpawn(vibespace string, args []string) error {
 
 	// Parse flags
 	shareCredentials := false
-	for _, arg := range args {
+	customName := ""
+	for i, arg := range args {
 		if arg == "--share-credentials" || arg == "-s" {
 			shareCredentials = true
 		}
+		if (arg == "--name" || arg == "-n") && i+1 < len(args) {
+			customName = args[i+1]
+		}
+		// Handle --name=value format
+		if len(arg) > 7 && arg[:7] == "--name=" {
+			customName = arg[7:]
+		}
+		if len(arg) > 3 && arg[:3] == "-n=" {
+			customName = arg[3:]
+		}
 	}
 
-	slog.Info("spawn command started", "vibespace", vibespace, "share_credentials", shareCredentials)
+	slog.Info("spawn command started", "vibespace", vibespace, "name", customName, "share_credentials", shareCredentials)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -116,10 +127,15 @@ func runSpawn(vibespace string, args []string) error {
 		return err
 	}
 
-	printStep("Spawning new agent in '%s'...", vibespace)
+	if customName != "" {
+		printStep("Spawning agent '%s' in '%s'...", customName, vibespace)
+	} else {
+		printStep("Spawning new agent in '%s'...", vibespace)
+	}
 
 	// Spawn the agent with options
 	opts := &vspkg.SpawnAgentOptions{
+		Name:             customName,
 		ShareCredentials: shareCredentials,
 	}
 	agentName, err := svc.SpawnAgent(ctx, vs.ID, opts)

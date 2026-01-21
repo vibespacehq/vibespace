@@ -12,7 +12,6 @@ type AgentInfo struct {
 type CreateDeploymentRequest struct {
 	VibespaceID string
 	Name        string
-	ProjectName string
 	ClaudeID    string // Claude instance ID (1, 2, 3, etc.)
 	Image       string
 	Resources   Resources
@@ -24,8 +23,8 @@ type CreateDeploymentRequest struct {
 // CreateAgentRequest contains parameters for creating an agent deployment
 type CreateAgentRequest struct {
 	VibespaceID      string
-	Name             string
-	ProjectName      string
+	Name             string // Vibespace name
+	AgentName        string // Agent name (custom or auto-generated like "claude-2")
 	ClaudeID         string // Claude instance ID (2, 3, 4, etc.)
 	Image            string
 	Resources        Resources

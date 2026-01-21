@@ -147,8 +147,8 @@ chown user:user /home/user/.bashrc
 # Startup info
 # ============================================================================
 log "Container starting..."
-log "  VIBESPACE_PROJECT: ${VIBESPACE_PROJECT:-not set}"
-log "  VIBESPACE_CLAUDE_ID: ${VIBESPACE_CLAUDE_ID:-not set}"
+log "  VIBESPACE_NAME: ${VIBESPACE_NAME:-not set}"
+log "  VIBESPACE_AGENT: ${VIBESPACE_AGENT:-not set}"
 log "  SHARE_CREDENTIALS: ${VIBESPACE_SHARE_CREDENTIALS:-false}"
 
 exec "$@"
