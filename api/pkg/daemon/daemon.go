@@ -16,10 +16,26 @@ func SpawnDaemon(vibespace string) error {
 		return err
 	}
 
-	// Check if already running
+	// Check if already running via socket
 	if IsRunning(vibespace) {
 		return fmt.Errorf("daemon already running for %s", vibespace)
 	}
+
+	// Kill any stale daemon process before spawning new one
+	// This handles the case where socket is dead but process still exists
+	if pid, err := ReadPidFile(vibespace); err == nil {
+		if process, err := os.FindProcess(pid); err == nil {
+			// Check if process is actually running
+			if err := process.Signal(syscall.Signal(0)); err == nil {
+				// Process exists, kill it
+				process.Signal(syscall.SIGTERM)
+				time.Sleep(500 * time.Millisecond)
+				process.Signal(syscall.SIGKILL)
+			}
+		}
+	}
+	// Clean up stale files
+	CleanupDaemonFiles(vibespace)
 
 	// Get the path to the current executable
 	executable, err := os.Executable()

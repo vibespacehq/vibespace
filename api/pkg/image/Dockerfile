@@ -112,7 +112,6 @@ RUN rm -f /etc/update-motd.d/* && \
 
 # Copy configuration files
 COPY supervisord.conf /etc/supervisor/conf.d/vibespace.conf
-COPY motd /etc/motd
 COPY bashrc.vibespace /home/user/.bashrc.vibespace
 COPY entrypoint.sh /entrypoint.sh
 
