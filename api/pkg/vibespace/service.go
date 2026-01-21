@@ -457,7 +457,7 @@ func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
 	}
 }
 
-// extractResourcesFromDeployment extracts CPU and memory from Deployment spec
+// extractResourcesFromDeployment extracts CPU, memory, and storage from Deployment
 func extractResourcesFromDeployment(deploy *appsv1.Deployment) model.Resources {
 	containers := deploy.Spec.Template.Spec.Containers
 	if len(containers) == 0 {
@@ -475,10 +475,16 @@ func extractResourcesFromDeployment(deploy *appsv1.Deployment) model.Resources {
 		memory = memQty.String()
 	}
 
+	// Storage is stored as annotation since it's actually in the PVC
+	storage := ""
+	if deploy.Annotations != nil {
+		storage = deploy.Annotations["vibespace.dev/storage"]
+	}
+
 	return model.Resources{
-		CPU:    cpu,
-		Memory: memory,
-		// Storage is not stored in Deployment spec - it's in the PVC
+		CPU:     cpu,
+		Memory:  memory,
+		Storage: storage,
 	}
 }
 

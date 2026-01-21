@@ -3,8 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
-	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
@@ -41,6 +39,9 @@ func runList(cmd *cobra.Command, args []string) error {
 				Name:      vs.Name,
 				Status:    vs.Status,
 				Agents:    1, // Default to 1 agent per vibespace for now
+				CPU:       vs.Resources.CPU,
+				Memory:    vs.Resources.Memory,
+				Storage:   vs.Resources.Storage,
 				CreatedAt: vs.CreatedAt,
 			}
 		}
@@ -63,32 +64,36 @@ func runList(cmd *cobra.Command, args []string) error {
 	// Plain output mode (tab-separated, no colors)
 	if out.IsPlainMode() {
 		for _, vs := range vibespaces {
-			fmt.Printf("%s\t%s\t%d\t%s\n", vs.Name, vs.Status, 1, vs.CreatedAt)
+			fmt.Printf("%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
+				vs.Name, vs.Status, 1,
+				vs.Resources.CPU, vs.Resources.Memory, vs.Resources.Storage,
+				vs.CreatedAt)
 		}
 		return nil
 	}
 
-	// Print as table
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tSTATUS\tAGENTS\tCREATED")
+	// Print as table with fixed-width columns (tabwriter doesn't work well with ANSI colors)
+	fmt.Printf("%-16s %-10s %-8s %-8s %-8s %-8s %s\n", "NAME", "STATUS", "AGENTS", "CPU", "MEMORY", "STORAGE", "CREATED")
 
 	for _, vs := range vibespaces {
-		status := vs.Status
-		switch status {
+		// Colorize status after padding to maintain alignment
+		status := fmt.Sprintf("%-10s", vs.Status)
+		switch vs.Status {
 		case "running":
-			status = green(status)
+			status = green(vs.Status) + "   " // "running" is 7 chars, pad to 10
 		case "stopped":
-			status = yellow(status)
+			status = yellow(vs.Status) + "   " // "stopped" is 7 chars, pad to 10
 		case "error":
-			status = red(status)
+			status = red(vs.Status) + "     " // "error" is 5 chars, pad to 10
 		}
 
 		agents := "1" // Default to 1 agent per vibespace for now
-		created := vs.CreatedAt // Already a formatted string
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", vs.Name, status, agents, created)
+		fmt.Printf("%-16s %s %-8s %-8s %-8s %-8s %s\n",
+			vs.Name, status, agents,
+			vs.Resources.CPU, vs.Resources.Memory, vs.Resources.Storage,
+			vs.CreatedAt)
 	}
 
-	w.Flush()
 	return nil
 }

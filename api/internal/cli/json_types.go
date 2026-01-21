@@ -32,6 +32,9 @@ type VibespaceListItem struct {
 	Name      string `json:"name"`
 	Status    string `json:"status"`
 	Agents    int    `json:"agents"`
+	CPU       string `json:"cpu"`
+	Memory    string `json:"memory"`
+	Storage   string `json:"storage"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -63,8 +66,9 @@ type AgentsOutput struct {
 
 // AgentListItem represents an agent in list output
 type AgentListItem struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
+	Name      string `json:"name"`
+	Vibespace string `json:"vibespace"`
+	Status    string `json:"status"`
 }
 
 // ForwardsOutput is the JSON output for the forward list command
