@@ -57,6 +57,7 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 			Labels:    labels,
 			Annotations: map[string]string{
 				"vibespace.dev/created-at": metav1.Now().Format("2006-01-02T15:04:05Z"),
+				"vibespace.dev/storage":    req.Resources.Storage,
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -208,6 +209,7 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 			Labels:    labels,
 			Annotations: map[string]string{
 				"vibespace.dev/created-at": metav1.Now().Format("2006-01-02T15:04:05Z"),
+				"vibespace.dev/storage":    req.Resources.Storage,
 			},
 		},
 		Spec: appsv1.DeploymentSpec{

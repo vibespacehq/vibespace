@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"sort"
-	"text/tabwriter"
 
 	"vibespace/pkg/daemon"
 )
@@ -40,8 +38,9 @@ func runAgents(vibespace string, args []string) error {
 		items := make([]AgentListItem, len(agents))
 		for i, agent := range agents {
 			items[i] = AgentListItem{
-				Name:   agent.AgentName,
-				Status: agent.Status,
+				Name:      agent.AgentName,
+				Vibespace: vibespace,
+				Status:    agent.Status,
 			}
 		}
 		return out.JSON(JSONOutput{
@@ -64,28 +63,28 @@ func runAgents(vibespace string, args []string) error {
 	// Plain output mode
 	if out.IsPlainMode() {
 		for _, agent := range agents {
-			fmt.Printf("%s\t%s\n", agent.AgentName, agent.Status)
+			fmt.Printf("%s\t%s\t%s\n", agent.AgentName, vibespace, agent.Status)
 		}
 		return nil
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "AGENT\tSTATUS")
+	// Print as table with fixed-width columns
+	fmt.Printf("%-12s %-20s %-10s\n", "AGENT", "VIBESPACE", "STATUS")
 
 	for _, agent := range agents {
-		status := agent.Status
-		switch status {
+		// Colorize status after formatting to maintain alignment
+		status := fmt.Sprintf("%-10s", agent.Status)
+		switch agent.Status {
 		case "running":
-			status = green(status)
+			status = green(agent.Status) + "   " // "running" is 7 chars, pad to 10
 		case "stopped":
-			status = yellow(status)
+			status = yellow(agent.Status) + "   " // "stopped" is 7 chars, pad to 10
 		case "creating":
-			status = yellow(status)
+			status = yellow(agent.Status) + "  " // "creating" is 8 chars, pad to 10
 		}
-		fmt.Fprintf(w, "%s\t%s\n", agent.AgentName, status)
+		fmt.Printf("%-12s %-20s %s\n", agent.AgentName, vibespace, status)
 	}
 
-	w.Flush()
 	slog.Debug("agents command completed", "vibespace", vibespace, "count", len(agents))
 	return nil
 }
