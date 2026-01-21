@@ -113,6 +113,7 @@ RUN rm -f /etc/update-motd.d/* && \
 # Copy configuration files
 COPY supervisord.conf /etc/supervisor/conf.d/vibespace.conf
 COPY bashrc.vibespace /home/user/.bashrc.vibespace
+COPY banner.txt /home/user/.banner.txt
 COPY entrypoint.sh /entrypoint.sh
 
 RUN mkdir -p /var/log/supervisor && \
