@@ -78,8 +78,7 @@ func runConnect(vibespace string, args []string) error {
 	if runClaude {
 		printStep("Connecting to %s in %s...", agent, vibespace)
 		slog.Info("connect command completed", "vibespace", vibespace, "mode", "ssh", "agent", agent, "local_port", localPort)
-		// Use login shell to ensure PATH and environment are set up
-		return connectViaSSH(localPort, "bash -l -c claude")
+		return connectViaSSH(localPort, "cd /vibespace && claude")
 	}
 
 	printStep("Connecting to shell in %s...", vibespace)
