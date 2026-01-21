@@ -74,11 +74,9 @@ info() {
 # Welcome Banner (shows on login)
 # ============================================================================
 echo ""
-echo -e "${_C_PINK}                 __   _ __"
-echo -e "   _  __ __  ___/ /  (_) /  ___  ___ ___   ___ _ _______"
-echo -e "  | |/ / _ \\/ _  /  / / _ \\/ -_)(_-</ _ \\ / _ \`/ __/ -_)"
-echo -e "  |___/_//_/\\_,_/  /_/_.__/\\__//___/ .__/ \\_,_/\\__/\\__/"
-echo -e "                                  /_/${_C_RESET}"
+echo -e "${_C_PINK}"
+cat ~/.banner.txt 2>/dev/null
+echo -e "${_C_RESET}"
 echo -e "  ${_C_GRAY}AI-Powered Development Environment${_C_RESET}"
 echo ""
 echo -e "  Vibespace: ${_C_ORANGE}${VIBESPACE_NAME:-unknown}${_C_RESET}"
