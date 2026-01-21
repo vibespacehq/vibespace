@@ -62,11 +62,19 @@ func NewManager(cfg ManagerConfig) *Manager {
 	}
 }
 
-// SetAgentPod sets the pod name for an agent
+// SetAgentPod sets the pod name for an agent and updates all its forwarders
 func (m *Manager) SetAgentPod(agentName, podName string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.agents[agentName] = podName
+
+	// Update pod name in all forwarders for this agent
+	prefix := agentName + ":"
+	for key, fwd := range m.forwarders {
+		if len(key) > len(prefix) && key[:len(prefix)] == prefix {
+			fwd.SetPodName(podName)
+		}
+	}
 }
 
 // GetAgentPod returns the pod name for an agent
