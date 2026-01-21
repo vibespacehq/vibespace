@@ -137,6 +137,19 @@ fi
 # ============================================================================
 # Shell configuration
 # ============================================================================
+# Create .profile to source .bashrc for SSH login shells
+if [ ! -f /home/user/.profile ]; then
+    cat > /home/user/.profile <<'PROFILE'
+# Source .bashrc for interactive shells
+if [ -n "$BASH_VERSION" ]; then
+    if [ -f "$HOME/.bashrc" ]; then
+        . "$HOME/.bashrc"
+    fi
+fi
+PROFILE
+    chown user:user /home/user/.profile
+fi
+
 # Append vibespace config to bashrc if not already present
 if ! grep -q "vibespace shell configuration" /home/user/.bashrc 2>/dev/null; then
     cat /home/user/.bashrc.vibespace >> /home/user/.bashrc
