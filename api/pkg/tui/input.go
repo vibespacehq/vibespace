@@ -7,10 +7,8 @@ import (
 	"vibespace/pkg/session"
 )
 
-// Action represents a parsed user input action
-type Action interface {
-	isAction()
-}
+// Action represents a parsed user input action (SendAction or CommandAction)
+type Action any
 
 // SendAction represents a message to send to one or more agents
 type SendAction struct {
@@ -18,15 +16,11 @@ type SendAction struct {
 	Message string
 }
 
-func (SendAction) isAction() {}
-
 // CommandAction represents a TUI command
 type CommandAction struct {
 	Cmd  string
 	Args []string
 }
-
-func (CommandAction) isAction() {}
 
 // ParseInput parses user input and returns the appropriate action
 // Supports:

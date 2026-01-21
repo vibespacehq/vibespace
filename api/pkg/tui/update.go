@@ -126,13 +126,21 @@ func (m *Model) executeSend(action SendAction) (tea.Model, tea.Cmd) {
 	m.agentMu.RLock()
 	defer m.agentMu.RUnlock()
 
+	sentTo := []string{}
+
 	for _, target := range action.Targets {
 		if target.Agent == "all" {
 			// Broadcast to all agents (optionally filtered by vibespace)
 			for key, conn := range m.agents {
 				if target.Vibespace == "" || conn.address.Vibespace == target.Vibespace {
-					if err := conn.Send(action.Message); err != nil {
+					// Echo user message to output
+					if output, ok := m.outputs[key]; ok {
+						output.Add(fmt.Sprintf("> %s", action.Message))
+					}
+					if err := conn.SendAndReconnect(action.Message); err != nil {
 						m.statusMsg = fmt.Sprintf("Failed to send to %s: %s", key, err.Error())
+					} else {
+						sentTo = append(sentTo, key)
 					}
 				}
 			}
@@ -144,10 +152,20 @@ func (m *Model) executeSend(action SendAction) (tea.Model, tea.Cmd) {
 				m.statusMsg = fmt.Sprintf("Agent not found: %s", key)
 				continue
 			}
-			if err := conn.Send(action.Message); err != nil {
+			// Echo user message to output
+			if output, ok := m.outputs[key]; ok {
+				output.Add(fmt.Sprintf("> %s", action.Message))
+			}
+			if err := conn.SendAndReconnect(action.Message); err != nil {
 				m.statusMsg = fmt.Sprintf("Failed to send to %s: %s", key, err.Error())
+			} else {
+				sentTo = append(sentTo, key)
 			}
 		}
+	}
+
+	if len(sentTo) > 0 {
+		m.statusMsg = fmt.Sprintf("Sent to %s", strings.Join(sentTo, ", "))
 	}
 
 	return m, nil
