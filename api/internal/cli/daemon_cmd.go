@@ -246,15 +246,18 @@ func discoverVibespaceAgents(ctx context.Context, k8sClient *k8s.Client, vibespa
 				continue
 			}
 
-			// Try to get claude-id from pod labels
-			claudeID := "1" // Default for backward compatibility
+			// Get agent name from labels (prefer agent-name, fall back to claude-id)
+			agentName := ""
 			if labels := pod.Labels; labels != nil {
-				if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
-					claudeID = cid
+				if name, ok := labels["vibespace.dev/agent-name"]; ok && name != "" {
+					agentName = name
+				} else if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
+					agentName = fmt.Sprintf("claude-%s", cid)
 				}
 			}
-
-			agentName := fmt.Sprintf("claude-%s", claudeID)
+			if agentName == "" {
+				agentName = "claude-1"
+			}
 
 			// Skip if we already have this agent (shouldn't happen, but be defensive)
 			if _, exists := agents[agentName]; exists {
@@ -308,15 +311,19 @@ func quickPodSnapshot(ctx context.Context, k8sClient *k8s.Client, vibespaceID st
 			continue
 		}
 
-		// Get claude-id from pod labels
-		claudeID := "1"
+		// Get agent name from labels (prefer agent-name, fall back to claude-id)
+		agentName := ""
 		if labels := pod.Labels; labels != nil {
-			if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
-				claudeID = cid
+			if name, ok := labels["vibespace.dev/agent-name"]; ok && name != "" {
+				agentName = name
+			} else if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
+				agentName = fmt.Sprintf("claude-%s", cid)
 			}
 		}
+		if agentName == "" {
+			agentName = "claude-1"
+		}
 
-		agentName := fmt.Sprintf("claude-%s", claudeID)
 		agents[agentName] = pod.Name
 	}
 

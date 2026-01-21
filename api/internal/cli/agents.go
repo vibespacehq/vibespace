@@ -91,6 +91,27 @@ func runAgents(vibespace string, args []string) error {
 }
 
 func runSpawn(vibespace string, args []string) error {
+	// Handle help flag
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Println(`Spawn a new Claude agent in a vibespace
+
+Usage:
+  vibespace <name> spawn [flags]
+
+Flags:
+  -n, --name string          Custom name for the agent (default: claude-N)
+  -s, --share-credentials    Share Claude credentials across all agents
+  -h, --help                 Help for spawn
+
+Examples:
+  vibespace myproject spawn
+  vibespace myproject spawn --name researcher
+  vibespace myproject spawn --share-credentials`)
+			return nil
+		}
+	}
+
 	ctx := context.Background()
 
 	// Parse flags
