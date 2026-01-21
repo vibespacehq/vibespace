@@ -520,10 +520,42 @@ func (s *Server) handleRefresh() Response {
 		return NewErrorResponse(fmt.Errorf("failed to discover pods: %w", err))
 	}
 
-	// Update pod mappings and restart forwards
+	// Update pod mappings and create forwards for new agents
 	for agentName, podName := range agents {
 		oldPod, exists := s.manager.GetAgentPod(agentName)
-		if !exists || oldPod != podName {
+		if !exists {
+			// New agent - create forwards for it
+			slog.Info("new agent discovered, creating forwards", "agent", agentName, "pod", podName)
+			s.manager.SetAgentPod(agentName, podName)
+			s.state.SetAgentPod(agentName, podName)
+
+			// Create SSH forward
+			sshLocalPort, err := s.manager.AddForward(agentName, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
+			if err != nil {
+				slog.Error("failed to create SSH forward for new agent", "agent", agentName, "error", err)
+			} else {
+				s.state.AddForward(agentName, &ForwardState{
+					LocalPort:  sshLocalPort,
+					RemotePort: portforward.DefaultSSHPort,
+					Type:       portforward.TypeSSH,
+					Status:     portforward.StatusActive,
+				})
+			}
+
+			// Create TTYD forward
+			ttydLocalPort, err := s.manager.AddForward(agentName, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
+			if err != nil {
+				slog.Error("failed to create TTYD forward for new agent", "agent", agentName, "error", err)
+			} else {
+				s.state.AddForward(agentName, &ForwardState{
+					LocalPort:  ttydLocalPort,
+					RemotePort: portforward.DefaultTTYDPort,
+					Type:       portforward.TypeTTYD,
+					Status:     portforward.StatusActive,
+				})
+			}
+		} else if oldPod != podName {
+			// Existing agent with new pod - update mapping
 			slog.Info("updating agent pod", "agent", agentName, "old_pod", oldPod, "new_pod", podName)
 			s.manager.SetAgentPod(agentName, podName)
 			s.state.SetAgentPod(agentName, podName)

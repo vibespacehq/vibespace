@@ -31,6 +31,18 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to list vibespaces: %w", err)
 	}
 
+	// Helper to count agents for a vibespace
+	countAgents := func(vsID string) int {
+		agents, err := svc.ListAgents(ctx, vsID)
+		if err != nil {
+			return 1 // Default to 1 on error
+		}
+		if len(agents) == 0 {
+			return 1 // At least 1 agent
+		}
+		return len(agents)
+	}
+
 	// JSON output mode
 	if out.IsJSONMode() {
 		items := make([]VibespaceListItem, len(vibespaces))
@@ -38,7 +50,7 @@ func runList(cmd *cobra.Command, args []string) error {
 			items[i] = VibespaceListItem{
 				Name:      vs.Name,
 				Status:    vs.Status,
-				Agents:    1, // Default to 1 agent per vibespace for now
+				Agents:    countAgents(vs.ID),
 				CPU:       vs.Resources.CPU,
 				Memory:    vs.Resources.Memory,
 				Storage:   vs.Resources.Storage,
@@ -65,7 +77,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	if out.IsPlainMode() {
 		for _, vs := range vibespaces {
 			fmt.Printf("%s\t%s\t%d\t%s\t%s\t%s\t%s\n",
-				vs.Name, vs.Status, 1,
+				vs.Name, vs.Status, countAgents(vs.ID),
 				vs.Resources.CPU, vs.Resources.Memory, vs.Resources.Storage,
 				vs.CreatedAt)
 		}
@@ -87,10 +99,8 @@ func runList(cmd *cobra.Command, args []string) error {
 			status = red(vs.Status) + "     " // "error" is 5 chars, pad to 10
 		}
 
-		agents := "1" // Default to 1 agent per vibespace for now
-
-		fmt.Printf("%-16s %s %-8s %-8s %-8s %-8s %s\n",
-			vs.Name, status, agents,
+		fmt.Printf("%-16s %s %-8d %-8s %-8s %-8s %s\n",
+			vs.Name, status, countAgents(vs.ID),
 			vs.Resources.CPU, vs.Resources.Memory, vs.Resources.Storage,
 			vs.CreatedAt)
 	}

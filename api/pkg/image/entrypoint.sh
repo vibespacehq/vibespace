@@ -60,6 +60,7 @@ if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
             echo "$AUTHORIZED_KEYS" >> "$SHARED_CONFIG/.ssh/authorized_keys"
             sort -u "$SHARED_CONFIG/.ssh/authorized_keys" -o "$SHARED_CONFIG/.ssh/authorized_keys" 2>/dev/null || true
             chmod 600 "$SHARED_CONFIG/.ssh/authorized_keys"
+            chown user:user "$SHARED_CONFIG/.ssh/authorized_keys"
         fi
 
         # Copy any existing SSH keys to shared location (first agent only)
