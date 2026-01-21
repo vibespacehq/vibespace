@@ -198,18 +198,19 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 
 	// Create Deployment
 	err = s.deploymentManager.CreateDeployment(ctx, &deployment.CreateDeploymentRequest{
-		VibespaceID: id,
-		Name:        req.Name,
-		ClaudeID:    "1", // First Claude instance
-		Image:       image,
+		VibespaceID:      id,
+		Name:             req.Name,
+		ClaudeID:         "1", // First Claude instance
+		Image:            image,
 		Resources: deployment.Resources{
 			CPU:     resources.CPU,
 			Memory:  resources.Memory,
 			Storage: resources.Storage,
 		},
-		Env:        req.Env,
-		Persistent: req.Persistent,
-		PVCName:    pvcName,
+		Env:              req.Env,
+		Persistent:       req.Persistent,
+		PVCName:          pvcName,
+		ShareCredentials: req.ShareCredentials,
 	})
 	if err != nil {
 		slog.Error("failed to create Deployment", "vibespace_id", id, "error", err)

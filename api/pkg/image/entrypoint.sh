@@ -40,11 +40,30 @@ if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
     chown -R user:user "$SHARED_CONFIG"
     chmod 700 "$SHARED_CONFIG/.ssh"
 
-    # Remove existing Claude config and symlink to shared location
-    rm -rf /home/user/.config/claude-code
-    mkdir -p /home/user/.config
-    ln -sf "$SHARED_CONFIG/.claude" /home/user/.config/claude-code
-    chown -h user:user /home/user/.config/claude-code
+    # Claude Code stores credentials in ~/.claude.json and ~/.claude/
+    # Symlink both to shared location
+
+    # Handle .claude.json (main config with oauth tokens)
+    if [ -f /home/user/.claude.json ] && [ ! -f "$SHARED_CONFIG/.claude.json" ]; then
+        # First agent: move existing config to shared location
+        mv /home/user/.claude.json "$SHARED_CONFIG/.claude.json"
+    else
+        rm -f /home/user/.claude.json
+    fi
+    ln -sf "$SHARED_CONFIG/.claude.json" /home/user/.claude.json
+    chown -h user:user /home/user/.claude.json
+
+    # Handle .claude/ directory (plugins, settings, etc.)
+    if [ -d /home/user/.claude ] && [ ! -d "$SHARED_CONFIG/.claude-home" ]; then
+        # First agent: move existing directory to shared location
+        mv /home/user/.claude "$SHARED_CONFIG/.claude-home"
+    else
+        rm -rf /home/user/.claude
+    fi
+    mkdir -p "$SHARED_CONFIG/.claude-home"
+    ln -sf "$SHARED_CONFIG/.claude-home" /home/user/.claude
+    chown -h user:user /home/user/.claude
+    chown -R user:user "$SHARED_CONFIG/.claude-home"
 
     # Symlink git config if it exists in shared location
     if [ -f "$SHARED_CONFIG/.gitconfig" ]; then
