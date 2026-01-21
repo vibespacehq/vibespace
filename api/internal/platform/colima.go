@@ -307,15 +307,17 @@ func (m *ColimaManager) KubeconfigPath() string {
 }
 
 // subprocessWriters returns writers for subprocess stdout/stderr
-// When debug mode is enabled, output is teed to slog
+// By default, output is discarded to keep CLI output clean
+// In debug mode (VIBESPACE_DEBUG=1), output is logged to debug log file
 func subprocessWriters(prefix string) (io.Writer, io.Writer) {
 	if os.Getenv("VIBESPACE_DEBUG") == "" {
-		return os.Stdout, os.Stderr
+		// Discard subprocess output to keep CLI clean
+		return io.Discard, io.Discard
 	}
 
-	// In debug mode, tee output to both terminal and log
-	stdoutWriter := &logTeeWriter{w: os.Stdout, prefix: prefix, stream: "stdout"}
-	stderrWriter := &logTeeWriter{w: os.Stderr, prefix: prefix, stream: "stderr"}
+	// In debug mode, log output to slog (goes to debug log file, not terminal)
+	stdoutWriter := &logTeeWriter{w: io.Discard, prefix: prefix, stream: "stdout"}
+	stderrWriter := &logTeeWriter{w: io.Discard, prefix: prefix, stream: "stderr"}
 	return stdoutWriter, stderrWriter
 }
 
