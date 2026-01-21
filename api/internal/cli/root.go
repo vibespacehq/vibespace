@@ -54,6 +54,11 @@ Environment Variables:
 	SilenceErrors:      true,
 	Args:               cobra.ArbitraryArgs,
 	DisableFlagParsing: true, // Let subcommands handle their own flags
+	// PersistentPreRunE initializes output after flags are parsed
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		initOutputFromFlags()
+		return nil
+	},
 	// Handle unknown commands as vibespace names
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
@@ -62,6 +67,22 @@ Environment Variables:
 		// Treat first argument as a vibespace name
 		return handleVibespaceCommand(args)
 	},
+}
+
+// initOutputFromFlags initializes the output based on global flag values
+func initOutputFromFlags() {
+	verbosity := 0
+	if globalVerbose {
+		verbosity = 1
+	} else if globalQuiet {
+		verbosity = -1
+	}
+	initOutput(OutputConfig{
+		JSONMode:  globalJSON,
+		PlainMode: globalPlain,
+		Verbosity: verbosity,
+		NoColor:   globalNoColor,
+	})
 }
 
 // parseGlobalFlags extracts global flags from os.Args and returns the remaining args
@@ -122,21 +143,11 @@ func parseGlobalFlags() {
 
 func Execute() error {
 	// Parse global flags before cobra processes commands
+	// This handles flags for dynamic vibespace commands (e.g., vibespace myproject agents --json)
 	parseGlobalFlags()
 
-	// Initialize output with global flags
-	verbosity := 0
-	if globalVerbose {
-		verbosity = 1
-	} else if globalQuiet {
-		verbosity = -1
-	}
-	initOutput(OutputConfig{
-		JSONMode:  globalJSON,
-		PlainMode: globalPlain,
-		Verbosity: verbosity,
-		NoColor:   globalNoColor,
-	})
+	// Initialize output with global flags (for dynamic commands that bypass PersistentPreRunE)
+	initOutputFromFlags()
 
 	cleanup := setupLogging(LogConfig{Mode: LogModeCLI})
 	defer cleanup()
@@ -168,7 +179,12 @@ func init() {
 	rootCmd.AddCommand(sessionCmd) // Multi-agent session management
 	rootCmd.AddCommand(multiCmd)   // Quick ad-hoc multi-agent sessions
 
-	// Global flags
+	// Global flags - registered here so subcommands can parse them
+	rootCmd.PersistentFlags().BoolVar(&globalJSON, "json", false, "Output in JSON format")
+	rootCmd.PersistentFlags().BoolVarP(&globalVerbose, "verbose", "v", false, "Enable verbose output")
+	rootCmd.PersistentFlags().BoolVarP(&globalQuiet, "quiet", "q", false, "Suppress non-essential output")
+	rootCmd.PersistentFlags().BoolVar(&globalNoColor, "no-color", false, "Disable colored output")
+	rootCmd.PersistentFlags().BoolVar(&globalPlain, "plain", false, "Plain output for scripting")
 	rootCmd.PersistentFlags().String("kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config)")
 }
 
