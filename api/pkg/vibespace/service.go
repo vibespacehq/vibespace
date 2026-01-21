@@ -578,15 +578,27 @@ type AgentInfo struct {
 	Status    string // running, stopped, creating
 }
 
+// SpawnAgentOptions contains options for spawning an agent
+type SpawnAgentOptions struct {
+	// ShareCredentials enables credential sharing via /vibespace/.vibespace
+	// When enabled, Claude config, git config, and SSH keys are shared across agents
+	ShareCredentials bool
+}
+
 // SpawnAgent creates a new Claude agent in a vibespace
 // Returns the agent name (e.g., "claude-2")
-func (s *Service) SpawnAgent(ctx context.Context, nameOrID string) (string, error) {
+func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAgentOptions) (string, error) {
 	if err := s.ensureClients(); err != nil {
 		return "", fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
 	}
 
 	if s.deploymentManager == nil {
 		return "", fmt.Errorf("deployment manager is not initialized")
+	}
+
+	// Default options
+	if opts == nil {
+		opts = &SpawnAgentOptions{}
 	}
 
 	// Get the vibespace
@@ -601,7 +613,7 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string) (string, erro
 		return "", fmt.Errorf("failed to get next agent ID: %w", err)
 	}
 
-	slog.Info("spawning agent", "vibespace_id", vs.ID, "name", vs.Name, "claude_id", nextID)
+	slog.Info("spawning agent", "vibespace_id", vs.ID, "name", vs.Name, "claude_id", nextID, "share_credentials", opts.ShareCredentials)
 
 	// Get the image
 	image := getVibespaceImage()
@@ -613,18 +625,19 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string) (string, erro
 	}
 
 	err = s.deploymentManager.CreateAgentDeployment(ctx, &deployment.CreateAgentRequest{
-		VibespaceID: vs.ID,
-		Name:        vs.Name,
-		ProjectName: vs.ProjectName,
-		ClaudeID:    nextID,
-		Image:       image,
+		VibespaceID:      vs.ID,
+		Name:             vs.Name,
+		ProjectName:      vs.ProjectName,
+		ClaudeID:         nextID,
+		Image:            image,
 		Resources: deployment.Resources{
 			CPU:     vs.Resources.CPU,
 			Memory:  vs.Resources.Memory,
 			Storage: vs.Resources.Storage,
 		},
-		Env:     nil,
-		PVCName: pvcName,
+		Env:              nil,
+		PVCName:          pvcName,
+		ShareCredentials: opts.ShareCredentials,
 	})
 	if err != nil {
 		slog.Error("failed to spawn agent", "vibespace_id", vs.ID, "claude_id", nextID, "error", err)

@@ -23,14 +23,15 @@ type CreateDeploymentRequest struct {
 
 // CreateAgentRequest contains parameters for creating an agent deployment
 type CreateAgentRequest struct {
-	VibespaceID string
-	Name        string
-	ProjectName string
-	ClaudeID    string // Claude instance ID (2, 3, 4, etc.)
-	Image       string
-	Resources   Resources
-	Env         map[string]string
-	PVCName     string // Shared PVC name for all agents
+	VibespaceID      string
+	Name             string
+	ProjectName      string
+	ClaudeID         string // Claude instance ID (2, 3, 4, etc.)
+	Image            string
+	Resources        Resources
+	Env              map[string]string
+	PVCName          string // Shared PVC name for all agents
+	ShareCredentials bool   // Share credentials with other agents via /vibespace/.vibespace
 }
 
 // Resources defines compute resources for a deployment

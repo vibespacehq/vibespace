@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"vibespace/pkg/daemon"
+	vspkg "vibespace/pkg/vibespace"
 )
 
 func runAgents(vibespace string, args []string) error {
@@ -92,7 +93,15 @@ func runAgents(vibespace string, args []string) error {
 func runSpawn(vibespace string, args []string) error {
 	ctx := context.Background()
 
-	slog.Info("spawn command started", "vibespace", vibespace)
+	// Parse flags
+	shareCredentials := false
+	for _, arg := range args {
+		if arg == "--share-credentials" || arg == "-s" {
+			shareCredentials = true
+		}
+	}
+
+	slog.Info("spawn command started", "vibespace", vibespace, "share_credentials", shareCredentials)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -109,8 +118,11 @@ func runSpawn(vibespace string, args []string) error {
 
 	printStep("Spawning new agent in '%s'...", vibespace)
 
-	// Spawn the agent
-	agentName, err := svc.SpawnAgent(ctx, vs.ID)
+	// Spawn the agent with options
+	opts := &vspkg.SpawnAgentOptions{
+		ShareCredentials: shareCredentials,
+	}
+	agentName, err := svc.SpawnAgent(ctx, vs.ID, opts)
 	if err != nil {
 		slog.Error("failed to spawn agent", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to spawn agent: %w", err)
@@ -118,6 +130,9 @@ func runSpawn(vibespace string, args []string) error {
 
 	slog.Info("spawn command completed", "vibespace", vibespace, "agent", agentName)
 	printSuccess("Agent '%s' created", agentName)
+	if shareCredentials {
+		fmt.Println("  Credential sharing enabled via /vibespace/.vibespace")
+	}
 	fmt.Println()
 
 	// If daemon is running, suggest restarting it to discover the new agent

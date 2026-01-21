@@ -1,0 +1,71 @@
+# vibespace shell configuration
+
+# ============================================================================
+# Environment
+# ============================================================================
+export EDITOR=vim
+export VISUAL=vim
+export PAGER=less
+export HISTSIZE=10000
+export HISTFILESIZE=20000
+export HISTCONTROL=ignoreboth:erasedups
+
+# ============================================================================
+# Prompt
+# ============================================================================
+# Format: [project:claude-N] ~/path $
+_vs_prompt() {
+    local project="${VIBESPACE_PROJECT:-vibespace}"
+    local claude_id="${VIBESPACE_CLAUDE_ID:-1}"
+    PS1="\[\e[38;5;141m\][\[\e[38;5;214m\]${project}\[\e[38;5;245m\]:\[\e[38;5;117m\]claude-${claude_id}\[\e[38;5;141m\]]\[\e[0m\] \[\e[38;5;245m\]\w\[\e[0m\] \$ "
+}
+_vs_prompt
+
+# ============================================================================
+# Aliases
+# ============================================================================
+alias ll='ls -la --color=auto'
+alias la='ls -A --color=auto'
+alias l='ls -CF --color=auto'
+alias ls='ls --color=auto'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias grep='grep --color=auto'
+alias c='clear'
+
+# Git shortcuts
+alias gs='git status'
+alias gd='git diff'
+alias gl='git log --oneline -10'
+alias gp='git pull'
+alias ga='git add'
+alias gc='git commit'
+
+# ============================================================================
+# Functions
+# ============================================================================
+# Quick project info
+info() {
+    echo ""
+    echo "  Project:   ${VIBESPACE_PROJECT:-unknown}"
+    echo "  Agent:     claude-${VIBESPACE_CLAUDE_ID:-1}"
+    echo "  Workspace: /vibespace"
+    if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
+        echo "  Sharing:   credentials enabled"
+    fi
+    echo ""
+}
+
+# ============================================================================
+# Welcome (dynamic part - shows on login)
+# ============================================================================
+echo ""
+echo -e "  Project:   \e[38;5;214m${VIBESPACE_PROJECT:-unknown}\e[0m"
+echo -e "  Agent:     \e[38;5;117mclaude-${VIBESPACE_CLAUDE_ID:-1}\e[0m"
+echo -e "  Workspace: \e[38;5;245m/vibespace\e[0m"
+echo ""
+echo "  Commands:"
+echo -e "    \e[38;5;156mclaude\e[0m        Start Claude Code AI assistant"
+echo -e "    \e[38;5;156mclaude /login\e[0m Authenticate with Anthropic"
+echo -e "    \e[38;5;156minfo\e[0m          Show environment info"
+echo ""
