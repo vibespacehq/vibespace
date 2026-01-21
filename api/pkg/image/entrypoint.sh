@@ -137,6 +137,16 @@ fi
 # ============================================================================
 # Shell configuration
 # ============================================================================
+# Export VIBESPACE env vars for SSH sessions (SSH doesn't inherit container env)
+cat > /etc/profile.d/vibespace.sh <<EOF
+export VIBESPACE_ID="${VIBESPACE_ID}"
+export VIBESPACE_NAME="${VIBESPACE_NAME}"
+export VIBESPACE_AGENT="${VIBESPACE_AGENT}"
+export VIBESPACE_CLAUDE_ID="${VIBESPACE_CLAUDE_ID}"
+export VIBESPACE_SHARE_CREDENTIALS="${VIBESPACE_SHARE_CREDENTIALS:-false}"
+EOF
+chmod 644 /etc/profile.d/vibespace.sh
+
 # Create .profile to source .bashrc for SSH login shells
 if [ ! -f /home/user/.profile ]; then
     cat > /home/user/.profile <<'PROFILE'
