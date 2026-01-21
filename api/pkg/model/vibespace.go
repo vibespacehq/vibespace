@@ -41,6 +41,9 @@ type CreateVibespaceRequest struct {
 	// Persistent enables data persistence across vibespace restarts
 	Persistent bool `json:"persistent"`
 
+	// ShareCredentials enables sharing Claude credentials across all agents
+	ShareCredentials bool `json:"share_credentials"`
+
 	// Resources defines CPU and memory limits
 	Resources *Resources `json:"resources,omitempty"`
 

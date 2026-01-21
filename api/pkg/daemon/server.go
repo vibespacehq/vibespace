@@ -523,11 +523,18 @@ func (s *Server) handleRefresh() Response {
 	// Update pod mappings and create forwards for new agents
 	for agentName, podName := range agents {
 		oldPod, exists := s.manager.GetAgentPod(agentName)
-		if !exists {
-			// New agent - create forwards for it
-			slog.Info("new agent discovered, creating forwards", "agent", agentName, "pod", podName)
-			s.manager.SetAgentPod(agentName, podName)
-			s.state.SetAgentPod(agentName, podName)
+
+		// Always update pod mapping
+		s.manager.SetAgentPod(agentName, podName)
+		s.state.SetAgentPod(agentName, podName)
+
+		// Check if agent needs forwards created (new agent or agent without forwards)
+		agentState := s.state.GetAgent(agentName)
+		hasForwards := agentState != nil && len(agentState.Forwards) > 0
+
+		if !hasForwards {
+			// New agent or agent without forwards - create them
+			slog.Info("creating forwards for agent", "agent", agentName, "pod", podName)
 
 			// Create SSH forward
 			sshLocalPort, err := s.manager.AddForward(agentName, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
@@ -554,11 +561,9 @@ func (s *Server) handleRefresh() Response {
 					Status:     portforward.StatusActive,
 				})
 			}
-		} else if oldPod != podName {
-			// Existing agent with new pod - update mapping
-			slog.Info("updating agent pod", "agent", agentName, "old_pod", oldPod, "new_pod", podName)
-			s.manager.SetAgentPod(agentName, podName)
-			s.state.SetAgentPod(agentName, podName)
+		} else if exists && oldPod != podName {
+			// Existing agent with new pod - just log the update
+			slog.Info("updated agent pod", "agent", agentName, "old_pod", oldPod, "new_pod", podName)
 		}
 	}
 

@@ -172,11 +172,21 @@ Examples:
 	}
 	fmt.Println()
 
-	// If daemon is running, suggest restarting it to discover the new agent
+	// If daemon is running, trigger a refresh to discover the new agent
 	if daemon.IsRunning(vibespace) {
-		printWarning("Daemon is running. Restart it to discover the new agent:")
-		fmt.Printf("  vibespace %s down && vibespace %s up\n", vibespace, vibespace)
-		fmt.Println()
+		client, err := daemon.NewClient(vibespace)
+		if err != nil {
+			slog.Warn("failed to create daemon client for refresh", "error", err)
+		} else {
+			if err := client.Refresh(); err != nil {
+				slog.Warn("failed to refresh daemon", "error", err)
+				printWarning("Could not refresh daemon. You may need to restart it:")
+				fmt.Printf("  vibespace %s down && vibespace %s up\n", vibespace, vibespace)
+				fmt.Println()
+			} else {
+				slog.Info("daemon refreshed to discover new agent", "agent", agentName)
+			}
+		}
 	}
 
 	fmt.Printf("Connect with: vibespace %s connect %s\n", vibespace, agentName)
@@ -217,11 +227,16 @@ func runKill(vibespace string, args []string) error {
 	slog.Info("kill command completed", "vibespace", vibespace, "agent", agentID)
 	printSuccess("Agent '%s' removed", agentID)
 
-	// If daemon is running, suggest restarting it
+	// If daemon is running, trigger a refresh to update agent list
 	if daemon.IsRunning(vibespace) {
-		fmt.Println()
-		printWarning("Daemon is running. Restart it to update agent list:")
-		fmt.Printf("  vibespace %s down && vibespace %s up\n", vibespace, vibespace)
+		client, err := daemon.NewClient(vibespace)
+		if err != nil {
+			slog.Warn("failed to create daemon client for refresh", "error", err)
+		} else {
+			if err := client.Refresh(); err != nil {
+				slog.Warn("failed to refresh daemon", "error", err)
+			}
+		}
 	}
 
 	return nil

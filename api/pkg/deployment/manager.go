@@ -41,7 +41,7 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 	}
 
 	// Build environment variables
-	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, req.ClaudeID, req.Env)
+	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, req.ClaudeID, req.Env, req.ShareCredentials)
 
 	// Build volumes and volume mounts
 	volumes, volumeMounts := m.buildVolumesAndMounts(req.Persistent, req.PVCName)
@@ -177,15 +177,7 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 	}
 
 	// Build environment variables
-	env := m.buildEnvironment(req.VibespaceID, req.Name, req.AgentName, req.ClaudeID, req.Env)
-
-	// Add credential sharing env var if enabled
-	if req.ShareCredentials {
-		env = append(env, corev1.EnvVar{
-			Name:  "VIBESPACE_SHARE_CREDENTIALS",
-			Value: "true",
-		})
-	}
+	env := m.buildEnvironment(req.VibespaceID, req.Name, req.AgentName, req.ClaudeID, req.Env, req.ShareCredentials)
 
 	// Build volumes and volume mounts (share the same PVC)
 	var volumes []corev1.Volume
@@ -437,7 +429,7 @@ func (m *DeploymentManager) GetNextAgentID(ctx context.Context, vibespaceID stri
 // Helper functions
 
 // buildEnvironment creates environment variables for the vibespace
-func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentName, claudeID string, userEnv map[string]string) []corev1.EnvVar {
+func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentName, claudeID string, userEnv map[string]string, shareCredentials bool) []corev1.EnvVar {
 	env := []corev1.EnvVar{}
 
 	// Add user-provided environment variables
@@ -479,6 +471,14 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentNam
 			},
 		},
 	})
+
+	// Credential sharing
+	if shareCredentials {
+		env = append(env, corev1.EnvVar{
+			Name:  "VIBESPACE_SHARE_CREDENTIALS",
+			Value: "true",
+		})
+	}
 
 	return env
 }

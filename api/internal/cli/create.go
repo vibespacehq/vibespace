@@ -23,16 +23,18 @@ If no name is provided, a random name will be generated.`,
 	Example: `  vibespace create
   vibespace create myproject
   vibespace create myproject --repo https://github.com/user/repo
-  vibespace create myproject --cpu 500m --memory 512Mi`,
+  vibespace create myproject --cpu 500m --memory 512Mi
+  vibespace create myproject --share-credentials`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runCreate,
 }
 
 var (
-	createRepo    string
-	createCPU     string
-	createMemory  string
-	createStorage string
+	createRepo             string
+	createCPU              string
+	createMemory           string
+	createStorage          string
+	createShareCredentials bool
 )
 
 // Default resource values - can be overridden via environment variables
@@ -60,6 +62,7 @@ func init() {
 	createCmd.Flags().StringVar(&createCPU, "cpu", cpuDefault, "CPU request/limit (e.g., 400m, 500m, 1)")
 	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
 	createCmd.Flags().StringVar(&createStorage, "storage", storageDefault, "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
+	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share Claude credentials across all agents")
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
@@ -80,8 +83,9 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	// Build create request
 	req := &model.CreateVibespaceRequest{
-		Name:       name,
-		Persistent: true, // Always use persistent storage for shared filesystem between agents
+		Name:             name,
+		Persistent:       true, // Always use persistent storage for shared filesystem between agents
+		ShareCredentials: createShareCredentials,
 		Resources: &model.Resources{
 			CPU:     createCPU,
 			Memory:  createMemory,
