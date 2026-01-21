@@ -120,7 +120,7 @@ type Model struct {
 func NewModel(sess *session.Session, isAdHoc bool) *Model {
 	ti := textinput.New()
 	ti.Prompt = "" // We render our own prompt
-	ti.Placeholder = "@agent message or /help"
+	ti.Placeholder = "@agent message or /help (Tab for autocomplete)"
 	ti.Focus()
 	ti.CharLimit = 4096
 	ti.Width = 80
@@ -329,21 +329,21 @@ func (m *Model) UpdateSuggestions() {
 		return
 	}
 
-	// Build suggestions list
+	// Build suggestions list - must include @ prefix and trailing space
+	// because suggestions replace the entire input value
 	var suggestions []string
 
 	// Add "all" option
 	if strings.HasPrefix("all", strings.ToLower(mention)) {
-		suggestions = append(suggestions, "all")
+		suggestions = append(suggestions, "@all ")
 	}
 
 	// Add connected agents
-	// Note: suggestions don't include @ prefix since user already typed it
 	m.agentMu.RLock()
 	for _, key := range m.agentOrder {
 		// key is "agent@vibespace"
 		if strings.HasPrefix(strings.ToLower(key), strings.ToLower(mention)) {
-			suggestions = append(suggestions, key)
+			suggestions = append(suggestions, "@"+key+" ")
 		}
 	}
 	m.agentMu.RUnlock()

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 
 	"vibespace/pkg/session"
@@ -17,14 +18,23 @@ import (
 // ClaudeMessage represents a streaming JSON message from Claude
 type ClaudeMessage struct {
 	Type    string `json:"type"`
-	Content string `json:"content,omitempty"`
+	Subtype string `json:"subtype,omitempty"`
 	Result  string `json:"result,omitempty"`
 
-	// For assistant messages
+	// For assistant messages - content is an array of content blocks
 	Message struct {
 		Role    string `json:"role"`
-		Content string `json:"content"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
 	} `json:"message,omitempty"`
+
+	// For content_block_delta events
+	ContentBlock struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"content_block,omitempty"`
 
 	// For tool use
 	Tool struct {
@@ -33,7 +43,8 @@ type ClaudeMessage struct {
 	} `json:"tool,omitempty"`
 
 	// For errors
-	Error string `json:"error,omitempty"`
+	Error   string `json:"error,omitempty"`
+	IsError bool   `json:"is_error,omitempty"`
 }
 
 // AgentConn represents a connection to a Claude agent in print mode
@@ -87,6 +98,7 @@ func (c *AgentConn) Connect() error {
 	// Build SSH command to run Claude in print mode
 	// Using stream-json for real-time output parsing
 	// Use login shell to ensure PATH and environment are set up
+	// Note: --verbose is required when using stream-json with -p
 	sshArgs := []string{
 		"-i", keyPath,
 		"-p", strconv.Itoa(c.localPort),
@@ -96,7 +108,7 @@ func (c *AgentConn) Connect() error {
 		"user@localhost",
 		// Run Claude in print mode with streaming JSON and pre-approved tools
 		"bash", "-l", "-c",
-		"claude -p --output-format stream-json --allowedTools 'Bash(read_only:true),Read,Write,Edit,Glob,Grep'",
+		"claude -p --verbose --output-format stream-json --allowedTools 'Bash(read_only:true),Read,Write,Edit,Glob,Grep'",
 	}
 
 	c.cmd = exec.CommandContext(c.ctx, "ssh", sshArgs...)
@@ -134,6 +146,9 @@ func (c *AgentConn) Connect() error {
 
 	// Start output reader goroutine
 	go c.readLoop()
+
+	// Start stderr reader goroutine
+	go c.readStderr()
 
 	return nil
 }
@@ -178,38 +193,75 @@ func (c *AgentConn) readLoop() {
 	c.mu.Unlock()
 }
 
+// readStderr reads stderr output and displays errors
+func (c *AgentConn) readStderr() {
+	scanner := bufio.NewScanner(c.stderr)
+	for scanner.Scan() {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+		}
+
+		line := scanner.Text()
+		if line != "" {
+			c.sendOutput(fmt.Sprintf("[Error] %s", line))
+		}
+	}
+}
+
 // formatMessage converts a Claude JSON message to display text
 func (c *AgentConn) formatMessage(msg *ClaudeMessage) string {
 	switch msg.Type {
 	case "assistant":
-		if msg.Message.Content != "" {
-			return msg.Message.Content
+		// Extract text from content blocks array
+		var texts []string
+		for _, block := range msg.Message.Content {
+			if block.Type == "text" && block.Text != "" {
+				texts = append(texts, block.Text)
+			}
 		}
-		return msg.Content
+		if len(texts) > 0 {
+			return strings.Join(texts, "\n")
+		}
+		return ""
 
 	case "result":
-		return msg.Result
+		// Final result - only show if it's different from assistant message
+		// and not an error
+		if msg.IsError {
+			return fmt.Sprintf("[Error: %s]", msg.Result)
+		}
+		// Skip result messages - we already showed the assistant response
+		return ""
 
 	case "content_block_delta":
-		return msg.Content
+		if msg.ContentBlock.Text != "" {
+			return msg.ContentBlock.Text
+		}
+		return ""
 
 	case "tool_use":
-		return fmt.Sprintf("[Using %s]", msg.Tool.Name)
+		if msg.Tool.Name != "" {
+			return fmt.Sprintf("[Using %s]", msg.Tool.Name)
+		}
+		return ""
 
 	case "tool_result":
-		return msg.Content
+		return ""
 
 	case "error":
 		return fmt.Sprintf("[Error: %s]", msg.Error)
 
 	case "system":
-		return fmt.Sprintf("[System: %s]", msg.Content)
+		// Skip system init messages - they're verbose
+		if msg.Subtype == "init" {
+			return ""
+		}
+		return ""
 
 	default:
-		// For unknown types, show content if available
-		if msg.Content != "" {
-			return msg.Content
-		}
+		// For unknown types, show result if available
 		if msg.Result != "" {
 			return msg.Result
 		}
@@ -227,6 +279,7 @@ func (c *AgentConn) sendOutput(text string) {
 }
 
 // Send sends a message to the Claude agent
+// Claude print mode requires EOF to process input, so we close stdin and reconnect
 func (c *AgentConn) Send(msg string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -237,7 +290,35 @@ func (c *AgentConn) Send(msg string) error {
 
 	// Send the message followed by newline
 	_, err := fmt.Fprintf(c.stdin, "%s\n", msg)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Close stdin to signal EOF - Claude print mode requires this to process
+	c.stdin.Close()
+
+	return nil
+}
+
+// SendAndReconnect sends a message and reconnects for the next one
+// This is needed because Claude print mode processes on EOF
+func (c *AgentConn) SendAndReconnect(msg string) error {
+	if err := c.Send(msg); err != nil {
+		return err
+	}
+
+	// Wait for response to be processed, then reconnect
+	// The readLoop will continue reading until the process exits
+	go func() {
+		// Wait for current process to finish
+		if c.cmd != nil {
+			c.cmd.Wait()
+		}
+		// Reconnect for next message
+		c.Reconnect()
+	}()
+
+	return nil
 }
 
 // OutputChan returns the channel for receiving output
@@ -275,12 +356,26 @@ func (c *AgentConn) Close() {
 }
 
 // Reconnect attempts to reconnect to the agent
+// Keeps the same output channel so listeners continue working
 func (c *AgentConn) Reconnect() error {
-	c.Close()
+	// Save the output channel before closing
+	savedCh := c.outputCh
 
-	// Create new context
+	c.cancel()
+
+	c.mu.Lock()
+	if c.stdin != nil {
+		c.stdin.Close()
+	}
+	if c.cmd != nil && c.cmd.Process != nil {
+		c.cmd.Process.Kill()
+	}
+	c.connected = false
+	c.mu.Unlock()
+
+	// Create new context but keep the same output channel
 	c.ctx, c.cancel = context.WithCancel(context.Background())
-	c.outputCh = make(chan string, 100)
+	c.outputCh = savedCh
 
 	return c.Connect()
 }
