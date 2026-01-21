@@ -14,8 +14,12 @@ import (
 	"vibespace/pkg/portforward"
 )
 
-// RefreshCallback is called to re-discover pods when deployments scale
+// RefreshCallback is called to re-discover pods when deployments scale (may block waiting for pods)
 type RefreshCallback func() (map[string]string, error)
+
+// HealthCheckCallback is called to quickly check current pod state (non-blocking)
+// Returns map of agent name -> pod name for currently running pods
+type HealthCheckCallback func() (map[string]string, error)
 
 // Server is the daemon server that listens on a Unix socket
 type Server struct {
@@ -25,6 +29,7 @@ type Server struct {
 	manager             *portforward.Manager
 	state               *DaemonState
 	onRefresh           RefreshCallback
+	onHealthCheck       HealthCheckCallback
 	healthCheckInterval time.Duration
 
 	ctx    context.Context
@@ -38,7 +43,8 @@ type ServerConfig struct {
 	Manager             *portforward.Manager
 	State               *DaemonState
 	OnRefresh           RefreshCallback
-	HealthCheckInterval time.Duration // How often to check for stale pods (default: 30s)
+	OnHealthCheck       HealthCheckCallback // Quick non-blocking pod check (falls back to OnRefresh if nil)
+	HealthCheckInterval time.Duration       // How often to check for stale pods (default: 30s)
 }
 
 // NewServer creates a new daemon server
@@ -64,12 +70,22 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	// Use OnHealthCheck if provided, otherwise fall back to OnRefresh
+	healthCheckCallback := cfg.OnHealthCheck
+	if healthCheckCallback == nil && cfg.OnRefresh != nil {
+		// Wrap OnRefresh as HealthCheckCallback (same signature)
+		healthCheckCallback = func() (map[string]string, error) {
+			return cfg.OnRefresh()
+		}
+	}
+
 	return &Server{
 		vibespace:           cfg.Vibespace,
 		sockPath:            paths.SockFile,
 		manager:             cfg.Manager,
 		state:               cfg.State,
 		onRefresh:           cfg.OnRefresh,
+		onHealthCheck:       healthCheckCallback,
 		healthCheckInterval: healthCheckInterval,
 		ctx:                 ctx,
 		cancel:              cancel,
@@ -143,8 +159,8 @@ func (s *Server) acceptLoop() {
 func (s *Server) healthCheckLoop() {
 	defer s.wg.Done()
 
-	if s.onRefresh == nil {
-		slog.Debug("health check disabled: no refresh callback configured")
+	if s.onHealthCheck == nil {
+		slog.Debug("health check disabled: no health check callback configured")
 		return
 	}
 
@@ -166,15 +182,24 @@ func (s *Server) healthCheckLoop() {
 
 // checkPodHealth checks if any pods have changed and triggers a refresh if needed
 func (s *Server) checkPodHealth() {
-	// Get current pods from k8s
-	currentPods, err := s.onRefresh()
+	// Get current pods from k8s (quick, non-blocking check)
+	currentPods, err := s.onHealthCheck()
 	if err != nil {
 		slog.Debug("health check: failed to get current pods", "error", err)
 		return
 	}
 
+	// If no pods returned, might be a transient state (pod recreating)
+	// Don't take action yet - wait for next health check
+	if len(currentPods) == 0 {
+		slog.Debug("health check: no running pods found, will retry")
+		return
+	}
+
 	// Compare against cached pods
 	needsRefresh := false
+
+	// Check if any current pods differ from cached
 	for agentName, currentPod := range currentPods {
 		cachedPod, exists := s.manager.GetAgentPod(agentName)
 		if !exists {

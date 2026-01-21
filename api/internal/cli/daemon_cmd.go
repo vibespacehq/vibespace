@@ -138,17 +138,23 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		slog.Error("failed to save state", "error", err)
 	}
 
-	// Create refresh callback that re-discovers pods
+	// Create refresh callback that re-discovers pods (blocking, waits for pods to be ready)
 	refreshCallback := func() (map[string]string, error) {
 		return discoverVibespaceAgents(ctx, k8sClient, vibespaceID)
 	}
 
+	// Create quick health check callback (non-blocking, just snapshots current state)
+	healthCheckCallback := func() (map[string]string, error) {
+		return quickPodSnapshot(ctx, k8sClient, vibespaceID)
+	}
+
 	// Create and start server
 	server, err := daemon.NewServer(daemon.ServerConfig{
-		Vibespace: daemonVibespace,
-		Manager:   manager,
-		State:     state,
-		OnRefresh: refreshCallback,
+		Vibespace:     daemonVibespace,
+		Manager:       manager,
+		State:         state,
+		OnRefresh:     refreshCallback,
+		OnHealthCheck: healthCheckCallback,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
@@ -285,6 +291,36 @@ func discoverVibespaceAgents(ctx context.Context, k8sClient *k8s.Client, vibespa
 		return nil, lastErr
 	}
 	return nil, fmt.Errorf("no running pods found for vibespace %s after waiting", vibespaceID)
+}
+
+// quickPodSnapshot returns current running pods without waiting (non-blocking)
+// Used by health check to detect stale pods without blocking
+func quickPodSnapshot(ctx context.Context, k8sClient *k8s.Client, vibespaceID string) (map[string]string, error) {
+	pods, err := k8sClient.Clientset().CoreV1().Pods(k8s.VibespaceNamespace).List(ctx, listOptionsForVibespace(vibespaceID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	agents := make(map[string]string)
+	for _, pod := range pods.Items {
+		// Only include running pods
+		if pod.Status.Phase != "Running" {
+			continue
+		}
+
+		// Get claude-id from pod labels
+		claudeID := "1"
+		if labels := pod.Labels; labels != nil {
+			if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
+				claudeID = cid
+			}
+		}
+
+		agentName := fmt.Sprintf("claude-%s", claudeID)
+		agents[agentName] = pod.Name
+	}
+
+	return agents, nil
 }
 
 // scaleUpDeployments scales up any deployments with replicas=0
