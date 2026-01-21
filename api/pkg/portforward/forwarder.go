@@ -233,6 +233,13 @@ func (f *Forwarder) PodName() string {
 	return f.podName
 }
 
+// SetPodName updates the pod name (used when pod is replaced)
+func (f *Forwarder) SetPodName(podName string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.podName = podName
+}
+
 // IncrementReconnects increments the reconnect counter
 func (f *Forwarder) IncrementReconnects() int {
 	f.mu.Lock()

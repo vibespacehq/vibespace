@@ -19,12 +19,13 @@ type RefreshCallback func() (map[string]string, error)
 
 // Server is the daemon server that listens on a Unix socket
 type Server struct {
-	vibespace string
-	sockPath  string
-	listener  net.Listener
-	manager   *portforward.Manager
-	state     *DaemonState
-	onRefresh RefreshCallback
+	vibespace           string
+	sockPath            string
+	listener            net.Listener
+	manager             *portforward.Manager
+	state               *DaemonState
+	onRefresh           RefreshCallback
+	healthCheckInterval time.Duration
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -33,10 +34,11 @@ type Server struct {
 
 // ServerConfig contains configuration for creating a Server
 type ServerConfig struct {
-	Vibespace string
-	Manager   *portforward.Manager
-	State     *DaemonState
-	OnRefresh RefreshCallback
+	Vibespace           string
+	Manager             *portforward.Manager
+	State               *DaemonState
+	OnRefresh           RefreshCallback
+	HealthCheckInterval time.Duration // How often to check for stale pods (default: 30s)
 }
 
 // NewServer creates a new daemon server
@@ -54,16 +56,23 @@ func NewServer(cfg ServerConfig) (*Server, error) {
 	// Remove existing socket if present
 	os.Remove(paths.SockFile)
 
+	// Default health check interval
+	healthCheckInterval := cfg.HealthCheckInterval
+	if healthCheckInterval == 0 {
+		healthCheckInterval = 30 * time.Second
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Server{
-		vibespace: cfg.Vibespace,
-		sockPath:  paths.SockFile,
-		manager:   cfg.Manager,
-		state:     cfg.State,
-		onRefresh: cfg.OnRefresh,
-		ctx:       ctx,
-		cancel:    cancel,
+		vibespace:           cfg.Vibespace,
+		sockPath:            paths.SockFile,
+		manager:             cfg.Manager,
+		state:               cfg.State,
+		onRefresh:           cfg.OnRefresh,
+		healthCheckInterval: healthCheckInterval,
+		ctx:                 ctx,
+		cancel:              cancel,
 	}, nil
 }
 
@@ -83,8 +92,9 @@ func (s *Server) Start() error {
 
 	slog.Info("daemon server started", "socket", s.sockPath)
 
-	s.wg.Add(1)
+	s.wg.Add(2)
 	go s.acceptLoop()
+	go s.healthCheckLoop()
 
 	return nil
 }
@@ -127,6 +137,76 @@ func (s *Server) acceptLoop() {
 		s.wg.Add(1)
 		go s.handleConnection(conn)
 	}
+}
+
+// healthCheckLoop periodically checks if pods have changed and triggers a refresh
+func (s *Server) healthCheckLoop() {
+	defer s.wg.Done()
+
+	if s.onRefresh == nil {
+		slog.Debug("health check disabled: no refresh callback configured")
+		return
+	}
+
+	ticker := time.NewTicker(s.healthCheckInterval)
+	defer ticker.Stop()
+
+	slog.Info("health check started", "interval", s.healthCheckInterval)
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			slog.Debug("health check stopped")
+			return
+		case <-ticker.C:
+			s.checkPodHealth()
+		}
+	}
+}
+
+// checkPodHealth checks if any pods have changed and triggers a refresh if needed
+func (s *Server) checkPodHealth() {
+	// Get current pods from k8s
+	currentPods, err := s.onRefresh()
+	if err != nil {
+		slog.Debug("health check: failed to get current pods", "error", err)
+		return
+	}
+
+	// Compare against cached pods
+	needsRefresh := false
+	for agentName, currentPod := range currentPods {
+		cachedPod, exists := s.manager.GetAgentPod(agentName)
+		if !exists {
+			slog.Info("health check: new agent detected", "agent", agentName, "pod", currentPod)
+			needsRefresh = true
+			break
+		}
+		if cachedPod != currentPod {
+			slog.Info("health check: pod changed", "agent", agentName, "old_pod", cachedPod, "new_pod", currentPod)
+			needsRefresh = true
+			break
+		}
+	}
+
+	if !needsRefresh {
+		return
+	}
+
+	slog.Info("health check: triggering refresh due to pod changes")
+
+	// Update pod mappings
+	for agentName, podName := range currentPods {
+		s.manager.SetAgentPod(agentName, podName)
+		s.state.SetAgentPod(agentName, podName)
+	}
+
+	// Restart all forwards with new pod mappings
+	if err := s.manager.RestartAll(); err != nil {
+		slog.Error("health check: failed to restart forwards", "error", err)
+	}
+
+	s.state.Save()
 }
 
 // handleConnection handles a single client connection
