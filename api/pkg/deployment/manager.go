@@ -178,6 +178,14 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 	// Build environment variables
 	env := m.buildEnvironment(req.VibespaceID, req.ProjectName, req.ClaudeID, req.Env)
 
+	// Add credential sharing env var if enabled
+	if req.ShareCredentials {
+		env = append(env, corev1.EnvVar{
+			Name:  "VIBESPACE_SHARE_CREDENTIALS",
+			Value: "true",
+		})
+	}
+
 	// Build volumes and volume mounts (share the same PVC)
 	var volumes []corev1.Volume
 	var volumeMounts []corev1.VolumeMount
