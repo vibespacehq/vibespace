@@ -1,6 +1,11 @@
 # vibespace shell configuration
 
 # ============================================================================
+# Non-interactive shell guard (prevents banner on SSH commands like `ls`)
+# ============================================================================
+[[ $- != *i* ]] && return
+
+# ============================================================================
 # Brand Colors (true color)
 # ============================================================================
 # Teal:   #00ABAB → 38;2;0;171;171
@@ -71,24 +76,22 @@ info() {
 }
 
 # ============================================================================
-# Welcome Banner (shows on login shell only)
+# Welcome Banner
 # ============================================================================
-if shopt -q login_shell 2>/dev/null; then
-    echo ""
-    echo -e "${_C_PINK}"
-    cat ~/.banner.txt 2>/dev/null
-    echo -e "${_C_RESET}"
-    echo -e "  ${_C_GRAY}AI-Powered Development Environment${_C_RESET}"
-    echo ""
-    echo -e "  Vibespace: ${_C_ORANGE}${VIBESPACE_NAME:-unknown}${_C_RESET}"
-    echo -e "  Agent:     ${_C_TEAL}${VIBESPACE_AGENT:-claude-1}${_C_RESET}"
-    echo ""
-    echo -e "  ${_C_GRAY}Commands:${_C_RESET}"
-    echo -e "    ${_C_YELLOW}claude${_C_RESET}        Start Claude Code AI assistant"
-    echo -e "    ${_C_YELLOW}claude /login${_C_RESET} Authenticate with Anthropic"
-    echo -e "    ${_C_YELLOW}info${_C_RESET}          Show environment info"
-    echo ""
-fi
+echo ""
+echo -e "${_C_PINK}"
+cat ~/.banner.txt 2>/dev/null
+echo -e "${_C_RESET}"
+echo -e "  ${_C_GRAY}AI-Powered Development Environment${_C_RESET}"
+echo ""
+echo -e "  Vibespace: ${_C_ORANGE}${VIBESPACE_NAME:-unknown}${_C_RESET}"
+echo -e "  Agent:     ${_C_TEAL}${VIBESPACE_AGENT:-claude-1}${_C_RESET}"
+echo ""
+echo -e "  ${_C_GRAY}Commands:${_C_RESET}"
+echo -e "    ${_C_YELLOW}claude${_C_RESET}        Start Claude Code AI assistant"
+echo -e "    ${_C_YELLOW}claude /login${_C_RESET} Authenticate with Anthropic"
+echo -e "    ${_C_YELLOW}info${_C_RESET}          Show environment info"
+echo ""
 
 # ============================================================================
 # Start in /vibespace directory
