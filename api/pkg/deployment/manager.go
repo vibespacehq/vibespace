@@ -30,17 +30,18 @@ func NewDeploymentManager(k8sClient *k8s.Client) *DeploymentManager {
 func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDeploymentRequest) error {
 	deploymentName := fmt.Sprintf("vibespace-%s", req.VibespaceID)
 
-	// Build labels
+	// Build labels (claude-1 is always the first agent)
+	agentName := fmt.Sprintf("claude-%s", req.ClaudeID)
 	labels := map[string]string{
 		"app.kubernetes.io/name":       req.Name,
 		"app.kubernetes.io/managed-by": "vibespace",
 		"vibespace.dev/id":             req.VibespaceID,
-		"vibespace.dev/project-name":   req.ProjectName,
 		"vibespace.dev/claude-id":      req.ClaudeID,
+		"vibespace.dev/agent-name":     agentName,
 	}
 
 	// Build environment variables
-	env := m.buildEnvironment(req.VibespaceID, req.ProjectName, req.ClaudeID, req.Env)
+	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, req.ClaudeID, req.Env)
 
 	// Build volumes and volume mounts
 	volumes, volumeMounts := m.buildVolumesAndMounts(req.Persistent, req.PVCName)
@@ -170,13 +171,13 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 		"app.kubernetes.io/name":       req.Name,
 		"app.kubernetes.io/managed-by": "vibespace",
 		"vibespace.dev/id":             req.VibespaceID,
-		"vibespace.dev/project-name":   req.ProjectName,
 		"vibespace.dev/claude-id":      req.ClaudeID,
+		"vibespace.dev/agent-name":     req.AgentName,
 		"vibespace.dev/is-agent":       "true",
 	}
 
 	// Build environment variables
-	env := m.buildEnvironment(req.VibespaceID, req.ProjectName, req.ClaudeID, req.Env)
+	env := m.buildEnvironment(req.VibespaceID, req.Name, req.AgentName, req.ClaudeID, req.Env)
 
 	// Add credential sharing env var if enabled
 	if req.ShareCredentials {
@@ -393,11 +394,17 @@ func (m *DeploymentManager) ListAgentsForVibespace(ctx context.Context, vibespac
 			claudeID = cid
 		}
 
+		// Get agent name from label, fallback to claude-{id} for backward compatibility
+		agentName := fmt.Sprintf("claude-%s", claudeID)
+		if name, ok := deploy.Labels["vibespace.dev/agent-name"]; ok && name != "" {
+			agentName = name
+		}
+
 		status := deploymentStatusToString(&deploy)
 
 		agents = append(agents, AgentInfo{
 			ClaudeID:       claudeID,
-			AgentName:      fmt.Sprintf("claude-%s", claudeID),
+			AgentName:      agentName,
 			DeploymentName: deploy.Name,
 			Status:         status,
 		})
@@ -430,7 +437,7 @@ func (m *DeploymentManager) GetNextAgentID(ctx context.Context, vibespaceID stri
 // Helper functions
 
 // buildEnvironment creates environment variables for the vibespace
-func (m *DeploymentManager) buildEnvironment(vibespaceID, projectName, claudeID string, userEnv map[string]string) []corev1.EnvVar {
+func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentName, claudeID string, userEnv map[string]string) []corev1.EnvVar {
 	env := []corev1.EnvVar{}
 
 	// Add user-provided environment variables
@@ -447,8 +454,12 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, projectName, claudeID 
 		Value: vibespaceID,
 	})
 	env = append(env, corev1.EnvVar{
-		Name:  "VIBESPACE_PROJECT",
-		Value: projectName,
+		Name:  "VIBESPACE_NAME",
+		Value: vibspaceName,
+	})
+	env = append(env, corev1.EnvVar{
+		Name:  "VIBESPACE_AGENT",
+		Value: agentName,
 	})
 	env = append(env, corev1.EnvVar{
 		Name:  "VIBESPACE_CLAUDE_ID",

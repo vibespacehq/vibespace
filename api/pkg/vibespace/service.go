@@ -116,10 +116,23 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		return nil, fmt.Errorf("deployment manager is not initialized")
 	}
 
+	// Validate vibespace name format
+	if err := ValidateName(req.Name); err != nil {
+		return nil, fmt.Errorf("invalid vibespace name: %w", err)
+	}
+
 	slog.Info("creating vibespace",
 		"name", req.Name,
 		"github_repo", req.GithubRepo,
 		"persistent", req.Persistent)
+
+	// Check if a vibespace with this name already exists
+	existingVibespaces, _ := s.List(ctx)
+	for _, vs := range existingVibespaces {
+		if vs.Name == req.Name {
+			return nil, fmt.Errorf("vibespace '%s' already exists", req.Name)
+		}
+	}
 
 	// Ensure namespace exists
 	if err := s.k8sClient.EnsureNamespace(ctx); err != nil {
@@ -130,19 +143,8 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	id := uuid.New().String()[:8]
 	pvcName := fmt.Sprintf("vibespace-%s-pvc", id)
 
-	// Generate unique project name for DNS routing
-	existingVibespaces, _ := s.List(ctx)
-	existingNames := make([]string, 0, len(existingVibespaces))
-	for _, vs := range existingVibespaces {
-		if vs.ProjectName != "" {
-			existingNames = append(existingNames, vs.ProjectName)
-		}
-	}
-	projectName := generateUniqueProjectName(existingNames)
-
-	slog.Debug("generated vibespace id and project name",
+	slog.Debug("generated vibespace id",
 		"vibespace_id", id,
-		"project_name", projectName,
 		"pvc_name", pvcName)
 
 	// Resources must be provided by the CLI
@@ -191,14 +193,13 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 
 	slog.Info("creating vibespace with Deployment",
 		"vibespace_id", id,
-		"project_name", projectName,
+		"name", req.Name,
 		"image", image)
 
 	// Create Deployment
 	err = s.deploymentManager.CreateDeployment(ctx, &deployment.CreateDeploymentRequest{
 		VibespaceID: id,
 		Name:        req.Name,
-		ProjectName: projectName,
 		ClaudeID:    "1", // First Claude instance
 		Image:       image,
 		Resources: deployment.Resources{
@@ -216,18 +217,17 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	}
 
 	vibespace := &model.Vibespace{
-		ID:          id,
-		Name:        req.Name,
-		ProjectName: projectName,
-		Status:      "creating",
-		Resources:   *resources,
-		Persistent:  req.Persistent,
-		CreatedAt:   time.Now().Format(time.RFC3339),
+		ID:         id,
+		Name:       req.Name,
+		Status:     "creating",
+		Resources:  *resources,
+		Persistent: req.Persistent,
+		CreatedAt:  time.Now().Format(time.RFC3339),
 	}
 
 	slog.Info("vibespace created successfully",
 		"vibespace_id", id,
-		"project_name", projectName)
+		"name", req.Name)
 
 	return vibespace, nil
 }
@@ -435,7 +435,6 @@ func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
 
 	id := labels["vibespace.dev/id"]
 	name := labels["app.kubernetes.io/name"]
-	projectName := labels["vibespace.dev/project-name"]
 	createdAt := ""
 	if annotations != nil {
 		createdAt = annotations["vibespace.dev/created-at"]
@@ -447,13 +446,12 @@ func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
 	resources := extractResourcesFromDeployment(deploy)
 
 	return &model.Vibespace{
-		ID:          id,
-		Name:        name,
-		ProjectName: projectName,
-		Status:      status,
-		Resources:   resources,
-		Persistent:  true,
-		CreatedAt:   createdAt,
+		ID:         id,
+		Name:       name,
+		Status:     status,
+		Resources:  resources,
+		Persistent: true,
+		CreatedAt:  createdAt,
 	}
 }
 
@@ -530,31 +528,6 @@ func getVibespaceImage() string {
 	return image
 }
 
-// generateUniqueProjectName generates a unique project name not in existingNames
-func generateUniqueProjectName(existingNames []string) string {
-	adjectives := []string{"swift", "bright", "calm", "bold", "keen", "wise", "pure", "fair", "true", "warm"}
-	nouns := []string{"fox", "owl", "bear", "wolf", "hawk", "deer", "seal", "crow", "dove", "lynx"}
-
-	existingSet := make(map[string]bool)
-	for _, name := range existingNames {
-		existingSet[name] = true
-	}
-
-	// Try random combinations
-	for attempts := 0; attempts < 100; attempts++ {
-		adj := adjectives[time.Now().UnixNano()%int64(len(adjectives))]
-		noun := nouns[time.Now().UnixNano()%int64(len(nouns))]
-		name := fmt.Sprintf("%s-%s", adj, noun)
-		if !existingSet[name] {
-			return name
-		}
-		time.Sleep(time.Nanosecond)
-	}
-
-	// Fallback: use timestamp
-	return fmt.Sprintf("space-%d", time.Now().Unix())
-}
-
 // isValidGitURL validates a Git repository URL
 func isValidGitURL(url string) bool {
 	if len(url) < 10 {
@@ -571,6 +544,51 @@ func isValidGitURL(url string) bool {
 	return strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "git@")
 }
 
+// ValidateName checks if a name is valid (DNS-friendly: lowercase, alphanumeric, hyphens)
+// Returns an error describing the validation failure, or nil if valid
+func ValidateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("name cannot be empty")
+	}
+	if len(name) > 63 {
+		return fmt.Errorf("name cannot exceed 63 characters")
+	}
+	if len(name) < 2 {
+		return fmt.Errorf("name must be at least 2 characters")
+	}
+
+	// Must start with a letter
+	if name[0] < 'a' || name[0] > 'z' {
+		return fmt.Errorf("name must start with a lowercase letter")
+	}
+
+	// Must end with alphanumeric
+	last := name[len(name)-1]
+	if !((last >= 'a' && last <= 'z') || (last >= '0' && last <= '9')) {
+		return fmt.Errorf("name must end with a lowercase letter or number")
+	}
+
+	// Check each character
+	for i, c := range name {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			continue
+		}
+		if c == '-' {
+			// No consecutive hyphens
+			if i > 0 && name[i-1] == '-' {
+				return fmt.Errorf("name cannot contain consecutive hyphens")
+			}
+			continue
+		}
+		if c >= 'A' && c <= 'Z' {
+			return fmt.Errorf("name must be lowercase (found '%c')", c)
+		}
+		return fmt.Errorf("name can only contain lowercase letters, numbers, and hyphens (found '%c')", c)
+	}
+
+	return nil
+}
+
 // AgentInfo contains information about an agent
 type AgentInfo struct {
 	ClaudeID  string // "1", "2", etc.
@@ -580,13 +598,16 @@ type AgentInfo struct {
 
 // SpawnAgentOptions contains options for spawning an agent
 type SpawnAgentOptions struct {
+	// Name is an optional custom agent name (auto-generated if empty)
+	Name string
+
 	// ShareCredentials enables credential sharing via /vibespace/.vibespace
 	// When enabled, Claude config, git config, and SSH keys are shared across agents
 	ShareCredentials bool
 }
 
 // SpawnAgent creates a new Claude agent in a vibespace
-// Returns the agent name (e.g., "claude-2")
+// Returns the agent name (e.g., "claude-2" or custom name)
 func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAgentOptions) (string, error) {
 	if err := s.ensureClients(); err != nil {
 		return "", fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
@@ -607,13 +628,46 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		return "", fmt.Errorf("vibespace not found: %w", err)
 	}
 
-	// Get next available claude ID
-	nextID, err := s.deploymentManager.GetNextAgentID(ctx, vs.ID)
+	// Get existing agents for uniqueness check
+	existingAgents, err := s.ListAgents(ctx, vs.ID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get next agent ID: %w", err)
+		return "", fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	slog.Info("spawning agent", "vibespace_id", vs.ID, "name", vs.Name, "claude_id", nextID, "share_credentials", opts.ShareCredentials)
+	var agentName string
+	var claudeID string
+
+	if opts.Name != "" {
+		// Custom name provided - validate format
+		if err := ValidateName(opts.Name); err != nil {
+			return "", fmt.Errorf("invalid agent name: %w", err)
+		}
+
+		// Check uniqueness
+		for _, agent := range existingAgents {
+			if agent.AgentName == opts.Name {
+				return "", fmt.Errorf("agent '%s' already exists in this vibespace", opts.Name)
+			}
+		}
+
+		agentName = opts.Name
+		// Generate a unique claude ID for internal use
+		nextID, err := s.deploymentManager.GetNextAgentID(ctx, vs.ID)
+		if err != nil {
+			return "", fmt.Errorf("failed to get next agent ID: %w", err)
+		}
+		claudeID = nextID
+	} else {
+		// Auto-generate name from claude ID
+		nextID, err := s.deploymentManager.GetNextAgentID(ctx, vs.ID)
+		if err != nil {
+			return "", fmt.Errorf("failed to get next agent ID: %w", err)
+		}
+		claudeID = nextID
+		agentName = fmt.Sprintf("claude-%s", nextID)
+	}
+
+	slog.Info("spawning agent", "vibespace_id", vs.ID, "vibespace_name", vs.Name, "agent_name", agentName, "claude_id", claudeID, "share_credentials", opts.ShareCredentials)
 
 	// Get the image
 	image := getVibespaceImage()
@@ -625,11 +679,11 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 	}
 
 	err = s.deploymentManager.CreateAgentDeployment(ctx, &deployment.CreateAgentRequest{
-		VibespaceID:      vs.ID,
-		Name:             vs.Name,
-		ProjectName:      vs.ProjectName,
-		ClaudeID:         nextID,
-		Image:            image,
+		VibespaceID: vs.ID,
+		Name:        vs.Name,
+		AgentName:   agentName,
+		ClaudeID:    claudeID,
+		Image:       image,
 		Resources: deployment.Resources{
 			CPU:     vs.Resources.CPU,
 			Memory:  vs.Resources.Memory,
@@ -640,11 +694,10 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		ShareCredentials: opts.ShareCredentials,
 	})
 	if err != nil {
-		slog.Error("failed to spawn agent", "vibespace_id", vs.ID, "claude_id", nextID, "error", err)
+		slog.Error("failed to spawn agent", "vibespace_id", vs.ID, "agent_name", agentName, "error", err)
 		return "", fmt.Errorf("failed to spawn agent: %w", err)
 	}
 
-	agentName := fmt.Sprintf("claude-%s", nextID)
 	slog.Info("agent spawned successfully", "vibespace_id", vs.ID, "agent", agentName)
 
 	return agentName, nil

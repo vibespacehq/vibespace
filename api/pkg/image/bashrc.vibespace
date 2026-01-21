@@ -13,11 +13,11 @@ export HISTCONTROL=ignoreboth:erasedups
 # ============================================================================
 # Prompt
 # ============================================================================
-# Format: [project:claude-N] ~/path $
+# Format: [vibespace:agent] ~/path $
 _vs_prompt() {
-    local project="${VIBESPACE_PROJECT:-vibespace}"
-    local claude_id="${VIBESPACE_CLAUDE_ID:-1}"
-    PS1="\[\e[38;5;141m\][\[\e[38;5;214m\]${project}\[\e[38;5;245m\]:\[\e[38;5;117m\]claude-${claude_id}\[\e[38;5;141m\]]\[\e[0m\] \[\e[38;5;245m\]\w\[\e[0m\] \$ "
+    local vs_name="${VIBESPACE_NAME:-vibespace}"
+    local agent="${VIBESPACE_AGENT:-claude-1}"
+    PS1="\[\e[38;5;141m\][\[\e[38;5;214m\]${vs_name}\[\e[38;5;245m\]:\[\e[38;5;117m\]${agent}\[\e[38;5;141m\]]\[\e[0m\] \[\e[38;5;245m\]\w\[\e[0m\] \$ "
 }
 _vs_prompt
 
@@ -44,12 +44,11 @@ alias gc='git commit'
 # ============================================================================
 # Functions
 # ============================================================================
-# Quick project info
+# Quick vibespace info
 info() {
     echo ""
-    echo "  Project:   ${VIBESPACE_PROJECT:-unknown}"
-    echo "  Agent:     claude-${VIBESPACE_CLAUDE_ID:-1}"
-    echo "  Workspace: /vibespace"
+    echo "  Vibespace: ${VIBESPACE_NAME:-unknown}"
+    echo "  Agent:     ${VIBESPACE_AGENT:-claude-1}"
     if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
         echo "  Sharing:   credentials enabled"
     fi
@@ -60,9 +59,8 @@ info() {
 # Welcome (dynamic part - shows on login)
 # ============================================================================
 echo ""
-echo -e "  Project:   \e[38;5;214m${VIBESPACE_PROJECT:-unknown}\e[0m"
-echo -e "  Agent:     \e[38;5;117mclaude-${VIBESPACE_CLAUDE_ID:-1}\e[0m"
-echo -e "  Workspace: \e[38;5;245m/vibespace\e[0m"
+echo -e "  Vibespace: \e[38;5;214m${VIBESPACE_NAME:-unknown}\e[0m"
+echo -e "  Agent:     \e[38;5;117m${VIBESPACE_AGENT:-claude-1}\e[0m"
 echo ""
 echo "  Commands:"
 echo -e "    \e[38;5;156mclaude\e[0m        Start Claude Code AI assistant"
