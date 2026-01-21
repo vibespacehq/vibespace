@@ -21,88 +21,43 @@ type LayoutMode int
 const (
 	LayoutSplit LayoutMode = iota
 	LayoutFocus
+	LayoutChat // New unified chat view
 )
-
-// OutputBuffer stores agent output history
-type OutputBuffer struct {
-	lines      []OutputLine
-	maxLines   int
-	scrollPos  int
-	mu         sync.Mutex
-}
-
-// OutputLine represents a single line of output
-type OutputLine struct {
-	Text      string
-	Timestamp time.Time
-}
-
-// NewOutputBuffer creates a new output buffer
-func NewOutputBuffer(maxLines int) *OutputBuffer {
-	return &OutputBuffer{
-		lines:    make([]OutputLine, 0),
-		maxLines: maxLines,
-	}
-}
-
-// Add adds a line to the buffer
-func (b *OutputBuffer) Add(text string) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.lines = append(b.lines, OutputLine{
-		Text:      text,
-		Timestamp: time.Now(),
-	})
-
-	// Trim if exceeds max
-	if len(b.lines) > b.maxLines {
-		b.lines = b.lines[len(b.lines)-b.maxLines:]
-	}
-}
-
-// GetLines returns the last n lines
-func (b *OutputBuffer) GetLines(n int) []OutputLine {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if n > len(b.lines) {
-		n = len(b.lines)
-	}
-	return b.lines[len(b.lines)-n:]
-}
-
-// Len returns the number of lines
-func (b *OutputBuffer) Len() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return len(b.lines)
-}
 
 // Model is the main Bubble Tea model for the TUI
 type Model struct {
 	// Session
-	session *session.Session
-	isAdHoc bool
+	session     *session.Session
+	sessionName string // Name for persistence (can be empty for ad-hoc)
+	isAdHoc     bool
 
 	// Connections
 	agents     map[string]*AgentConn // "claude-1@projectA" → connection
 	agentOrder []string              // display order
 	agentMu    sync.RWMutex
 
+	// Agent states (thinking indicators, session IDs)
+	agentStates map[string]*AgentState
+
+	// Claude session management (--session-id vs --resume)
+	sessionManager *ClaudeSessionManager
+
 	// Daemon clients (one per vibespace)
 	daemons map[string]*daemon.Client
 
 	// UI components
 	input   textinput.Model
-	outputs map[string]*OutputBuffer
+	history *ChatHistory // Unified chat history
 	styles  Styles
 
+	// Persistence
+	historyStore *HistoryStore
+
 	// Layout
-	layout      LayoutMode
-	focusAgent  string
-	width       int
-	height      int
+	layout     LayoutMode
+	focusAgent string
+	width      int
+	height     int
 
 	// State
 	ctx        context.Context
@@ -111,6 +66,7 @@ type Model struct {
 	quitting   bool
 	err        error
 	statusMsg  string
+	tickCount  int // For animations
 
 	// Default vibespace for short commands
 	defaultVibespace string
@@ -134,16 +90,37 @@ func NewModel(sess *session.Session, isAdHoc bool) *Model {
 		defaultVS = sess.Vibespaces[0].Name
 	}
 
+	// Determine session name for persistence
+	sessionName := sess.Name
+	if sessionName == "" && isAdHoc {
+		// Generate a name from vibespace names
+		var vsNames []string
+		for _, vs := range sess.Vibespaces {
+			vsNames = append(vsNames, vs.Name)
+		}
+		sessionName = strings.Join(vsNames, "-")
+	}
+
+	// Try to create history store
+	historyStore, _ := NewHistoryStore()
+
+	// Create Claude session manager for --session-id vs --resume logic
+	sessionManager := NewClaudeSessionManager()
+
 	return &Model{
 		session:          sess,
+		sessionName:      sessionName,
 		isAdHoc:          isAdHoc,
 		agents:           make(map[string]*AgentConn),
 		agentOrder:       make([]string, 0),
+		agentStates:      make(map[string]*AgentState),
+		sessionManager:   sessionManager,
 		daemons:          make(map[string]*daemon.Client),
 		input:            ti,
-		outputs:          make(map[string]*OutputBuffer),
+		history:          NewChatHistory(1000),
+		historyStore:     historyStore,
 		styles:           NewStyles(),
-		layout:           LayoutSplit,
+		layout:           LayoutChat, // Default to unified chat view
 		ctx:              ctx,
 		cancel:           cancel,
 		defaultVibespace: defaultVS,
@@ -155,7 +132,28 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(
 		textinput.Blink,
 		m.initConnections(),
+		m.loadHistory(),
 	)
+}
+
+// loadHistory loads chat history from persistence
+func (m *Model) loadHistory() tea.Cmd {
+	return func() tea.Msg {
+		if m.historyStore == nil || m.sessionName == "" {
+			return nil
+		}
+
+		messages, err := m.historyStore.Load(m.sessionName)
+		if err != nil {
+			return nil // Silently ignore load errors
+		}
+
+		if len(messages) > 0 {
+			m.history.SetMessages(messages)
+		}
+
+		return nil
+	}
 }
 
 // initConnections starts connecting to all agents
@@ -274,8 +272,8 @@ func (m *Model) connectAgent(addr session.AgentAddress) error {
 		return fmt.Errorf("no active SSH forward for %s", addr.String())
 	}
 
-	// Create agent connection
-	conn := NewAgentConn(addr, sshPort)
+	// Create agent connection with shared session manager
+	conn := NewAgentConn(addr, sshPort, m.sessionManager)
 	if err := conn.Connect(); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
@@ -285,7 +283,7 @@ func (m *Model) connectAgent(addr session.AgentAddress) error {
 	key := addr.String()
 	m.agents[key] = conn
 	m.agentOrder = append(m.agentOrder, key)
-	m.outputs[key] = NewOutputBuffer(1000)
+	m.agentStates[key] = NewAgentState(addr)
 	m.agentMu.Unlock()
 
 	return nil
@@ -349,6 +347,40 @@ func (m *Model) UpdateSuggestions() {
 	m.agentMu.RUnlock()
 
 	m.input.SetSuggestions(suggestions)
+}
+
+// AddMessage adds a message to history and persists it
+func (m *Model) AddMessage(msg *Message) {
+	m.history.Add(msg)
+
+	// Persist to history store
+	if m.historyStore != nil && m.sessionName != "" {
+		go m.historyStore.Append(m.sessionName, msg)
+	}
+}
+
+// SetAgentThinking sets the thinking state for an agent
+func (m *Model) SetAgentThinking(agentKey string, thinking bool) {
+	m.agentMu.Lock()
+	defer m.agentMu.Unlock()
+
+	if state, ok := m.agentStates[agentKey]; ok {
+		state.SetThinking(thinking)
+	}
+}
+
+// GetThinkingAgents returns agents that are currently thinking
+func (m *Model) GetThinkingAgents() []*AgentState {
+	m.agentMu.RLock()
+	defer m.agentMu.RUnlock()
+
+	var thinking []*AgentState
+	for _, state := range m.agentStates {
+		if state.IsThinking {
+			thinking = append(thinking, state)
+		}
+	}
+	return thinking
 }
 
 // Close cleans up all connections

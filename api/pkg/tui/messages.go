@@ -4,10 +4,16 @@ import (
 	"vibespace/pkg/session"
 )
 
-// AgentOutputMsg is sent when an agent produces output
+// AgentOutputMsg is sent when an agent produces output (legacy, kept for compatibility)
 type AgentOutputMsg struct {
 	Address session.AgentAddress
 	Output  string
+}
+
+// RichMessageMsg is sent when an agent produces a rich message
+type RichMessageMsg struct {
+	AgentKey string
+	Message  *Message
 }
 
 // AgentConnectedMsg is sent when an agent connection is established
@@ -72,3 +78,38 @@ type TickMsg struct{}
 type FocusReturnMsg struct {
 	Address session.AgentAddress
 }
+
+// ThinkingStartMsg signals an agent has started thinking
+type ThinkingStartMsg struct {
+	AgentKey string
+}
+
+// ThinkingEndMsg signals an agent has finished thinking
+type ThinkingEndMsg struct {
+	AgentKey string
+}
+
+// ScrollMsg signals a scroll action
+type ScrollMsg struct {
+	Direction ScrollDirection
+	Amount    int // Number of lines
+}
+
+// ScrollDirection represents the direction to scroll
+type ScrollDirection int
+
+const (
+	ScrollUp ScrollDirection = iota
+	ScrollDown
+	ScrollTop
+	ScrollBottom
+)
+
+// HistoryLoadedMsg signals that history has been loaded from persistence
+type HistoryLoadedMsg struct {
+	Messages []*Message
+	Error    error
+}
+
+// HistoryClearedMsg signals that history has been cleared
+type HistoryClearedMsg struct{}

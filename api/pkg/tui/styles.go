@@ -14,6 +14,14 @@ var (
 	dimColor       = lipgloss.Color("#666666") // Gray
 	whiteColor     = lipgloss.Color("#FFFFFF")
 	blackColor     = lipgloss.Color("#000000")
+
+	// New colors for chat view
+	userColor      = lipgloss.Color("#00FF9F") // Green for user messages
+	toolColor      = lipgloss.Color("#FFB800") // Yellow for tool use
+	timestampColor = lipgloss.Color("#555555") // Darker gray for timestamps
+	codeBlockBg    = lipgloss.Color("#1a1a2e") // Dark blue background for code
+	codeBlockFg    = lipgloss.Color("#87CEEB") // Light blue text for code
+	thinkingColor  = lipgloss.Color("#FF6B9D") // Pink for thinking indicator
 )
 
 // Agent colors palette
@@ -48,6 +56,13 @@ type Styles struct {
 	Warning    lipgloss.Style
 	Error      lipgloss.Style
 	AgentLabel lipgloss.Style
+
+	// Chat view specific
+	UserLabel  lipgloss.Style // For [You → target] labels
+	ToolLabel  lipgloss.Style // For [agent: Tool] labels
+	Timestamp  lipgloss.Style // For subtle timestamps
+	CodeBlock  lipgloss.Style // For code block styling
+	Thinking   lipgloss.Style // For thinking indicator
 
 	// Input
 	Input       lipgloss.Style
@@ -118,6 +133,27 @@ func NewStyles() Styles {
 		AgentLabel: lipgloss.NewStyle().
 			Bold(true),
 
+		// Chat view specific
+		UserLabel: lipgloss.NewStyle().
+			Foreground(userColor).
+			Bold(true),
+
+		ToolLabel: lipgloss.NewStyle().
+			Foreground(toolColor).
+			Italic(true),
+
+		Timestamp: lipgloss.NewStyle().
+			Foreground(timestampColor),
+
+		CodeBlock: lipgloss.NewStyle().
+			Foreground(codeBlockFg).
+			Background(codeBlockBg).
+			Padding(0, 1),
+
+		Thinking: lipgloss.NewStyle().
+			Foreground(thinkingColor).
+			Italic(true),
+
 		// Input
 		Input: lipgloss.NewStyle().
 			Foreground(whiteColor),
@@ -145,4 +181,20 @@ func AgentLabelStyle(color lipgloss.Color) lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(color).
 		Bold(true)
+}
+
+// UserLabelWithTarget returns styled user label with target
+func UserLabelWithTarget(target string) string {
+	style := lipgloss.NewStyle().
+		Foreground(userColor).
+		Bold(true)
+	return style.Render("[You → " + target + "]")
+}
+
+// ThinkingIndicator returns a styled thinking indicator
+func ThinkingIndicator(dots string) string {
+	style := lipgloss.NewStyle().
+		Foreground(thinkingColor).
+		Italic(true)
+	return style.Render("(thinking" + dots + ")")
 }

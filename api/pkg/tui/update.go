@@ -18,19 +18,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle special keys, but let others pass through to text input
+		// Handle special keys
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			m.quitting = true
 			return m, tea.Quit
+
 		case tea.KeyEnter:
 			return m.handleInput()
+
 		case tea.KeyEsc:
 			if m.layout == LayoutFocus {
-				m.layout = LayoutSplit
+				m.layout = LayoutChat
 				m.focusAgent = ""
-				m.statusMsg = "Returned to split view"
+				m.statusMsg = "Returned to chat view"
 			}
+
+		// Scrolling keys
+		case tea.KeyUp:
+			m.history.ScrollUp(1)
+		case tea.KeyDown:
+			m.history.ScrollDown(1)
+		case tea.KeyPgUp:
+			m.history.ScrollUp(10)
+		case tea.KeyPgDown:
+			m.history.ScrollDown(10)
+		case tea.KeyEnd:
+			m.history.ScrollToBottom()
+		case tea.KeyHome:
+			m.history.ScrollToTop()
 		}
 		// Fall through to update text input below
 
@@ -50,29 +66,42 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Start listening to all agent outputs
 		cmds = append(cmds, m.listenToAgents())
+		// Start tick for animations
+		cmds = append(cmds, m.tick())
 
-	case AgentOutputMsg:
-		m.handleAgentOutput(msg)
+	case RichMessageMsg:
+		m.handleRichMessage(msg)
 
 	case AgentConnectedMsg:
 		m.statusMsg = fmt.Sprintf("Connected: %s", msg.Address.String())
+		m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s connected", msg.Address.String())))
 
 	case AgentDisconnectedMsg:
 		m.statusMsg = fmt.Sprintf("Disconnected: %s", msg.Address.String())
 		if msg.Error != nil {
 			m.statusMsg += fmt.Sprintf(" (%s)", msg.Error.Error())
 		}
+		// Clear thinking state
+		m.SetAgentThinking(msg.Address.String(), false)
+		m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s disconnected", msg.Address.String())))
 
 	case AgentErrorMsg:
 		m.statusMsg = fmt.Sprintf("Error from %s: %s", msg.Address.String(), msg.Error.Error())
 
 	case TickMsg:
-		// Periodic tick for updates
+		m.tickCount++
+		// Periodic tick for animations
 		cmds = append(cmds, m.tick())
 
 	case FocusReturnMsg:
 		// Returned from interactive focus mode
 		m.statusMsg = fmt.Sprintf("Returned from %s", msg.Address.String())
+
+	case ThinkingStartMsg:
+		m.SetAgentThinking(msg.AgentKey, true)
+
+	case ThinkingEndMsg:
+		m.SetAgentThinking(msg.AgentKey, false)
 	}
 
 	// Update text input
@@ -123,50 +152,73 @@ func (m *Model) executeAction(action Action) (tea.Model, tea.Cmd) {
 
 // executeSend sends a message to agents
 func (m *Model) executeSend(action SendAction) (tea.Model, tea.Cmd) {
-	m.agentMu.RLock()
-	defer m.agentMu.RUnlock()
-
 	sentTo := []string{}
 
+	// Determine target string for user message
+	var targetStr string
+	if len(action.Targets) == 1 && action.Targets[0].Agent == "all" {
+		targetStr = "all"
+	} else if len(action.Targets) == 1 {
+		targetStr = action.Targets[0].String()
+	} else {
+		var targetNames []string
+		for _, t := range action.Targets {
+			targetNames = append(targetNames, t.String())
+		}
+		targetStr = strings.Join(targetNames, ", ")
+	}
+
+	// Add user message to history
+	userMsg := NewUserMessage(targetStr, action.Message)
+	m.AddMessage(userMsg)
+
+	// Collect agents to send to (avoid holding lock during send)
+	type sendTarget struct {
+		key  string
+		conn *AgentConn
+	}
+	var targets []sendTarget
+
+	m.agentMu.RLock()
 	for _, target := range action.Targets {
 		if target.Agent == "all" {
 			// Broadcast to all agents (optionally filtered by vibespace)
 			for key, conn := range m.agents {
 				if target.Vibespace == "" || conn.address.Vibespace == target.Vibespace {
-					// Echo user message to output
-					if output, ok := m.outputs[key]; ok {
-						output.Add(fmt.Sprintf("> %s", action.Message))
-					}
-					if err := conn.SendAndReconnect(action.Message); err != nil {
-						m.statusMsg = fmt.Sprintf("Failed to send to %s: %s", key, err.Error())
-					} else {
-						sentTo = append(sentTo, key)
-					}
+					targets = append(targets, sendTarget{key: key, conn: conn})
 				}
 			}
 		} else {
 			// Send to specific agent
 			key := target.String()
-			conn, ok := m.agents[key]
-			if !ok {
-				m.statusMsg = fmt.Sprintf("Agent not found: %s", key)
-				continue
-			}
-			// Echo user message to output
-			if output, ok := m.outputs[key]; ok {
-				output.Add(fmt.Sprintf("> %s", action.Message))
-			}
-			if err := conn.SendAndReconnect(action.Message); err != nil {
-				m.statusMsg = fmt.Sprintf("Failed to send to %s: %s", key, err.Error())
+			if conn, ok := m.agents[key]; ok {
+				targets = append(targets, sendTarget{key: key, conn: conn})
 			} else {
-				sentTo = append(sentTo, key)
+				m.statusMsg = fmt.Sprintf("Agent not found: %s", key)
 			}
+		}
+	}
+	m.agentMu.RUnlock()
+
+	// Now send to each target (no lock held)
+	for _, t := range targets {
+		// Mark agent as thinking
+		m.SetAgentThinking(t.key, true)
+
+		if err := t.conn.SendAndReconnect(action.Message); err != nil {
+			m.statusMsg = fmt.Sprintf("Failed to send to %s: %s", t.key, err.Error())
+			m.SetAgentThinking(t.key, false)
+		} else {
+			sentTo = append(sentTo, t.key)
 		}
 	}
 
 	if len(sentTo) > 0 {
 		m.statusMsg = fmt.Sprintf("Sent to %s", strings.Join(sentTo, ", "))
 	}
+
+	// Scroll to bottom when sending
+	m.history.ScrollToBottom()
 
 	return m, nil
 }
@@ -220,10 +272,10 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			},
 		)
 
-	case "split":
-		m.layout = LayoutSplit
+	case "split", "chat":
+		m.layout = LayoutChat
 		m.focusAgent = ""
-		m.statusMsg = "Returned to split view"
+		m.statusMsg = "Returned to chat view"
 
 	case "ports":
 		m.statusMsg = m.listPorts()
@@ -268,6 +320,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 		if conn, ok := m.agents[key]; ok {
 			conn.Close()
 			delete(m.agents, key)
+			delete(m.agentStates, key)
 			// Remove from order
 			for i, k := range m.agentOrder {
 				if k == key {
@@ -276,21 +329,120 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.statusMsg = fmt.Sprintf("Removed %s", key)
+			m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s removed", key)))
 		} else {
 			m.statusMsg = fmt.Sprintf("Agent not found: %s", key)
 		}
 		m.agentMu.Unlock()
 
 	case "clear":
-		// Clear output for all agents
-		m.agentMu.Lock()
-		for _, output := range m.outputs {
-			output.mu.Lock()
-			output.lines = nil
-			output.mu.Unlock()
+		// Clear chat history
+		m.history.Clear()
+		// Also clear persisted history
+		if m.historyStore != nil && m.sessionName != "" {
+			go m.historyStore.Clear(m.sessionName)
 		}
-		m.agentMu.Unlock()
-		m.statusMsg = "Cleared all output"
+		m.statusMsg = "Cleared chat history"
+
+	case "scroll":
+		if len(cmd.Args) == 0 {
+			m.statusMsg = "Usage: /scroll <top|bottom>"
+			return m, nil
+		}
+		switch cmd.Args[0] {
+		case "top":
+			m.history.ScrollToTop()
+			m.statusMsg = "Scrolled to top"
+		case "bottom":
+			m.history.ScrollToBottom()
+			m.statusMsg = "Scrolled to bottom"
+		default:
+			m.statusMsg = "Usage: /scroll <top|bottom>"
+		}
+
+	case "session":
+		// /session @agent <action> [args]
+		// /session @agent new        - Start fresh Claude session
+		// /session @agent list       - List session history
+		// /session @agent resume <id> - Resume specific session
+		// /session @agent info       - Show current session info
+		if len(cmd.Args) < 2 {
+			m.statusMsg = "Usage: /session @agent <new|list|resume|info> [session-id]"
+			return m, nil
+		}
+
+		// Parse agent address (first arg should be @agent)
+		agentArg := cmd.Args[0]
+		if !strings.HasPrefix(agentArg, "@") {
+			m.statusMsg = "Usage: /session @agent <new|list|resume|info> [session-id]"
+			return m, nil
+		}
+		addr := session.ParseAgentAddress(agentArg[1:], m.defaultVibespace)
+		key := addr.String()
+
+		// Verify agent exists
+		m.agentMu.RLock()
+		_, exists := m.agents[key]
+		m.agentMu.RUnlock()
+		if !exists {
+			m.statusMsg = fmt.Sprintf("Agent not found: %s", key)
+			return m, nil
+		}
+
+		action := cmd.Args[1]
+		switch action {
+		case "new":
+			// Create new session for this agent
+			newID := m.sessionManager.NewSession(addr)
+			shortID := newID
+			if len(shortID) > 8 {
+				shortID = shortID[:8]
+			}
+			m.statusMsg = fmt.Sprintf("Started new session for %s: %s", key, shortID)
+			m.AddMessage(NewSystemMessage(fmt.Sprintf("New Claude session started for %s (ID: %s)", key, shortID)))
+
+		case "list":
+			// List sessions for this agent
+			sessions := m.sessionManager.ListSessions(addr)
+			currentID := m.sessionManager.GetCurrentSessionID(addr)
+			if len(sessions) == 0 {
+				m.statusMsg = fmt.Sprintf("No sessions for %s", key)
+			} else {
+				m.statusMsg = fmt.Sprintf("Sessions for %s:\n%s", key, FormatSessionList(sessions, currentID))
+			}
+
+		case "resume":
+			if len(cmd.Args) < 3 {
+				m.statusMsg = "Usage: /session @agent resume <session-id>"
+				return m, nil
+			}
+			sessionID := cmd.Args[2]
+			if err := m.sessionManager.ResumeSession(addr, sessionID); err != nil {
+				m.statusMsg = fmt.Sprintf("Failed to resume session: %s", err.Error())
+			} else {
+				m.statusMsg = fmt.Sprintf("Resumed session %s for %s", sessionID, key)
+				m.AddMessage(NewSystemMessage(fmt.Sprintf("Resumed Claude session %s for %s", sessionID, key)))
+			}
+
+		case "info":
+			// Show current session info
+			sess := m.sessionManager.GetCurrentSession(addr)
+			if sess == nil {
+				m.statusMsg = fmt.Sprintf("No active session for %s", key)
+			} else {
+				shortID := sess.ID
+				if len(shortID) > 8 {
+					shortID = shortID[:8]
+				}
+				m.statusMsg = fmt.Sprintf("Session for %s:\n  ID: %s\n  Messages: %d\n  Created: %s\n  Last used: %s",
+					key, shortID, sess.MessageCount,
+					sess.CreatedAt.Format("Jan 2 15:04"),
+					sess.LastUsedAt.Format("Jan 2 15:04"))
+			}
+
+		default:
+			m.statusMsg = "Usage: /session @agent <new|list|resume|info> [session-id]"
+		}
 
 	default:
 		m.statusMsg = fmt.Sprintf("Unknown command: /%s. Type /help for available commands.", cmd.Cmd)
@@ -314,6 +466,10 @@ func (m *Model) listAgents() string {
 		status := "connected"
 		if !conn.IsConnected() {
 			status = "disconnected"
+		}
+		// Check if thinking
+		if state, ok := m.agentStates[key]; ok && state.IsThinking {
+			status = "thinking"
 		}
 		parts = append(parts, fmt.Sprintf("%s (%s)", key, status))
 	}
@@ -360,16 +516,17 @@ func (m *Model) saveSession(name string) error {
 	return store.Save(m.session)
 }
 
-// handleAgentOutput processes output from an agent
-func (m *Model) handleAgentOutput(msg AgentOutputMsg) {
-	key := msg.Address.String()
+// handleRichMessage processes a rich message from an agent
+func (m *Model) handleRichMessage(msg RichMessageMsg) {
+	// Clear thinking state when we receive a message
+	m.SetAgentThinking(msg.AgentKey, false)
 
-	m.agentMu.RLock()
-	output, ok := m.outputs[key]
-	m.agentMu.RUnlock()
+	// Add the message to history
+	m.AddMessage(msg.Message)
 
-	if ok {
-		output.Add(msg.Output)
+	// Auto-scroll to bottom if we're already at the bottom
+	if m.history.IsAtBottom() {
+		m.history.ScrollToBottom()
 	}
 }
 
@@ -383,18 +540,14 @@ func (m *Model) listenToAgents() tea.Cmd {
 		}
 		m.agentMu.RUnlock()
 
-		// This is a simplified approach - in practice you'd want a more
-		// sophisticated multiplexing strategy
+		// Start a goroutine for each agent to listen for messages
 		for _, conn := range agents {
 			go func(c *AgentConn) {
-				for output := range c.OutputChan() {
-					// We can't send messages directly from here,
-					// so we buffer in the output and let the tick pick it up
-					m.agentMu.RLock()
-					if out, ok := m.outputs[c.Address().String()]; ok {
-						out.Add(output)
-					}
-					m.agentMu.RUnlock()
+				for msg := range c.OutputChan() {
+					// We can't send tea.Msg from here directly,
+					// so we add messages to the history and let the tick trigger rerender
+					m.SetAgentThinking(c.Address().String(), false)
+					m.AddMessage(msg)
 				}
 			}(conn)
 		}
