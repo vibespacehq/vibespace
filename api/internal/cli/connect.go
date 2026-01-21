@@ -20,8 +20,8 @@ func runConnect(vibespace string, args []string) error {
 
 	// Parse flags from args
 	browser := false
-	agent := ""           // Empty = shell only, specified = run claude
-	agentSpecified := false // Track if agent was explicitly specified
+	agent := "claude-1"     // Default to primary agent
+	runClaude := false      // Whether to run claude or just shell
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -30,14 +30,14 @@ func runConnect(vibespace string, args []string) error {
 		case "--agent", "-a":
 			if i+1 < len(args) {
 				agent = args[i+1]
-				agentSpecified = true
+				runClaude = true
 				i++
 			}
 		default:
 			// If arg doesn't start with -, treat as agent name
 			if len(args[i]) > 0 && args[i][0] != '-' {
 				agent = args[i]
-				agentSpecified = true
+				runClaude = true
 			}
 		}
 	}
@@ -45,11 +45,6 @@ func runConnect(vibespace string, args []string) error {
 	// Also check global flag if set
 	if connectBrowserFlag {
 		browser = true
-	}
-
-	// For browser, default to claude-1
-	if browser && agent == "" {
-		agent = "claude-1"
 	}
 
 	mode := "ssh"
@@ -60,7 +55,7 @@ func runConnect(vibespace string, args []string) error {
 
 	if browser {
 		// For browser access, use ttyd port
-		localPort, err := ensureDaemonRunningTTYD(ctx, vibespace, agent)
+		localPort, err := ensureDaemonRunningForAgent(ctx, vibespace, agent, "ttyd")
 		if err != nil {
 			slog.Error("failed to ensure daemon running for ttyd", "vibespace", vibespace, "agent", agent, "error", err)
 			return err
@@ -71,23 +66,16 @@ func runConnect(vibespace string, args []string) error {
 		return openBrowser(url)
 	}
 
-	// For CLI access, use SSH port
-	// All agents share the same PVC, so we can use any available agent for shell access
-	containerAgent := agent
-	if containerAgent == "" {
-		// No specific agent requested - use first available
-		containerAgent = "" // Will be resolved by ensureDaemonRunningSSH
-	}
-
-	localPort, err := ensureDaemonRunningSSHAnyAgent(ctx, vibespace, containerAgent)
+	// For CLI access, use SSH port (always use claude-1 by default)
+	localPort, err := ensureDaemonRunningForAgent(ctx, vibespace, agent, "ssh")
 	if err != nil {
-		slog.Error("failed to ensure daemon running for ssh", "vibespace", vibespace, "agent", containerAgent, "error", err)
+		slog.Error("failed to ensure daemon running for ssh", "vibespace", vibespace, "agent", agent, "error", err)
 		return err
 	}
 
-	// If agent was specified, run claude interactively
-	// If no agent specified, just give a shell
-	if agentSpecified {
+	// If agent was explicitly specified, run claude interactively
+	// Otherwise just give a shell (all agents share the same filesystem)
+	if runClaude {
 		printStep("Connecting to %s in %s...", agent, vibespace)
 		slog.Info("connect command completed", "vibespace", vibespace, "mode", "ssh", "agent", agent, "local_port", localPort)
 		// Use login shell to ensure PATH and environment are set up

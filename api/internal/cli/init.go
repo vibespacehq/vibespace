@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"vibespace/internal/platform"
+	"vibespace/pkg/daemon"
 
 	"github.com/spf13/cobra"
 )
@@ -73,6 +74,10 @@ func init() {
 func runInit(cmd *cobra.Command, args []string) error {
 	slog.Info("init command started")
 	ctx := context.Background()
+
+	// Clean up any stale daemon state from previous runs
+	daemon.StopAllDaemons()
+	slog.Debug("cleaned up daemon state")
 
 	// Determine vibespace home directory
 	home, err := os.UserHomeDir()
