@@ -133,6 +133,32 @@ Group agents from multiple vibespaces:
 - Quick ad-hoc sessions with `vibespace multi`
 - @agent@vibespace addressing
 
+### Claude Session Management
+Each agent maintains conversation continuity via Claude CLI sessions:
+- **First message**: Uses `--session-id <uuid>` to create a new Claude session
+- **Subsequent messages**: Uses `--resume <uuid>` to continue the conversation
+- **Per-agent tracking**: Each agent has its own session history
+- **Persistence**: Sessions stored in `~/.vibespace/claude_sessions.json`
+
+**TUI Commands**:
+```
+/session @agent new         # Start fresh Claude session
+/session @agent list        # Show session history
+/session @agent resume <id> # Switch to a different session
+/session @agent info        # Show current session details
+```
+
+**Architecture**:
+```
+ClaudeSessionManager (shared)
+├── claude-1@projectA
+│   ├── currentSessionID: "abc-123"
+│   ├── messageCount: 5  (0 = --session-id, >0 = --resume)
+│   └── history: ["abc-123", "def-456", ...]
+├── claude-2@projectA
+│   └── ...
+```
+
 ---
 
 ## External Dependencies
@@ -241,6 +267,9 @@ vibespace remote disconnect      # Disconnect
 │   └── <vibespace>.log          # Daemon logs (JSON, rotated)
 ├── sessions/                    # Multi-session state
 │   └── <session>.json
+├── history/                     # TUI chat history (JSONL format)
+│   └── <session>.jsonl
+├── claude_sessions.json         # Claude CLI session tracking per agent
 ├── remote/                      # Remote connection config
 │   ├── kubeconfig
 │   ├── wireguard.conf
@@ -336,6 +365,11 @@ tail -f ~/.vibespace/daemons/<name>.log  # Follow daemon logs (JSON format)
 - `api/internal/cli/suggestions.go` - Typo suggestions (Levenshtein distance)
 - `api/pkg/vibespace/service.go` - Core vibespace logic
 - `api/internal/platform/colima.go` - Colima VM management
+- `api/pkg/tui/model.go` - TUI main model (Bubble Tea)
+- `api/pkg/tui/agent.go` - Agent connections (SSH to Claude print mode)
+- `api/pkg/tui/session_manager.go` - Claude CLI session tracking (--session-id/--resume)
+- `api/pkg/tui/view.go` - TUI rendering (chat view, messages)
+- `api/pkg/tui/update.go` - TUI event handling and commands
 
 ---
 
@@ -358,6 +392,11 @@ tail -f ~/.vibespace/daemons/<name>.log  # Follow daemon logs (JSON format)
   - Request ID correlation for tracing operations
   - Subprocess output capture in debug mode
 - **Multi-session TUI**: Basic bubbletea UI with input parsing
+- **Claude session management**:
+  - Per-agent session tracking with `--session-id` (first msg) / `--resume` (subsequent)
+  - Session history persistence (`~/.vibespace/claude_sessions.json`)
+  - TUI commands: `/session @agent new|list|resume|info`
+  - Conversation continuity across TUI restarts
 - **CLI UX improvements** (clig.dev guidelines):
   - Global flags: --json, --plain, --quiet, --verbose, --no-color
   - JSON output for scripting (list, status, agents, forward list, session)
@@ -382,4 +421,4 @@ See `docs/CLI_SPEC.md` for the full target feature set.
 
 ---
 
-**Last Updated**: 2026-01-20
+**Last Updated**: 2026-01-22
