@@ -190,11 +190,3 @@ func UserLabelWithTarget(target string) string {
 		Bold(true)
 	return style.Render("[You → " + target + "]")
 }
-
-// ThinkingIndicator returns a styled thinking indicator
-func ThinkingIndicator(dots string) string {
-	style := lipgloss.NewStyle().
-		Foreground(thinkingColor).
-		Italic(true)
-	return style.Render("(thinking" + dots + ")")
-}
