@@ -57,6 +57,7 @@ type Model struct {
 
 	// Persistence
 	historyStore *HistoryStore
+	sessionStore *session.Store // For saving session changes
 
 	// Layout
 	layout         LayoutMode
@@ -114,6 +115,9 @@ func NewModel(sess *session.Session, isAdHoc bool) *Model {
 	// Try to create history store
 	historyStore, _ := NewHistoryStore()
 
+	// Try to create session store for saving session changes
+	sessionStore, _ := session.NewStore()
+
 	// Create Claude session manager for --session-id vs --resume logic
 	sessionManager := NewClaudeSessionManager()
 
@@ -129,6 +133,7 @@ func NewModel(sess *session.Session, isAdHoc bool) *Model {
 		input:            ti,
 		history:          NewChatHistory(1000),
 		historyStore:     historyStore,
+		sessionStore:     sessionStore,
 		styles:           NewStyles(),
 		layout:           LayoutChat, // Default to unified chat view
 		ctx:              ctx,
@@ -171,6 +176,11 @@ func (m *Model) loadHistory() tea.Cmd {
 func (m *Model) initConnections() tea.Cmd {
 	return func() tea.Msg {
 		var errors []error
+
+		// Handle empty session - this is valid, user will add vibespaces with /add
+		if len(m.session.Vibespaces) == 0 {
+			return InitCompleteMsg{Errors: nil}
+		}
 
 		// Ensure daemons are running for each vibespace
 		for _, vs := range m.session.Vibespaces {
@@ -327,6 +337,8 @@ var slashCommands = []struct {
 }{
 	{"help", ""},
 	{"list", ""},
+	{"add", "<vibespace>"},
+	{"remove", "<agent>"},
 	{"focus", "<agent>"},
 	{"clear", ""},
 	{"quit", ""},
@@ -482,7 +494,7 @@ func (m *Model) renderAllMessages() string {
 	}
 
 	if len(m.agentOrder) == 0 {
-		return leftPad + m.styles.Dim.Render("No agents connected. Waiting for connections...")
+		return leftPad + m.styles.Dim.Render("No agents connected. Use /add <vibespace> to add agents.")
 	}
 
 	messages := m.history.GetAll()

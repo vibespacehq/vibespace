@@ -14,6 +14,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Compile-time check that vibespace package is imported (used for GetSSHPrivateKeyPath)
+var _ = vibespace.GetSSHPrivateKeyPath
+
 // Update implements tea.Model
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -353,11 +356,10 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 
 	case "add":
 		if len(cmd.Args) == 0 {
-			m.statusMsg = "Usage: /add <vibespace> [agent]"
+			m.statusMsg = "Usage: /add <vibespace> or /add <agent>@<vibespace>"
 			return m, nil
 		}
-		// Adding vibespaces at runtime is complex, show message
-		m.statusMsg = "Adding vibespaces at runtime is not yet supported. Create a session with 'vibespace session add'"
+		return m.executeAddCommand(cmd.Args)
 
 	case "remove", "rm":
 		if len(cmd.Args) == 0 {
@@ -637,4 +639,116 @@ func (m *Model) tick() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return TickMsg{}
 	})
+}
+
+// executeAddCommand handles the /add command to add a vibespace or agent
+func (m *Model) executeAddCommand(args []string) (tea.Model, tea.Cmd) {
+	arg := args[0]
+
+	// Check if it's an agent@vibespace format or just a vibespace
+	var vsName string
+	var specificAgent string
+
+	if strings.Contains(arg, "@") {
+		addr := session.ParseAgentAddress(arg, "")
+		if addr.Vibespace == "" {
+			m.statusMsg = "Invalid format. Use: /add <vibespace> or /add <agent>@<vibespace>"
+			return m, nil
+		}
+		vsName = addr.Vibespace
+		specificAgent = addr.Agent
+	} else {
+		vsName = arg
+	}
+
+	// Ensure daemon is running - this will fail if vibespace doesn't exist or isn't running
+	if err := m.ensureDaemon(vsName); err != nil {
+		m.statusMsg = fmt.Sprintf("Failed to connect to %s: %s", vsName, err.Error())
+		return m, nil
+	}
+
+	// Get agents to connect
+	var agentsToConnect []string
+	if specificAgent != "" {
+		agentsToConnect = []string{specificAgent}
+	} else {
+		// Get all agents from daemon
+		client := m.daemons[vsName]
+		status, err := client.Status()
+		if err != nil {
+			m.statusMsg = fmt.Sprintf("Failed to get status for %s: %s", vsName, err.Error())
+			return m, nil
+		}
+		for _, a := range status.Agents {
+			agentsToConnect = append(agentsToConnect, a.Name)
+		}
+	}
+
+	// Connect to agents
+	connected := []string{}
+	for _, agentName := range agentsToConnect {
+		addr := session.AgentAddress{Agent: agentName, Vibespace: vsName}
+		key := addr.String()
+
+		// Skip if already connected
+		m.agentMu.RLock()
+		_, exists := m.agents[key]
+		m.agentMu.RUnlock()
+		if exists {
+			continue
+		}
+
+		if err := m.connectAgent(addr); err != nil {
+			m.AddMessage(NewSystemMessage(fmt.Sprintf("Failed to connect to %s: %s", key, err.Error())))
+			continue
+		}
+		connected = append(connected, key)
+	}
+
+	// Update session state
+	if specificAgent != "" {
+		m.session.AddVibespace(vsName, []string{specificAgent})
+	} else {
+		m.session.AddVibespace(vsName, nil)
+	}
+
+	// Set default vibespace if not set
+	if m.defaultVibespace == "" {
+		m.defaultVibespace = vsName
+	}
+
+	// Save session
+	if m.sessionStore != nil && m.session.Name != "" {
+		go m.sessionStore.Save(m.session)
+	}
+
+	// Start listening to new agents
+	if len(connected) > 0 {
+		m.AddMessage(NewSystemMessage(fmt.Sprintf("Added: %s", strings.Join(connected, ", "))))
+		m.statusMsg = fmt.Sprintf("Added %d agent(s) from %s", len(connected), vsName)
+
+		// Start listening to the new agents' output channels
+		m.agentMu.RLock()
+		for _, key := range connected {
+			if conn, ok := m.agents[key]; ok {
+				go func(c *AgentConn) {
+					for msg := range c.OutputChan() {
+						select {
+						case m.incomingMsgs <- RichMessageMsg{
+							AgentKey: c.Address().String(),
+							Message:  msg,
+						}:
+						case <-m.ctx.Done():
+							return
+						}
+					}
+				}(conn)
+			}
+		}
+		m.agentMu.RUnlock()
+	} else {
+		m.statusMsg = fmt.Sprintf("No new agents to add from %s", vsName)
+	}
+
+	return m, nil
 }

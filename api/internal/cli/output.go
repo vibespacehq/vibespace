@@ -246,6 +246,22 @@ func (o *Output) Bold(s string) string {
 	return o.bold(s)
 }
 
+// Dim returns the string in dim/faint color (if colors enabled)
+func (o *Output) Dim(s string) string {
+	if o.noColor || !o.stdoutTTY {
+		return s
+	}
+	return color.New(color.Faint).Sprint(s)
+}
+
+// Cyan returns the string in cyan color (if colors enabled)
+func (o *Output) Cyan(s string) string {
+	if o.noColor || !o.stdoutTTY {
+		return s
+	}
+	return color.CyanString(s)
+}
+
 // Package-level convenience functions that use the global Output instance
 
 // printStep prints a progress step message (uses global Output)
