@@ -103,6 +103,16 @@ MULTI-SESSION (Terminal UI for multiple agents)
   vibespace multi <vibespace>...     Start TUI with specified vibespaces
                                      Example: vibespace multi projectA projectB
 
+  # Non-interactive mode (for scripting, auto-detected when not TTY)
+  vibespace multi <vibespace>... [message]
+      --json                         JSON output (default for non-TTY)
+      --plain                        Plain text output
+      --stream                       Stream responses in real-time (plain mode)
+      --agent <name>                 Target specific agent (default: all)
+      --list-agents                  List connected agents and exit
+      --batch                        Batch mode: read JSONL from stdin
+      --timeout <duration>           Response timeout (default: 2m)
+
 REMOTE MODE (Client connecting to another machine's cluster)
 ──────────────────────────────────────────────────────────────────────────
   vibespace remote connect <host>    Connect to remote vibespace server
@@ -148,6 +158,13 @@ PORT MANAGEMENT (within TUI)
   /forward <port>[@vibespace]        Add a port forward
   /unforward <port>[@vibespace]      Remove a port forward
   /open <port>[@vibespace]           Open port in browser
+
+CLAUDE SESSION MANAGEMENT (conversation continuity)
+──────────────────────────────────────────────────────────────────────────
+  /session @<agent> new              Start fresh Claude session for agent
+  /session @<agent> list             Show session history for agent
+  /session @<agent> resume <id>      Switch to a different session
+  /session @<agent> info             Show current session details
 
 SESSION CONTROL
 ──────────────────────────────────────────────────────────────────────────
@@ -225,6 +242,12 @@ Debug logs are written to:
 │
 ├── sessions/                        # Multi-session state
 │   └── <session-name>.json          # Session config (vibespaces, agents, layout)
+│
+├── history/                         # TUI and non-TTY chat history (JSONL)
+│   └── <session>.jsonl              # Message history per session
+│
+├── claude_sessions.json             # Claude CLI session tracking per agent
+│                                    # (--session-id vs --resume logic)
 │
 ├── remote/                          # Remote mode config
 │   ├── kubeconfig                   # Remote cluster kubeconfig
@@ -475,6 +498,51 @@ vibespace multi myproject
 # > @claude-1 work on the auth module
 # > @claude-2 write tests for the API
 # > @all what's your status?
+```
+
+### Non-Interactive / Scripting Mode
+
+```bash
+# Auto-detection: non-TTY defaults to JSON output
+echo "list files in current directory" | vibespace multi myproject
+# {
+#   "session": "myproject",
+#   "request": {"target": "all", "message": "list files..."},
+#   "responses": [{"agent": "claude-1@myproject", ...}]
+# }
+
+# Explicit JSON mode with inline message
+vibespace multi myproject --json "what is your status?"
+
+# Plain text output
+vibespace multi myproject --plain "list files"
+# [claude-1@myproject]
+# Here are the files in the current directory:
+# - main.go
+# - go.mod
+
+# Streaming plain text (real-time output)
+vibespace multi myproject --plain --stream "work on the auth module"
+
+# Target specific agent
+vibespace multi myproject --json --agent claude-1 "run the tests"
+
+# List agents without sending a message
+vibespace multi myproject --list-agents
+# {
+#   "session": "myproject",
+#   "agents": ["claude-1@myproject", "claude-2@myproject"]
+# }
+
+# Batch mode: process multiple messages from JSONL
+cat <<EOF | vibespace multi myproject --batch
+{"target": "claude-1", "message": "check the logs"}
+{"target": "claude-2", "message": "run the tests"}
+{"target": "all", "message": "what is your status?"}
+EOF
+
+# Custom timeout for long-running tasks
+vibespace multi myproject --json --timeout 5m "run full test suite"
 ```
 
 ### Remote Access
