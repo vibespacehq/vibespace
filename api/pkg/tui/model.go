@@ -320,17 +320,42 @@ func (m *Model) GetAgentColor(addr string) lipgloss.Color {
 	return GetAgentColor(0)
 }
 
+// Available slash commands for autocomplete
+var slashCommands = []struct {
+	cmd  string
+	args string // hint for what comes after
+}{
+	{"help", ""},
+	{"list", ""},
+	{"focus", "<agent>"},
+	{"clear", ""},
+	{"quit", ""},
+	{"session", "@agent"},
+	{"ports", ""},
+	{"scroll", "<top|bottom>"},
+}
+
 // UpdateSuggestions updates the autocomplete suggestions based on current input
 func (m *Model) UpdateSuggestions() {
 	input := m.input.Value()
 
-	// Only show suggestions when typing @mention
-	if !strings.HasPrefix(input, "@") {
-		m.input.SetSuggestions(nil)
+	// Handle @mentions
+	if strings.HasPrefix(input, "@") {
+		m.updateMentionSuggestions(input)
 		return
 	}
 
-	// Get the partial mention (everything after @, before space)
+	// Handle /commands
+	if strings.HasPrefix(input, "/") {
+		m.updateCommandSuggestions(input)
+		return
+	}
+
+	m.input.SetSuggestions(nil)
+}
+
+// updateMentionSuggestions handles @agent autocomplete
+func (m *Model) updateMentionSuggestions(input string) {
 	mention := strings.TrimPrefix(input, "@")
 	if idx := strings.Index(mention, " "); idx != -1 {
 		// Already have a space, no more suggestions needed
@@ -338,8 +363,6 @@ func (m *Model) UpdateSuggestions() {
 		return
 	}
 
-	// Build suggestions list - must include @ prefix and trailing space
-	// because suggestions replace the entire input value
 	var suggestions []string
 
 	// Add "all" option
@@ -350,7 +373,6 @@ func (m *Model) UpdateSuggestions() {
 	// Add connected agents
 	m.agentMu.RLock()
 	for _, key := range m.agentOrder {
-		// key is "agent@vibespace"
 		if strings.HasPrefix(strings.ToLower(key), strings.ToLower(mention)) {
 			suggestions = append(suggestions, "@"+key+" ")
 		}
@@ -358,6 +380,65 @@ func (m *Model) UpdateSuggestions() {
 	m.agentMu.RUnlock()
 
 	m.input.SetSuggestions(suggestions)
+}
+
+// updateCommandSuggestions handles /command autocomplete
+func (m *Model) updateCommandSuggestions(input string) {
+	cmdPart := strings.TrimPrefix(input, "/")
+	parts := strings.SplitN(cmdPart, " ", 2)
+	cmd := parts[0]
+
+	// If no space yet, suggest commands
+	if len(parts) == 1 {
+		var suggestions []string
+		for _, c := range slashCommands {
+			if strings.HasPrefix(c.cmd, strings.ToLower(cmd)) {
+				if c.args != "" {
+					suggestions = append(suggestions, "/"+c.cmd+" ")
+				} else {
+					suggestions = append(suggestions, "/"+c.cmd)
+				}
+			}
+		}
+		m.input.SetSuggestions(suggestions)
+		return
+	}
+
+	// Command already typed, suggest args based on command
+	arg := parts[1]
+	switch cmd {
+	case "focus", "session":
+		// Suggest agents
+		var suggestions []string
+		m.agentMu.RLock()
+		for _, key := range m.agentOrder {
+			// For /focus, suggest agent names
+			// For /session, suggest @agent format
+			if cmd == "session" {
+				if strings.HasPrefix("@"+strings.ToLower(key), strings.ToLower(arg)) {
+					suggestions = append(suggestions, "/"+cmd+" @"+key+" ")
+				}
+			} else {
+				if strings.HasPrefix(strings.ToLower(key), strings.ToLower(arg)) {
+					suggestions = append(suggestions, "/"+cmd+" "+key)
+				}
+			}
+		}
+		m.agentMu.RUnlock()
+		m.input.SetSuggestions(suggestions)
+
+	case "scroll":
+		var suggestions []string
+		for _, opt := range []string{"top", "bottom"} {
+			if strings.HasPrefix(opt, strings.ToLower(arg)) {
+				suggestions = append(suggestions, "/scroll "+opt)
+			}
+		}
+		m.input.SetSuggestions(suggestions)
+
+	default:
+		m.input.SetSuggestions(nil)
+	}
 }
 
 // AddMessage adds a message to history and persists it
