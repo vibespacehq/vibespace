@@ -84,21 +84,36 @@ Commands: @agent message, @all broadcast, /add, /remove, /focus, /quit
 
 ```
 vibespace/
-├── api/                       # Go CLI and core packages
-│   ├── cmd/vibespace/         # CLI entry point
-│   ├── internal/
-│   │   ├── cli/               # Cobra commands + logging setup
-│   │   └── platform/          # Colima/k3s management
-│   └── pkg/
-│       ├── k8s/               # Kubernetes client
-│       ├── vibespace/         # Vibespace business logic
-│       ├── model/             # Data models
-│       ├── session/           # Multi-session management
-│       ├── tui/               # Terminal UI (bubbletea)
-│       └── image/             # Container image (ttyd + Claude Code)
-├── docs/
-│   └── CLI_SPEC.md            # Complete CLI specification
-└── archive/                   # Old code (Tauri app, HTTP server, etc.)
+├── go.mod                         # module github.com/yagizdagabak/vibespace
+├── cmd/vibespace/                 # CLI entry point
+├── internal/
+│   ├── cli/                       # Cobra commands + logging setup
+│   └── platform/                  # Colima/k3s management
+├── pkg/
+│   ├── daemon/                    # Port-forward daemon
+│   ├── deployment/                # K8s deployment logic
+│   ├── k8s/                       # Kubernetes client
+│   ├── model/                     # Data models
+│   ├── portforward/               # Port-forward utilities
+│   ├── session/                   # Multi-session management
+│   ├── tui/                       # Terminal UI (bubbletea)
+│   └── vibespace/                 # Vibespace business logic
+├── build/
+│   └── package/                   # Dockerfile + container scripts
+│       ├── Dockerfile
+│       ├── entrypoint.sh
+│       ├── supervisord.conf
+│       ├── bashrc.vibespace
+│       └── banner.txt
+├── deployments/
+│   └── kubernetes/registry/       # K8s manifests
+├── scripts/
+│   ├── build.sh                   # Build CLI binary
+│   └── install.sh                 # Build and install to /usr/local/bin
+├── configs/
+│   └── config.yaml                # Configuration template
+└── docs/
+    └── CLI_SPEC.md                # Complete CLI specification
 ```
 
 ---
@@ -183,22 +198,23 @@ ClaudeSessionManager (shared)
 ### Building
 
 ```bash
-cd api
 go build -o vibespace ./cmd/vibespace
+# or use the script:
+./scripts/build.sh
 ```
 
 ### Testing
 
 ```bash
-cd api && go test ./...
+go test ./...
 ```
 
 ### Installing Locally
 
 ```bash
-cd api
-go build -o vibespace ./cmd/vibespace
-sudo mv vibespace /usr/local/bin/
+./scripts/install.sh
+# or manually:
+go build -o vibespace ./cmd/vibespace && sudo mv vibespace /usr/local/bin/
 ```
 
 ---
@@ -357,19 +373,21 @@ tail -f ~/.vibespace/daemons/<name>.log  # Follow daemon logs (JSON format)
 ## Important Files
 
 - `docs/CLI_SPEC.md` - Complete CLI command reference
-- `api/internal/cli/` - All CLI command implementations
-- `api/internal/cli/logging.go` - Centralized logging configuration
-- `api/internal/cli/output.go` - Output handling (TTY, colors, JSON, verbosity)
-- `api/internal/cli/spinner.go` - Progress spinners for long operations
-- `api/internal/cli/json_types.go` - JSON output type definitions
-- `api/internal/cli/suggestions.go` - Typo suggestions (Levenshtein distance)
-- `api/pkg/vibespace/service.go` - Core vibespace logic
-- `api/internal/platform/colima.go` - Colima VM management
-- `api/pkg/tui/model.go` - TUI main model (Bubble Tea)
-- `api/pkg/tui/agent.go` - Agent connections (SSH to Claude print mode)
-- `api/pkg/tui/session_manager.go` - Claude CLI session tracking (--session-id/--resume)
-- `api/pkg/tui/view.go` - TUI rendering (chat view, messages)
-- `api/pkg/tui/update.go` - TUI event handling and commands
+- `internal/cli/` - All CLI command implementations
+- `internal/cli/logging.go` - Centralized logging configuration
+- `internal/cli/output.go` - Output handling (TTY, colors, JSON, verbosity)
+- `internal/cli/spinner.go` - Progress spinners for long operations
+- `internal/cli/json_types.go` - JSON output type definitions
+- `internal/cli/suggestions.go` - Typo suggestions (Levenshtein distance)
+- `pkg/vibespace/service.go` - Core vibespace logic
+- `internal/platform/colima.go` - Colima VM management
+- `pkg/tui/model.go` - TUI main model (Bubble Tea)
+- `pkg/tui/agent.go` - Agent connections (SSH to Claude print mode)
+- `pkg/tui/session_manager.go` - Claude CLI session tracking (--session-id/--resume)
+- `pkg/tui/view.go` - TUI rendering (chat view, messages)
+- `pkg/tui/update.go` - TUI event handling and commands
+- `build/package/Dockerfile` - Container image definition
+- `scripts/build.sh` - Build script
 
 ---
 
