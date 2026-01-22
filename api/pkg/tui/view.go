@@ -275,12 +275,22 @@ func (m *Model) renderFocusedAgent() string {
 // renderInput renders the input area
 func (m *Model) renderInput() string {
 	prompt := m.styles.Prompt.Render("> ")
-	input := m.input.View()
 
-	// Add target hint below input
+	// Render input with syntax coloring for commands and mentions
+	input := m.renderColoredInput()
+
+	// Add contextual hint below input
 	var hint string
 	inputVal := m.input.Value()
-	if strings.HasPrefix(inputVal, "@") {
+
+	if strings.HasPrefix(inputVal, "/") {
+		// Command hint
+		parts := strings.SplitN(inputVal[1:], " ", 2)
+		cmd := parts[0]
+		if cmd != "" {
+			hint = m.styles.Dim.Render("command")
+		}
+	} else if strings.HasPrefix(inputVal, "@") {
 		// Parse target from input
 		parts := strings.SplitN(inputVal[1:], " ", 2)
 		if len(parts) >= 1 && parts[0] != "" {
@@ -299,6 +309,139 @@ func (m *Model) renderInput() string {
 	}
 
 	return m.styles.InputArea.Width(m.width).Render(inputLine)
+}
+
+// renderColoredInput renders the input text with syntax coloring
+func (m *Model) renderColoredInput() string {
+	val := m.input.Value()
+	pos := m.input.Position()
+
+	// Style definitions
+	cmdStyle := lipgloss.NewStyle().Foreground(warningColor).Bold(true)
+	mentionStyle := lipgloss.NewStyle().Foreground(successColor).Bold(true)
+	cursorStyle := lipgloss.NewStyle().Reverse(true)
+	suggestionStyle := lipgloss.NewStyle().Foreground(dimColor)
+
+	// Get suggestion if any
+	suggestion := ""
+	if suggestions := m.input.AvailableSuggestions(); len(suggestions) > 0 {
+		// Show first suggestion as ghost text
+		if len(suggestions[0]) > len(val) {
+			suggestion = suggestions[0][len(val):]
+		}
+	}
+
+	// If empty, just show cursor and suggestion
+	if val == "" {
+		cursor := cursorStyle.Render(" ")
+		if suggestion != "" {
+			return cursor + suggestionStyle.Render(suggestion)
+		}
+		return cursor
+	}
+
+	// Build colored output
+	var result strings.Builder
+
+	if strings.HasPrefix(val, "/") {
+		// Color the command part
+		parts := strings.SplitN(val, " ", 2)
+		cmd := parts[0]
+
+		// Render command with color, handling cursor position
+		if pos <= len(cmd) {
+			// Cursor is in the command
+			before := cmd[:pos]
+			after := cmd[pos:]
+			if pos < len(cmd) {
+				result.WriteString(cmdStyle.Render(before))
+				result.WriteString(cursorStyle.Render(string(cmd[pos])))
+				result.WriteString(cmdStyle.Render(after[1:]))
+			} else {
+				result.WriteString(cmdStyle.Render(before))
+				if len(parts) > 1 {
+					result.WriteString(cursorStyle.Render(" "))
+					result.WriteString(parts[1][1:])
+				} else {
+					result.WriteString(cursorStyle.Render(" "))
+				}
+			}
+		} else {
+			// Cursor is after the command
+			result.WriteString(cmdStyle.Render(cmd))
+			if len(parts) > 1 {
+				rest := " " + parts[1]
+				restPos := pos - len(cmd)
+				if restPos < len(rest) {
+					result.WriteString(rest[:restPos])
+					result.WriteString(cursorStyle.Render(string(rest[restPos])))
+					result.WriteString(rest[restPos+1:])
+				} else {
+					result.WriteString(rest)
+					result.WriteString(cursorStyle.Render(" "))
+				}
+			} else {
+				result.WriteString(cursorStyle.Render(" "))
+			}
+		}
+	} else if strings.HasPrefix(val, "@") {
+		// Color the mention part
+		spaceIdx := strings.Index(val, " ")
+		var mention, rest string
+		if spaceIdx == -1 {
+			mention = val
+			rest = ""
+		} else {
+			mention = val[:spaceIdx]
+			rest = val[spaceIdx:]
+		}
+
+		if pos <= len(mention) {
+			// Cursor is in the mention
+			if pos < len(mention) {
+				result.WriteString(mentionStyle.Render(mention[:pos]))
+				result.WriteString(cursorStyle.Render(string(mention[pos])))
+				result.WriteString(mentionStyle.Render(mention[pos+1:]))
+			} else {
+				result.WriteString(mentionStyle.Render(mention))
+				if rest != "" {
+					result.WriteString(cursorStyle.Render(string(rest[0])))
+					result.WriteString(rest[1:])
+				} else {
+					result.WriteString(cursorStyle.Render(" "))
+				}
+			}
+			result.WriteString(rest)
+		} else {
+			result.WriteString(mentionStyle.Render(mention))
+			restPos := pos - len(mention)
+			if restPos < len(rest) {
+				result.WriteString(rest[:restPos])
+				result.WriteString(cursorStyle.Render(string(rest[restPos])))
+				result.WriteString(rest[restPos+1:])
+			} else {
+				result.WriteString(rest)
+				result.WriteString(cursorStyle.Render(" "))
+			}
+		}
+	} else {
+		// Regular text
+		if pos < len(val) {
+			result.WriteString(val[:pos])
+			result.WriteString(cursorStyle.Render(string(val[pos])))
+			result.WriteString(val[pos+1:])
+		} else {
+			result.WriteString(val)
+			result.WriteString(cursorStyle.Render(" "))
+		}
+	}
+
+	// Add ghost suggestion
+	if suggestion != "" {
+		result.WriteString(suggestionStyle.Render(suggestion))
+	}
+
+	return result.String()
 }
 
 // renderHelp renders the help text in a compact multi-line format for the status area

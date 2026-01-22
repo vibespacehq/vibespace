@@ -312,7 +312,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				"-o", "LogLevel=ERROR",
 				"-t",
 				"user@localhost",
-				"bash", "-l", "-c", claudeCmd,
+				fmt.Sprintf("bash -l -c '%s'", claudeCmd), // Single arg with proper quoting
 			),
 			func(err error) tea.Msg {
 				if err != nil {
