@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"vibespace/pkg/session"
+
+	"github.com/google/uuid"
 )
 
 // ClaudeSession represents a single Claude CLI session for an agent
@@ -63,7 +65,7 @@ func (m *ClaudeSessionManager) GetOrCreateSession(addr session.AgentAddress) (st
 
 	if !exists {
 		// First time seeing this agent - create new state and session
-		sessionID := generateSessionID()
+		sessionID := uuid.New().String()
 		state = &AgentSessionState{
 			AgentAddress:     key,
 			CurrentSessionID: sessionID,
@@ -83,7 +85,7 @@ func (m *ClaudeSessionManager) GetOrCreateSession(addr session.AgentAddress) (st
 	currentSession := m.findSession(state, state.CurrentSessionID)
 	if currentSession == nil {
 		// Current session not found (shouldn't happen) - create new one
-		sessionID := generateSessionID()
+		sessionID := uuid.New().String()
 		state.CurrentSessionID = sessionID
 		state.Sessions = append([]ClaudeSession{{
 			ID:           sessionID,
@@ -145,7 +147,7 @@ func (m *ClaudeSessionManager) NewSession(addr session.AgentAddress) string {
 	key := addr.String()
 	state, exists := m.agents[key]
 
-	sessionID := generateSessionID()
+	sessionID := uuid.New().String()
 	newSession := ClaudeSession{
 		ID:           sessionID,
 		CreatedAt:    time.Now(),

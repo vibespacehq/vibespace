@@ -126,13 +126,8 @@ type AgentState struct {
 func NewAgentState(addr session.AgentAddress) *AgentState {
 	return &AgentState{
 		Address:   addr,
-		SessionID: generateSessionID(),
+		SessionID: uuid.New().String(),
 	}
-}
-
-// generateSessionID generates a valid UUID v4 for session continuity
-func generateSessionID() string {
-	return uuid.New().String()
 }
 
 // SetThinking sets the agent to thinking state
