@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/internal/platform"
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
@@ -15,12 +16,6 @@ import (
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
-// Common error messages
-const (
-	errClusterNotInitialized = "cluster not initialized. Run 'vibespace init' first"
-	errClusterNotRunning     = "cluster is not running. Run 'vibespace init' to start it"
-	errClusterUnreachable    = "cannot connect to cluster. Check if cluster is running with 'vibespace status'"
-)
 
 // checkClusterInitialized checks if the cluster has been initialized (kubeconfig exists)
 func checkClusterInitialized() error {
@@ -31,7 +26,7 @@ func checkClusterInitialized() error {
 
 	kubeconfig := filepath.Join(home, ".kube", "config")
 	if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {
-		return fmt.Errorf(errClusterNotInitialized)
+		return fmt.Errorf("run 'vibespace init' first: %w", vserrors.ErrClusterNotInitialized)
 	}
 
 	return nil
@@ -51,12 +46,12 @@ func checkClusterRunning() error {
 	p := platform.Detect()
 	manager, err := platform.NewClusterManager(p, vibespaceHome)
 	if err != nil {
-		return fmt.Errorf(errClusterNotRunning)
+		return fmt.Errorf("run 'vibespace init' to start it: %w", vserrors.ErrClusterNotRunning)
 	}
 
 	running, err := manager.IsRunning()
 	if err != nil || !running {
-		return fmt.Errorf(errClusterNotRunning)
+		return fmt.Errorf("run 'vibespace init' to start it: %w", vserrors.ErrClusterNotRunning)
 	}
 
 	return nil
@@ -82,7 +77,7 @@ func getVibespaceServiceWithCheck() (*vibespace.Service, error) {
 	// Create k8s client
 	k8sClient, err := k8s.NewClient()
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errClusterUnreachable, err)
+		return nil, fmt.Errorf("check if cluster is running with 'vibespace status': %w", vserrors.ErrClusterUnreachable)
 	}
 
 	// Create vibespace service

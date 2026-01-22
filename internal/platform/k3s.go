@@ -17,6 +17,9 @@ type K3sManager struct {
 	binDir        string
 }
 
+// Compile-time interface satisfaction check
+var _ ClusterManager = (*K3sManager)(nil)
+
 // NewK3sManager creates a new k3s cluster manager
 func NewK3sManager(p Platform, vibespaceHome string) *K3sManager {
 	return &K3sManager{

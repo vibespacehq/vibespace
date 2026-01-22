@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yagizdagabak/vibespace/pkg/deployment"
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
 	"github.com/yagizdagabak/vibespace/pkg/model"
 
@@ -80,11 +81,11 @@ func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
 // Get returns a vibespace by name or ID
 func (s *Service) Get(ctx context.Context, nameOrID string) (*model.Vibespace, error) {
 	if err := s.ensureClients(); err != nil {
-		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		return nil, fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
 
 	if s.deploymentManager == nil {
-		return nil, fmt.Errorf("deployment manager is not initialized")
+		return nil, vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	slog.Info("getting vibespace", "vibespace_id", nameOrID)
@@ -96,7 +97,7 @@ func (s *Service) Get(ctx context.Context, nameOrID string) (*model.Vibespace, e
 		deploy, err = s.deploymentManager.GetDeployment(ctx, nameOrID)
 		if err != nil {
 			slog.Warn("vibespace not found", "vibespace_id", nameOrID, "error", err)
-			return nil, fmt.Errorf("vibespace not found: %w", err)
+			return nil, fmt.Errorf("%s: %w", nameOrID, vserrors.ErrVibespaceNotFound)
 		}
 	}
 
@@ -109,11 +110,11 @@ func (s *Service) Get(ctx context.Context, nameOrID string) (*model.Vibespace, e
 // Create creates a new vibespace
 func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest) (*model.Vibespace, error) {
 	if err := s.ensureClients(); err != nil {
-		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		return nil, fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
 
 	if s.deploymentManager == nil {
-		return nil, fmt.Errorf("deployment manager is not initialized")
+		return nil, vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	// Validate vibespace name format
@@ -130,7 +131,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 	existingVibespaces, _ := s.List(ctx)
 	for _, vs := range existingVibespaces {
 		if vs.Name == req.Name {
-			return nil, fmt.Errorf("vibespace '%s' already exists", req.Name)
+			return nil, fmt.Errorf("'%s': %w", req.Name, vserrors.ErrVibespaceExists)
 		}
 	}
 
@@ -242,11 +243,11 @@ type DeleteOptions struct {
 // Delete deletes a vibespace by name or ID
 func (s *Service) Delete(ctx context.Context, nameOrID string, opts *DeleteOptions) error {
 	if err := s.ensureClients(); err != nil {
-		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
 
 	if s.deploymentManager == nil {
-		return fmt.Errorf("deployment manager is not initialized")
+		return vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	if opts == nil {
@@ -327,11 +328,11 @@ func (s *Service) deleteSecret(ctx context.Context, name string) error {
 // Start starts a stopped vibespace
 func (s *Service) Start(ctx context.Context, nameOrID string) error {
 	if err := s.ensureClients(); err != nil {
-		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
 
 	if s.deploymentManager == nil {
-		return fmt.Errorf("deployment manager is not initialized")
+		return vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	// Resolve name to internal ID
@@ -356,11 +357,11 @@ func (s *Service) Start(ctx context.Context, nameOrID string) error {
 // Stop stops a running vibespace
 func (s *Service) Stop(ctx context.Context, nameOrID string) error {
 	if err := s.ensureClients(); err != nil {
-		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
 
 	if s.deploymentManager == nil {
-		return fmt.Errorf("deployment manager is not initialized")
+		return vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	// Resolve name to internal ID
@@ -611,11 +612,11 @@ type SpawnAgentOptions struct {
 // Returns the agent name (e.g., "claude-2" or custom name)
 func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAgentOptions) (string, error) {
 	if err := s.ensureClients(); err != nil {
-		return "", fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		return "", fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
 
 	if s.deploymentManager == nil {
-		return "", fmt.Errorf("deployment manager is not initialized")
+		return "", vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	// Default options
@@ -708,11 +709,11 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 // Cannot kill claude-1 (the main agent)
 func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentID string) error {
 	if err := s.ensureClients(); err != nil {
-		return fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
 
 	if s.deploymentManager == nil {
-		return fmt.Errorf("deployment manager is not initialized")
+		return vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	// Parse agent name to get claude ID
@@ -748,11 +749,11 @@ func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentID string
 // ListAgents returns all agents in a vibespace
 func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo, error) {
 	if err := s.ensureClients(); err != nil {
-		return nil, fmt.Errorf("kubernetes is not available - please install and start Kubernetes first")
+		return nil, fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
 
 	if s.deploymentManager == nil {
-		return nil, fmt.Errorf("deployment manager is not initialized")
+		return nil, vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	// Get the vibespace
