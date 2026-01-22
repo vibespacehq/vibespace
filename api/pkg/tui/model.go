@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/wordwrap"
 	"golang.org/x/term"
 )
 
@@ -76,6 +77,9 @@ type Model struct {
 
 	// Default vibespace for short commands
 	defaultVibespace string
+
+	// Channel for receiving messages from agent goroutines (proper Bubble Tea pattern)
+	incomingMsgs chan RichMessageMsg
 }
 
 // NewModel creates a new TUI model
@@ -130,6 +134,7 @@ func NewModel(sess *session.Session, isAdHoc bool) *Model {
 		ctx:              ctx,
 		cancel:           cancel,
 		defaultVibespace: defaultVS,
+		incomingMsgs:     make(chan RichMessageMsg, 100), // Buffered channel for agent messages
 	}
 }
 
@@ -388,28 +393,46 @@ func (m *Model) renderAllMessages() string {
 	m.agentMu.RLock()
 	defer m.agentMu.RUnlock()
 
+	const leftPad = "  "  // Left padding for all content
+	const rightPad = 4    // Right margin
+	wrapWidth := m.width - len(leftPad) - rightPad
+	if wrapWidth < 40 {
+		wrapWidth = 40
+	}
+
 	if len(m.agentOrder) == 0 {
-		return m.styles.Dim.Render("No agents connected. Waiting for connections...")
+		return leftPad + m.styles.Dim.Render("No agents connected. Waiting for connections...")
 	}
 
 	messages := m.history.GetAll()
 	if len(messages) == 0 {
-		return m.styles.Dim.Render("(no messages yet - type @all <message> to send to all agents)")
+		return leftPad + m.styles.Dim.Render("(no messages yet - type @all <message> to send to all agents)")
 	}
 
 	var lines []string
 
-	// Render each message
-	for _, msg := range messages {
+	// Render each message with padding and word wrapping
+	for i, msg := range messages {
 		rendered := m.renderMessageForViewport(msg)
-		lines = append(lines, rendered)
+		// Word wrap the rendered message
+		wrapped := wordwrap.String(rendered, wrapWidth)
+		// Add left padding to each line of the message
+		msgLines := strings.Split(wrapped, "\n")
+		for _, line := range msgLines {
+			lines = append(lines, leftPad+line)
+		}
+		// Add bottom spacing between messages (empty line)
+		if i < len(messages)-1 {
+			lines = append(lines, "")
+		}
 	}
 
 	// Add thinking indicators for agents that are thinking
 	for _, state := range m.agentStates {
 		if state.IsThinking {
+			lines = append(lines, "") // Space before thinking
 			line := m.renderThinkingForViewport(state)
-			lines = append(lines, line)
+			lines = append(lines, leftPad+line)
 		}
 	}
 

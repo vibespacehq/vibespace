@@ -301,29 +301,43 @@ func (m *Model) renderInput() string {
 	return m.styles.InputArea.Width(m.width).Render(inputLine)
 }
 
-// renderHelp renders the help text
+// renderHelp renders the help text in a compact multi-line format for the status area
 func (m *Model) renderHelp() string {
-	help := []struct {
-		key  string
-		desc string
-	}{
-		{"@agent msg", "send to agent"},
-		{"@all msg", "broadcast"},
-		{"/help", "show help"},
-		{"/list", "list agents"},
-		{"/focus agent", "focus view"},
-		{"/session @agent new|list|resume|info", "manage Claude sessions"},
-		{"/clear", "clear history"},
-		{"/quit", "exit"},
-	}
+	// Use different colors for different categories
+	msgStyle := lipgloss.NewStyle().Foreground(successColor).Bold(true)
+	cmdStyle := lipgloss.NewStyle().Foreground(warningColor).Bold(true)
+	sessionStyle := lipgloss.NewStyle().Foreground(secondaryColor).Bold(true)
+	descStyle := m.styles.HelpDesc
 
-	var parts []string
-	for _, h := range help {
-		parts = append(parts, fmt.Sprintf("%s %s",
-			m.styles.HelpKey.Render(h.key),
-			m.styles.HelpDesc.Render(h.desc),
-		))
-	}
+	// Line 1: Messaging
+	line1 := fmt.Sprintf("%s %s  %s %s",
+		msgStyle.Render("@agent <msg>"),
+		descStyle.Render("send to agent"),
+		msgStyle.Render("@all <msg>"),
+		descStyle.Render("broadcast to all"),
+	)
 
-	return strings.Join(parts, "  ")
+	// Line 2: Commands
+	line2 := fmt.Sprintf("%s %s  %s %s  %s %s",
+		cmdStyle.Render("/list"),
+		descStyle.Render("show agents"),
+		cmdStyle.Render("/clear"),
+		descStyle.Render("clear history"),
+		cmdStyle.Render("/quit"),
+		descStyle.Render("exit"),
+	)
+
+	// Line 3: Focus mode
+	line3 := fmt.Sprintf("%s %s",
+		cmdStyle.Render("/focus <agent>"),
+		descStyle.Render("open interactive Claude (resumes session, exit with /exit to return)"),
+	)
+
+	// Line 4: Session management
+	line4 := fmt.Sprintf("%s %s",
+		sessionStyle.Render("/session @agent"),
+		descStyle.Render("new | list | resume <id> | info"),
+	)
+
+	return fmt.Sprintf("%s\n%s\n%s\n%s", line1, line2, line3, line4)
 }
