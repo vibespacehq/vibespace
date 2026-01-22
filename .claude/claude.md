@@ -391,7 +391,21 @@ tail -f ~/.vibespace/daemons/<name>.log  # Follow daemon logs (JSON format)
   - Log rotation via lumberjack (10MB max, 3 backups, 7 days retention)
   - Request ID correlation for tracing operations
   - Subprocess output capture in debug mode
-- **Multi-session TUI**: Basic bubbletea UI with input parsing
+- **Multi-session TUI**: Bubbletea UI with viewport scrolling, syntax highlighting
+  - Viewport component for proper scrolling (input stays fixed)
+  - Syntax highlighting for code blocks (chroma library, monokai theme)
+  - Improved tool display with colored icons
+  - Thinking indicator (braille spinner, agent-colored)
+- **Non-interactive multi-session mode** (scripting support):
+  - Auto-detects non-TTY and switches to JSON output
+  - `--json` flag for explicit JSON output
+  - `--plain` flag for structured plain text output
+  - `--stream` flag for real-time streaming in plain text mode
+  - `--list-agents` flag to discover agents without sending a message
+  - `--batch` flag for JSONL batch processing from stdin
+  - `--agent` flag to target specific agent
+  - `--timeout` flag for response timeout
+  - Session history persisted for both TUI and non-TTY modes
 - **Claude session management**:
   - Per-agent session tracking with `--session-id` (first msg) / `--resume` (subsequent)
   - Session history persistence (`~/.vibespace/claude_sessions.json`)
@@ -403,6 +417,7 @@ tail -f ~/.vibespace/daemons/<name>.log  # Follow daemon logs (JSON format)
   - Spinners for long operations (init, create, delete, stop)
   - Typo suggestions for mistyped commands
   - TTY detection (disables colors when piping, refuses prompts without TTY)
+  - TTY guard in tui.Run() prevents crashes in non-interactive contexts
   - Double Ctrl-C handling in daemon (graceful then force quit)
   - Examples in all command help text
 
