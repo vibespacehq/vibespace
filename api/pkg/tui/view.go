@@ -22,23 +22,20 @@ func (m *Model) View() string {
 		return m.renderLoading()
 	}
 
-	var sections []string
+	// Simple layout like official example: header + viewport + input + status
+	// The viewport internally handles padding to its set Height
+	header := m.renderHeader()
+	input := m.renderInput()
 
-	// Header
-	sections = append(sections, m.renderHeader())
-
-	// Main content area
-	sections = append(sections, m.renderContent())
-
-	// Input area
-	sections = append(sections, m.renderInput())
-
-	// Status bar
+	var status string
 	if m.statusMsg != "" {
-		sections = append(sections, m.styles.StatusBar.Render(m.statusMsg))
+		status = m.styles.StatusBar.Render(m.statusMsg)
+	} else {
+		status = " " // Keep consistent height
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	// Viewport handles its own height padding
+	return fmt.Sprintf("%s\n%s\n%s\n%s", header, m.viewport.View(), input, status)
 }
 
 // renderLoading renders the loading state
@@ -81,9 +78,10 @@ func (m *Model) renderHeader() string {
 
 	statusStr := fmt.Sprintf("%d %s connected", agentCount, agentLabel)
 
-	// Add scroll indicator if not at bottom
-	if !m.history.IsAtBottom() {
-		statusStr += " | Scroll: " + m.styles.Dim.Render("↑↓ PgUp/PgDn End")
+	// Add scroll indicator if not at bottom (check viewport)
+	if m.viewportReady && !m.viewport.AtBottom() {
+		scrollPercent := m.viewport.ScrollPercent() * 100
+		statusStr += fmt.Sprintf(" | %.0f%% ", scrollPercent) + m.styles.Dim.Render("↑↓ PgUp/PgDn End")
 	}
 
 	header := lipgloss.JoinHorizontal(

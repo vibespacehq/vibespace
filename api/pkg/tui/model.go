@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -11,8 +12,10 @@ import (
 	"vibespace/pkg/session"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
 
 // LayoutMode represents the TUI layout mode
@@ -46,18 +49,21 @@ type Model struct {
 	daemons map[string]*daemon.Client
 
 	// UI components
-	input   textinput.Model
-	history *ChatHistory // Unified chat history
-	styles  Styles
+	input    textinput.Model
+	viewport viewport.Model // Scrollable chat area
+	history  *ChatHistory   // Unified chat history (still used for message storage)
+	styles   Styles
 
 	// Persistence
 	historyStore *HistoryStore
 
 	// Layout
-	layout     LayoutMode
-	focusAgent string
-	width      int
-	height     int
+	layout         LayoutMode
+	focusAgent     string
+	width          int
+	height         int
+	viewportReady  bool // True once viewport is sized
+	contentDirty   bool // True when messages changed and viewport needs update
 
 	// State
 	ctx        context.Context
@@ -352,11 +358,269 @@ func (m *Model) UpdateSuggestions() {
 // AddMessage adds a message to history and persists it
 func (m *Model) AddMessage(msg *Message) {
 	m.history.Add(msg)
+	m.contentDirty = true // Mark for viewport refresh
 
 	// Persist to history store
 	if m.historyStore != nil && m.sessionName != "" {
 		go m.historyStore.Append(m.sessionName, msg)
 	}
+}
+
+// updateViewportContent renders all messages and updates the viewport
+func (m *Model) updateViewportContent() {
+	if !m.viewportReady {
+		return
+	}
+
+	content := m.renderAllMessages()
+	m.viewport.SetContent(content)
+
+	// Auto-scroll to bottom when new content arrives (if already at bottom)
+	if m.history.IsAtBottom() {
+		m.viewport.GotoBottom()
+	}
+
+	m.contentDirty = false
+}
+
+// renderAllMessages renders all messages as a single string for the viewport
+func (m *Model) renderAllMessages() string {
+	m.agentMu.RLock()
+	defer m.agentMu.RUnlock()
+
+	if len(m.agentOrder) == 0 {
+		return m.styles.Dim.Render("No agents connected. Waiting for connections...")
+	}
+
+	messages := m.history.GetAll()
+	if len(messages) == 0 {
+		return m.styles.Dim.Render("(no messages yet - type @all <message> to send to all agents)")
+	}
+
+	var lines []string
+
+	// Render each message
+	for _, msg := range messages {
+		rendered := m.renderMessageForViewport(msg)
+		lines = append(lines, rendered)
+	}
+
+	// Add thinking indicators for agents that are thinking
+	for _, state := range m.agentStates {
+		if state.IsThinking {
+			line := m.renderThinkingForViewport(state)
+			lines = append(lines, line)
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// renderMessageForViewport renders a single message (may be multiple lines)
+func (m *Model) renderMessageForViewport(msg *Message) string {
+	// Format timestamp
+	ts := m.styles.Timestamp.Render(msg.Timestamp.Format("15:04"))
+
+	var label, content string
+
+	switch msg.Type {
+	case MessageTypeUser:
+		label = UserLabelWithTarget(msg.Target)
+		content = msg.Content
+
+	case MessageTypeAssistant:
+		color := m.GetAgentColor(msg.Sender)
+		label = AgentLabelStyle(color).Render(fmt.Sprintf("[%s]", msg.Sender))
+		content = m.renderContentWithHighlighting(msg.Content)
+
+	case MessageTypeToolUse:
+		content = m.renderToolUse(msg)
+		// Tool use has its own label formatting
+		return fmt.Sprintf("%s %s", ts, content)
+
+	case MessageTypeError:
+		color := m.GetAgentColor(msg.Sender)
+		label = AgentLabelStyle(color).Render(fmt.Sprintf("[%s]", msg.Sender))
+		content = m.styles.Error.Render(msg.Content)
+
+	case MessageTypeSystem:
+		label = m.styles.Dim.Render("[system]")
+		content = m.styles.Dim.Render(msg.Content)
+
+	default:
+		label = m.styles.Dim.Render("[unknown]")
+		content = msg.Content
+	}
+
+	if content != "" {
+		return fmt.Sprintf("%s %s %s", ts, label, content)
+	}
+	return fmt.Sprintf("%s %s", ts, label)
+}
+
+// renderThinkingForViewport renders a thinking indicator
+func (m *Model) renderThinkingForViewport(state *AgentState) string {
+	ts := m.styles.Timestamp.Render("     ") // Blank timestamp for alignment
+	color := m.GetAgentColor(state.Address.String())
+	label := AgentLabelStyle(color).Render(fmt.Sprintf("[%s]", state.Address.String()))
+	spinner := state.ThinkingIndicatorText()
+	// Color the spinner to match the agent's color
+	indicator := lipgloss.NewStyle().Foreground(color).Render(spinner)
+
+	return fmt.Sprintf("%s %s %s", ts, label, indicator)
+}
+
+// renderContentWithHighlighting renders message content with code block styling
+// For now uses basic styling; syntax highlighting can be added later
+func (m *Model) renderContentWithHighlighting(content string) string {
+	// For now, delegate to the existing styleContent method
+	// This can be enhanced with proper syntax highlighting later
+	return styleContentWithCodeBlocks(content, m.styles)
+}
+
+// renderToolUse renders a tool use message with improved formatting
+// Format: [agent] [colored_symbol] ToolName → details
+func (m *Model) renderToolUse(msg *Message) string {
+	agentColor := m.GetAgentColor(msg.Sender)
+	agentLabel := AgentLabelStyle(agentColor).Render(fmt.Sprintf("[%s]", msg.Sender))
+
+	// Get tool icon and color
+	icon, toolColor := getToolIconAndColor(msg.ToolName)
+	coloredIcon := lipgloss.NewStyle().Foreground(toolColor).Render(fmt.Sprintf("[%s]", icon))
+	toolName := lipgloss.NewStyle().Foreground(toolColor).Bold(true).Render(msg.ToolName)
+
+	// Format details based on tool type
+	var details string
+	switch msg.ToolName {
+	case "Read":
+		details = msg.ToolInput
+	case "Write":
+		details = msg.ToolInput
+	case "Edit":
+		details = msg.ToolInput
+	case "Bash":
+		cmd := msg.ToolInput
+		if len(cmd) > 60 {
+			cmd = cmd[:57] + "..."
+		}
+		details = cmd
+	case "Glob", "Grep":
+		details = msg.ToolInput
+	case "WebSearch":
+		details = msg.ToolInput
+	case "WebFetch":
+		details = msg.ToolInput
+	case "Task":
+		details = msg.ToolInput
+	case "EnterPlanMode":
+		details = "entering plan mode"
+	case "ExitPlanMode":
+		details = "plan complete"
+	case "AskUserQuestion":
+		details = "awaiting input"
+	case "TodoWrite":
+		details = "updating tasks"
+	default:
+		details = msg.ToolInput
+	}
+
+	// Format: [agent] [symbol] Tool → details
+	arrow := m.styles.Dim.Render("→")
+	if details != "" {
+		detailsStyled := m.styles.Dim.Render(details)
+		return fmt.Sprintf("%s %s %s %s %s", agentLabel, coloredIcon, toolName, arrow, detailsStyled)
+	}
+	return fmt.Sprintf("%s %s %s", agentLabel, coloredIcon, toolName)
+}
+
+// getToolIconAndColor returns an icon and color for a tool type
+func getToolIconAndColor(toolName string) (string, lipgloss.Color) {
+	switch toolName {
+	case "Read":
+		return "◀", lipgloss.Color("#FFB800") // Yellow - reading in
+	case "Write":
+		return "▶", lipgloss.Color("#00FF9F") // Green - writing out
+	case "Edit":
+		return "✎", lipgloss.Color("#FF8C42") // Orange - modifying
+	case "Bash":
+		return "$", lipgloss.Color("#00D9FF") // Cyan - terminal
+	case "Glob":
+		return "⊛", lipgloss.Color("#7B61FF") // Purple - pattern
+	case "Grep":
+		return "⌕", lipgloss.Color("#7B61FF") // Purple - search
+	case "WebSearch":
+		return "◎", lipgloss.Color("#4ECDC4") // Teal - web
+	case "WebFetch":
+		return "⇣", lipgloss.Color("#4ECDC4") // Teal - download
+	case "Task":
+		return "◈", lipgloss.Color("#FF6B9D") // Pink - task
+	case "EnterPlanMode":
+		return "▣", lipgloss.Color("#FFB800") // Yellow - planning
+	case "ExitPlanMode":
+		return "✓", lipgloss.Color("#00FF9F") // Green - done
+	case "AskUserQuestion":
+		return "?", lipgloss.Color("#FF6B9D") // Pink - question
+	case "TodoWrite":
+		return "☐", lipgloss.Color("#00D9FF") // Cyan - todo
+	default:
+		return "●", lipgloss.Color("#888888") // Gray - unknown
+	}
+}
+
+// styleContentWithCodeBlocks applies styling to content including code blocks
+func styleContentWithCodeBlocks(content string, styles Styles) string {
+	// Check if content has code blocks
+	if !strings.Contains(content, "```") {
+		return content
+	}
+
+	// Split by code blocks and style them
+	var result strings.Builder
+	remaining := content
+
+	for {
+		// Find start of code block
+		startIdx := strings.Index(remaining, "```")
+		if startIdx == -1 {
+			result.WriteString(remaining)
+			break
+		}
+
+		// Write content before code block
+		result.WriteString(remaining[:startIdx])
+
+		// Find end of code block
+		afterStart := remaining[startIdx+3:]
+		endIdx := strings.Index(afterStart, "```")
+		if endIdx == -1 {
+			// Unclosed code block, write as-is
+			result.WriteString(remaining[startIdx:])
+			break
+		}
+
+		// Extract code block content
+		codeContent := afterStart[:endIdx]
+
+		// Check for language hint (first line before newline)
+		lang := ""
+		codeLines := codeContent
+		if nlIdx := strings.Index(codeContent, "\n"); nlIdx != -1 {
+			firstLine := strings.TrimSpace(codeContent[:nlIdx])
+			if len(firstLine) > 0 && !strings.Contains(firstLine, " ") {
+				lang = firstLine
+				codeLines = codeContent[nlIdx+1:]
+			}
+		}
+
+		// Style the code block with syntax highlighting
+		styledCode := highlightCodeBlock(codeLines, lang, styles)
+		result.WriteString(styledCode)
+
+		// Move past this code block
+		remaining = afterStart[endIdx+3:]
+	}
+
+	return result.String()
 }
 
 // SetAgentThinking sets the thinking state for an agent
@@ -396,7 +660,16 @@ func (m *Model) Close() {
 }
 
 // Run starts the TUI
+// Returns an error if stdin/stdout are not TTYs
 func Run(sess *session.Session, isAdHoc bool) error {
+	// Guard: TUI requires a terminal
+	if !term.IsTerminal(int(os.Stdin.Fd())) {
+		return fmt.Errorf("TUI requires an interactive terminal (stdin is not a TTY); use --json for non-interactive mode")
+	}
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return fmt.Errorf("TUI requires an interactive terminal (stdout is not a TTY); use --json for non-interactive mode")
+	}
+
 	m := NewModel(sess, isAdHoc)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 

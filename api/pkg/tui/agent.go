@@ -71,8 +71,10 @@ type AgentConn struct {
 
 	// Output channel for parsed messages (now rich Message types)
 	outputCh chan *Message
-	ctx      context.Context
-	cancel   context.CancelFunc
+	// Signals when Claude has finished responding (received "result" message)
+	responseDone chan struct{}
+	ctx          context.Context
+	cancel       context.CancelFunc
 }
 
 // NewAgentConn creates a new agent connection
@@ -83,6 +85,7 @@ func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *ClaudeSe
 		localPort:      localPort,
 		sessionManager: sessionMgr,
 		outputCh:       make(chan *Message, 100),
+		responseDone:   make(chan struct{}),
 		ctx:            ctx,
 		cancel:         cancel,
 	}
@@ -298,7 +301,9 @@ func (c *AgentConn) parseClaudeMessage(msg *ClaudeMessage) []*Message {
 		}
 
 	case "result":
-		// Final result - only show if it's an error
+		// Final result - signal completion
+		c.signalResponseDone()
+		// Only show if it's an error
 		if msg.IsError {
 			messages = append(messages, NewErrorMessage(sender, msg.Result))
 		}
@@ -483,6 +488,21 @@ func (c *AgentConn) OutputChan() <-chan *Message {
 	return c.outputCh
 }
 
+// DoneChan returns a channel that's closed when the response is complete
+func (c *AgentConn) DoneChan() <-chan struct{} {
+	return c.responseDone
+}
+
+// signalResponseDone signals that the response is complete (non-blocking)
+func (c *AgentConn) signalResponseDone() {
+	select {
+	case <-c.responseDone:
+		// Already closed
+	default:
+		close(c.responseDone)
+	}
+}
+
 // IsConnected returns whether the agent is connected
 func (c *AgentConn) IsConnected() bool {
 	c.mu.Lock()
@@ -541,10 +561,11 @@ func (c *AgentConn) Reconnect() error {
 	c.connected = false
 	c.mu.Unlock()
 
-	// Create new context but keep the same output channel
+	// Create new context and responseDone channel, but keep the same output channel
 	// Session ID is managed by sessionManager
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.outputCh = savedCh
+	c.responseDone = make(chan struct{}) // New channel for next response
 
 	return c.Connect()
 }

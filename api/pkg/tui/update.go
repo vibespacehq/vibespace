@@ -9,7 +9,9 @@ import (
 	"vibespace/pkg/session"
 	"vibespace/pkg/vibespace"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Update implements tea.Model
@@ -34,19 +36,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = "Returned to chat view"
 			}
 
-		// Scrolling keys
-		case tea.KeyUp:
-			m.history.ScrollUp(1)
-		case tea.KeyDown:
-			m.history.ScrollDown(1)
-		case tea.KeyPgUp:
-			m.history.ScrollUp(10)
-		case tea.KeyPgDown:
-			m.history.ScrollDown(10)
-		case tea.KeyEnd:
-			m.history.ScrollToBottom()
-		case tea.KeyHome:
-			m.history.ScrollToTop()
+		// Scrolling keys - handled by viewport
+		case tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
+			// Let viewport handle scrolling
+			if m.viewportReady {
+				var cmd tea.Cmd
+				m.viewport, cmd = m.viewport.Update(msg)
+				cmds = append(cmds, cmd)
+				// Track if user scrolled away from bottom
+				m.history.SetScrollPosition(!m.viewport.AtBottom())
+			}
+			// Don't fall through - these are scroll-only keys
+			return m, tea.Batch(cmds...)
 		}
 		// Fall through to update text input below
 
@@ -54,6 +55,34 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.input.Width = msg.Width - 4
+
+		// Calculate viewport height by measuring actual rendered heights
+		// like the official chat example does
+		headerRendered := m.renderHeader()
+		inputRendered := m.renderInput()
+		statusRendered := " " // minimum status height
+
+		headerH := lipgloss.Height(headerRendered)
+		inputH := lipgloss.Height(inputRendered)
+		statusH := lipgloss.Height(statusRendered)
+		gaps := 3 // newlines between sections
+
+		viewportHeight := msg.Height - headerH - inputH - statusH - gaps
+		if viewportHeight < 3 {
+			viewportHeight = 3
+		}
+
+		if !m.viewportReady {
+			// First time sizing
+			m.viewport = viewport.New(msg.Width, viewportHeight)
+			m.viewport.Style = m.styles.OutputArea
+			m.viewportReady = true
+			m.contentDirty = true
+		} else {
+			// Resize existing viewport
+			m.viewport.Width = msg.Width
+			m.viewport.Height = viewportHeight
+		}
 
 	case InitCompleteMsg:
 		m.ready = true
@@ -68,6 +97,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, m.listenToAgents())
 		// Start tick for animations
 		cmds = append(cmds, m.tick())
+		// Initial content render
+		m.contentDirty = true
 
 	case RichMessageMsg:
 		m.handleRichMessage(msg)
@@ -90,6 +121,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TickMsg:
 		m.tickCount++
+		// Update viewport content if dirty or if thinking (for animation)
+		if m.contentDirty || len(m.GetThinkingAgents()) > 0 {
+			m.updateViewportContent()
+		}
 		// Periodic tick for animations
 		cmds = append(cmds, m.tick())
 
@@ -99,12 +134,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ThinkingStartMsg:
 		m.SetAgentThinking(msg.AgentKey, true)
+		m.contentDirty = true
 
 	case ThinkingEndMsg:
 		m.SetAgentThinking(msg.AgentKey, false)
+		m.contentDirty = true
 	}
 
-	// Update text input
+	// Update text input (for all non-scroll key events)
 	var inputCmd tea.Cmd
 	m.input, inputCmd = m.input.Update(msg)
 	cmds = append(cmds, inputCmd)
@@ -219,6 +256,10 @@ func (m *Model) executeSend(action SendAction) (tea.Model, tea.Cmd) {
 
 	// Scroll to bottom when sending
 	m.history.ScrollToBottom()
+	if m.viewportReady {
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+	}
 
 	return m, nil
 }
@@ -342,6 +383,12 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 		if m.historyStore != nil && m.sessionName != "" {
 			go m.historyStore.Clear(m.sessionName)
 		}
+		// Clear viewport content
+		if m.viewportReady {
+			m.viewport.SetContent("")
+			m.viewport.GotoTop()
+		}
+		m.contentDirty = true
 		m.statusMsg = "Cleared chat history"
 
 	case "scroll":
@@ -521,12 +568,15 @@ func (m *Model) handleRichMessage(msg RichMessageMsg) {
 	// Clear thinking state when we receive a message
 	m.SetAgentThinking(msg.AgentKey, false)
 
-	// Add the message to history
+	// Check if we should auto-scroll (before adding message)
+	wasAtBottom := m.history.IsAtBottom()
+
+	// Add the message to history (marks content as dirty)
 	m.AddMessage(msg.Message)
 
-	// Auto-scroll to bottom if we're already at the bottom
-	if m.history.IsAtBottom() {
-		m.history.ScrollToBottom()
+	// Auto-scroll viewport to bottom if we were already at the bottom
+	if wasAtBottom && m.viewportReady {
+		m.viewport.GotoBottom()
 	}
 }
 
