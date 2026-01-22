@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 )
 
@@ -227,13 +228,13 @@ func (r *HeadlessRunner) SendAndWait(ctx context.Context, target, message string
 			}
 		}
 		if conn == nil {
-			return nil, fmt.Errorf("agent not found: %s", target)
+			return nil, fmt.Errorf("%s: %w", target, vserrors.ErrAgentNotFound)
 		}
 		targetAgents = append(targetAgents, conn)
 	}
 
 	if len(targetAgents) == 0 {
-		return nil, fmt.Errorf("no agents to send to")
+		return nil, vserrors.ErrNoAgents
 	}
 
 	// Create channels to collect responses
@@ -408,7 +409,9 @@ func joinNonEmpty(parts []string, sep string) string {
 	return result
 }
 
-// MessageCallback is called for each message received during streaming
+// MessageCallback is called for each message received during streaming.
+// The agent parameter identifies which agent sent the message, and msg contains
+// the parsed message content including type, text, and tool use information.
 type MessageCallback func(agent string, msg *Message)
 
 // StreamResponses sends a message and streams responses via callback
@@ -438,13 +441,13 @@ func (r *HeadlessRunner) StreamResponses(ctx context.Context, target, message st
 			}
 		}
 		if conn == nil {
-			return fmt.Errorf("agent not found: %s", target)
+			return fmt.Errorf("%s: %w", target, vserrors.ErrAgentNotFound)
 		}
 		targetAgents = append(targetAgents, conn)
 	}
 
 	if len(targetAgents) == 0 {
-		return fmt.Errorf("no agents to send to")
+		return vserrors.ErrNoAgents
 	}
 
 	// Create a timeout context

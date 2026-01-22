@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 )
 
 // SpawnDaemon spawns a new daemon process for a vibespace
@@ -18,7 +20,7 @@ func SpawnDaemon(vibespace string) error {
 
 	// Check if already running via socket
 	if IsRunning(vibespace) {
-		return fmt.Errorf("daemon already running for %s", vibespace)
+		return fmt.Errorf("%s: %w", vibespace, vserrors.ErrDaemonAlreadyRunning)
 	}
 
 	// Kill any stale daemon process before spawning new one
@@ -83,7 +85,7 @@ func SpawnDaemon(vibespace string) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	return fmt.Errorf("daemon failed to start within timeout")
+	return vserrors.ErrDaemonStartTimeout
 }
 
 // StopDaemon stops a running daemon
@@ -174,7 +176,7 @@ func IsRunning(vibespace string) bool {
 // GetStatus gets the status of a daemon
 func GetStatus(vibespace string) (*StatusResponse, error) {
 	if !IsRunning(vibespace) {
-		return nil, fmt.Errorf("daemon not running for %s", vibespace)
+		return nil, fmt.Errorf("%s: %w", vibespace, vserrors.ErrDaemonNotRunning)
 	}
 
 	client, err := NewClient(vibespace)
@@ -200,7 +202,7 @@ func WaitForReady(vibespace string, timeout time.Duration) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	return fmt.Errorf("daemon not ready within timeout")
+	return vserrors.ErrDaemonStartTimeout
 }
 
 // StopAllDaemons stops all running daemons and cleans up state files

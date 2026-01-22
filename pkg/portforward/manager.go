@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"k8s.io/client-go/rest"
 )
 
@@ -92,7 +93,7 @@ func (m *Manager) AddForward(agentName string, remotePort int, forwardType Forwa
 	podName, exists := m.agents[agentName]
 	if !exists {
 		m.mu.Unlock()
-		return 0, fmt.Errorf("unknown agent: %s", agentName)
+		return 0, fmt.Errorf("%s: %w", agentName, vserrors.ErrUnknownAgent)
 	}
 
 	key := fmt.Sprintf("%s:%d", agentName, remotePort)
@@ -168,7 +169,7 @@ func (m *Manager) RemoveForward(agentName string, remotePort int) error {
 	fwd, exists := m.forwarders[key]
 	if !exists {
 		m.mu.Unlock()
-		return fmt.Errorf("forward not found: %s port %d", agentName, remotePort)
+		return fmt.Errorf("%s port %d: %w", agentName, remotePort, vserrors.ErrForwardNotFound)
 	}
 
 	delete(m.forwarders, key)
@@ -196,7 +197,7 @@ func (m *Manager) StopForward(agentName string, remotePort int) error {
 	m.mu.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("forward not found: %s port %d", agentName, remotePort)
+		return fmt.Errorf("%s port %d: %w", agentName, remotePort, vserrors.ErrForwardNotFound)
 	}
 
 	fwd.Stop()
@@ -216,7 +217,7 @@ func (m *Manager) StartForward(agentName string, remotePort int) error {
 	m.mu.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("forward not found: %s port %d", agentName, remotePort)
+		return fmt.Errorf("%s port %d: %w", agentName, remotePort, vserrors.ErrForwardNotFound)
 	}
 
 	if fwd.Status() == StatusActive {

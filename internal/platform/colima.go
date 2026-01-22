@@ -21,6 +21,9 @@ type ColimaManager struct {
 	binDir        string
 }
 
+// Compile-time interface satisfaction check
+var _ ClusterManager = (*ColimaManager)(nil)
+
 // NewColimaManager creates a new Colima cluster manager
 func NewColimaManager(p Platform, vibespaceHome string) *ColimaManager {
 	return &ColimaManager{

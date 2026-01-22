@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
@@ -102,7 +103,7 @@ func (c *AgentConn) Connect() error {
 	// Get the private key path
 	keyPath := vibespace.GetSSHPrivateKeyPath()
 	if keyPath == "" {
-		return fmt.Errorf("SSH key not found")
+		return vserrors.ErrSSHKeyNotFound
 	}
 
 	// Get session ID and determine if this is a new session or continuation
@@ -443,7 +444,7 @@ func (c *AgentConn) Send(msg string) error {
 	defer c.mu.Unlock()
 
 	if !c.connected {
-		return fmt.Errorf("not connected")
+		return vserrors.ErrNotConnected
 	}
 
 	// Send the message followed by newline
