@@ -1,11 +1,11 @@
 package tui
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"time"
 
 	"vibespace/pkg/session"
+
+	"github.com/google/uuid"
 )
 
 // MessageType represents the type of a chat message
@@ -132,24 +132,7 @@ func NewAgentState(addr session.AgentAddress) *AgentState {
 
 // generateSessionID generates a valid UUID v4 for session continuity
 func generateSessionID() string {
-	// Generate 16 random bytes
-	var uuid [16]byte
-	if _, err := rand.Read(uuid[:]); err != nil {
-		// Fallback to time-based if crypto/rand fails (shouldn't happen)
-		return time.Now().Format("20060102150405.000000000")
-	}
-
-	// Set version to 4 (random UUID)
-	uuid[6] = (uuid[6] & 0x0f) | 0x40
-	// Set variant to RFC 4122
-	uuid[8] = (uuid[8] & 0x3f) | 0x80
-
-	// Format as UUID string
-	return hex.EncodeToString(uuid[0:4]) + "-" +
-		hex.EncodeToString(uuid[4:6]) + "-" +
-		hex.EncodeToString(uuid[6:8]) + "-" +
-		hex.EncodeToString(uuid[8:10]) + "-" +
-		hex.EncodeToString(uuid[10:16])
+	return uuid.New().String()
 }
 
 // SetThinking sets the agent to thinking state
