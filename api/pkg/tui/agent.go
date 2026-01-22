@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"strings"
 	"sync"
 
 	"vibespace/pkg/session"
@@ -568,9 +567,4 @@ func (c *AgentConn) Reconnect() error {
 	c.responseDone = make(chan struct{}) // New channel for next response
 
 	return c.Connect()
-}
-
-// HasContent returns true if a string has non-whitespace content
-func HasContent(s string) bool {
-	return strings.TrimSpace(s) != ""
 }
