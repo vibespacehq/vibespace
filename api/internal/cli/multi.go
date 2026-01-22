@@ -12,67 +12,72 @@ import (
 	"vibespace/pkg/session"
 	"vibespace/pkg/tui"
 
+	"github.com/charmbracelet/huh"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
 
-// multiCmd is the top-level multi command for quick ad-hoc sessions
+// multiCmd is the top-level multi command
 var multiCmd = &cobra.Command{
-	Use:   "multi <vibespace>... [message]",
-	Short: "Start multi-agent terminal with specified vibespaces",
-	Long: `Start an ad-hoc multi-agent terminal session with one or more vibespaces.
+	Use:   "multi",
+	Short: "Start multi-agent terminal session",
+	Long: `Start a multi-agent terminal session to interact with Claude agents across vibespaces.
 
-This launches a terminal UI where you can interact with multiple Claude agents
-across the specified vibespaces simultaneously.
-
-Interactive mode (default when TTY):
-  vibespace multi projectA           # Single vibespace
-  vibespace multi projectA projectB  # Multiple vibespaces
+Interactive mode (default):
+  vibespace multi                                       # New empty session, add agents in TUI
+  vibespace multi --vibespaces test                     # New session with all agents from 'test'
+  vibespace multi --vibespaces test,test2               # New session with multiple vibespaces
+  vibespace multi --vibespaces test --agents claude-1@other  # Mix vibespace + specific agent
+  vibespace multi -r                                    # Resume an existing session (picker)
+  vibespace multi --name mywork --vibespaces test       # New session with explicit name
+  vibespace test multi                                  # Shorthand for single vibespace
 
 Non-interactive mode (for scripting):
-  vibespace multi projectA --json "list files"
-  vibespace multi projectA --plain "list files"
-  vibespace multi projectA --plain --stream "work on task"
-  echo "hello" | vibespace multi projectA --json
-  vibespace multi projectA --json --agent claude-1 "check logs"
-  vibespace multi projectA --json --list-agents
+  vibespace multi --vibespaces test --json "list files"
+  vibespace multi --vibespaces test --plain --stream "work on task"
 
 Inside the TUI:
   @<agent> <message>                 Send to specific agent
-  @<agent>@<vibespace> <message>     Send to agent in specific vibespace
   @all <message>                     Broadcast to all agents
+  /add <vibespace>                   Add all agents from a vibespace
+  /add <agent>@<vibespace>           Add specific agent
+  /remove <vibespace>                Remove vibespace from session
   /list                              List connected agents
   /focus <agent>                     Focus on single agent
-  /split                             Return to split view
-  /save <name>                       Save as named session
-  /quit                              Exit
-
-Keyboard shortcuts:
-  Up/Down                            Scroll chat history
-  PgUp/PgDown                        Scroll by page
-  Home/End                           Jump to top/bottom
-  Tab                                Autocomplete agent names
-  Ctrl+C                             Exit`,
-	Args: cobra.MinimumNArgs(1),
+  /quit                              Exit`,
+	Args: cobra.ArbitraryArgs,
 	RunE: runMultiCmd,
 }
 
 func init() {
-	// Add flags for non-interactive mode
-	// Note: --json and --plain are global flags, handled by root.go
-	multiCmd.Flags().String("agent", "all", "Target agent for non-interactive mode (default: all)")
+	// Session selection
+	multiCmd.Flags().BoolP("resume", "r", false, "Resume an existing session (shows picker)")
+
+	// Session composition (no shortcuts for clarity)
+	multiCmd.Flags().StringSlice("vibespaces", nil, "Vibespaces to include (all agents)")
+	multiCmd.Flags().StringSlice("agents", nil, "Specific agents to include (format: agent@vibespace)")
+	multiCmd.Flags().String("name", "", "Session name (default: auto-generated UUID)")
+
+	// Non-interactive mode flags
+	multiCmd.Flags().String("agent", "all", "Target agent for non-interactive mode")
 	multiCmd.Flags().Bool("batch", false, "Batch mode: read JSONL messages from stdin")
-	multiCmd.Flags().Bool("list-agents", false, "List connected agents and exit (no message required)")
+	multiCmd.Flags().Bool("list-agents", false, "List connected agents and exit")
 	multiCmd.Flags().Bool("stream", false, "Stream responses as they arrive (plain text mode)")
 	multiCmd.Flags().Duration("timeout", 2*time.Minute, "Response timeout for non-interactive mode")
 }
 
-// runMultiCmd handles the top-level multi command
+// runMultiCmd handles the multi command
 func runMultiCmd(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	// Parse flags
-	// Note: jsonFlag and plainFlag use global flags (handled by root.go's parseGlobalFlags)
+	resumeFlag, _ := cmd.Flags().GetBool("resume")
+	vibespaces, _ := cmd.Flags().GetStringSlice("vibespaces")
+	agents, _ := cmd.Flags().GetStringSlice("agents")
+	nameFlag, _ := cmd.Flags().GetString("name")
+
+	// Non-interactive flags
 	jsonFlag := globalJSON
 	plainFlag := globalPlain
 	agentFlag, _ := cmd.Flags().GetString("agent")
@@ -81,43 +86,24 @@ func runMultiCmd(cmd *cobra.Command, args []string) error {
 	streamFlag, _ := cmd.Flags().GetBool("stream")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
 
-	// Detect TTY - auto-enable non-interactive mode when not interactive
+	// Detect TTY
 	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
 
-	// Determine output mode
+	// Determine if non-interactive mode
 	nonInteractive := jsonFlag || plainFlag || !stdinTTY || !stdoutTTY
 	if nonInteractive && !plainFlag {
-		jsonFlag = true // Default to JSON for non-interactive
+		jsonFlag = true
 	}
 
-	// Separate vibespaces from potential message
-	vibespaces := args
-	var message string
-
-	// Check if the last argument looks like a message (doesn't exist as vibespace)
-	if len(args) > 1 && nonInteractive {
-		// In non-interactive mode, last arg might be the message
-		lastArg := args[len(args)-1]
-		// Check if it looks like a message (contains spaces or isn't a valid vibespace name)
-		if strings.Contains(lastArg, " ") || !isValidVibespace(ctx, lastArg) {
-			vibespaces = args[:len(args)-1]
-			message = lastArg
-		}
+	// Handle resume flag - show session picker
+	if resumeFlag {
+		return runSessionPicker(ctx)
 	}
 
-	// Verify all vibespaces exist and are running
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		if jsonFlag {
-			outputJSONError(err)
-			return nil
-		}
-		return err
-	}
-
-	for _, vsName := range vibespaces {
-		_, err := checkVibespaceRunning(ctx, svc, vsName)
+	// Validate vibespaces exist
+	if len(vibespaces) > 0 || len(agents) > 0 {
+		svc, err := getVibespaceServiceWithCheck()
 		if err != nil {
 			if jsonFlag {
 				outputJSONError(err)
@@ -125,97 +111,259 @@ func runMultiCmd(cmd *cobra.Command, args []string) error {
 			}
 			return err
 		}
+
+		// Validate all vibespaces
+		for _, vs := range vibespaces {
+			if _, err := checkVibespaceRunning(ctx, svc, vs); err != nil {
+				if jsonFlag {
+					outputJSONError(err)
+					return nil
+				}
+				return err
+			}
+		}
+
+		// Validate vibespaces from agent addresses
+		for _, agentAddr := range agents {
+			addr := session.ParseAgentAddress(agentAddr, "")
+			if addr.Vibespace == "" {
+				err := fmt.Errorf("agent '%s' must include vibespace (format: agent@vibespace)", agentAddr)
+				if jsonFlag {
+					outputJSONError(err)
+					return nil
+				}
+				return err
+			}
+			if _, err := checkVibespaceRunning(ctx, svc, addr.Vibespace); err != nil {
+				if jsonFlag {
+					outputJSONError(err)
+					return nil
+				}
+				return err
+			}
+		}
 	}
 
-	// Non-interactive mode
+	// Build session
+	sess := buildSession(nameFlag, vibespaces, agents)
+
+	// Save session (both interactive and non-interactive modes)
+	store, err := session.NewStore()
+	if err != nil {
+		if jsonFlag {
+			outputJSONError(err)
+			return nil
+		}
+		return err
+	}
+	if err := store.Save(sess); err != nil {
+		if jsonFlag {
+			outputJSONError(err)
+			return nil
+		}
+		return err
+	}
+
+	// Non-interactive mode needs at least one vibespace
 	if nonInteractive {
-		// List agents mode - no message required
+		if len(sess.Vibespaces) == 0 {
+			err := fmt.Errorf("non-interactive mode requires at least one vibespace (-v flag)")
+			if jsonFlag {
+				outputJSONError(err)
+				return nil
+			}
+			return err
+		}
+
 		if listAgentsFlag {
-			return runListAgents(ctx, vibespaces, jsonFlag, timeout)
+			return runListAgents(ctx, sess.Vibespaces, jsonFlag, timeout)
 		}
 
-		// Batch mode takes priority - don't consume stdin for single message
 		if batchFlag {
-			return runBatchMode(ctx, vibespaces, timeout)
+			return runBatchMode(ctx, sess.Vibespaces, timeout, sess.Name)
 		}
 
-		// Read message from stdin if not provided (single message mode only)
-		if message == "" && !stdinTTY {
+		// Get message from args or stdin
+		var message string
+		if len(args) > 0 {
+			message = strings.Join(args, " ")
+		} else if !stdinTTY {
 			scanner := bufio.NewScanner(os.Stdin)
 			if scanner.Scan() {
 				message = scanner.Text()
 			}
 		}
 
-		// Single message mode
 		if message == "" {
-			return fmt.Errorf("message required in non-interactive mode (use --list-agents to list agents without a message)")
+			err := fmt.Errorf("message required in non-interactive mode")
+			if jsonFlag {
+				outputJSONError(err)
+				return nil
+			}
+			return err
 		}
 
-		// Streaming plain text mode
 		if streamFlag && plainFlag {
-			return runStreamingPlain(ctx, vibespaces, agentFlag, message, timeout)
+			return runStreamingPlain(ctx, sess.Vibespaces, agentFlag, message, timeout, sess.Name)
 		}
 
-		// Plain text mode (non-streaming)
 		if plainFlag {
-			return runPlainText(ctx, vibespaces, agentFlag, message, timeout)
+			return runPlainText(ctx, sess.Vibespaces, agentFlag, message, timeout, sess.Name)
 		}
 
-		// JSON mode (default for non-interactive)
-		return runNonInteractive(ctx, vibespaces, agentFlag, message, timeout)
+		return runNonInteractive(ctx, sess.Vibespaces, agentFlag, message, timeout, sess.Name)
 	}
 
 	// Interactive TUI mode
+	// Setup TUI logging
+	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
+	defer cleanup()
+
+	return tui.Run(sess, false)
+}
+
+// buildSession creates a session from the provided flags
+func buildSession(name string, vibespaces []string, agents []string) *session.Session {
+	if name == "" {
+		name = uuid.New().String()[:8] // Short UUID
+	}
+
 	sess := &session.Session{
-		CreatedAt: time.Now(),
-		LastUsed:  time.Now(),
-		Vibespaces: make([]session.VibespaceEntry, 0, len(vibespaces)),
+		Name:       name,
+		CreatedAt:  time.Now(),
+		LastUsed:   time.Now(),
+		Vibespaces: []session.VibespaceEntry{},
 		Layout: session.Layout{
 			Mode: session.LayoutModeSplit,
 		},
 	}
 
+	// Add whole vibespaces
 	for _, vs := range vibespaces {
-		sess.Vibespaces = append(sess.Vibespaces, session.VibespaceEntry{
-			Name: vs,
-		})
+		sess.AddVibespace(vs, nil)
 	}
 
-	// Setup TUI logging before launching (cleanup happens when TUI exits)
+	// Add specific agents
+	for _, agentAddr := range agents {
+		addr := session.ParseAgentAddress(agentAddr, "")
+		if addr.Vibespace != "" {
+			sess.AddVibespace(addr.Vibespace, []string{addr.Agent})
+		}
+	}
+
+	return sess
+}
+
+// runSessionPicker shows an interactive session picker
+func runSessionPicker(ctx context.Context) error {
+	store, err := session.NewStore()
+	if err != nil {
+		return err
+	}
+
+	sessions, err := store.List()
+	if err != nil {
+		return err
+	}
+
+	if len(sessions) == 0 {
+		fmt.Println("No sessions found.")
+		fmt.Println()
+		fmt.Println("Create a new session with:")
+		fmt.Println("  vibespace multi --vibespaces <name>")
+		return nil
+	}
+
+	// Build options for picker with detailed info
+	options := make([]huh.Option[string], len(sessions))
+	for i, sess := range sessions {
+		lastUsed := formatRelativeTime(sess.LastUsed)
+
+		// Build vibespace and agent info
+		var vsInfo, agentInfo string
+		if len(sess.Vibespaces) == 0 {
+			vsInfo = "(empty)"
+			agentInfo = "-"
+		} else {
+			vsNames := make([]string, len(sess.Vibespaces))
+			var agentNames []string
+			for j, vs := range sess.Vibespaces {
+				vsNames[j] = vs.Name
+				if len(vs.Agents) > 0 {
+					for _, a := range vs.Agents {
+						agentNames = append(agentNames, a+"@"+vs.Name)
+					}
+				}
+			}
+			vsInfo = strings.Join(vsNames, ", ")
+			if len(agentNames) > 0 {
+				agentInfo = strings.Join(agentNames, ", ")
+			} else {
+				agentInfo = "all"
+			}
+		}
+
+		// Format with aligned columns
+		label := fmt.Sprintf("%-14s │ %-15s │ %-18s │ %s", sess.Name, vsInfo, agentInfo, lastUsed)
+		options[i] = huh.NewOption(label, sess.Name)
+	}
+
+	var selected string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Resume Session").
+				Description("Select a session to continue working").
+				Options(options...).
+				Value(&selected),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return err
+	}
+
+	if selected == "" {
+		return nil // User cancelled
+	}
+
+	// Load and start the selected session
+	sess, err := store.Get(selected)
+	if err != nil {
+		return err
+	}
+
+	// Update last used
+	sess.LastUsed = time.Now()
+	_ = store.Save(sess)
+
+	// Setup TUI logging
 	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
 	defer cleanup()
 
-	// Launch TUI
-	return tui.Run(sess, true /* isAdHoc */)
+	return tui.Run(sess, false)
 }
 
 // runNonInteractive runs in non-interactive mode with JSON output
-func runNonInteractive(ctx context.Context, vibespaces []string, target, message string, timeout time.Duration) error {
-	sessionName := strings.Join(vibespaces, "-")
-
+func runNonInteractive(ctx context.Context, vibespaces []session.VibespaceEntry, target, message string, timeout time.Duration, sessionName string) error {
 	runner := tui.NewHeadlessRunner()
 	runner.SetTimeout(timeout)
-	runner.SetSessionName(sessionName) // Enable history persistence
+	runner.SetSessionName(sessionName)
 	defer runner.Close()
 
-	// Connect to agents
 	if err := runner.Connect(ctx, vibespaces); err != nil {
 		outputJSONError(err)
 		return nil
 	}
 
-	// Send message and wait for responses
 	response, err := runner.SendAndWait(ctx, target, message)
 	if err != nil {
 		outputJSONError(err)
 		return nil
 	}
 
-	// Set session name based on vibespaces
 	response.Session = sessionName
 
-	// Output JSON response
 	data, err := response.ToJSON()
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)
@@ -226,21 +374,17 @@ func runNonInteractive(ctx context.Context, vibespaces []string, target, message
 }
 
 // runBatchMode processes multiple messages from stdin (JSONL format)
-func runBatchMode(ctx context.Context, vibespaces []string, timeout time.Duration) error {
-	sessionName := strings.Join(vibespaces, "-")
-
+func runBatchMode(ctx context.Context, vibespaces []session.VibespaceEntry, timeout time.Duration, sessionName string) error {
 	runner := tui.NewHeadlessRunner()
 	runner.SetTimeout(timeout)
-	runner.SetSessionName(sessionName) // Enable history persistence
+	runner.SetSessionName(sessionName)
 	defer runner.Close()
 
-	// Connect to agents
 	if err := runner.Connect(ctx, vibespaces); err != nil {
 		outputJSONError(err)
 		return nil
 	}
 
-	// Read JSONL from stdin
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -248,24 +392,20 @@ func runBatchMode(ctx context.Context, vibespaces []string, timeout time.Duratio
 			continue
 		}
 
-		// Parse request
 		var req tui.MultiRequest
 		if err := json.Unmarshal([]byte(line), &req); err != nil {
 			outputJSONError(fmt.Errorf("invalid request: %w", err))
 			continue
 		}
 
-		// Send message and wait for responses
 		response, err := runner.SendAndWait(ctx, req.Target, req.Message)
 		if err != nil {
 			outputJSONError(err)
 			continue
 		}
 
-		// Set session name
-		response.Session = strings.Join(vibespaces, "-")
+		response.Session = sessionName
 
-		// Output JSON response
 		data, err := response.ToJSON()
 		if err != nil {
 			outputJSONError(fmt.Errorf("failed to marshal response: %w", err))
@@ -290,58 +430,12 @@ func outputJSONError(err error) {
 	fmt.Println(string(data))
 }
 
-// isValidVibespace checks if a name is a valid vibespace
-func isValidVibespace(ctx context.Context, name string) bool {
-	svc, err := getVibespaceService()
-	if err != nil {
-		return false
-	}
-	_, err = svc.Get(ctx, name)
-	return err == nil
-}
-
-// runMulti handles the vibespace-scoped multi command: vibespace <name> multi
-func runMulti(vibespace string, args []string) error {
-	ctx := context.Background()
-
-	svc, err := getVibespaceService()
-	if err != nil {
-		return err
-	}
-
-	// Verify vibespace exists and is running
-	_, err = checkVibespaceRunning(ctx, svc, vibespace)
-	if err != nil {
-		return err
-	}
-
-	// Create ad-hoc session with single vibespace
-	sess := &session.Session{
-		CreatedAt: time.Now(),
-		LastUsed:  time.Now(),
-		Vibespaces: []session.VibespaceEntry{
-			{Name: vibespace},
-		},
-		Layout: session.Layout{
-			Mode: session.LayoutModeSplit,
-		},
-	}
-
-	// Setup TUI logging before launching (cleanup happens when TUI exits)
-	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
-	defer cleanup()
-
-	// Launch TUI
-	return tui.Run(sess, true /* isAdHoc */)
-}
-
 // runListAgents lists connected agents without sending a message
-func runListAgents(ctx context.Context, vibespaces []string, jsonOutput bool, timeout time.Duration) error {
+func runListAgents(ctx context.Context, vibespaces []session.VibespaceEntry, jsonOutput bool, timeout time.Duration) error {
 	runner := tui.NewHeadlessRunner()
 	runner.SetTimeout(timeout)
 	defer runner.Close()
 
-	// Connect to agents
 	if err := runner.Connect(ctx, vibespaces); err != nil {
 		if jsonOutput {
 			outputJSONError(err)
@@ -352,12 +446,19 @@ func runListAgents(ctx context.Context, vibespaces []string, jsonOutput bool, ti
 
 	agents := runner.GetAgents()
 
+	// Build session name from vibespace names
+	vsNames := make([]string, len(vibespaces))
+	for i, vs := range vibespaces {
+		vsNames[i] = vs.Name
+	}
+	sessionName := strings.Join(vsNames, "-")
+
 	if jsonOutput {
 		response := struct {
 			Session string   `json:"session"`
 			Agents  []string `json:"agents"`
 		}{
-			Session: strings.Join(vibespaces, "-"),
+			Session: sessionName,
 			Agents:  agents,
 		}
 		data, err := json.MarshalIndent(response, "", "  ")
@@ -366,8 +467,7 @@ func runListAgents(ctx context.Context, vibespaces []string, jsonOutput bool, ti
 		}
 		fmt.Println(string(data))
 	} else {
-		// Plain text output
-		fmt.Printf("Session: %s\n", strings.Join(vibespaces, "-"))
+		fmt.Printf("Session: %s\n", sessionName)
 		fmt.Printf("Agents (%d):\n", len(agents))
 		for _, agent := range agents {
 			fmt.Printf("  %s\n", agent)
@@ -378,28 +478,23 @@ func runListAgents(ctx context.Context, vibespaces []string, jsonOutput bool, ti
 }
 
 // runPlainText runs in plain text mode (non-streaming)
-func runPlainText(ctx context.Context, vibespaces []string, target, message string, timeout time.Duration) error {
-	sessionName := strings.Join(vibespaces, "-")
-
+func runPlainText(ctx context.Context, vibespaces []session.VibespaceEntry, target, message string, timeout time.Duration, sessionName string) error {
 	runner := tui.NewHeadlessRunner()
 	runner.SetTimeout(timeout)
-	runner.SetSessionName(sessionName) // Enable history persistence
+	runner.SetSessionName(sessionName)
 	defer runner.Close()
 
-	// Connect to agents
 	if err := runner.Connect(ctx, vibespaces); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		return nil
 	}
 
-	// Send message and wait for responses
 	response, err := runner.SendAndWait(ctx, target, message)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		return nil
 	}
 
-	// Plain text output
 	for _, agentResp := range response.Responses {
 		fmt.Printf("[%s]\n", agentResp.Agent)
 		if agentResp.Error != "" {
@@ -424,26 +519,56 @@ func runPlainText(ctx context.Context, vibespaces []string, target, message stri
 	return nil
 }
 
-// runStreamingPlain runs in streaming plain text mode
-func runStreamingPlain(ctx context.Context, vibespaces []string, target, message string, timeout time.Duration) error {
-	sessionName := strings.Join(vibespaces, "-")
+// runMulti handles the vibespace-scoped multi command: vibespace <name> multi
+// This provides backward compatibility with the old command style
+func runMulti(vsName string, args []string) error {
+	ctx := context.Background()
 
+	// Verify vibespace exists and is running
+	svc, err := getVibespaceServiceWithCheck()
+	if err != nil {
+		return err
+	}
+
+	if _, err := checkVibespaceRunning(ctx, svc, vsName); err != nil {
+		return err
+	}
+
+	// Build session with single vibespace
+	sess := buildSession("", []string{vsName}, nil)
+
+	// Save session
+	store, err := session.NewStore()
+	if err != nil {
+		return err
+	}
+
+	if err := store.Save(sess); err != nil {
+		return err
+	}
+
+	// Setup TUI logging
+	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
+	defer cleanup()
+
+	return tui.Run(sess, false)
+}
+
+// runStreamingPlain runs in streaming plain text mode
+func runStreamingPlain(ctx context.Context, vibespaces []session.VibespaceEntry, target, message string, timeout time.Duration, sessionName string) error {
 	runner := tui.NewHeadlessRunner()
 	runner.SetTimeout(timeout)
-	runner.SetSessionName(sessionName) // Enable history persistence
+	runner.SetSessionName(sessionName)
 	defer runner.Close()
 
-	// Connect to agents
 	if err := runner.Connect(ctx, vibespaces); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		return nil
 	}
 
-	// Start streaming
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Use streaming runner
 	return runner.StreamResponses(ctx, target, message, func(agent string, msg *tui.Message) {
 		switch msg.Type {
 		case tui.MessageTypeAssistant:

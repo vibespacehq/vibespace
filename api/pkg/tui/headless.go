@@ -53,8 +53,11 @@ func (r *HeadlessRunner) SetTimeout(d time.Duration) {
 }
 
 // Connect connects to agents in the specified vibespaces
-func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []string) error {
-	for _, vsName := range vibespaces {
+func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.VibespaceEntry) error {
+	for _, vsEntry := range vibespaces {
+		vsName := vsEntry.Name
+		agentFilter := vsEntry.Agents // nil means all agents
+
 		// Ensure daemon is running
 		if err := r.ensureDaemon(vsName); err != nil {
 			return fmt.Errorf("failed to start daemon for %s: %w", vsName, err)
@@ -84,8 +87,21 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []string) error
 			}
 		}
 
-		// Connect to each agent
+		// Build agent filter set for quick lookup
+		filterSet := make(map[string]bool)
+		if len(agentFilter) > 0 {
+			for _, a := range agentFilter {
+				filterSet[a] = true
+			}
+		}
+
+		// Connect to each agent (filtered if specified)
 		for _, a := range status.Agents {
+			// Apply filter if specified
+			if len(filterSet) > 0 && !filterSet[a.Name] {
+				continue
+			}
+
 			port, ok := agentPorts[a.Name]
 			if !ok {
 				continue // No SSH forward for this agent
@@ -390,72 +406,6 @@ func joinNonEmpty(parts []string, sep string) string {
 		result += sep + nonEmpty[i]
 	}
 	return result
-}
-
-// RunHeadless runs a headless session with the given configuration
-func RunHeadless(ctx context.Context, vibespaces []string, target, message string, jsonOutput bool) error {
-	runner := NewHeadlessRunner()
-	defer runner.Close()
-
-	// Connect to agents
-	if err := runner.Connect(ctx, vibespaces); err != nil {
-		if jsonOutput {
-			resp := &MultiResponse{
-				Error: err.Error(),
-			}
-			data, _ := resp.ToJSON()
-			fmt.Println(string(data))
-			return nil
-		}
-		return err
-	}
-
-	// Send message and wait for responses
-	response, err := runner.SendAndWait(ctx, target, message)
-	if err != nil {
-		if jsonOutput {
-			resp := &MultiResponse{
-				Error: err.Error(),
-			}
-			data, _ := resp.ToJSON()
-			fmt.Println(string(data))
-			return nil
-		}
-		return err
-	}
-
-	// Output response
-	if jsonOutput {
-		data, err := response.ToJSON()
-		if err != nil {
-			return fmt.Errorf("failed to marshal response: %w", err)
-		}
-		fmt.Println(string(data))
-	} else {
-		// Plain text output
-		for _, agentResp := range response.Responses {
-			fmt.Printf("[%s]\n", agentResp.Agent)
-			if agentResp.Error != "" {
-				fmt.Printf("Error: %s\n", agentResp.Error)
-			} else {
-				if len(agentResp.ToolUses) > 0 {
-					for _, tu := range agentResp.ToolUses {
-						if tu.Input != "" {
-							fmt.Printf("  [%s] %s\n", tu.Tool, tu.Input)
-						} else {
-							fmt.Printf("  [%s]\n", tu.Tool)
-						}
-					}
-				}
-				if agentResp.Content != "" {
-					fmt.Println(agentResp.Content)
-				}
-			}
-			fmt.Println()
-		}
-	}
-
-	return nil
 }
 
 // MessageCallback is called for each message received during streaming

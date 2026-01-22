@@ -460,7 +460,7 @@ func (m *Model) renderHelp() string {
 		descStyle.Render("broadcast to all"),
 	)
 
-	// Line 2: Commands
+	// Line 2: Basic commands
 	line2 := fmt.Sprintf("%s %s  %s %s  %s %s",
 		cmdStyle.Render("/list"),
 		descStyle.Render("show agents"),
@@ -470,17 +470,25 @@ func (m *Model) renderHelp() string {
 		descStyle.Render("exit"),
 	)
 
-	// Line 3: Focus mode
-	line3 := fmt.Sprintf("%s %s",
-		cmdStyle.Render("/focus <agent>"),
-		descStyle.Render("open interactive Claude (resumes session, exit with /exit to return)"),
+	// Line 3: Add/remove agents
+	line3 := fmt.Sprintf("%s %s  %s %s",
+		cmdStyle.Render("/add <vibespace>"),
+		descStyle.Render("add agents (or agent@vibespace)"),
+		cmdStyle.Render("/remove <agent>"),
+		descStyle.Render("remove agent"),
 	)
 
-	// Line 4: Session management
+	// Line 4: Focus mode
 	line4 := fmt.Sprintf("%s %s",
+		cmdStyle.Render("/focus <agent>"),
+		descStyle.Render("open interactive Claude (exit with /exit to return)"),
+	)
+
+	// Line 5: Session management
+	line5 := fmt.Sprintf("%s %s",
 		sessionStyle.Render("/session @agent"),
 		descStyle.Render("new | list | resume <id> | info"),
 	)
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s", line1, line2, line3, line4)
+	return fmt.Sprintf("%s\n%s\n%s\n%s\n%s", line1, line2, line3, line4, line5)
 }

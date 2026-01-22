@@ -1,14 +1,14 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"vibespace/pkg/session"
-	"vibespace/pkg/tui"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 )
 
@@ -17,20 +17,11 @@ var sessionCmd = &cobra.Command{
 	Short: "Manage multi-agent sessions",
 	Long: `Manage multi-agent sessions for working with multiple Claude agents across vibespaces.
 
-Sessions allow you to group agents from multiple vibespaces and interact with them
-through a terminal UI.`,
-	Example: `  vibespace session create mysession
-  vibespace session add mysession myproject
-  vibespace session start mysession
-  vibespace session list`,
-}
-
-var sessionCreateCmd = &cobra.Command{
-	Use:     "create <name>",
-	Short:   "Create a new session",
-	Example: `  vibespace session create mysession`,
-	Args:    cobra.ExactArgs(1),
-	RunE:    runSessionCreate,
+Use 'vibespace multi' to create and launch sessions interactively.
+Use these commands to list, show details, or delete existing sessions.`,
+	Example: `  vibespace session list           # List all sessions
+  vibespace session show mywork     # Show session details
+  vibespace session delete mywork   # Delete a session`,
 }
 
 var sessionListCmd = &cobra.Command{
@@ -49,38 +40,6 @@ var sessionDeleteCmd = &cobra.Command{
 	RunE:    runSessionDelete,
 }
 
-var sessionAddCmd = &cobra.Command{
-	Use:   "add <session> <vibespace> [agent]",
-	Short: "Add a vibespace or agent to a session",
-	Long: `Add a vibespace or specific agent to an existing session.
-
-If no agent is specified, all agents from the vibespace will be included.`,
-	Example: `  vibespace session add mysession myproject
-  vibespace session add mysession myproject claude-1`,
-	Args: cobra.RangeArgs(2, 3),
-	RunE: runSessionAdd,
-}
-
-var sessionRemoveCmd = &cobra.Command{
-	Use:   "remove <session> <vibespace> [agent]",
-	Short: "Remove a vibespace or agent from a session",
-	Long: `Remove a vibespace or specific agent from a session.
-
-If no agent is specified, the entire vibespace is removed from the session.`,
-	Example: `  vibespace session remove mysession myproject
-  vibespace session remove mysession myproject claude-1`,
-	Args: cobra.RangeArgs(2, 3),
-	RunE: runSessionRemove,
-}
-
-var sessionStartCmd = &cobra.Command{
-	Use:     "start <name>",
-	Short:   "Start a session (launch TUI)",
-	Example: `  vibespace session start mysession`,
-	Args:    cobra.ExactArgs(1),
-	RunE:    runSessionStart,
-}
-
 var sessionShowCmd = &cobra.Command{
 	Use:     "show <name>",
 	Short:   "Show session details",
@@ -90,35 +49,9 @@ var sessionShowCmd = &cobra.Command{
 }
 
 func init() {
-	sessionCmd.AddCommand(sessionCreateCmd)
 	sessionCmd.AddCommand(sessionListCmd)
 	sessionCmd.AddCommand(sessionDeleteCmd)
-	sessionCmd.AddCommand(sessionAddCmd)
-	sessionCmd.AddCommand(sessionRemoveCmd)
-	sessionCmd.AddCommand(sessionStartCmd)
 	sessionCmd.AddCommand(sessionShowCmd)
-}
-
-func runSessionCreate(cmd *cobra.Command, args []string) error {
-	name := args[0]
-
-	store, err := session.NewStore()
-	if err != nil {
-		return err
-	}
-
-	sess, err := store.Create(name)
-	if err != nil {
-		return err
-	}
-
-	printSuccess("Created session '%s'", sess.Name)
-	fmt.Println()
-	fmt.Println("Next steps:")
-	fmt.Printf("  vibespace session add %s <vibespace>    Add a vibespace to the session\n", name)
-	fmt.Printf("  vibespace session start %s              Start the session TUI\n", name)
-
-	return nil
 }
 
 func runSessionList(cmd *cobra.Command, args []string) error {
@@ -155,28 +88,42 @@ func runSessionList(cmd *cobra.Command, args []string) error {
 	if len(sessions) == 0 {
 		fmt.Println("No sessions found.")
 		fmt.Println()
-		fmt.Println("Create one with:")
-		fmt.Println("  vibespace session create <name>")
+		fmt.Println("Create a new session with:")
+		fmt.Println("  vibespace multi --vibespaces <name>")
+		fmt.Println()
+		fmt.Println("Or start an empty session and add vibespaces interactively:")
+		fmt.Println("  vibespace multi")
 		return nil
 	}
 
-	fmt.Println("Sessions:")
-	fmt.Println()
-
-	for _, sess := range sessions {
-		// Format vibespaces count
-		vsCount := len(sess.Vibespaces)
-		vsLabel := "vibespace"
-		if vsCount != 1 {
-			vsLabel = "vibespaces"
-		}
-
-		// Format last used time
+	// Build table rows
+	rows := make([][]string, len(sessions))
+	for i, sess := range sessions {
+		vsNames, agentCount := formatSessionInfo(sess)
 		lastUsed := formatRelativeTime(sess.LastUsed)
-
-		fmt.Printf("  %s\n", out.Bold(sess.Name))
-		fmt.Printf("    %d %s, last used %s\n", vsCount, vsLabel, lastUsed)
+		rows[i] = []string{sess.Name, vsNames, agentCount, lastUsed}
 	}
+
+	// Define styles
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	cellStyle := lipgloss.NewStyle().Padding(0, 1)
+
+	// Create table
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
+		Headers("NAME", "VIBESPACES", "AGENTS", "LAST USED").
+		Rows(rows...).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if row == table.HeaderRow {
+				return headerStyle.Padding(0, 1)
+			}
+			return cellStyle
+		})
+
+	fmt.Println(t)
+	fmt.Println()
+	fmt.Printf("Resume a session: %s\n", out.Dim("vibespace multi -r"))
 
 	return nil
 }
@@ -195,110 +142,6 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 
 	printSuccess("Deleted session '%s'", name)
 	return nil
-}
-
-func runSessionAdd(cmd *cobra.Command, args []string) error {
-	sessionName := args[0]
-	vibespace := args[1]
-	var agents []string
-	if len(args) > 2 {
-		agents = []string{args[2]}
-	}
-
-	// Verify vibespace exists
-	ctx := context.Background()
-	svc, err := getVibespaceService()
-	if err != nil {
-		return err
-	}
-
-	_, err = svc.Get(ctx, vibespace)
-	if err != nil {
-		return fmt.Errorf("vibespace '%s' not found", vibespace)
-	}
-
-	// Update session
-	store, err := session.NewStore()
-	if err != nil {
-		return err
-	}
-
-	sess, err := store.Get(sessionName)
-	if err != nil {
-		return err
-	}
-
-	sess.AddVibespace(vibespace, agents)
-
-	if err := store.Save(sess); err != nil {
-		return err
-	}
-
-	if len(agents) > 0 {
-		printSuccess("Added %s from %s to session '%s'", agents[0], vibespace, sessionName)
-	} else {
-		printSuccess("Added vibespace %s to session '%s'", vibespace, sessionName)
-	}
-
-	return nil
-}
-
-func runSessionRemove(cmd *cobra.Command, args []string) error {
-	sessionName := args[0]
-	vibespace := args[1]
-	var agent string
-	if len(args) > 2 {
-		agent = args[2]
-	}
-
-	store, err := session.NewStore()
-	if err != nil {
-		return err
-	}
-
-	sess, err := store.Get(sessionName)
-	if err != nil {
-		return err
-	}
-
-	if agent != "" {
-		sess.RemoveAgent(session.AgentAddress{Agent: agent, Vibespace: vibespace})
-		printSuccess("Removed %s@%s from session '%s'", agent, vibespace, sessionName)
-	} else {
-		sess.RemoveVibespace(vibespace)
-		printSuccess("Removed vibespace %s from session '%s'", vibespace, sessionName)
-	}
-
-	if err := store.Save(sess); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func runSessionStart(cmd *cobra.Command, args []string) error {
-	name := args[0]
-
-	store, err := session.NewStore()
-	if err != nil {
-		return err
-	}
-
-	sess, err := store.Get(name)
-	if err != nil {
-		return err
-	}
-
-	if len(sess.Vibespaces) == 0 {
-		return fmt.Errorf("session '%s' has no vibespaces. Add one with: vibespace session add %s <vibespace>", name, name)
-	}
-
-	// Update last used time
-	sess.LastUsed = time.Now()
-	_ = store.Save(sess)
-
-	// Launch TUI
-	return runTUI(sess, false)
 }
 
 func runSessionShow(cmd *cobra.Command, args []string) error {
@@ -343,6 +186,7 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 	if len(sess.Vibespaces) == 0 {
 		fmt.Println()
 		fmt.Println("No vibespaces in this session.")
+		fmt.Println("Add vibespaces with /add inside the TUI")
 		return nil
 	}
 
@@ -351,7 +195,7 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 	for _, vs := range sess.Vibespaces {
 		fmt.Printf("  %s\n", out.Bold(vs.Name))
 		if len(vs.Agents) > 0 {
-			fmt.Printf("    Agents: %s\n", strings.Join(vs.Agents, ", "))
+			fmt.Printf("    Agents: %s\n", joinStrings(vs.Agents, ", "))
 		} else {
 			fmt.Printf("    Agents: (all)\n")
 		}
@@ -389,7 +233,44 @@ func formatRelativeTime(t time.Time) string {
 	}
 }
 
-// runTUI launches the terminal UI for a session
-func runTUI(sess *session.Session, isAdHoc bool) error {
-	return tui.Run(sess, isAdHoc)
+// joinStrings joins strings with a separator
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
+}
+
+// formatSessionInfo returns vibespace names and agent names for display
+func formatSessionInfo(sess session.Session) (vibespaces string, agents string) {
+	if len(sess.Vibespaces) == 0 {
+		return "(empty)", "-"
+	}
+
+	vsNames := make([]string, len(sess.Vibespaces))
+	var agentNames []string
+
+	for i, vs := range sess.Vibespaces {
+		vsNames[i] = vs.Name
+		if len(vs.Agents) > 0 {
+			// Specific agents selected
+			for _, a := range vs.Agents {
+				agentNames = append(agentNames, a+"@"+vs.Name)
+			}
+		}
+	}
+
+	vibespaces = strings.Join(vsNames, ", ")
+
+	if len(agentNames) > 0 {
+		agents = strings.Join(agentNames, ", ")
+	} else {
+		agents = "all"
+	}
+
+	return vibespaces, agents
 }
