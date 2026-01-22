@@ -174,3 +174,16 @@ func (h *ChatHistory) SetMessages(messages []*Message) {
 
 	h.scrollPos = 0
 }
+
+// SetScrollPosition sets whether we're scrolled away from bottom
+// Used to track scroll state when using external viewport
+func (h *ChatHistory) SetScrollPosition(scrolledUp bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if scrolledUp {
+		h.scrollPos = 1 // Any non-zero value means scrolled up
+	} else {
+		h.scrollPos = 0 // At bottom
+	}
+}

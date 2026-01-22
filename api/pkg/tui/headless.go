@@ -22,10 +22,15 @@ type HeadlessRunner struct {
 
 	// Configuration
 	timeout time.Duration
+
+	// History persistence
+	historyStore *HistoryStore
+	sessionName  string // Name for history persistence
 }
 
 // NewHeadlessRunner creates a new headless runner
 func NewHeadlessRunner() *HeadlessRunner {
+	historyStore, _ := NewHistoryStore() // Ignore error, history is optional
 	return &HeadlessRunner{
 		agents:         make(map[string]*AgentConn),
 		agentOrder:     make([]string, 0),
@@ -33,7 +38,13 @@ func NewHeadlessRunner() *HeadlessRunner {
 		sessionManager: NewClaudeSessionManager(),
 		daemons:        make(map[string]*daemon.Client),
 		timeout:        2 * time.Minute, // Default timeout
+		historyStore:   historyStore,
 	}
+}
+
+// SetSessionName sets the session name for history persistence
+func (r *HeadlessRunner) SetSessionName(name string) {
+	r.sessionName = name
 }
 
 // SetTimeout sets the response timeout
@@ -178,6 +189,9 @@ func (r *HeadlessRunner) SendAndWait(ctx context.Context, target, message string
 		Responses: make([]AgentResponse, 0),
 	}
 
+	// Persist user message to history
+	r.persistMessage(NewUserMessage(target, message))
+
 	// Determine which agents to send to
 	var targetAgents []*AgentConn
 	if target == "all" || target == "" {
@@ -227,20 +241,34 @@ func (r *HeadlessRunner) SendAndWait(ctx context.Context, target, message string
 
 			key := c.Address().String()
 			var messages []*Message
+			var messagesMu sync.Mutex
 
 			// Start collecting messages from output channel
 			outputCh := c.OutputChan()
-			doneCh := make(chan struct{})
+			doneCh := c.DoneChan() // Use the agent's done channel
 
 			go func() {
 				for {
 					select {
 					case msg, ok := <-outputCh:
 						if !ok {
-							close(doneCh)
 							return
 						}
+						messagesMu.Lock()
 						messages = append(messages, msg)
+						messagesMu.Unlock()
+					case <-doneCh:
+						// Response complete, drain remaining messages
+						for {
+							select {
+							case msg := <-outputCh:
+								messagesMu.Lock()
+								messages = append(messages, msg)
+								messagesMu.Unlock()
+							default:
+								return
+							}
+						}
 					case <-ctx.Done():
 						return
 					}
@@ -253,17 +281,22 @@ func (r *HeadlessRunner) SendAndWait(ctx context.Context, target, message string
 				return
 			}
 
-			// Wait for the response (until reconnect completes or timeout)
+			// Wait for the response (until agent signals done or timeout)
 			select {
 			case <-doneCh:
-				// Channel closed, agent finished responding
+				// Agent finished responding (received "result" message)
 			case <-time.After(r.timeout):
 				// Timeout waiting for response
 			case <-ctx.Done():
 				// Context cancelled
 			}
 
+			// Small delay to allow message collection goroutine to finish draining
+			time.Sleep(100 * time.Millisecond)
+
+			messagesMu.Lock()
 			resultCh <- agentResult{key: key, messages: messages}
+			messagesMu.Unlock()
 		}(conn)
 	}
 
@@ -283,10 +316,15 @@ func (r *HeadlessRunner) SendAndWait(ctx context.Context, target, message string
 
 		if result.err != nil {
 			agentResp.Error = result.err.Error()
+			// Persist error message
+			r.persistMessage(NewErrorMessage(result.key, result.err.Error()))
 		} else {
 			// Combine messages into content and tool uses
 			var contentParts []string
 			for _, msg := range result.messages {
+				// Persist each message to history
+				r.persistMessage(msg)
+
 				switch msg.Type {
 				case MessageTypeAssistant:
 					if msg.Content != "" {
@@ -312,6 +350,13 @@ func (r *HeadlessRunner) SendAndWait(ctx context.Context, target, message string
 	}
 
 	return response, nil
+}
+
+// persistMessage saves a message to history if configured
+func (r *HeadlessRunner) persistMessage(msg *Message) {
+	if r.historyStore != nil && r.sessionName != "" {
+		go r.historyStore.Append(r.sessionName, msg)
+	}
 }
 
 // GetAgents returns a list of connected agent addresses
@@ -410,5 +455,115 @@ func RunHeadless(ctx context.Context, vibespaces []string, target, message strin
 		}
 	}
 
+	return nil
+}
+
+// MessageCallback is called for each message received during streaming
+type MessageCallback func(agent string, msg *Message)
+
+// StreamResponses sends a message and streams responses via callback
+func (r *HeadlessRunner) StreamResponses(ctx context.Context, target, message string, callback MessageCallback) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Persist user message to history
+	r.persistMessage(NewUserMessage(target, message))
+
+	// Determine which agents to send to
+	var targetAgents []*AgentConn
+	if target == "all" || target == "" {
+		for _, conn := range r.agents {
+			targetAgents = append(targetAgents, conn)
+		}
+	} else {
+		conn, ok := r.agents[target]
+		if !ok {
+			// Try to match by agent name without vibespace
+			for key, c := range r.agents {
+				if c.Address().Agent == target {
+					conn = c
+					target = key
+					break
+				}
+			}
+		}
+		if conn == nil {
+			return fmt.Errorf("agent not found: %s", target)
+		}
+		targetAgents = append(targetAgents, conn)
+	}
+
+	if len(targetAgents) == 0 {
+		return fmt.Errorf("no agents to send to")
+	}
+
+	// Create a timeout context
+	ctx, cancel := context.WithTimeout(ctx, r.timeout)
+	defer cancel()
+
+	// Track completion for all agents
+	var wg sync.WaitGroup
+
+	for _, conn := range targetAgents {
+		wg.Add(1)
+		go func(c *AgentConn) {
+			defer wg.Done()
+
+			key := c.Address().String()
+
+			// Start collecting messages from output channel
+			outputCh := c.OutputChan()
+			doneCh := c.DoneChan()
+
+			// Goroutine to stream messages via callback
+			streamDone := make(chan struct{})
+			go func() {
+				defer close(streamDone)
+				for {
+					select {
+					case msg, ok := <-outputCh:
+						if !ok {
+							return
+						}
+						r.persistMessage(msg) // Persist to history
+						callback(key, msg)
+					case <-doneCh:
+						// Drain remaining messages
+						for {
+							select {
+							case msg := <-outputCh:
+								r.persistMessage(msg) // Persist to history
+								callback(key, msg)
+							default:
+								return
+							}
+						}
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+
+			// Send the message
+			if err := c.SendAndReconnect(message); err != nil {
+				errMsg := NewErrorMessage(key, err.Error())
+				r.persistMessage(errMsg) // Persist error to history
+				callback(key, errMsg)
+				return
+			}
+
+			// Wait for streaming to complete
+			select {
+			case <-streamDone:
+			case <-doneCh:
+				// Give a moment for final messages
+				time.Sleep(100 * time.Millisecond)
+			case <-ctx.Done():
+			}
+		}(conn)
+	}
+
+	// Wait for all agents
+	wg.Wait()
 	return nil
 }
