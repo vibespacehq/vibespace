@@ -102,6 +102,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case RichMessageMsg:
 		m.handleRichMessage(msg)
+		// Continue listening for more messages
+		cmds = append(cmds, m.waitForAgentMessage())
 
 	case AgentConnectedMsg:
 		m.statusMsg = fmt.Sprintf("Connected: %s", msg.Address.String())
@@ -291,6 +293,13 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Agent not found: %s", key)
 			return m, nil
 		}
+
+		// Build Claude command - resume existing session if one exists with messages
+		claudeCmd := "claude"
+		if sess := m.sessionManager.GetCurrentSession(addr); sess != nil && sess.MessageCount > 0 {
+			claudeCmd = fmt.Sprintf("claude --resume %s", sess.ID)
+		}
+
 		// Launch interactive Claude session
 		// This temporarily exits the TUI and hands control to Claude
 		m.statusMsg = fmt.Sprintf("Launching interactive session with %s...", key)
@@ -303,7 +312,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				"-o", "LogLevel=ERROR",
 				"-t",
 				"user@localhost",
-				"bash", "-l", "-c", "claude",
+				"bash", "-l", "-c", claudeCmd,
 			),
 			func(err error) tea.Msg {
 				if err != nil {
@@ -582,27 +591,44 @@ func (m *Model) handleRichMessage(msg RichMessageMsg) {
 
 // listenToAgents starts listening to all agent output channels
 func (m *Model) listenToAgents() tea.Cmd {
-	return func() tea.Msg {
-		m.agentMu.RLock()
-		agents := make([]*AgentConn, 0, len(m.agents))
-		for _, conn := range m.agents {
-			agents = append(agents, conn)
-		}
-		m.agentMu.RUnlock()
+	// Get current agents under lock
+	m.agentMu.RLock()
+	agents := make([]*AgentConn, 0, len(m.agents))
+	for _, conn := range m.agents {
+		agents = append(agents, conn)
+	}
+	m.agentMu.RUnlock()
 
-		// Start a goroutine for each agent to listen for messages
-		for _, conn := range agents {
-			go func(c *AgentConn) {
-				for msg := range c.OutputChan() {
-					// We can't send tea.Msg from here directly,
-					// so we add messages to the history and let the tick trigger rerender
-					m.SetAgentThinking(c.Address().String(), false)
-					m.AddMessage(msg)
+	// Start a goroutine for each agent to forward messages to the channel
+	// These goroutines send to m.incomingMsgs, NOT directly modify model state
+	for _, conn := range agents {
+		go func(c *AgentConn) {
+			for msg := range c.OutputChan() {
+				select {
+				case m.incomingMsgs <- RichMessageMsg{
+					AgentKey: c.Address().String(),
+					Message:  msg,
+				}:
+				case <-m.ctx.Done():
+					return
 				}
-			}(conn)
-		}
+			}
+		}(conn)
+	}
 
-		return TickMsg{}
+	// Return command to start listening to the incoming messages channel
+	return m.waitForAgentMessage()
+}
+
+// waitForAgentMessage returns a command that waits for the next message from any agent
+func (m *Model) waitForAgentMessage() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case msg := <-m.incomingMsgs:
+			return msg
+		case <-m.ctx.Done():
+			return nil
+		}
 	}
 }
 
