@@ -3,8 +3,7 @@ name: Build Container Image
 on:
   push:
     branches:
-      - main
-      - vibespace-cli-pivot
+      - vibespace-wip
     paths:
       - 'build/package/**'
       - '.github/workflows/build-image.yml'
