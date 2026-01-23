@@ -520,6 +520,16 @@ func (s *Server) handleRefresh() Response {
 		return NewErrorResponse(fmt.Errorf("failed to discover pods: %w", err))
 	}
 
+	// Find and remove agents that no longer exist
+	currentAgents := s.state.GetAllAgents()
+	for _, agentName := range currentAgents {
+		if _, exists := agents[agentName]; !exists {
+			slog.Info("removing forwards for deleted agent", "agent", agentName)
+			s.manager.RemoveAgentForwards(agentName)
+			s.state.RemoveAgent(agentName)
+		}
+	}
+
 	// Update pod mappings and create forwards for new agents
 	for agentName, podName := range agents {
 		oldPod, exists := s.manager.GetAgentPod(agentName)

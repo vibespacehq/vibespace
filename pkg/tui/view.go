@@ -44,11 +44,7 @@ func (m *Model) renderLoading() string {
 	sb.WriteString(m.styles.Title.Render("vibespace multi-session"))
 	sb.WriteString("\n\n")
 
-	if m.isAdHoc {
-		sb.WriteString(m.styles.Dim.Render("Starting ad-hoc session..."))
-	} else {
-		sb.WriteString(m.styles.Dim.Render(fmt.Sprintf("Starting session '%s'...", m.session.Name)))
-	}
+	sb.WriteString(m.styles.Dim.Render(fmt.Sprintf("Starting session '%s'...", m.sessionName)))
 	sb.WriteString("\n\n")
 
 	// Show connection progress
@@ -62,12 +58,7 @@ func (m *Model) renderLoading() string {
 
 // renderHeader renders the header section
 func (m *Model) renderHeader() string {
-	var title string
-	if m.isAdHoc {
-		title = "vibespace multi-session"
-	} else {
-		title = fmt.Sprintf("vibespace session: %s", m.session.Name)
-	}
+	title := fmt.Sprintf("vibespace session: %s", m.sessionName)
 
 	agentCount := m.GetAgentCount()
 	agentLabel := "agent"

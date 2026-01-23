@@ -31,7 +31,7 @@ type Model struct {
 	// Session
 	session     *session.Session
 	sessionName string // Name for persistence (can be empty for ad-hoc)
-	isAdHoc     bool
+	resume      bool   // If true, resume existing Claude sessions; if false, start fresh
 
 	// Connections
 	agents     map[string]*AgentConn // "claude-1@projectA" → connection
@@ -81,7 +81,8 @@ type Model struct {
 }
 
 // NewModel creates a new TUI model
-func NewModel(sess *session.Session, isAdHoc bool) *Model {
+// resume indicates whether to resume existing Claude sessions (true) or start fresh (false)
+func NewModel(sess *session.Session, resume bool) *Model {
 	ti := textinput.New()
 	ti.Prompt = "" // We render our own prompt
 	ti.Placeholder = "@agent message or /help (Tab for autocomplete)"
@@ -98,16 +99,8 @@ func NewModel(sess *session.Session, isAdHoc bool) *Model {
 		defaultVS = sess.Vibespaces[0].Name
 	}
 
-	// Determine session name for persistence
+	// Session name is used for persistence
 	sessionName := sess.Name
-	if sessionName == "" && isAdHoc {
-		// Generate a name from vibespace names
-		var vsNames []string
-		for _, vs := range sess.Vibespaces {
-			vsNames = append(vsNames, vs.Name)
-		}
-		sessionName = strings.Join(vsNames, "-")
-	}
 
 	// Try to create history store
 	historyStore, _ := NewHistoryStore()
@@ -121,7 +114,7 @@ func NewModel(sess *session.Session, isAdHoc bool) *Model {
 	return &Model{
 		session:          sess,
 		sessionName:      sessionName,
-		isAdHoc:          isAdHoc,
+		resume:           resume,
 		agents:           make(map[string]*AgentConn),
 		agentOrder:       make([]string, 0),
 		agentStates:      make(map[string]*AgentState),
@@ -291,7 +284,8 @@ func (m *Model) connectAgent(addr session.AgentAddress) error {
 	}
 
 	// Create agent connection with shared session manager
-	conn := NewAgentConn(addr, sshPort, m.sessionManager)
+	// Pass the multi-session ID (sessionName) and resume flag
+	conn := NewAgentConn(addr, sshPort, m.sessionManager, m.sessionName, m.resume)
 	if err := conn.Connect(); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
@@ -773,8 +767,9 @@ func (m *Model) Close() {
 }
 
 // Run starts the TUI
+// resume indicates whether to resume existing Claude sessions (true) or start fresh (false)
 // Returns an error if stdin/stdout are not TTYs
-func Run(sess *session.Session, isAdHoc bool) error {
+func Run(sess *session.Session, resume bool) error {
 	// Guard: TUI requires a terminal
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return fmt.Errorf("TUI requires an interactive terminal (stdin is not a TTY); use --json for non-interactive mode")
@@ -783,7 +778,7 @@ func Run(sess *session.Session, isAdHoc bool) error {
 		return fmt.Errorf("TUI requires an interactive terminal (stdout is not a TTY); use --json for non-interactive mode")
 	}
 
-	m := NewModel(sess, isAdHoc)
+	m := NewModel(sess, resume)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 
 	_, err := p.Run()

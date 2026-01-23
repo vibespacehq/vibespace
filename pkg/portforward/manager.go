@@ -189,6 +189,48 @@ func (m *Manager) RemoveForward(agentName string, remotePort int) error {
 	return nil
 }
 
+// RemoveAgentForwards stops and removes all forwards for an agent
+func (m *Manager) RemoveAgentForwards(agentName string) {
+	m.mu.Lock()
+
+	// Find all forwards for this agent
+	var toRemove []string
+	for key := range m.forwarders {
+		// Key format is "agentName:remotePort"
+		lastColon := -1
+		for i := len(key) - 1; i >= 0; i-- {
+			if key[i] == ':' {
+				lastColon = i
+				break
+			}
+		}
+		if lastColon == -1 {
+			continue
+		}
+		if key[:lastColon] == agentName {
+			toRemove = append(toRemove, key)
+		}
+	}
+
+	// Stop and remove each forward
+	for _, key := range toRemove {
+		if fwd, exists := m.forwarders[key]; exists {
+			fwd.Stop()
+			delete(m.forwarders, key)
+		}
+	}
+
+	// Remove pod mapping
+	delete(m.agents, agentName)
+
+	// Release all ports for this agent
+	m.allocator.ReleaseAllForAgent(agentName)
+
+	m.mu.Unlock()
+
+	slog.Info("removed all forwards for agent", "agent", agentName, "count", len(toRemove))
+}
+
 // StopForward stops a forward without removing it (can be restarted)
 func (m *Manager) StopForward(agentName string, remotePort int) error {
 	m.mu.RLock()

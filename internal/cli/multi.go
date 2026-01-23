@@ -71,6 +71,10 @@ func init() {
 func runMultiCmd(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
+	// Setup logging early so it applies to all modes (interactive and non-interactive)
+	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
+	defer cleanup()
+
 	// Parse flags
 	resumeFlag, _ := cmd.Flags().GetBool("resume")
 	vibespaces, _ := cmd.Flags().GetStringSlice("vibespaces")
@@ -215,10 +219,6 @@ func runMultiCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Interactive TUI mode
-	// Setup TUI logging
-	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
-	defer cleanup()
-
 	return tui.Run(sess, false)
 }
 
@@ -341,7 +341,8 @@ func runSessionPicker(ctx context.Context) error {
 	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
 	defer cleanup()
 
-	return tui.Run(sess, false)
+	// Resume existing Claude sessions (use --resume)
+	return tui.Run(sess, true)
 }
 
 // runNonInteractive runs in non-interactive mode with JSON output

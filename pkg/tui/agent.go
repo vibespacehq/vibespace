@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -58,6 +59,9 @@ type AgentConn struct {
 	address        session.AgentAddress
 	localPort      int
 	sessionManager *ClaudeSessionManager // Shared session manager for --session-id vs --resume
+	multiSessionID string                // Multi-session ID for session isolation
+	resume         bool                  // If true, use --resume with existing session; if false, use --session-id
+	forceNewSession bool                 // If true, use --session-id even if session exists (for /session @agent new)
 
 	// SSH process running claude in print mode
 	cmd    *exec.Cmd
@@ -66,8 +70,9 @@ type AgentConn struct {
 	stderr io.Reader
 
 	// State
-	connected bool
-	mu        sync.Mutex
+	connected    bool
+	reconnectGen uint64 // Incremented on manual reconnect to prevent stale async reconnects
+	mu           sync.Mutex
 
 	// Output channel for parsed messages (now rich Message types)
 	outputCh chan *Message
@@ -78,12 +83,16 @@ type AgentConn struct {
 }
 
 // NewAgentConn creates a new agent connection
-func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *ClaudeSessionManager) *AgentConn {
+// multiSessionID is the multi-session ID for session isolation
+// resume indicates whether to resume an existing session (--resume) or start fresh (--session-id)
+func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *ClaudeSessionManager, multiSessionID string, resume bool) *AgentConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &AgentConn{
 		address:        addr,
 		localPort:      localPort,
 		sessionManager: sessionMgr,
+		multiSessionID: multiSessionID,
+		resume:         resume,
 		outputCh:       make(chan *Message, 100),
 		responseDone:   make(chan struct{}),
 		ctx:            ctx,
@@ -97,6 +106,7 @@ func (c *AgentConn) Connect() error {
 	defer c.mu.Unlock()
 
 	if c.connected {
+		slog.Debug("agent already connected", "agent", c.address.String())
 		return nil
 	}
 
@@ -106,29 +116,42 @@ func (c *AgentConn) Connect() error {
 		return vserrors.ErrSSHKeyNotFound
 	}
 
-	// Get session ID and determine if this is a new session or continuation
-	// isNew=true: first message in session, use --session-id to create
-	// isNew=false: continuing session, use --resume to continue
-	sessionID, isNew := c.sessionManager.GetOrCreateSession(c.address)
-
-	// Build SSH command to run Claude in print mode
-	// Using stream-json for real-time output parsing
-	// Use login shell to ensure PATH and environment are set up
-	// Note: --verbose is required when using stream-json with -p
+	// Get session ID and determine whether to use --session-id or --resume
+	agentAddr := c.address.String()
 	var claudeCmd string
-	if isNew {
-		// First message: create new session with --session-id
+	var sessionMode string
+
+	// Check if a session already exists for this agent in this multi-session
+	existingSessionID := c.sessionManager.GetSession(c.multiSessionID, agentAddr)
+	slog.Debug("connect: checking session", "agent", agentAddr, "multiSession", c.multiSessionID,
+		"existingSessionID", existingSessionID, "forceNewSession", c.forceNewSession)
+
+	if c.forceNewSession && existingSessionID != "" {
+		// Force new session (e.g., /session @agent new) - use --session-id
+		// Clear the flag after using it
+		c.forceNewSession = false
+		sessionMode = "session-id (forced new)"
+		claudeCmd = fmt.Sprintf(
+			`bash -l -c 'claude -p --verbose --output-format stream-json --session-id %s --allowedTools "Bash(read_only:true),Read,Write,Edit,Glob,Grep"'`,
+			existingSessionID,
+		)
+	} else if existingSessionID != "" {
+		// Session exists - use --resume to continue it
+		sessionMode = "resume"
+		claudeCmd = fmt.Sprintf(
+			`bash -l -c 'claude -p --verbose --output-format stream-json --resume %s --allowedTools "Bash(read_only:true),Read,Write,Edit,Glob,Grep"'`,
+			existingSessionID,
+		)
+	} else {
+		// No existing session - create a new one with --session-id
+		sessionID := c.sessionManager.GetOrCreateSession(c.multiSessionID, agentAddr)
+		sessionMode = "session-id (new)"
 		claudeCmd = fmt.Sprintf(
 			`bash -l -c 'claude -p --verbose --output-format stream-json --session-id %s --allowedTools "Bash(read_only:true),Read,Write,Edit,Glob,Grep"'`,
 			sessionID,
 		)
-	} else {
-		// Continuing: resume existing session with --resume
-		claudeCmd = fmt.Sprintf(
-			`bash -l -c 'claude -p --verbose --output-format stream-json --resume %s --allowedTools "Bash(read_only:true),Read,Write,Edit,Glob,Grep"'`,
-			sessionID,
-		)
 	}
+	slog.Debug("connect: using mode", "agent", agentAddr, "mode", sessionMode)
 
 	sshArgs := []string{
 		"-i", keyPath,
@@ -168,10 +191,16 @@ func (c *AgentConn) Connect() error {
 	// Start the process
 	if err := c.cmd.Start(); err != nil {
 		stdin.Close()
+		slog.Error("connect: failed to start SSH", "agent", agentAddr, "error", err)
 		return fmt.Errorf("failed to start SSH: %w", err)
 	}
 
 	c.connected = true
+	slog.Debug("connect: SSH process started", "agent", agentAddr, "pid", c.cmd.Process.Pid)
+
+	// After first successful connection, always use --resume for reconnects
+	// This prevents "Session ID already in use" errors
+	c.resume = true
 
 	// Start output reader goroutine
 	go c.readLoop()
@@ -184,6 +213,11 @@ func (c *AgentConn) Connect() error {
 
 // readLoop continuously reads and parses JSON output from Claude
 func (c *AgentConn) readLoop() {
+	// Capture generation at start - only modify state if we're still current
+	c.mu.Lock()
+	myGen := c.reconnectGen
+	c.mu.Unlock()
+
 	scanner := bufio.NewScanner(c.stdout)
 	// Increase buffer size for large responses
 	buf := make([]byte, 0, 64*1024)
@@ -237,9 +271,14 @@ func (c *AgentConn) readLoop() {
 		}
 	}
 
-	// Connection closed or error
+	// Connection closed or error - only update state if we're still the current readLoop
 	c.mu.Lock()
-	c.connected = false
+	if c.reconnectGen == myGen {
+		c.connected = false
+		slog.Debug("readLoop: connection closed, setting connected=false", "agent", c.address.String(), "gen", myGen)
+	} else {
+		slog.Debug("readLoop: stale loop exiting, not modifying state", "agent", c.address.String(), "myGen", myGen, "currentGen", c.reconnectGen)
+	}
 	c.mu.Unlock()
 }
 
@@ -443,18 +482,21 @@ func (c *AgentConn) Send(msg string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	slog.Debug("send: attempting", "agent", c.address.String(), "connected", c.connected, "msgLen", len(msg))
+
 	if !c.connected {
+		slog.Error("send: not connected", "agent", c.address.String())
 		return vserrors.ErrNotConnected
 	}
 
 	// Send the message followed by newline
 	_, err := fmt.Fprintf(c.stdin, "%s\n", msg)
 	if err != nil {
+		slog.Error("send: write failed", "agent", c.address.String(), "error", err)
 		return err
 	}
 
-	// Record message in session manager (for --session-id vs --resume logic)
-	c.sessionManager.RecordMessage(c.address, msg)
+	slog.Debug("send: message written, closing stdin", "agent", c.address.String())
 
 	// Close stdin to signal EOF - Claude print mode requires this to process
 	c.stdin.Close()
@@ -465,17 +507,45 @@ func (c *AgentConn) Send(msg string) error {
 // SendAndReconnect sends a message and reconnects for the next one
 // This is needed because Claude print mode processes on EOF
 func (c *AgentConn) SendAndReconnect(msg string) error {
+	// Capture current generation and cmd before sending
+	c.mu.Lock()
+	currentGen := c.reconnectGen
+	currentCmd := c.cmd
+	c.mu.Unlock()
+
+	slog.Debug("sendAndReconnect: starting", "agent", c.address.String(), "gen", currentGen)
+
 	if err := c.Send(msg); err != nil {
+		slog.Error("sendAndReconnect: send failed", "agent", c.address.String(), "error", err)
 		return err
 	}
+
+	slog.Debug("sendAndReconnect: send succeeded, starting async wait", "agent", c.address.String(), "gen", currentGen)
 
 	// Wait for response to be processed, then reconnect
 	// The readLoop will continue reading until the process exits
 	go func() {
+		slog.Debug("sendAndReconnect: async goroutine waiting for process", "agent", c.address.String(), "gen", currentGen)
+
 		// Wait for current process to finish
-		if c.cmd != nil {
-			c.cmd.Wait()
+		if currentCmd != nil {
+			currentCmd.Wait()
 		}
+
+		slog.Debug("sendAndReconnect: process finished, checking gen", "agent", c.address.String(), "capturedGen", currentGen)
+
+		// Only reconnect if no manual reconnect happened (e.g., /session @agent new)
+		c.mu.Lock()
+		if c.reconnectGen != currentGen {
+			slog.Debug("sendAndReconnect: skipping async reconnect - manual reconnect already happened",
+				"agent", c.address.String(), "oldGen", currentGen, "newGen", c.reconnectGen)
+			c.mu.Unlock()
+			return
+		}
+		c.mu.Unlock()
+
+		slog.Debug("sendAndReconnect: proceeding with async reconnect", "agent", c.address.String(), "gen", currentGen)
+
 		// Reconnect for next message
 		c.Reconnect()
 	}()
@@ -517,7 +587,22 @@ func (c *AgentConn) Address() session.AgentAddress {
 
 // SessionID returns the current Claude session ID for this connection
 func (c *AgentConn) SessionID() string {
-	return c.sessionManager.GetCurrentSessionID(c.address)
+	return c.sessionManager.GetCurrentSessionID(c.multiSessionID, c.address.String())
+}
+
+// MultiSessionID returns the multi-session ID for this connection
+func (c *AgentConn) MultiSessionID() string {
+	return c.multiSessionID
+}
+
+// SetResume sets the resume flag for this connection (used when switching sessions)
+func (c *AgentConn) SetResume(resume bool) {
+	c.resume = resume
+}
+
+// SetForceNewSession sets the forceNewSession flag (used by /session @agent new)
+func (c *AgentConn) SetForceNewSession(force bool) {
+	c.forceNewSession = force
 }
 
 // LocalPort returns the local SSH port
@@ -546,6 +631,8 @@ func (c *AgentConn) Close() {
 // Keeps the same output channel so listeners continue working
 // Session continuity is managed by ClaudeSessionManager (--session-id vs --resume)
 func (c *AgentConn) Reconnect() error {
+	slog.Debug("reconnect: starting", "agent", c.address.String(), "forceNewSession", c.forceNewSession)
+
 	// Save the output channel before closing
 	savedCh := c.outputCh
 
@@ -559,6 +646,7 @@ func (c *AgentConn) Reconnect() error {
 		c.cmd.Process.Kill()
 	}
 	c.connected = false
+	c.reconnectGen++ // Increment to invalidate any pending async reconnects
 	c.mu.Unlock()
 
 	// Create new context and responseDone channel, but keep the same output channel
@@ -567,5 +655,11 @@ func (c *AgentConn) Reconnect() error {
 	c.outputCh = savedCh
 	c.responseDone = make(chan struct{}) // New channel for next response
 
-	return c.Connect()
+	err := c.Connect()
+	if err != nil {
+		slog.Error("reconnect: connect failed", "agent", c.address.String(), "error", err)
+	} else {
+		slog.Debug("reconnect: connect successful", "agent", c.address.String())
+	}
+	return err
 }
