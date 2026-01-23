@@ -19,6 +19,7 @@ type Request struct {
 type Response struct {
 	ID       string   `json:"id"`
 	Decision Decision `json:"decision"`
+	Reason   string   `json:"reason,omitempty"`
 }
 
 // Decision represents the user's decision on a permission request.

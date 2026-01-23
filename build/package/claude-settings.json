@@ -1,8 +1,8 @@
 {
   "hooks": {
-    "PermissionRequest": [
+    "PreToolUse": [
       {
-        "matcher": ".*",
+        "matcher": "*",
         "hooks": [
           {
             "type": "command",

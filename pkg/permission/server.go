@@ -148,10 +148,11 @@ func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 	slog.Debug("received permission request", "body", string(body))
 
 	// Parse the incoming request
+	// PreToolUse sends toolInput as JSON object, not string
 	var incoming struct {
-		AgentKey  string `json:"agent_key"`
-		ToolName  string `json:"toolName"`
-		ToolInput string `json:"toolInput"`
+		AgentKey  string          `json:"agent_key"`
+		ToolName  string          `json:"toolName"`
+		ToolInput json.RawMessage `json:"toolInput"`
 	}
 	if err := json.Unmarshal(body, &incoming); err != nil {
 		slog.Error("failed to parse request", "error", err)
@@ -164,7 +165,7 @@ func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 		ID:        uuid.New().String(),
 		AgentKey:  incoming.AgentKey,
 		ToolName:  incoming.ToolName,
-		ToolInput: json.RawMessage(incoming.ToolInput),
+		ToolInput: incoming.ToolInput,
 		Timestamp: time.Now(),
 	}
 
@@ -212,8 +213,16 @@ func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 
 // writeResponse writes the permission decision response.
 func (s *Server) writeResponse(w http.ResponseWriter, decision Decision) {
+	reason := "Controlled by vibespace"
+	if decision == DecisionAllow {
+		reason = "Approved by user in vibespace TUI"
+	} else if decision == DecisionDeny {
+		reason = "Denied by user in vibespace TUI"
+	}
+
 	resp := Response{
 		Decision: decision,
+		Reason:   reason,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
