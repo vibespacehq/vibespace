@@ -291,15 +291,13 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Build Claude command based on resume flag and existing session
+		// Build Claude command - if session exists, always use --resume
+		// (the session was already created on the pod when we sent messages)
 		var claudeCmd string
 		sessionID := m.sessionManager.GetSession(m.sessionName, key)
-		if m.resume && sessionID != "" {
-			// Resume existing session
+		if sessionID != "" {
+			// Session exists on pod - resume it
 			claudeCmd = fmt.Sprintf("claude --resume %s", sessionID)
-		} else if sessionID != "" {
-			// Session exists but we're not resuming - use session-id to continue
-			claudeCmd = fmt.Sprintf("claude --session-id %s", sessionID)
 		} else {
 			// No session yet, just start claude
 			claudeCmd = "claude"
@@ -310,7 +308,8 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 
 		// Use tmux: attach to existing session or create new one with Claude
 		// tmux new-session -A: attach if exists, create if not
-		tmuxCmd := fmt.Sprintf("tmux new-session -A -s %s '%s'", tmuxSession, claudeCmd)
+		// Set TERM=xterm-256color to avoid issues with non-standard terminals (e.g., ghostty)
+		tmuxCmd := fmt.Sprintf("TERM=xterm-256color tmux new-session -A -s %s '%s'", tmuxSession, claudeCmd)
 
 		// Launch interactive Claude session via tmux
 		// User can detach with Ctrl+B D to return to TUI without killing Claude
