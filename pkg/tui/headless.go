@@ -55,11 +55,6 @@ func (r *HeadlessRunner) SetTimeout(d time.Duration) {
 	r.timeout = d
 }
 
-// SetResume sets the resume flag for Claude sessions
-// If true, existing sessions will be resumed; if false, new sessions will be created
-func (r *HeadlessRunner) SetResume(resume bool) {
-	r.resume = resume
-}
 
 // Connect connects to agents in the specified vibespaces
 func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.VibespaceEntry) error {
