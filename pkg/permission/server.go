@@ -148,11 +148,11 @@ func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 	slog.Debug("received permission request", "body", string(body))
 
 	// Parse the incoming request
-	// PreToolUse sends toolInput as JSON object, not string
+	// PreToolUse sends tool_name and tool_input in snake_case
 	var incoming struct {
 		AgentKey  string          `json:"agent_key"`
-		ToolName  string          `json:"toolName"`
-		ToolInput json.RawMessage `json:"toolInput"`
+		ToolName  string          `json:"tool_name"`
+		ToolInput json.RawMessage `json:"tool_input"`
 	}
 	if err := json.Unmarshal(body, &incoming); err != nil {
 		slog.Error("failed to parse request", "error", err)
