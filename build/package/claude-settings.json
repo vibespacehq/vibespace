@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/.local/bin/vibespace-permission-hook",
+            "timeout": 300000
+          }
+        ]
+      }
+    ]
+  }
+}

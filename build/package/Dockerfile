@@ -116,11 +116,17 @@ COPY bashrc.vibespace /home/user/.bashrc.vibespace
 COPY banner.txt /home/user/.banner.txt
 COPY entrypoint.sh /entrypoint.sh
 
-RUN mkdir -p /var/log/supervisor && \
+# Copy permission hook and Claude settings
+COPY vibespace-permission-hook /home/user/.local/bin/vibespace-permission-hook
+COPY claude-settings.json /etc/vibespace/claude-settings.json
+
+RUN mkdir -p /var/log/supervisor /etc/vibespace && \
     chown 1000:1000 /var/log/supervisor && \
     chmod 755 /var/log/supervisor && \
     chmod +x /entrypoint.sh && \
-    chown user:user /home/user/.bashrc.vibespace
+    chmod +x /home/user/.local/bin/vibespace-permission-hook && \
+    chown user:user /home/user/.bashrc.vibespace && \
+    chown user:user /home/user/.local/bin/vibespace-permission-hook
 
 # Switch to user for npm config
 USER user

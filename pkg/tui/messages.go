@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/yagizdagabak/vibespace/pkg/permission"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 )
 
@@ -113,3 +114,14 @@ type HistoryLoadedMsg struct {
 
 // HistoryClearedMsg signals that history has been cleared
 type HistoryClearedMsg struct{}
+
+// PermissionRequestMsg is sent when the permission server receives a request.
+type PermissionRequestMsg struct {
+	Request *permission.Request
+}
+
+// PermissionDecisionMsg is sent when the user makes a permission decision.
+type PermissionDecisionMsg struct {
+	ID       string
+	Decision permission.Decision
+}

@@ -33,8 +33,15 @@ func (m *Model) View() string {
 		status = " " // Keep consistent height
 	}
 
-	// Viewport handles its own height padding
-	return fmt.Sprintf("%s\n%s\n%s\n%s", header, m.viewport.View(), input, status)
+	// Base view
+	baseView := fmt.Sprintf("%s\n%s\n%s\n%s", header, m.viewport.View(), input, status)
+
+	// If permission prompt is showing, render it as an overlay
+	if m.permissionPrompt != nil {
+		return m.permissionPrompt.View()
+	}
+
+	return baseView
 }
 
 // renderLoading renders the loading state
