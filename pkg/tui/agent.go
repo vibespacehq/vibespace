@@ -159,6 +159,8 @@ func (c *AgentConn) Connect() error {
 		"-o", "StrictHostKeyChecking=no",
 		"-o", "UserKnownHostsFile=/dev/null",
 		"-o", "LogLevel=ERROR",
+		// Reverse tunnel: pod's localhost:18080 -> host's localhost:18080 (permission server)
+		"-R", "18080:localhost:18080",
 		"user@localhost",
 		claudeCmd,
 	}

@@ -1,12 +1,12 @@
 #!/bin/bash
-# vibespace Permission Hook for Claude Code
+# vibespace Permission Hook for Claude Code (PreToolUse)
 #
-# This script is called by Claude Code when a tool requires permission.
+# This script is called by Claude Code before each tool use.
 # It POSTs to the TUI's permission server (port-forwarded from the host)
 # and blocks until the user approves or denies the request.
 #
 # Input (stdin): JSON from Claude with tool information
-# Output (stdout): JSON with the permission decision
+# Output (stdout): JSON with the permission decision (PreToolUse format)
 #
 # Environment variables:
 #   VIBESPACE_PERMISSION_PORT - Port for permission server (default: 18080)
@@ -26,7 +26,7 @@ REQUEST=$(cat)
 AGENT_KEY="${VIBESPACE_AGENT:-unknown}@${VIBESPACE_NAME:-unknown}"
 
 # Add agent identifier to request
-# Claude sends: {"hookEventName": "PermissionRequest", "toolName": "Bash", "toolInput": "..."}
+# Claude sends: {"hookEventName": "PreToolUse", "toolName": "Bash", "toolInput": {...}}
 REQUEST=$(echo "$REQUEST" | jq --arg agent "$AGENT_KEY" '. + {agent_key: $agent}')
 
 # Debug logging (uncomment for troubleshooting)
@@ -47,19 +47,20 @@ RESPONSE=$(echo "$REQUEST" | curl -s -X POST \
 
 # Parse decision from response
 DECISION=$(echo "$RESPONSE" | jq -r '.decision // "deny"')
+REASON=$(echo "$RESPONSE" | jq -r '.reason // "Controlled by vibespace"')
 
 # Debug logging
 # echo "[vibespace-hook] Response: $RESPONSE" >&2
 # echo "[vibespace-hook] Decision: $DECISION" >&2
 
-# Return hook output format expected by Claude
+# Return PreToolUse hook output format expected by Claude
+# permissionDecision: "allow" | "deny" | "ask"
 cat <<EOF
 {
   "hookSpecificOutput": {
-    "hookEventName": "PermissionRequest",
-    "decision": {
-      "behavior": "$DECISION"
-    }
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "$DECISION",
+    "permissionDecisionReason": "$REASON"
   }
 }
 EOF
