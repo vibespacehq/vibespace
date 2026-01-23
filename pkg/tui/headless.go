@@ -23,10 +23,11 @@ type HeadlessRunner struct {
 
 	// Configuration
 	timeout time.Duration
+	resume  bool // If true, resume existing Claude sessions; if false, start fresh
 
 	// History persistence
 	historyStore *HistoryStore
-	sessionName  string // Name for history persistence
+	sessionName  string // Name for history persistence (also used as multi-session ID)
 }
 
 // NewHeadlessRunner creates a new headless runner
@@ -44,6 +45,7 @@ func NewHeadlessRunner() *HeadlessRunner {
 }
 
 // SetSessionName sets the session name for history persistence
+// This is also used as the multi-session ID for Claude session isolation
 func (r *HeadlessRunner) SetSessionName(name string) {
 	r.sessionName = name
 }
@@ -51,6 +53,12 @@ func (r *HeadlessRunner) SetSessionName(name string) {
 // SetTimeout sets the response timeout
 func (r *HeadlessRunner) SetTimeout(d time.Duration) {
 	r.timeout = d
+}
+
+// SetResume sets the resume flag for Claude sessions
+// If true, existing sessions will be resumed; if false, new sessions will be created
+func (r *HeadlessRunner) SetResume(resume bool) {
+	r.resume = resume
 }
 
 // Connect connects to agents in the specified vibespaces
@@ -109,7 +117,8 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 			}
 
 			addr := session.AgentAddress{Agent: a.Name, Vibespace: vsName}
-			conn := NewAgentConn(addr, port, r.sessionManager)
+			// Pass sessionName as multi-session ID and resume flag
+			conn := NewAgentConn(addr, port, r.sessionManager, r.sessionName, r.resume)
 			if err := conn.Connect(); err != nil {
 				return fmt.Errorf("failed to connect to %s: %w", addr.String(), err)
 			}

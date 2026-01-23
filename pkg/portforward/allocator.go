@@ -62,6 +62,19 @@ func (a *PortAllocator) ReleasePort(agentName string, remotePort int) {
 	delete(a.allocatedPorts, key)
 }
 
+// ReleaseAllForAgent releases all allocated ports for an agent
+func (a *PortAllocator) ReleaseAllForAgent(agentName string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	prefix := agentName + ":"
+	for key := range a.allocatedPorts {
+		if len(key) >= len(prefix) && key[:len(prefix)] == prefix {
+			delete(a.allocatedPorts, key)
+		}
+	}
+}
+
 // isPortAvailable checks if a port is available for binding
 func isPortAvailable(port int) bool {
 	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))

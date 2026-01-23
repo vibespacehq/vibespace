@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
@@ -290,10 +291,18 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Build Claude command - resume existing session if one exists with messages
-		claudeCmd := "claude"
-		if sess := m.sessionManager.GetCurrentSession(addr); sess != nil && sess.MessageCount > 0 {
-			claudeCmd = fmt.Sprintf("claude --resume %s", sess.ID)
+		// Build Claude command based on resume flag and existing session
+		var claudeCmd string
+		sessionID := m.sessionManager.GetSession(m.sessionName, key)
+		if m.resume && sessionID != "" {
+			// Resume existing session
+			claudeCmd = fmt.Sprintf("claude --resume %s", sessionID)
+		} else if sessionID != "" {
+			// Session exists but we're not resuming - use session-id to continue
+			claudeCmd = fmt.Sprintf("claude --session-id %s", sessionID)
+		} else {
+			// No session yet, just start claude
+			claudeCmd = "claude"
 		}
 
 		// tmux session name based on agent (sanitize for tmux)
@@ -309,7 +318,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 		return m, tea.ExecProcess(
 			exec.Command("ssh",
 				"-i", vibespace.GetSSHPrivateKeyPath(),
-				"-p", fmt.Sprintf("%d", conn.localPort),
+				"-p", fmt.Sprintf("%d", conn.LocalPort()),
 				"-o", "StrictHostKeyChecking=no",
 				"-o", "UserKnownHostsFile=/dev/null",
 				"-o", "LogLevel=ERROR",
@@ -329,16 +338,14 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 		m.statusMsg = m.listPorts()
 
 	case "save":
-		if !m.isAdHoc {
-			m.statusMsg = "This is already a saved session"
-			return m, nil
-		}
+		// Sessions are automatically saved on creation with a UUID name
+		// /save allows renaming to a more memorable name
 		name := ""
 		if len(cmd.Args) > 0 {
 			name = cmd.Args[0]
 		}
 		if name == "" {
-			m.statusMsg = "Usage: /save <name>"
+			m.statusMsg = "Usage: /save <name> (rename session)"
 			return m, nil
 		}
 		if err := m.saveSession(name); err != nil {
@@ -346,7 +353,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.statusMsg = fmt.Sprintf("Session saved as '%s'", name)
-		m.isAdHoc = false
+		m.sessionName = name
 		m.session.Name = name
 
 	case "add":
@@ -435,7 +442,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 
 		// Verify agent exists
 		m.agentMu.RLock()
-		_, exists := m.agents[key]
+		conn, exists := m.agents[key]
 		m.agentMu.RUnlock()
 		if !exists {
 			m.statusMsg = fmt.Sprintf("Agent not found: %s", key)
@@ -443,21 +450,35 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 		}
 
 		action := cmd.Args[1]
+		slog.Debug("session command", "action", action, "agent", key, "multiSession", m.sessionName)
 		switch action {
 		case "new":
-			// Create new session for this agent
-			newID := m.sessionManager.NewSession(addr)
+			// Create new session for this agent within current multi-session
+			newID := m.sessionManager.NewSession(m.sessionName, key)
 			shortID := newID
 			if len(shortID) > 8 {
 				shortID = shortID[:8]
 			}
-			m.statusMsg = fmt.Sprintf("Started new session for %s: %s", key, shortID)
-			m.AddMessage(NewSystemMessage(fmt.Sprintf("New Claude session started for %s (ID: %s)", key, shortID)))
+			slog.Debug("created new session", "agent", key, "sessionID", newID)
+
+			// Reconnect agent with new session (force --session-id to create it on pod)
+			// Do this synchronously so the agent is ready for the next message
+			conn.SetForceNewSession(true)
+			slog.Debug("reconnecting agent", "agent", key, "forceNewSession", true)
+			if err := conn.Reconnect(); err != nil {
+				slog.Error("reconnect failed", "agent", key, "error", err)
+				m.statusMsg = fmt.Sprintf("Failed to start new session: %s", err.Error())
+				m.AddMessage(NewSystemMessage(fmt.Sprintf("Failed to start new session for %s: %s", key, err.Error())))
+			} else {
+				slog.Debug("reconnect successful", "agent", key, "sessionID", newID)
+				m.statusMsg = fmt.Sprintf("New session for %s: %s", key, shortID)
+				m.AddMessage(NewSystemMessage(fmt.Sprintf("New Claude session started for %s (ID: %s)", key, shortID)))
+			}
 
 		case "list":
-			// List sessions for this agent
-			sessions := m.sessionManager.ListSessions(addr)
-			currentID := m.sessionManager.GetCurrentSessionID(addr)
+			// List sessions for this agent within current multi-session
+			sessions := m.sessionManager.ListSessions(m.sessionName, key)
+			currentID := m.sessionManager.GetCurrentSessionID(m.sessionName, key)
 			if len(sessions) == 0 {
 				m.statusMsg = fmt.Sprintf("No sessions for %s", key)
 			} else {
@@ -470,27 +491,31 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			sessionID := cmd.Args[2]
-			if err := m.sessionManager.ResumeSession(addr, sessionID); err != nil {
+			if err := m.sessionManager.ResumeSession(m.sessionName, key, sessionID); err != nil {
 				m.statusMsg = fmt.Sprintf("Failed to resume session: %s", err.Error())
 			} else {
-				m.statusMsg = fmt.Sprintf("Resumed session %s for %s", sessionID, key)
-				m.AddMessage(NewSystemMessage(fmt.Sprintf("Resumed Claude session %s for %s", sessionID, key)))
+				// Reconnect agent with resumed session (use --resume)
+				// Do this synchronously so the agent is ready for the next message
+				if err := conn.Reconnect(); err != nil {
+					m.statusMsg = fmt.Sprintf("Failed to resume session: %s", err.Error())
+					m.AddMessage(NewSystemMessage(fmt.Sprintf("Failed to resume session for %s: %s", key, err.Error())))
+				} else {
+					m.statusMsg = fmt.Sprintf("Resumed session %s for %s", sessionID, key)
+					m.AddMessage(NewSystemMessage(fmt.Sprintf("Resumed Claude session %s for %s", sessionID, key)))
+				}
 			}
 
 		case "info":
 			// Show current session info
-			sess := m.sessionManager.GetCurrentSession(addr)
-			if sess == nil {
+			currentID := m.sessionManager.GetCurrentSessionID(m.sessionName, key)
+			if currentID == "" {
 				m.statusMsg = fmt.Sprintf("No active session for %s", key)
 			} else {
-				shortID := sess.ID
+				shortID := currentID
 				if len(shortID) > 8 {
 					shortID = shortID[:8]
 				}
-				m.statusMsg = fmt.Sprintf("Session for %s:\n  ID: %s\n  Messages: %d\n  Created: %s\n  Last used: %s",
-					key, shortID, sess.MessageCount,
-					sess.CreatedAt.Format("Jan 2 15:04"),
-					sess.LastUsedAt.Format("Jan 2 15:04"))
+				m.statusMsg = fmt.Sprintf("Session for %s: %s", key, shortID)
 			}
 
 		default:
