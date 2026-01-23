@@ -42,30 +42,3 @@ type HookInput struct {
 	SessionID string `json:"sessionId,omitempty"`
 }
 
-// HookOutput represents the JSON output returned to Claude's PermissionRequest hook.
-type HookOutput struct {
-	HookSpecificOutput HookSpecificOutput `json:"hookSpecificOutput"`
-}
-
-// HookSpecificOutput contains the permission decision for Claude.
-type HookSpecificOutput struct {
-	HookEventName string       `json:"hookEventName"`
-	Decision      HookDecision `json:"decision"`
-}
-
-// HookDecision contains the behavior Claude should take.
-type HookDecision struct {
-	Behavior string `json:"behavior"` // "allow" or "deny"
-}
-
-// NewHookOutput creates a hook output with the given decision.
-func NewHookOutput(decision Decision) HookOutput {
-	return HookOutput{
-		HookSpecificOutput: HookSpecificOutput{
-			HookEventName: "PermissionRequest",
-			Decision: HookDecision{
-				Behavior: string(decision),
-			},
-		},
-	}
-}
