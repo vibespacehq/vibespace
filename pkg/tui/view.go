@@ -302,7 +302,7 @@ func (m *Model) renderHelp() string {
 	// Line 4: Focus mode
 	line4 := fmt.Sprintf("%s %s",
 		cmdStyle.Render("/focus <agent>"),
-		descStyle.Render("open interactive Claude (exit with /exit to return)"),
+		descStyle.Render("interactive Claude (Ctrl+B D to detach)"),
 	)
 
 	// Line 5: Session management

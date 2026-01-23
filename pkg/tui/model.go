@@ -23,9 +23,7 @@ import (
 type LayoutMode int
 
 const (
-	LayoutSplit LayoutMode = iota
-	LayoutFocus
-	LayoutChat // New unified chat view
+	LayoutChat LayoutMode = iota // Unified chat view
 )
 
 // Model is the main Bubble Tea model for the TUI
@@ -60,12 +58,11 @@ type Model struct {
 	sessionStore *session.Store // For saving session changes
 
 	// Layout
-	layout         LayoutMode
-	focusAgent     string
-	width          int
-	height         int
-	viewportReady  bool // True once viewport is sized
-	contentDirty   bool // True when messages changed and viewport needs update
+	layout        LayoutMode
+	width         int
+	height        int
+	viewportReady bool // True once viewport is sized
+	contentDirty  bool // True when messages changed and viewport needs update
 
 	// State
 	ctx        context.Context

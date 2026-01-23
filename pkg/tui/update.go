@@ -32,13 +32,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			return m.handleInput()
 
-		case tea.KeyEsc:
-			if m.layout == LayoutFocus {
-				m.layout = LayoutChat
-				m.focusAgent = ""
-				m.statusMsg = "Returned to chat view"
-			}
-
 		// Scrolling keys - handled by viewport
 		case tea.KeyUp, tea.KeyDown, tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
 			// Let viewport handle scrolling
@@ -284,7 +277,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 
 	case "focus":
 		if len(cmd.Args) == 0 {
-			m.statusMsg = "Usage: /focus <agent>[@vibespace]"
+			m.statusMsg = "Usage: /focus <agent>[@vibespace] (Ctrl+B D to detach)"
 			return m, nil
 		}
 		addr := session.ParseAgentAddress(cmd.Args[0], m.defaultVibespace)
@@ -303,9 +296,16 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			claudeCmd = fmt.Sprintf("claude --resume %s", sess.ID)
 		}
 
-		// Launch interactive Claude session
-		// This temporarily exits the TUI and hands control to Claude
-		m.statusMsg = fmt.Sprintf("Launching interactive session with %s...", key)
+		// tmux session name based on agent (sanitize for tmux)
+		tmuxSession := fmt.Sprintf("claude-%s", addr.Agent)
+
+		// Use tmux: attach to existing session or create new one with Claude
+		// tmux new-session -A: attach if exists, create if not
+		tmuxCmd := fmt.Sprintf("tmux new-session -A -s %s '%s'", tmuxSession, claudeCmd)
+
+		// Launch interactive Claude session via tmux
+		// User can detach with Ctrl+B D to return to TUI without killing Claude
+		m.statusMsg = fmt.Sprintf("Launching %s (Ctrl+B D to detach)...", key)
 		return m, tea.ExecProcess(
 			exec.Command("ssh",
 				"-i", vibespace.GetSSHPrivateKeyPath(),
@@ -315,7 +315,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				"-o", "LogLevel=ERROR",
 				"-t",
 				"user@localhost",
-				fmt.Sprintf("bash -l -c '%s'", claudeCmd), // Single arg with proper quoting
+				tmuxCmd,
 			),
 			func(err error) tea.Msg {
 				if err != nil {
@@ -324,11 +324,6 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				return FocusReturnMsg{Address: addr}
 			},
 		)
-
-	case "split", "chat":
-		m.layout = LayoutChat
-		m.focusAgent = ""
-		m.statusMsg = "Returned to chat view"
 
 	case "ports":
 		m.statusMsg = m.listPorts()

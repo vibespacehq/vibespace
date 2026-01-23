@@ -60,7 +60,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Build essentials
     build-essential ca-certificates pkg-config \
     # Modern CLI tools
-    ripgrep fzf jq tree htop \
+    ripgrep fzf jq tree htop tmux \
     # Network tools
     net-tools procps dnsutils iputils-ping \
     # Archive tools
