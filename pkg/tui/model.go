@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
+	"github.com/yagizdagabak/vibespace/pkg/permission"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -78,6 +79,11 @@ type Model struct {
 
 	// Channel for receiving messages from agent goroutines (proper Bubble Tea pattern)
 	incomingMsgs chan RichMessageMsg
+
+	// Permission handling
+	permissionServer *permission.Server
+	pendingPerms     []*permission.Request // Queue of pending permission requests
+	permissionPrompt *PermissionPrompt     // Current permission prompt (nil if none showing)
 }
 
 // NewModel creates a new TUI model
@@ -111,6 +117,9 @@ func NewModel(sess *session.Session, resume bool) *Model {
 	// Create Claude session manager for --session-id vs --resume logic
 	sessionManager := NewClaudeSessionManager()
 
+	// Create permission server
+	permServer := permission.NewServer(permission.DefaultPermissionPort)
+
 	return &Model{
 		session:          sess,
 		sessionName:      sessionName,
@@ -130,6 +139,8 @@ func NewModel(sess *session.Session, resume bool) *Model {
 		cancel:           cancel,
 		defaultVibespace: defaultVS,
 		incomingMsgs:     make(chan RichMessageMsg, 100), // Buffered channel for agent messages
+		permissionServer: permServer,
+		pendingPerms:     make([]*permission.Request, 0),
 	}
 }
 
@@ -139,7 +150,31 @@ func (m *Model) Init() tea.Cmd {
 		textinput.Blink,
 		m.initConnections(),
 		m.loadHistory(),
+		m.startPermissionServer(),
 	)
+}
+
+// startPermissionServer starts the permission server and returns a command to listen for requests.
+func (m *Model) startPermissionServer() tea.Cmd {
+	return func() tea.Msg {
+		if err := m.permissionServer.Start(); err != nil {
+			// Log error but don't fail - permission prompts just won't work
+			return nil
+		}
+		return m.listenForPermissions()()
+	}
+}
+
+// listenForPermissions returns a command that waits for permission requests.
+func (m *Model) listenForPermissions() tea.Cmd {
+	return func() tea.Msg {
+		select {
+		case req := <-m.permissionServer.RequestChan():
+			return PermissionRequestMsg{Request: req}
+		case <-m.ctx.Done():
+			return nil
+		}
+	}
 }
 
 // loadHistory loads chat history from persistence
@@ -757,6 +792,11 @@ func (m *Model) GetThinkingAgents() []*AgentState {
 // Close cleans up all connections
 func (m *Model) Close() {
 	m.cancel()
+
+	// Stop permission server
+	if m.permissionServer != nil {
+		m.permissionServer.Stop()
+	}
 
 	m.agentMu.Lock()
 	defer m.agentMu.Unlock()

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yagizdagabak/vibespace/pkg/permission"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 
@@ -24,6 +25,42 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// If permission prompt is showing, handle its input first
+		if m.permissionPrompt != nil {
+			switch msg.Type {
+			case tea.KeyCtrlC:
+				// Deny and close prompt
+				return m, m.handlePermissionDecision(permission.DecisionDeny)
+
+			case tea.KeyEnter:
+				// Confirm current selection
+				return m, m.handlePermissionDecision(m.permissionPrompt.GetDecision())
+
+			case tea.KeyLeft:
+				m.permissionPrompt.MoveLeft()
+				return m, nil
+
+			case tea.KeyRight:
+				m.permissionPrompt.MoveRight()
+				return m, nil
+
+			case tea.KeyEsc:
+				// Deny on escape
+				return m, m.handlePermissionDecision(permission.DecisionDeny)
+			}
+
+			// Handle 'a' for allow, 'd' for deny
+			switch msg.String() {
+			case "a", "A":
+				return m, m.handlePermissionDecision(permission.DecisionAllow)
+			case "d", "D":
+				return m, m.handlePermissionDecision(permission.DecisionDeny)
+			}
+
+			// Ignore other keys while prompt is showing
+			return m, nil
+		}
+
 		// Handle special keys
 		switch msg.Type {
 		case tea.KeyCtrlC:
@@ -52,6 +89,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.input.Width = msg.Width - 4
+
+		// Update permission prompt size if showing
+		if m.permissionPrompt != nil {
+			m.permissionPrompt.SetSize(msg.Width, msg.Height)
+		}
 
 		// Calculate viewport height by measuring actual rendered heights
 		// like the official chat example does
@@ -138,6 +180,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ThinkingEndMsg:
 		m.SetAgentThinking(msg.AgentKey, false)
 		m.contentDirty = true
+
+	case PermissionRequestMsg:
+		// Add to queue
+		m.pendingPerms = append(m.pendingPerms, msg.Request)
+		// Show prompt if not already showing one
+		if m.permissionPrompt == nil && len(m.pendingPerms) > 0 {
+			m.permissionPrompt = NewPermissionPrompt(m.pendingPerms[0])
+			m.permissionPrompt.SetSize(m.width, m.height)
+		}
+		// Continue listening for more permission requests
+		cmds = append(cmds, m.listenForPermissions())
+
+	case PermissionDecisionMsg:
+		// This is handled via handlePermissionDecision which returns a command
+		// to send the decision to the server
 	}
 
 	// Update text input (for all non-scroll key events)
@@ -770,4 +827,41 @@ func (m *Model) executeAddCommand(args []string) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// handlePermissionDecision sends a permission decision and advances the queue.
+func (m *Model) handlePermissionDecision(decision permission.Decision) tea.Cmd {
+	if m.permissionPrompt == nil {
+		return nil
+	}
+
+	req := m.permissionPrompt.Request()
+	slog.Debug("permission decision", "id", req.ID, "agent", req.AgentKey, "tool", req.ToolName, "decision", decision)
+
+	// Send decision to server
+	if err := m.permissionServer.Respond(req.ID, decision); err != nil {
+		slog.Error("failed to send permission decision", "error", err)
+	}
+
+	// Add system message about the decision
+	decisionStr := "denied"
+	if decision == permission.DecisionAllow {
+		decisionStr = "allowed"
+	}
+	m.AddMessage(NewSystemMessage(fmt.Sprintf("Permission %s: %s for %s", decisionStr, req.ToolName, req.AgentKey)))
+
+	// Remove from queue
+	if len(m.pendingPerms) > 0 {
+		m.pendingPerms = m.pendingPerms[1:]
+	}
+
+	// Show next prompt or clear
+	if len(m.pendingPerms) > 0 {
+		m.permissionPrompt = NewPermissionPrompt(m.pendingPerms[0])
+		m.permissionPrompt.SetSize(m.width, m.height)
+	} else {
+		m.permissionPrompt = nil
+	}
+
+	return nil
 }

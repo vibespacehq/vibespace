@@ -94,6 +94,17 @@ fi
 chown user:user "$USER_HOME/.bashrc"
 
 # ============================================================================
+# Claude Code settings (permission hooks)
+# ============================================================================
+CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
+if [ ! -f "$CLAUDE_CONFIG_DIR/settings.json" ]; then
+    log "Setting up Claude Code permission hooks"
+    mkdir -p "$CLAUDE_CONFIG_DIR"
+    cp /etc/vibespace/claude-settings.json "$CLAUDE_CONFIG_DIR/settings.json"
+    chown -R user:user "$CLAUDE_CONFIG_DIR"
+fi
+
+# ============================================================================
 # Startup
 # ============================================================================
 log "Starting (name=${VIBESPACE_NAME:-?}, agent=${VIBESPACE_AGENT:-?}, shared=${VIBESPACE_SHARE_CREDENTIALS:-false})"

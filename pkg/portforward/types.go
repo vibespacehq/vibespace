@@ -33,6 +33,8 @@ const (
 	TypeManual ForwardType = "manual"
 	// TypeDetected is an auto-detected dev server forward
 	TypeDetected ForwardType = "detected"
+	// TypePermission is the permission server forward for TUI permission prompts
+	TypePermission ForwardType = "permission"
 )
 
 // ForwardSpec describes a port-forward configuration
@@ -68,6 +70,9 @@ const DefaultSSHPort = 22
 
 // DefaultTTYDPort is the default port for ttyd (browser fallback)
 const DefaultTTYDPort = 7681
+
+// DefaultPermissionPort is the default port for the permission server
+const DefaultPermissionPort = 18080
 
 // CalculateLocalPort calculates the local port based on agent number and remote port
 // Formula: (agentNum - 1) * 10000 + remotePort
