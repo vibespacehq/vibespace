@@ -8,24 +8,22 @@ import (
 	"time"
 )
 
-// Client is a client for communicating with a daemon via Unix socket
+// Client is a client for communicating with the daemon via Unix socket
 type Client struct {
-	vibespace string
-	sockPath  string
-	timeout   time.Duration
+	sockPath string
+	timeout  time.Duration
 }
 
-// NewClient creates a new daemon client
-func NewClient(vibespace string) (*Client, error) {
-	paths, err := GetDaemonPaths(vibespace)
+// NewClient creates a new client for the daemon
+func NewClient() (*Client, error) {
+	paths, err := GetDaemonPaths()
 	if err != nil {
 		return nil, err
 	}
 
 	return &Client{
-		vibespace: vibespace,
-		sockPath:  paths.SockFile,
-		timeout:   10 * time.Second,
+		sockPath: paths.SockFile,
+		timeout:  10 * time.Second,
 	}, nil
 }
 
@@ -103,135 +101,6 @@ func (c *Client) Status() (*StatusResponse, error) {
 	return &result, nil
 }
 
-// ListForwards lists all forwards
-func (c *Client) ListForwards() (*ListForwardsResponse, error) {
-	resp, err := c.sendRequest(Request{Type: RequestListForwards})
-	if err != nil {
-		return nil, err
-	}
-
-	if !resp.Success {
-		return nil, fmt.Errorf("list forwards failed: %s", resp.Error)
-	}
-
-	var result ListForwardsResponse
-	if err := json.Unmarshal(resp.Data, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse list forwards response: %w", err)
-	}
-
-	return &result, nil
-}
-
-// AddForward adds a new forward
-func (c *Client) AddForward(agent string, remotePort int, localPort int) (*AddForwardResponse, error) {
-	resp, err := c.sendRequest(Request{
-		Type:  RequestAddForward,
-		Agent: agent,
-		Port:  remotePort,
-		Local: localPort,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if !resp.Success {
-		return nil, fmt.Errorf("add forward failed: %s", resp.Error)
-	}
-
-	var result AddForwardResponse
-	if err := json.Unmarshal(resp.Data, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse add forward response: %w", err)
-	}
-
-	return &result, nil
-}
-
-// RemoveForward removes a forward
-func (c *Client) RemoveForward(agent string, remotePort int) error {
-	resp, err := c.sendRequest(Request{
-		Type:  RequestRemoveForward,
-		Agent: agent,
-		Port:  remotePort,
-	})
-	if err != nil {
-		return err
-	}
-
-	if !resp.Success {
-		return fmt.Errorf("remove forward failed: %s", resp.Error)
-	}
-
-	return nil
-}
-
-// StartForward starts a stopped forward
-func (c *Client) StartForward(agent string, remotePort int) error {
-	resp, err := c.sendRequest(Request{
-		Type:  RequestStartForward,
-		Agent: agent,
-		Port:  remotePort,
-	})
-	if err != nil {
-		return err
-	}
-
-	if !resp.Success {
-		return fmt.Errorf("start forward failed: %s", resp.Error)
-	}
-
-	return nil
-}
-
-// StopForward stops a running forward
-func (c *Client) StopForward(agent string, remotePort int) error {
-	resp, err := c.sendRequest(Request{
-		Type:  RequestStopForward,
-		Agent: agent,
-		Port:  remotePort,
-	})
-	if err != nil {
-		return err
-	}
-
-	if !resp.Success {
-		return fmt.Errorf("stop forward failed: %s", resp.Error)
-	}
-
-	return nil
-}
-
-// RestartForward restarts a forward
-func (c *Client) RestartForward(agent string, remotePort int) error {
-	resp, err := c.sendRequest(Request{
-		Type:  RequestRestartForward,
-		Agent: agent,
-		Port:  remotePort,
-	})
-	if err != nil {
-		return err
-	}
-
-	if !resp.Success {
-		return fmt.Errorf("restart forward failed: %s", resp.Error)
-	}
-
-	return nil
-}
-
-// RestartAll restarts all forwards
-func (c *Client) RestartAll() error {
-	resp, err := c.sendRequest(Request{Type: RequestRestartAll})
-	if err != nil {
-		return err
-	}
-
-	if !resp.Success {
-		return fmt.Errorf("restart all failed: %s", resp.Error)
-	}
-
-	return nil
-}
-
 // Refresh re-discovers pods for agents (useful when deployments scale)
 func (c *Client) Refresh() error {
 	resp, err := c.sendRequest(Request{Type: RequestRefresh})
@@ -264,4 +133,89 @@ func (c *Client) Shutdown() error {
 func (c *Client) IsRunning() bool {
 	_, err := c.Ping()
 	return err == nil
+}
+
+// DaemonStatus gets the status of the daemon including all vibespaces
+func (c *Client) DaemonStatus() (*DaemonStatusResponse, error) {
+	resp, err := c.sendRequest(Request{Type: RequestStatus})
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("daemon status failed: %s", resp.Error)
+	}
+
+	var result DaemonStatusResponse
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse daemon status response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// ListForwardsForVibespace lists forwards for a specific vibespace
+func (c *Client) ListForwardsForVibespace(vibespace string) (*ListForwardsResponse, error) {
+	resp, err := c.sendRequest(Request{
+		Type:      RequestListForwards,
+		Vibespace: vibespace,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("list forwards failed: %s", resp.Error)
+	}
+
+	var result ListForwardsResponse
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse list forwards response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// AddForwardForVibespace adds a forward for a specific vibespace
+func (c *Client) AddForwardForVibespace(vibespace, agent string, remotePort, localPort int) (*AddForwardResponse, error) {
+	resp, err := c.sendRequest(Request{
+		Type:      RequestAddForward,
+		Vibespace: vibespace,
+		Agent:     agent,
+		Port:      remotePort,
+		Local:     localPort,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("add forward failed: %s", resp.Error)
+	}
+
+	var result AddForwardResponse
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse add forward response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// RemoveForwardForVibespace removes a forward for a specific vibespace
+func (c *Client) RemoveForwardForVibespace(vibespace, agent string, remotePort int) error {
+	resp, err := c.sendRequest(Request{
+		Type:      RequestRemoveForward,
+		Vibespace: vibespace,
+		Agent:     agent,
+		Port:      remotePort,
+	})
+	if err != nil {
+		return err
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("remove forward failed: %s", resp.Error)
+	}
+
+	return nil
 }

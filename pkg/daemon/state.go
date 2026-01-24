@@ -1,7 +1,6 @@
 package daemon
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,13 +10,135 @@ import (
 	"github.com/yagizdagabak/vibespace/pkg/portforward"
 )
 
-// DaemonState represents the persistent state of a daemon
+// DaemonState represents the runtime state of the daemon
 type DaemonState struct {
-	Vibespace string                  `json:"vibespace"`
-	StartedAt time.Time               `json:"started_at"`
-	Agents    map[string]*AgentState  `json:"agents"` // key: agent name
-	mu        sync.RWMutex
-	filePath  string
+	StartedAt  time.Time                     `json:"started_at"`
+	Vibespaces map[string]*VibespaceState    `json:"vibespaces"` // vibespace name -> state
+	mu         sync.RWMutex
+}
+
+// VibespaceState represents the state of a single vibespace
+type VibespaceState struct {
+	ID     string                  `json:"id"`
+	Agents map[string]*AgentState  `json:"agents"` // agent name -> state
+	mu     sync.RWMutex
+}
+
+// NewDaemonState creates a new daemon state
+func NewDaemonState() *DaemonState {
+	return &DaemonState{
+		StartedAt:  time.Now(),
+		Vibespaces: make(map[string]*VibespaceState),
+	}
+}
+
+// GetOrCreateVibespace gets or creates a vibespace state
+func (s *DaemonState) GetOrCreateVibespace(name string) *VibespaceState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if vs, exists := s.Vibespaces[name]; exists {
+		return vs
+	}
+
+	vs := &VibespaceState{
+		Agents: make(map[string]*AgentState),
+	}
+	s.Vibespaces[name] = vs
+	return vs
+}
+
+// GetVibespace gets a vibespace state or nil if not exists
+func (s *DaemonState) GetVibespace(name string) *VibespaceState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Vibespaces[name]
+}
+
+// RemoveVibespace removes a vibespace from state
+func (s *DaemonState) RemoveVibespace(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.Vibespaces, name)
+}
+
+// GetAllVibespaces returns all vibespace names
+func (s *DaemonState) GetAllVibespaces() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	names := make([]string, 0, len(s.Vibespaces))
+	for name := range s.Vibespaces {
+		names = append(names, name)
+	}
+	return names
+}
+
+// SetAgentPod sets the pod name for an agent in a vibespace
+func (vs *VibespaceState) SetAgentPod(agentName, podName string) {
+	vs.mu.Lock()
+	defer vs.mu.Unlock()
+
+	if agent, exists := vs.Agents[agentName]; exists {
+		agent.PodName = podName
+	} else {
+		vs.Agents[agentName] = &AgentState{
+			PodName:  podName,
+			Forwards: make([]*ForwardState, 0),
+		}
+	}
+}
+
+// GetAgentPod gets the pod name for an agent
+func (vs *VibespaceState) GetAgentPod(agentName string) (string, bool) {
+	vs.mu.RLock()
+	defer vs.mu.RUnlock()
+
+	if agent, exists := vs.Agents[agentName]; exists {
+		return agent.PodName, true
+	}
+	return "", false
+}
+
+// RemoveAgent removes an agent from vibespace state
+func (vs *VibespaceState) RemoveAgent(agentName string) {
+	vs.mu.Lock()
+	defer vs.mu.Unlock()
+	delete(vs.Agents, agentName)
+}
+
+// AddForward adds a forward to an agent's state
+func (vs *VibespaceState) AddForward(agentName string, fwd *ForwardState) {
+	vs.mu.Lock()
+	defer vs.mu.Unlock()
+
+	agent := vs.Agents[agentName]
+	if agent == nil {
+		agent = &AgentState{Forwards: make([]*ForwardState, 0)}
+		vs.Agents[agentName] = agent
+	}
+
+	// Check if forward already exists
+	for _, existing := range agent.Forwards {
+		if existing.RemotePort == fwd.RemotePort {
+			*existing = *fwd
+			return
+		}
+	}
+
+	agent.Forwards = append(agent.Forwards, fwd)
+}
+
+// GetAllAgentNames returns all agent names in the vibespace
+func (vs *VibespaceState) GetAllAgentNames() []string {
+	vs.mu.RLock()
+	defer vs.mu.RUnlock()
+
+	names := make([]string, 0, len(vs.Agents))
+	for name := range vs.Agents {
+		names = append(names, name)
+	}
+	return names
 }
 
 // AgentState represents the state of an agent's port-forwards
@@ -36,30 +157,6 @@ type ForwardState struct {
 	Reconnects int                      `json:"reconnects"`
 }
 
-// DaemonPaths contains paths for daemon state files
-type DaemonPaths struct {
-	Dir      string // ~/.vibespace/daemons/
-	PidFile  string // ~/.vibespace/daemons/<name>.pid
-	SockFile string // ~/.vibespace/daemons/<name>.sock
-	JsonFile string // ~/.vibespace/daemons/<name>.json
-}
-
-// GetDaemonPaths returns the paths for a daemon's state files
-func GetDaemonPaths(vibespace string) (DaemonPaths, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return DaemonPaths{}, fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	dir := filepath.Join(home, ".vibespace", "daemons")
-	return DaemonPaths{
-		Dir:      dir,
-		PidFile:  filepath.Join(dir, vibespace+".pid"),
-		SockFile: filepath.Join(dir, vibespace+".sock"),
-		JsonFile: filepath.Join(dir, vibespace+".json"),
-	}, nil
-}
-
 // EnsureDaemonDir ensures the daemon directory exists
 func EnsureDaemonDir() error {
 	home, err := os.UserHomeDir()
@@ -67,235 +164,15 @@ func EnsureDaemonDir() error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	dir := filepath.Join(home, ".vibespace", "daemons")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	// Create base directory and forwards subdirectory
+	baseDir := filepath.Join(home, ".vibespace")
+	if err := os.MkdirAll(baseDir, 0755); err != nil {
 		return fmt.Errorf("failed to create daemon directory: %w", err)
 	}
-
-	return nil
-}
-
-// NewDaemonState creates a new daemon state
-func NewDaemonState(vibespace string) (*DaemonState, error) {
-	paths, err := GetDaemonPaths(vibespace)
-	if err != nil {
-		return nil, err
-	}
-
-	return &DaemonState{
-		Vibespace: vibespace,
-		StartedAt: time.Now(),
-		Agents:    make(map[string]*AgentState),
-		filePath:  paths.JsonFile,
-	}, nil
-}
-
-// Save persists the daemon state to file
-func (s *DaemonState) Save() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal state: %w", err)
-	}
-
-	if err := os.WriteFile(s.filePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write state file: %w", err)
+	if err := os.MkdirAll(filepath.Join(baseDir, "forwards"), 0755); err != nil {
+		return fmt.Errorf("failed to create forwards directory: %w", err)
 	}
 
 	return nil
 }
 
-// GetAgent gets an agent's state, creating it if it doesn't exist
-func (s *DaemonState) GetAgent(name string) *AgentState {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if agent, exists := s.Agents[name]; exists {
-		return agent
-	}
-
-	agent := &AgentState{
-		Forwards: make([]*ForwardState, 0),
-	}
-	s.Agents[name] = agent
-	return agent
-}
-
-// SetAgentPod sets the pod name for an agent
-func (s *DaemonState) SetAgentPod(agentName, podName string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if agent, exists := s.Agents[agentName]; exists {
-		agent.PodName = podName
-	} else {
-		s.Agents[agentName] = &AgentState{
-			PodName:  podName,
-			Forwards: make([]*ForwardState, 0),
-		}
-	}
-}
-
-// AddForward adds a forward to an agent's state
-func (s *DaemonState) AddForward(agentName string, fwd *ForwardState) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	agent := s.Agents[agentName]
-	if agent == nil {
-		agent = &AgentState{Forwards: make([]*ForwardState, 0)}
-		s.Agents[agentName] = agent
-	}
-
-	// Check if forward already exists
-	for _, existing := range agent.Forwards {
-		if existing.RemotePort == fwd.RemotePort {
-			// Update existing
-			*existing = *fwd
-			return
-		}
-	}
-
-	agent.Forwards = append(agent.Forwards, fwd)
-}
-
-// RemoveForward removes a forward from an agent's state
-func (s *DaemonState) RemoveForward(agentName string, remotePort int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	agent := s.Agents[agentName]
-	if agent == nil {
-		return
-	}
-
-	newForwards := make([]*ForwardState, 0, len(agent.Forwards))
-	for _, fwd := range agent.Forwards {
-		if fwd.RemotePort != remotePort {
-			newForwards = append(newForwards, fwd)
-		}
-	}
-	agent.Forwards = newForwards
-}
-
-// GetForward gets a forward from an agent's state
-func (s *DaemonState) GetForward(agentName string, remotePort int) *ForwardState {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	agent := s.Agents[agentName]
-	if agent == nil {
-		return nil
-	}
-
-	for _, fwd := range agent.Forwards {
-		if fwd.RemotePort == remotePort {
-			return fwd
-		}
-	}
-	return nil
-}
-
-// UpdateForwardStatus updates the status of a forward
-func (s *DaemonState) UpdateForwardStatus(agentName string, remotePort int, status portforward.ForwardStatus, errMsg string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	agent := s.Agents[agentName]
-	if agent == nil {
-		return
-	}
-
-	for _, fwd := range agent.Forwards {
-		if fwd.RemotePort == remotePort {
-			fwd.Status = status
-			fwd.Error = errMsg
-			return
-		}
-	}
-}
-
-// IncrementReconnects increments the reconnect count for a forward
-func (s *DaemonState) IncrementReconnects(agentName string, remotePort int) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	agent := s.Agents[agentName]
-	if agent == nil {
-		return 0
-	}
-
-	for _, fwd := range agent.Forwards {
-		if fwd.RemotePort == remotePort {
-			fwd.Reconnects++
-			return fwd.Reconnects
-		}
-	}
-	return 0
-}
-
-// GetAllAgents returns a copy of all agent names
-func (s *DaemonState) GetAllAgents() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	agents := make([]string, 0, len(s.Agents))
-	for name := range s.Agents {
-		agents = append(agents, name)
-	}
-	return agents
-}
-
-// RemoveAgent removes an agent from state
-func (s *DaemonState) RemoveAgent(name string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.Agents, name)
-}
-
-// Cleanup removes all state files for a daemon
-func CleanupDaemonFiles(vibespace string) error {
-	paths, err := GetDaemonPaths(vibespace)
-	if err != nil {
-		return err
-	}
-
-	// Remove all files, ignoring errors for files that don't exist
-	os.Remove(paths.PidFile)
-	os.Remove(paths.SockFile)
-	os.Remove(paths.JsonFile)
-
-	return nil
-}
-
-// WritePidFile writes the PID file for a daemon
-func WritePidFile(vibespace string, pid int) error {
-	paths, err := GetDaemonPaths(vibespace)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(paths.PidFile, []byte(fmt.Sprintf("%d", pid)), 0644)
-}
-
-// ReadPidFile reads the PID from a daemon's PID file
-func ReadPidFile(vibespace string) (int, error) {
-	paths, err := GetDaemonPaths(vibespace)
-	if err != nil {
-		return 0, err
-	}
-
-	data, err := os.ReadFile(paths.PidFile)
-	if err != nil {
-		return 0, err
-	}
-
-	var pid int
-	if _, err := fmt.Sscanf(string(data), "%d", &pid); err != nil {
-		return 0, fmt.Errorf("invalid PID file: %w", err)
-	}
-
-	return pid, nil
-}

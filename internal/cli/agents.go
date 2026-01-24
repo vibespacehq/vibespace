@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
 	"github.com/yagizdagabak/vibespace/pkg/model"
 	vspkg "github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
@@ -236,24 +235,6 @@ Examples:
 		}
 	}
 	fmt.Println()
-
-	// If daemon is running, trigger a refresh to discover the new agent
-	if daemon.IsRunning(vibespace) {
-		client, err := daemon.NewClient(vibespace)
-		if err != nil {
-			slog.Warn("failed to create daemon client for refresh", "error", err)
-		} else {
-			if err := client.Refresh(); err != nil {
-				slog.Warn("failed to refresh daemon", "error", err)
-				printWarning("Could not refresh daemon. You may need to restart it:")
-				fmt.Printf("  vibespace %s down && vibespace %s up\n", vibespace, vibespace)
-				fmt.Println()
-			} else {
-				slog.Info("daemon refreshed to discover new agent", "agent", agentName)
-			}
-		}
-	}
-
 	fmt.Printf("Connect with: vibespace %s connect %s\n", vibespace, agentName)
 	return nil
 }
@@ -292,25 +273,38 @@ func runKill(vibespace string, args []string) error {
 	slog.Info("kill command completed", "vibespace", vibespace, "agent", agentID)
 	printSuccess("Agent '%s' removed", agentID)
 
-	// If daemon is running, trigger a refresh to update agent list
-	if daemon.IsRunning(vibespace) {
-		client, err := daemon.NewClient(vibespace)
-		if err != nil {
-			slog.Warn("failed to create daemon client for refresh", "error", err)
-		} else {
-			if err := client.Refresh(); err != nil {
-				slog.Warn("failed to refresh daemon", "error", err)
-			}
+	return nil
+}
+
+// runUp scales up agents in a vibespace
+// Usage:
+//   vibespace foo up           # scale all agents to 1
+//   vibespace foo up claude-2  # scale specific agent to 1
+func runUp(vibespace string, args []string) error {
+	ctx := context.Background()
+
+	// Handle help flag
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Println(`Scale up agents in a vibespace
+
+Usage:
+  vibespace <name> up [agent] [flags]
+
+Arguments:
+  agent    Optional agent name to scale up (default: all agents)
+
+Flags:
+  -h, --help   Help for up
+
+Examples:
+  vibespace myproject up           # Scale all agents to 1
+  vibespace myproject up claude-2  # Scale specific agent to 1`)
+			return nil
 		}
 	}
 
-	return nil
-}
-
-func runStartVibespace(vibespace string) error {
-	ctx := context.Background()
-
-	slog.Info("start command started", "vibespace", vibespace)
+	slog.Info("up command started", "vibespace", vibespace, "args", args)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -318,22 +312,70 @@ func runStartVibespace(vibespace string) error {
 		return err
 	}
 
-	printStep("Starting vibespace '%s'...", vibespace)
-
-	if err := svc.Start(ctx, vibespace); err != nil {
-		slog.Error("failed to start vibespace", "vibespace", vibespace, "error", err)
-		return fmt.Errorf("failed to start vibespace: %w", err)
+	// Check vibespace exists
+	vs, err := checkVibespaceExists(ctx, svc, vibespace)
+	if err != nil {
+		slog.Error("vibespace not found", "vibespace", vibespace, "error", err)
+		return err
 	}
 
-	slog.Info("start command completed", "vibespace", vibespace)
-	printSuccess("Vibespace '%s' started", vibespace)
+	if len(args) > 0 {
+		// Scale up specific agent
+		agentName := args[0]
+		printStep("Scaling up agent '%s' in '%s'...", agentName, vibespace)
+
+		if err := svc.StartAgent(ctx, vs.ID, agentName); err != nil {
+			slog.Error("failed to scale up agent", "vibespace", vibespace, "agent", agentName, "error", err)
+			return fmt.Errorf("failed to scale up agent: %w", err)
+		}
+
+		slog.Info("up command completed", "vibespace", vibespace, "agent", agentName)
+		printSuccess("Agent '%s' scaled up", agentName)
+	} else {
+		// Scale up all agents (start the vibespace)
+		printStep("Scaling up all agents in '%s'...", vibespace)
+
+		if err := svc.Start(ctx, vs.ID); err != nil {
+			slog.Error("failed to scale up vibespace", "vibespace", vibespace, "error", err)
+			return fmt.Errorf("failed to scale up vibespace: %w", err)
+		}
+
+		slog.Info("up command completed", "vibespace", vibespace)
+		printSuccess("All agents scaled up in '%s'", vibespace)
+	}
+
 	return nil
 }
 
-func runStopVibespace(vibespace string) error {
+// runDown scales down agents in a vibespace
+// Usage:
+//   vibespace foo down           # scale all agents to 0
+//   vibespace foo down claude-2  # scale specific agent to 0
+func runDown(vibespace string, args []string) error {
 	ctx := context.Background()
 
-	slog.Info("stop command started", "vibespace", vibespace)
+	// Handle help flag
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Println(`Scale down agents in a vibespace
+
+Usage:
+  vibespace <name> down [agent] [flags]
+
+Arguments:
+  agent    Optional agent name to scale down (default: all agents)
+
+Flags:
+  -h, --help   Help for down
+
+Examples:
+  vibespace myproject down           # Scale all agents to 0
+  vibespace myproject down claude-2  # Scale specific agent to 0`)
+			return nil
+		}
+	}
+
+	slog.Info("down command started", "vibespace", vibespace, "args", args)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -341,14 +383,37 @@ func runStopVibespace(vibespace string) error {
 		return err
 	}
 
-	printStep("Stopping vibespace '%s'...", vibespace)
-
-	if err := svc.Stop(ctx, vibespace); err != nil {
-		slog.Error("failed to stop vibespace", "vibespace", vibespace, "error", err)
-		return fmt.Errorf("failed to stop vibespace: %w", err)
+	// Check vibespace exists
+	vs, err := checkVibespaceExists(ctx, svc, vibespace)
+	if err != nil {
+		slog.Error("vibespace not found", "vibespace", vibespace, "error", err)
+		return err
 	}
 
-	slog.Info("stop command completed", "vibespace", vibespace)
-	printSuccess("Vibespace '%s' stopped", vibespace)
+	if len(args) > 0 {
+		// Scale down specific agent
+		agentName := args[0]
+		printStep("Scaling down agent '%s' in '%s'...", agentName, vibespace)
+
+		if err := svc.StopAgent(ctx, vs.ID, agentName); err != nil {
+			slog.Error("failed to scale down agent", "vibespace", vibespace, "agent", agentName, "error", err)
+			return fmt.Errorf("failed to scale down agent: %w", err)
+		}
+
+		slog.Info("down command completed", "vibespace", vibespace, "agent", agentName)
+		printSuccess("Agent '%s' scaled down", agentName)
+	} else {
+		// Scale down all agents (stop the vibespace)
+		printStep("Scaling down all agents in '%s'...", vibespace)
+
+		if err := svc.Stop(ctx, vs.ID); err != nil {
+			slog.Error("failed to scale down vibespace", "vibespace", vibespace, "error", err)
+			return fmt.Errorf("failed to scale down vibespace: %w", err)
+		}
+
+		slog.Info("down command completed", "vibespace", vibespace)
+		printSuccess("All agents scaled down in '%s'", vibespace)
+	}
+
 	return nil
 }

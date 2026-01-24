@@ -230,11 +230,11 @@ func handleVibespaceCommand(args []string) error {
 		fmt.Println("  config     View/modify agent configuration")
 		fmt.Println("  multi      Multi-agent terminal mode")
 		fmt.Println("  ports      List detected ports")
-		fmt.Println("  up         Start port-forward daemon")
-		fmt.Println("  down       Stop port-forward daemon")
+		fmt.Println("  up         Scale up agents (start pods)")
+		fmt.Println("  down       Scale down agents (stop pods)")
 		fmt.Println("  forward    Manage port-forwards (list, add, remove, ...)")
-		fmt.Println("  start      Start the vibespace")
-		fmt.Println("  stop       Stop the vibespace")
+		fmt.Println("  start      Start the vibespace (alias for 'up')")
+		fmt.Println("  stop       Stop the vibespace (alias for 'down')")
 		return nil
 	}
 
@@ -256,16 +256,12 @@ func handleVibespaceCommand(args []string) error {
 		return runMulti(vibespace, cmdArgs)
 	case "ports":
 		return runPorts(vibespace, cmdArgs)
-	case "up":
+	case "up", "start":
 		return runUp(vibespace, cmdArgs)
-	case "down":
+	case "down", "stop":
 		return runDown(vibespace, cmdArgs)
 	case "forward":
 		return runForwardCmd(vibespace, cmdArgs)
-	case "start":
-		return runStartVibespace(vibespace)
-	case "stop":
-		return runStopVibespace(vibespace)
 	default:
 		if suggestion := suggestVibespaceCommand(subCmd); suggestion != "" {
 			return fmt.Errorf("unknown command: %s\n\nDid you mean: vibespace %s %s", subCmd, vibespace, suggestion)

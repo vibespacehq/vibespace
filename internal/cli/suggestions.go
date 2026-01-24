@@ -43,13 +43,14 @@ var knownVibespaceSubcommands = []string{
 	"spawn",
 	"kill",
 	"connect",
+	"config",
 	"multi",
 	"ports",
 	"up",
 	"down",
 	"forward",
-	"start",
-	"stop",
+	"start", // alias for up
+	"stop",  // alias for down
 }
 
 // suggestVibespaceCommand suggests a command based on input typo

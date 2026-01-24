@@ -379,6 +379,31 @@ func (m *DeploymentManager) ScaleAllDeploymentsForVibespace(ctx context.Context,
 	return nil
 }
 
+// ScaleAgentDeployment scales a specific agent's deployment
+func (m *DeploymentManager) ScaleAgentDeployment(ctx context.Context, vibespaceID, agentName string, replicas int32) error {
+	labelSelector := fmt.Sprintf("vibespace.dev/id=%s,vibespace.dev/agent-name=%s", vibespaceID, agentName)
+	deployments, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labelSelector,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list Deployments: %w", err)
+	}
+
+	if len(deployments.Items) == 0 {
+		return fmt.Errorf("agent '%s' not found in vibespace", agentName)
+	}
+
+	for _, deployment := range deployments.Items {
+		deployment.Spec.Replicas = &replicas
+		_, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, &deployment, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to scale Deployment %s: %w", deployment.Name, err)
+		}
+	}
+
+	return nil
+}
+
 // ListAgentsForVibespace lists all agents (Deployments) for a vibespace
 func (m *DeploymentManager) ListAgentsForVibespace(ctx context.Context, vibespaceID string) ([]AgentInfo, error) {
 	deployments, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
