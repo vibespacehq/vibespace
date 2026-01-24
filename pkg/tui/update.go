@@ -140,7 +140,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.contentDirty = true
 
 	case RichMessageMsg:
-		m.handleRichMessage(msg)
+		needsReconnect, addr := m.handleRichMessage(msg)
+		if needsReconnect {
+			key := addr.String()
+			// Only schedule reconnect if not already reconnecting
+			if !m.reconnecting[key] {
+				m.reconnecting[key] = true
+				m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s disconnected, will retry...", key)))
+				cmds = append(cmds, m.scheduleReconnect(addr, 1, 5))
+			}
+		}
 		// Continue listening for more messages
 		cmds = append(cmds, m.waitForAgentMessage())
 
@@ -149,13 +158,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s connected", msg.Address.String())))
 
 	case AgentDisconnectedMsg:
-		m.statusMsg = fmt.Sprintf("Disconnected: %s", msg.Address.String())
+		key := msg.Address.String()
+		m.statusMsg = fmt.Sprintf("Disconnected: %s", key)
 		if msg.Error != nil {
 			m.statusMsg += fmt.Sprintf(" (%s)", msg.Error.Error())
 		}
 		// Clear thinking state
-		m.SetAgentThinking(msg.Address.String(), false)
-		m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s disconnected", msg.Address.String())))
+		m.SetAgentThinking(key, false)
+		// Only schedule reconnect if not already reconnecting
+		if !m.reconnecting[key] {
+			m.reconnecting[key] = true
+			m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s disconnected, will retry...", key)))
+			cmds = append(cmds, m.scheduleReconnect(msg.Address, 1, 5))
+		}
+
+	case AgentReconnectMsg:
+		cmds = append(cmds, m.handleReconnect(msg))
 
 	case AgentErrorMsg:
 		m.statusMsg = fmt.Sprintf("Error from %s: %s", msg.Address.String(), msg.Error.Error())
@@ -647,12 +665,30 @@ func (m *Model) saveSession(name string) error {
 }
 
 // handleRichMessage processes a rich message from an agent
-func (m *Model) handleRichMessage(msg RichMessageMsg) {
+func (m *Model) handleRichMessage(msg RichMessageMsg) (needsReconnect bool, addr session.AgentAddress) {
 	// Clear thinking state when we receive a message
 	m.SetAgentThinking(msg.AgentKey, false)
 
 	// Check if we should auto-scroll (before adding message)
 	wasAtBottom := m.history.IsAtBottom()
+
+	// Check for disconnection errors - don't add these to history, trigger reconnect instead
+	if msg.Message.Type == MessageTypeError {
+		content := msg.Message.Content
+		if strings.Contains(content, "Connection to localhost closed") ||
+			strings.Contains(content, "Connection refused") ||
+			strings.Contains(content, "Connection reset") {
+			// Parse agent address from the key
+			m.agentMu.RLock()
+			if conn, ok := m.agents[msg.AgentKey]; ok {
+				addr = conn.Address()
+				needsReconnect = true
+			}
+			m.agentMu.RUnlock()
+			// Don't add disconnect error to history - we'll show reconnect message instead
+			return needsReconnect, addr
+		}
+	}
 
 	// Add the message to history (marks content as dirty)
 	m.AddMessage(msg.Message)
@@ -661,6 +697,8 @@ func (m *Model) handleRichMessage(msg RichMessageMsg) {
 	if wasAtBottom && m.viewportReady {
 		m.viewport.GotoBottom()
 	}
+
+	return false, session.AgentAddress{}
 }
 
 // listenToAgents starts listening to all agent output channels
@@ -858,5 +896,114 @@ func (m *Model) handlePermissionDecision(decision permission.Decision) tea.Cmd {
 		m.permissionPrompt = nil
 	}
 
+	return nil
+}
+
+// scheduleReconnect returns a command that triggers a reconnect after a delay
+func (m *Model) scheduleReconnect(addr session.AgentAddress, attempt, maxRetry int) tea.Cmd {
+	// Exponential backoff: 2s, 4s, 8s, 16s, 32s
+	delay := time.Duration(1<<uint(attempt)) * time.Second
+	if delay > 32*time.Second {
+		delay = 32 * time.Second
+	}
+
+	slog.Debug("scheduling reconnect", "agent", addr.String(), "attempt", attempt, "delay", delay)
+
+	return tea.Tick(delay, func(t time.Time) tea.Msg {
+		return AgentReconnectMsg{
+			Address:  addr,
+			Attempt:  attempt,
+			MaxRetry: maxRetry,
+		}
+	})
+}
+
+// handleReconnect attempts to reconnect to a disconnected agent
+func (m *Model) handleReconnect(msg AgentReconnectMsg) tea.Cmd {
+	key := msg.Address.String()
+	slog.Debug("attempting reconnect", "agent", key, "attempt", msg.Attempt)
+
+	// Check if agent still exists in our map
+	m.agentMu.RLock()
+	conn, exists := m.agents[key]
+	m.agentMu.RUnlock()
+
+	if !exists {
+		slog.Debug("agent no longer in session, skipping reconnect", "agent", key)
+		delete(m.reconnecting, key)
+		return nil
+	}
+
+	// Check if already connected
+	if conn.IsConnected() {
+		slog.Debug("agent already connected, skipping reconnect", "agent", key)
+		delete(m.reconnecting, key)
+		return nil
+	}
+
+	// Try to get fresh port info from daemon (port may have changed after pod restart)
+	if m.daemonClient != nil {
+		forwards, err := m.daemonClient.ListForwardsForVibespace(msg.Address.Vibespace)
+		if err == nil {
+			for _, agent := range forwards.Agents {
+				if agent.Name == msg.Address.Agent {
+					for _, fwd := range agent.Forwards {
+						if fwd.Type == "ssh" && fwd.Status == "active" {
+							// Update port if changed
+							if fwd.LocalPort != conn.LocalPort() {
+								slog.Debug("SSH port changed, creating new connection",
+									"agent", key, "old_port", conn.LocalPort(), "new_port", fwd.LocalPort)
+								// Close old connection and create new one with updated port
+								conn.Close()
+								newConn := NewAgentConn(msg.Address, fwd.LocalPort, m.sessionManager, m.sessionName, true, conn.Config())
+								if err := newConn.Connect(); err == nil {
+									m.agentMu.Lock()
+									m.agents[key] = newConn
+									m.agentMu.Unlock()
+									delete(m.reconnecting, key)
+									m.statusMsg = fmt.Sprintf("Reconnected: %s", key)
+									m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s reconnected", key)))
+									// Start listening to the new connection's output
+									go func(c *AgentConn) {
+										for msg := range c.OutputChan() {
+											select {
+											case m.incomingMsgs <- RichMessageMsg{
+												AgentKey: c.Address().String(),
+												Message:  msg,
+											}:
+											case <-m.ctx.Done():
+												return
+											}
+										}
+									}(newConn)
+									return nil
+								}
+							}
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Try to reconnect using existing connection
+	if err := conn.Reconnect(); err != nil {
+		slog.Debug("reconnect failed", "agent", key, "attempt", msg.Attempt, "error", err)
+
+		if msg.Attempt < msg.MaxRetry {
+			m.statusMsg = fmt.Sprintf("Reconnect failed for %s (attempt %d/%d), retrying...", key, msg.Attempt, msg.MaxRetry)
+			return m.scheduleReconnect(msg.Address, msg.Attempt+1, msg.MaxRetry)
+		}
+
+		delete(m.reconnecting, key)
+		m.statusMsg = fmt.Sprintf("Failed to reconnect to %s after %d attempts", key, msg.MaxRetry)
+		m.AddMessage(NewSystemMessage(fmt.Sprintf("Failed to reconnect to %s after %d attempts", key, msg.MaxRetry)))
+		return nil
+	}
+
+	delete(m.reconnecting, key)
+	m.statusMsg = fmt.Sprintf("Reconnected: %s", key)
+	m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s reconnected", key)))
 	return nil
 }
