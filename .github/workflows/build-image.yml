@@ -3,7 +3,7 @@ name: Build Container Image
 on:
   push:
     branches:
-      - vibespace-wip
+      - vibespace-wip-configurable-agent
     paths:
       - 'build/package/**'
       - '.github/workflows/build-image.yml'

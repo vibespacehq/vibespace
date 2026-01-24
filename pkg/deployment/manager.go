@@ -3,8 +3,11 @@ package deployment
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
+	"github.com/yagizdagabak/vibespace/pkg/model"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -41,7 +44,7 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 	}
 
 	// Build environment variables
-	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, req.ClaudeID, req.Env, req.ShareCredentials)
+	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, req.ClaudeID, req.Env, req.ShareCredentials, req.ClaudeConfig)
 
 	// Build volumes and volume mounts
 	volumes, volumeMounts := m.buildVolumesAndMounts(req.Persistent, req.PVCName)
@@ -177,7 +180,7 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 	}
 
 	// Build environment variables
-	env := m.buildEnvironment(req.VibespaceID, req.Name, req.AgentName, req.ClaudeID, req.Env, req.ShareCredentials)
+	env := m.buildEnvironment(req.VibespaceID, req.Name, req.AgentName, req.ClaudeID, req.Env, req.ShareCredentials, req.ClaudeConfig)
 
 	// Build volumes and volume mounts (share the same PVC)
 	var volumes []corev1.Volume
@@ -426,10 +429,164 @@ func (m *DeploymentManager) GetNextAgentID(ctx context.Context, vibespaceID stri
 	return fmt.Sprintf("%d", maxID+1), nil
 }
 
+// GetAgentConfig extracts ClaudeConfig from deployment env vars
+func (m *DeploymentManager) GetAgentConfig(ctx context.Context, vibespaceID, agentName string) (*model.ClaudeConfig, error) {
+	// Find the deployment for this agent
+	deployments, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list deployments: %w", err)
+	}
+
+	var deploy *appsv1.Deployment
+	for i := range deployments.Items {
+		d := &deployments.Items[i]
+		if name, ok := d.Labels["vibespace.dev/agent-name"]; ok && name == agentName {
+			deploy = d
+			break
+		}
+	}
+
+	if deploy == nil {
+		return nil, fmt.Errorf("agent '%s' not found", agentName)
+	}
+
+	return m.extractConfigFromDeployment(deploy), nil
+}
+
+// extractConfigFromDeployment extracts ClaudeConfig from deployment env vars
+func (m *DeploymentManager) extractConfigFromDeployment(deploy *appsv1.Deployment) *model.ClaudeConfig {
+	config := &model.ClaudeConfig{}
+
+	if len(deploy.Spec.Template.Spec.Containers) == 0 {
+		return config
+	}
+
+	for _, env := range deploy.Spec.Template.Spec.Containers[0].Env {
+		switch env.Name {
+		case "VIBESPACE_SKIP_PERMISSIONS":
+			config.SkipPermissions = env.Value == "true"
+		case "VIBESPACE_ALLOWED_TOOLS":
+			if env.Value != "" {
+				config.AllowedTools = strings.Split(env.Value, ",")
+			}
+		case "VIBESPACE_DISALLOWED_TOOLS":
+			if env.Value != "" {
+				config.DisallowedTools = strings.Split(env.Value, ",")
+			}
+		case "VIBESPACE_MODEL":
+			config.Model = env.Value
+		case "VIBESPACE_MAX_TURNS":
+			if v, err := strconv.Atoi(env.Value); err == nil {
+				config.MaxTurns = v
+			}
+		case "VIBESPACE_SYSTEM_PROMPT":
+			config.SystemPrompt = env.Value
+		case "VIBESPACE_SHARE_CREDENTIALS":
+			config.ShareCredentials = env.Value == "true"
+		}
+	}
+
+	return config
+}
+
+// UpdateAgentConfig updates the ClaudeConfig for an agent (triggers pod restart)
+func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, agentName string, config *model.ClaudeConfig) error {
+	// Find the deployment for this agent
+	deployments, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list deployments: %w", err)
+	}
+
+	var deploy *appsv1.Deployment
+	for i := range deployments.Items {
+		d := &deployments.Items[i]
+		if name, ok := d.Labels["vibespace.dev/agent-name"]; ok && name == agentName {
+			deploy = d
+			break
+		}
+	}
+
+	if deploy == nil {
+		return fmt.Errorf("agent '%s' not found", agentName)
+	}
+
+	// Update environment variables
+	if len(deploy.Spec.Template.Spec.Containers) == 0 {
+		return fmt.Errorf("deployment has no containers")
+	}
+
+	container := &deploy.Spec.Template.Spec.Containers[0]
+	newEnv := m.updateEnvVars(container.Env, config)
+	container.Env = newEnv
+
+	// Update the deployment (triggers rolling update)
+	_, err = m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, deploy, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update deployment: %w", err)
+	}
+
+	return nil
+}
+
+// updateEnvVars updates or adds Claude config env vars
+func (m *DeploymentManager) updateEnvVars(env []corev1.EnvVar, config *model.ClaudeConfig) []corev1.EnvVar {
+	// Map of env vars to update
+	configVars := map[string]string{
+		"VIBESPACE_SKIP_PERMISSIONS": "",
+		"VIBESPACE_ALLOWED_TOOLS":    "",
+		"VIBESPACE_DISALLOWED_TOOLS": "",
+		"VIBESPACE_MODEL":            "",
+		"VIBESPACE_MAX_TURNS":        "",
+		"VIBESPACE_SYSTEM_PROMPT":    "",
+	}
+
+	if config != nil {
+		if config.SkipPermissions {
+			configVars["VIBESPACE_SKIP_PERMISSIONS"] = "true"
+		}
+		if len(config.AllowedTools) > 0 {
+			configVars["VIBESPACE_ALLOWED_TOOLS"] = config.AllowedToolsString()
+		}
+		if len(config.DisallowedTools) > 0 {
+			configVars["VIBESPACE_DISALLOWED_TOOLS"] = config.DisallowedToolsString()
+		}
+		if config.Model != "" {
+			configVars["VIBESPACE_MODEL"] = config.Model
+		}
+		if config.MaxTurns > 0 {
+			configVars["VIBESPACE_MAX_TURNS"] = strconv.Itoa(config.MaxTurns)
+		}
+		if config.SystemPrompt != "" {
+			configVars["VIBESPACE_SYSTEM_PROMPT"] = config.SystemPrompt
+		}
+	}
+
+	// Remove existing config vars and non-config vars to result
+	result := make([]corev1.EnvVar, 0, len(env))
+	for _, e := range env {
+		if _, isConfigVar := configVars[e.Name]; !isConfigVar {
+			result = append(result, e)
+		}
+	}
+
+	// Add config vars with non-empty values
+	for name, value := range configVars {
+		if value != "" {
+			result = append(result, corev1.EnvVar{Name: name, Value: value})
+		}
+	}
+
+	return result
+}
+
 // Helper functions
 
 // buildEnvironment creates environment variables for the vibespace
-func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentName, claudeID string, userEnv map[string]string, shareCredentials bool) []corev1.EnvVar {
+func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentName, claudeID string, userEnv map[string]string, shareCredentials bool, claudeConfig *model.ClaudeConfig) []corev1.EnvVar {
 	env := []corev1.EnvVar{}
 
 	// Add user-provided environment variables
@@ -478,6 +635,46 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentNam
 			Name:  "VIBESPACE_SHARE_CREDENTIALS",
 			Value: "true",
 		})
+	}
+
+	// Claude configuration environment variables
+	if claudeConfig != nil {
+		if claudeConfig.SkipPermissions {
+			env = append(env, corev1.EnvVar{
+				Name:  "VIBESPACE_SKIP_PERMISSIONS",
+				Value: "true",
+			})
+		}
+		if len(claudeConfig.AllowedTools) > 0 {
+			env = append(env, corev1.EnvVar{
+				Name:  "VIBESPACE_ALLOWED_TOOLS",
+				Value: claudeConfig.AllowedToolsString(),
+			})
+		}
+		if len(claudeConfig.DisallowedTools) > 0 {
+			env = append(env, corev1.EnvVar{
+				Name:  "VIBESPACE_DISALLOWED_TOOLS",
+				Value: claudeConfig.DisallowedToolsString(),
+			})
+		}
+		if claudeConfig.Model != "" {
+			env = append(env, corev1.EnvVar{
+				Name:  "VIBESPACE_MODEL",
+				Value: claudeConfig.Model,
+			})
+		}
+		if claudeConfig.MaxTurns > 0 {
+			env = append(env, corev1.EnvVar{
+				Name:  "VIBESPACE_MAX_TURNS",
+				Value: strconv.Itoa(claudeConfig.MaxTurns),
+			})
+		}
+		if claudeConfig.SystemPrompt != "" {
+			env = append(env, corev1.EnvVar{
+				Name:  "VIBESPACE_SYSTEM_PROMPT",
+				Value: claudeConfig.SystemPrompt,
+			})
+		}
 	}
 
 	return env

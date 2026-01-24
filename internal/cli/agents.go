@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
+	"github.com/yagizdagabak/vibespace/pkg/model"
 	vspkg "github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
@@ -100,14 +103,21 @@ Usage:
   vibespace <name> spawn [flags]
 
 Flags:
-  -n, --name string          Custom name for the agent (default: claude-N)
-  -s, --share-credentials    Share Claude credentials across all agents
-  -h, --help                 Help for spawn
+  -n, --name string            Custom name for the agent (default: claude-N)
+  -s, --share-credentials      Share Claude credentials across all agents
+      --skip-permissions       Enable --dangerously-skip-permissions for Claude
+      --allowed-tools string   Comma-separated allowed tools (replaces default)
+      --disallowed-tools string Comma-separated disallowed tools
+      --model string           Claude model to use (e.g., opus, sonnet)
+      --max-turns int          Maximum conversation turns
+  -h, --help                   Help for spawn
 
 Examples:
   vibespace myproject spawn
   vibespace myproject spawn --name researcher
-  vibespace myproject spawn --share-credentials`)
+  vibespace myproject spawn --share-credentials
+  vibespace myproject spawn --skip-permissions
+  vibespace myproject spawn --allowed-tools "Bash,Read,Write"`)
 			return nil
 		}
 	}
@@ -117,19 +127,46 @@ Examples:
 	// Parse flags
 	shareCredentials := false
 	customName := ""
-	for i, arg := range args {
-		if arg == "--share-credentials" || arg == "-s" {
+	skipPermissions := false
+	allowedTools := ""
+	disallowedTools := ""
+	modelName := ""
+	maxTurns := 0
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--share-credentials" || arg == "-s":
 			shareCredentials = true
-		}
-		if (arg == "--name" || arg == "-n") && i+1 < len(args) {
+		case arg == "--skip-permissions":
+			skipPermissions = true
+		case (arg == "--name" || arg == "-n") && i+1 < len(args):
 			customName = args[i+1]
-		}
-		// Handle --name=value format
-		if len(arg) > 7 && arg[:7] == "--name=" {
+			i++
+		case strings.HasPrefix(arg, "--name="):
 			customName = arg[7:]
-		}
-		if len(arg) > 3 && arg[:3] == "-n=" {
+		case strings.HasPrefix(arg, "-n="):
 			customName = arg[3:]
+		case arg == "--allowed-tools" && i+1 < len(args):
+			allowedTools = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--allowed-tools="):
+			allowedTools = arg[16:]
+		case arg == "--disallowed-tools" && i+1 < len(args):
+			disallowedTools = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--disallowed-tools="):
+			disallowedTools = arg[19:]
+		case arg == "--model" && i+1 < len(args):
+			modelName = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--model="):
+			modelName = arg[8:]
+		case arg == "--max-turns" && i+1 < len(args):
+			maxTurns, _ = strconv.Atoi(args[i+1])
+			i++
+		case strings.HasPrefix(arg, "--max-turns="):
+			maxTurns, _ = strconv.Atoi(arg[12:])
 		}
 	}
 
@@ -154,10 +191,27 @@ Examples:
 		printStep("Spawning new agent in '%s'...", vibespace)
 	}
 
+	// Build ClaudeConfig if any config flags are set
+	var claudeConfig *model.ClaudeConfig
+	if skipPermissions || allowedTools != "" || disallowedTools != "" || modelName != "" || maxTurns > 0 {
+		claudeConfig = &model.ClaudeConfig{
+			SkipPermissions: skipPermissions,
+			Model:           modelName,
+			MaxTurns:        maxTurns,
+		}
+		if allowedTools != "" {
+			claudeConfig.AllowedTools = strings.Split(allowedTools, ",")
+		}
+		if disallowedTools != "" {
+			claudeConfig.DisallowedTools = strings.Split(disallowedTools, ",")
+		}
+	}
+
 	// Spawn the agent with options
 	opts := &vspkg.SpawnAgentOptions{
 		Name:             customName,
 		ShareCredentials: shareCredentials,
+		ClaudeConfig:     claudeConfig,
 	}
 	agentName, err := svc.SpawnAgent(ctx, vs.ID, opts)
 	if err != nil {
@@ -169,6 +223,17 @@ Examples:
 	printSuccess("Agent '%s' created", agentName)
 	if shareCredentials {
 		fmt.Println("  Credential sharing enabled via /vibespace/.vibespace")
+	}
+	if claudeConfig != nil {
+		if claudeConfig.SkipPermissions {
+			fmt.Println("  Skip permissions enabled")
+		}
+		if len(claudeConfig.AllowedTools) > 0 {
+			fmt.Printf("  Allowed tools: %s\n", claudeConfig.AllowedToolsString())
+		}
+		if claudeConfig.Model != "" {
+			fmt.Printf("  Model: %s\n", claudeConfig.Model)
+		}
 	}
 	fmt.Println()
 

@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/session"
+	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
 // HeadlessRunner handles non-interactive mode for multi-agent sessions
@@ -112,8 +115,19 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 			}
 
 			addr := session.AgentAddress{Agent: a.Name, Vibespace: vsName}
-			// Pass sessionName as multi-session ID and resume flag
-			conn := NewAgentConn(addr, port, r.sessionManager, r.sessionName, r.resume)
+
+			// Get agent config from vibespace service
+			var claudeConfig *model.ClaudeConfig
+			svc := vibespace.NewService(nil) // Service will initialize k8s client on first use
+			config, err := svc.GetAgentConfig(context.Background(), vsName, a.Name)
+			if err != nil {
+				slog.Warn("failed to get agent config, using defaults", "agent", addr.String(), "error", err)
+			} else {
+				claudeConfig = config
+			}
+
+			// Pass sessionName as multi-session ID, resume flag, and config
+			conn := NewAgentConn(addr, port, r.sessionManager, r.sessionName, r.resume, claudeConfig)
 			if err := conn.Connect(); err != nil {
 				return fmt.Errorf("failed to connect to %s: %w", addr.String(), err)
 			}

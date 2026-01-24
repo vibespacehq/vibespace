@@ -52,6 +52,9 @@ type CreateVibespaceRequest struct {
 
 	// GithubRepo is an optional GitHub repo URL to clone on startup
 	GithubRepo string `json:"github_repo,omitempty"`
+
+	// ClaudeConfig configures the Claude Code agent (nil = defaults)
+	ClaudeConfig *ClaudeConfig `json:"claude_config,omitempty"`
 }
 
 // UpdateVibespaceRequest represents the request to update a vibespace

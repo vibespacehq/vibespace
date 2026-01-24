@@ -8,7 +8,9 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 
+	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
@@ -76,9 +78,23 @@ func runConnect(vibespace string, args []string) error {
 	// If agent was explicitly specified, run claude interactively
 	// Otherwise just give a shell (all agents share the same filesystem)
 	if runClaude {
+		// Get agent config from service
+		svc, err := getVibespaceService()
+		var config *model.ClaudeConfig
+		if err != nil {
+			slog.Warn("failed to get vibespace service for config", "error", err)
+		} else {
+			config, err = svc.GetAgentConfig(ctx, vibespace, agent)
+			if err != nil {
+				slog.Warn("failed to get agent config, using defaults", "error", err)
+				config = nil
+			}
+		}
+
+		cmd := buildClaudeInteractiveCommand(config)
 		printStep("Connecting to %s in %s...", agent, vibespace)
 		slog.Info("connect command completed", "vibespace", vibespace, "mode", "ssh", "agent", agent, "local_port", localPort)
-		return connectViaSSH(localPort, "cd /vibespace && claude")
+		return connectViaSSH(localPort, cmd)
 	}
 
 	printStep("Connecting to shell in %s...", vibespace)
@@ -142,4 +158,34 @@ func openBrowser(url string) error {
 
 	printSuccess("Browser opened: %s", url)
 	return nil
+}
+
+// buildClaudeInteractiveCommand builds the claude command for interactive mode
+func buildClaudeInteractiveCommand(config *model.ClaudeConfig) string {
+	args := []string{"cd /vibespace &&", "claude"}
+
+	if config != nil {
+		if config.SkipPermissions {
+			args = append(args, "--dangerously-skip-permissions")
+		}
+		if len(config.AllowedTools) > 0 {
+			// Explicit allowed tools always take precedence
+			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, config.AllowedToolsString()))
+		} else if !config.SkipPermissions {
+			// Only use restrictive defaults if NOT skipping permissions
+			// With skip_permissions, omit --allowedTools for full access
+			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(model.DefaultAllowedTools(), ",")))
+		}
+		if len(config.DisallowedTools) > 0 {
+			args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, config.DisallowedToolsString()))
+		}
+		if config.Model != "" {
+			args = append(args, "--model", config.Model)
+		}
+		if config.MaxTurns > 0 {
+			args = append(args, "--max-turns", fmt.Sprintf("%d", config.MaxTurns))
+		}
+	}
+
+	return strings.Join(args, " ")
 }

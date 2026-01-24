@@ -10,9 +10,11 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
@@ -62,6 +64,7 @@ type AgentConn struct {
 	multiSessionID string                // Multi-session ID for session isolation
 	resume         bool                  // If true, use --resume with existing session; if false, use --session-id
 	forceNewSession bool                 // If true, use --session-id even if session exists (for /session @agent new)
+	claudeConfig   *model.ClaudeConfig   // Claude configuration for this agent
 
 	// SSH process running claude in print mode
 	cmd    *exec.Cmd
@@ -85,7 +88,8 @@ type AgentConn struct {
 // NewAgentConn creates a new agent connection
 // multiSessionID is the multi-session ID for session isolation
 // resume indicates whether to resume an existing session (--resume) or start fresh (--session-id)
-func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *ClaudeSessionManager, multiSessionID string, resume bool) *AgentConn {
+// claudeConfig optionally provides agent-specific Claude configuration
+func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *ClaudeSessionManager, multiSessionID string, resume bool, claudeConfig *model.ClaudeConfig) *AgentConn {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &AgentConn{
 		address:        addr,
@@ -93,6 +97,7 @@ func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *ClaudeSe
 		sessionManager: sessionMgr,
 		multiSessionID: multiSessionID,
 		resume:         resume,
+		claudeConfig:   claudeConfig,
 		outputCh:       make(chan *Message, 100),
 		responseDone:   make(chan struct{}),
 		ctx:            ctx,
@@ -118,7 +123,8 @@ func (c *AgentConn) Connect() error {
 
 	// Get session ID and determine whether to use --session-id or --resume
 	agentAddr := c.address.String()
-	var claudeCmd string
+	var sessionID string
+	var useResume bool
 	var sessionMode string
 
 	// Check if a session already exists for this agent in this multi-session
@@ -131,27 +137,22 @@ func (c *AgentConn) Connect() error {
 		// Clear the flag after using it
 		c.forceNewSession = false
 		sessionMode = "session-id (forced new)"
-		claudeCmd = fmt.Sprintf(
-			`bash -l -c 'claude -p --verbose --output-format stream-json --session-id %s --allowedTools "Bash(read_only:true),Read,Write,Edit,Glob,Grep"'`,
-			existingSessionID,
-		)
+		sessionID = existingSessionID
+		useResume = false
 	} else if existingSessionID != "" {
 		// Session exists - use --resume to continue it
 		sessionMode = "resume"
-		claudeCmd = fmt.Sprintf(
-			`bash -l -c 'claude -p --verbose --output-format stream-json --resume %s --allowedTools "Bash(read_only:true),Read,Write,Edit,Glob,Grep"'`,
-			existingSessionID,
-		)
+		sessionID = existingSessionID
+		useResume = true
 	} else {
 		// No existing session - create a new one with --session-id
-		sessionID := c.sessionManager.GetOrCreateSession(c.multiSessionID, agentAddr)
+		sessionID = c.sessionManager.GetOrCreateSession(c.multiSessionID, agentAddr)
 		sessionMode = "session-id (new)"
-		claudeCmd = fmt.Sprintf(
-			`bash -l -c 'claude -p --verbose --output-format stream-json --session-id %s --allowedTools "Bash(read_only:true),Read,Write,Edit,Glob,Grep"'`,
-			sessionID,
-		)
+		useResume = false
 	}
 	slog.Debug("connect: using mode", "agent", agentAddr, "mode", sessionMode)
+
+	claudeCmd := c.buildClaudeCommand(sessionID, useResume)
 
 	sshArgs := []string{
 		"-i", keyPath,
@@ -610,6 +611,88 @@ func (c *AgentConn) SetForceNewSession(force bool) {
 // LocalPort returns the local SSH port
 func (c *AgentConn) LocalPort() int {
 	return c.localPort
+}
+
+// Config returns the Claude configuration for this agent
+func (c *AgentConn) Config() *model.ClaudeConfig {
+	return c.claudeConfig
+}
+
+// BuildInteractiveClaudeCommand builds a claude command for interactive (non-print) mode
+// This is used by /focus to launch an interactive Claude session with the agent's config
+func BuildInteractiveClaudeCommand(config *model.ClaudeConfig, sessionID string) string {
+	args := []string{"claude"}
+
+	// Session handling
+	if sessionID != "" {
+		args = append(args, "--resume", sessionID)
+	}
+
+	// Config-based flags
+	if config != nil {
+		if config.SkipPermissions {
+			args = append(args, "--dangerously-skip-permissions")
+		}
+		if len(config.AllowedTools) > 0 {
+			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, config.AllowedToolsString()))
+		} else if !config.SkipPermissions {
+			// Only use restrictive defaults if NOT skipping permissions
+			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(model.DefaultAllowedTools(), ",")))
+		}
+		if len(config.DisallowedTools) > 0 {
+			args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, config.DisallowedToolsString()))
+		}
+		if config.Model != "" {
+			args = append(args, "--model", config.Model)
+		}
+		if config.MaxTurns > 0 {
+			args = append(args, "--max-turns", fmt.Sprintf("%d", config.MaxTurns))
+		}
+	}
+
+	return strings.Join(args, " ")
+}
+
+// buildClaudeCommand builds the claude print-mode command with config-based flags
+func (c *AgentConn) buildClaudeCommand(sessionID string, useResume bool) string {
+	args := []string{"claude", "-p", "--verbose", "--output-format", "stream-json"}
+
+	// Session handling
+	if useResume {
+		args = append(args, "--resume", sessionID)
+	} else {
+		args = append(args, "--session-id", sessionID)
+	}
+
+	// Config-based flags
+	if c.claudeConfig != nil {
+		if c.claudeConfig.SkipPermissions {
+			args = append(args, "--dangerously-skip-permissions")
+		}
+		if len(c.claudeConfig.AllowedTools) > 0 {
+			// Explicit allowed tools always take precedence
+			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, c.claudeConfig.AllowedToolsString()))
+		} else if !c.claudeConfig.SkipPermissions {
+			// Only use restrictive defaults if NOT skipping permissions
+			// With skip_permissions, omit --allowedTools for full access
+			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(model.DefaultAllowedTools(), ",")))
+		}
+		if len(c.claudeConfig.DisallowedTools) > 0 {
+			args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, c.claudeConfig.DisallowedToolsString()))
+		}
+		if c.claudeConfig.Model != "" {
+			args = append(args, "--model", c.claudeConfig.Model)
+		}
+		if c.claudeConfig.MaxTurns > 0 {
+			args = append(args, "--max-turns", fmt.Sprintf("%d", c.claudeConfig.MaxTurns))
+		}
+	} else {
+		// Fallback: no config available, use restrictive defaults
+		args = append(args, "--allowedTools", `"Bash(read_only:true),Read,Write,Edit,Glob,Grep"`)
+	}
+
+	// Wrap in bash -l -c to ensure proper shell environment
+	return fmt.Sprintf(`bash -l -c '%s'`, strings.Join(args, " "))
 }
 
 // Close closes the agent connection
