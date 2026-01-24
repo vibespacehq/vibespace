@@ -109,4 +109,7 @@ log "Claude Code permission hooks configured"
 # ============================================================================
 log "Starting (name=${VIBESPACE_NAME:-?}, agent=${VIBESPACE_AGENT:-?}, shared=${VIBESPACE_SHARE_CREDENTIALS:-false})"
 
+# Export USER_HOME for supervisor to pass to ttyd
+export USER_HOME
+
 exec "$@"
