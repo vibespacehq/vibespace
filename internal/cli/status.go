@@ -158,8 +158,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 }
 
 func checkClusterComponents(ctx context.Context, vibespaceHome string) map[string]bool {
-	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".kube", "config")
+	// Use isolated kubeconfig
+	kubeconfig := filepath.Join(vibespaceHome, "kubeconfig")
 	kubectlBin := filepath.Join(vibespaceHome, "bin", "kubectl")
 
 	result := map[string]bool{
@@ -182,6 +182,19 @@ var stopCmd = &cobra.Command{
 	Long:  `Stop the vibespace cluster. Data is preserved and can be started again with 'vibespace init'.`,
 	Example: `  vibespace stop`,
 	RunE: runStop,
+}
+
+var uninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Remove vibespace and all cluster data",
+	Long: `Completely remove vibespace including:
+- The Colima VM (macOS) or k3s cluster (Linux)
+- All vibespace data in ~/.vibespace/
+- All vibespaces and their data
+
+This action cannot be undone. Your ~/.kube/config is NOT affected.`,
+	Example: `  vibespace uninstall`,
+	RunE:    runUninstall,
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
@@ -241,5 +254,79 @@ func runStop(cmd *cobra.Command, args []string) error {
 
 	slog.Info("stop completed successfully")
 	spinner.Success("Cluster stopped")
+	return nil
+}
+
+func runUninstall(cmd *cobra.Command, args []string) error {
+	slog.Info("uninstall command started")
+
+	fmt.Println("This will remove ALL vibespace data including:")
+	fmt.Println("  - The Colima VM (macOS) or k3s cluster (Linux)")
+	fmt.Println("  - All vibespaces and their data")
+	fmt.Println("  - All downloaded binaries")
+	fmt.Println()
+	fmt.Println("Your ~/.kube/config will NOT be affected.")
+	fmt.Println()
+	fmt.Print("Continue? [y/N] ")
+
+	var response string
+	fmt.Scanln(&response)
+	if response != "y" && response != "Y" {
+		fmt.Println("Aborted.")
+		return nil
+	}
+
+	// Stop daemon first
+	if daemon.IsDaemonRunning() {
+		printStep("Stopping daemon...")
+		if err := daemon.StopDaemon(); err != nil {
+			slog.Warn("failed to stop daemon", "error", err)
+		} else {
+			printSuccess("Daemon stopped")
+		}
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		slog.Error("failed to get home directory", "error", err)
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+	vibespaceHome := filepath.Join(home, ".vibespace")
+
+	// Detect platform and get manager
+	p := platform.Detect()
+	slog.Debug("platform detected", "os", p.OS, "arch", p.Arch)
+
+	// Only uninstall cluster if binaries exist
+	manager, err := platform.NewClusterManager(p, vibespaceHome)
+	if err != nil {
+		slog.Warn("failed to create cluster manager", "error", err)
+	} else {
+		installed, _ := manager.IsInstalled()
+		if installed {
+			spinner := NewSpinner("Removing cluster...")
+			spinner.Start()
+			slog.Info("uninstalling cluster")
+			ctx := context.Background()
+			if err := manager.Uninstall(ctx); err != nil {
+				slog.Warn("cluster uninstall had errors", "error", err)
+			}
+			spinner.Success("Cluster removed")
+		}
+	}
+
+	// Remove entire ~/.vibespace/ directory
+	spinner := NewSpinner("Removing vibespace data...")
+	spinner.Start()
+	slog.Info("removing vibespace home directory", "path", vibespaceHome)
+	if err := os.RemoveAll(vibespaceHome); err != nil {
+		spinner.Fail("Failed to remove vibespace data")
+		slog.Error("failed to remove vibespace home", "error", err)
+		return fmt.Errorf("failed to remove %s: %w", vibespaceHome, err)
+	}
+	spinner.Success("Vibespace data removed")
+
+	slog.Info("uninstall completed successfully")
+	printSuccess("vibespace has been completely removed")
 	return nil
 }

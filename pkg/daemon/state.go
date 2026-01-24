@@ -100,6 +100,17 @@ func (vs *VibespaceState) GetAgentPod(agentName string) (string, bool) {
 	return "", false
 }
 
+// GetAgentState returns the full agent state (nil if not found)
+func (vs *VibespaceState) GetAgentState(agentName string) *AgentState {
+	vs.mu.RLock()
+	defer vs.mu.RUnlock()
+
+	if agent, exists := vs.Agents[agentName]; exists {
+		return agent
+	}
+	return nil
+}
+
 // RemoveAgent removes an agent from vibespace state
 func (vs *VibespaceState) RemoveAgent(agentName string) {
 	vs.mu.Lock()

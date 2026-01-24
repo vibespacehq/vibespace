@@ -85,6 +85,58 @@ func (m *K3sManager) IsRunning() (bool, error) {
 	return false, nil
 }
 
+// GetVMState returns the current state of the k3s cluster
+// For k3s on Linux, there's no VM - it's either running, stopped, or broken
+func (m *K3sManager) GetVMState(ctx context.Context) VMState {
+	pidFile := filepath.Join(m.vibespaceHome, "k3s.pid")
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		// No PID file - check if data directory exists
+		dataDir := filepath.Join(m.vibespaceHome, "k3s-data")
+		if _, statErr := os.Stat(dataDir); statErr == nil {
+			// Data exists but no PID - stopped state
+			return VMStateStopped
+		}
+		return VMStateNotExists
+	}
+
+	pid := strings.TrimSpace(string(data))
+	// Check if process exists
+	if _, err := os.Stat(filepath.Join("/proc", pid)); err == nil {
+		// Process exists - verify it's actually k3s and working
+		kubeconfig := m.KubeconfigPath()
+		if _, statErr := os.Stat(kubeconfig); statErr == nil {
+			return VMStateRunning
+		}
+		// Process running but no kubeconfig - broken
+		return VMStateBroken
+	}
+
+	// PID file exists but process doesn't - broken state (stale PID)
+	return VMStateBroken
+}
+
+// Resume starts a stopped k3s cluster
+// For k3s, this is equivalent to Start since there's no persistent VM state
+func (m *K3sManager) Resume(ctx context.Context) error {
+	// K3s doesn't have a "resume" concept - just start with default config
+	return m.Start(ctx, ClusterConfig{})
+}
+
+// Recover cleans up a broken k3s state
+func (m *K3sManager) Recover(ctx context.Context) error {
+	// Stop any running k3s process
+	_ = m.Stop(ctx)
+
+	// Remove stale PID file
+	pidFile := filepath.Join(m.vibespaceHome, "k3s.pid")
+	_ = os.Remove(pidFile)
+
+	// Optionally clean up stale data if it's corrupted
+	// For now, we preserve data to allow recovery
+	return nil
+}
+
 // Start starts k3s server
 // Note: config is ignored for k3s as it runs directly on the host
 func (m *K3sManager) Start(ctx context.Context, config ClusterConfig) error {
