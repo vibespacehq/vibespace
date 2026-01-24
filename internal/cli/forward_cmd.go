@@ -22,6 +22,9 @@ func runForwardCmd(vibespace string, args []string) error {
 	subArgs := args[1:]
 
 	switch subCmd {
+	case "--help", "-h":
+		printForwardHelp(vibespace)
+		return nil
 	case "list":
 		return runForwardList(vibespace)
 	case "add":
@@ -35,6 +38,32 @@ func runForwardCmd(vibespace string, args []string) error {
 		}
 		return fmt.Errorf("unknown forward subcommand: %s", subCmd)
 	}
+}
+
+// printForwardHelp prints help for the forward command
+func printForwardHelp(vibespace string) {
+	fmt.Printf(`Manage port-forwards for a vibespace
+
+Usage:
+  vibespace %s forward [command]
+
+Available Commands:
+  list        List all port-forwards (default)
+  add         Add a new port-forward
+  remove      Remove a port-forward
+
+Flags:
+  -h, --help  Help for forward
+
+Examples:
+  vibespace %s forward                    # List all forwards
+  vibespace %s forward list               # List all forwards
+  vibespace %s forward add 3000           # Forward port 3000 for claude-1
+  vibespace %s forward add 8080 --agent claude-2 --local 9090
+  vibespace %s forward remove 3000        # Remove port 3000 forward
+
+Use "vibespace %s forward [command] --help" for more information about a command.
+`, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace)
 }
 
 // runForwardList lists all port-forwards
@@ -142,6 +171,31 @@ func runForwardList(vibespace string) error {
 
 // runForwardAdd adds a new port-forward
 func runForwardAdd(vibespace string, args []string) error {
+	// Handle help flag
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Printf(`Add a new port-forward
+
+Usage:
+  vibespace %s forward add PORT [flags]
+
+Arguments:
+  PORT    Remote port in the container to forward
+
+Flags:
+  -a, --agent string   Agent to forward from (default: claude-1)
+  -l, --local int      Local port to use (default: auto-allocate)
+  -h, --help           Help for add
+
+Examples:
+  vibespace %s forward add 3000
+  vibespace %s forward add 8080 --agent claude-2
+  vibespace %s forward add 5432 --local 15432 --agent trusted
+`, vibespace, vibespace, vibespace, vibespace)
+			return nil
+		}
+	}
+
 	if len(args) == 0 {
 		return fmt.Errorf("remote port required. Usage: vibespace %s forward add PORT [--agent AGENT] [--local LOCAL_PORT]", vibespace)
 	}
@@ -199,6 +253,29 @@ func runForwardAdd(vibespace string, args []string) error {
 
 // runForwardRemove removes a port-forward
 func runForwardRemove(vibespace string, args []string) error {
+	// Handle help flag
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Printf(`Remove a port-forward
+
+Usage:
+  vibespace %s forward remove PORT [flags]
+
+Arguments:
+  PORT    Remote port to stop forwarding
+
+Flags:
+  -a, --agent string   Agent to remove forward from (default: claude-1)
+  -h, --help           Help for remove
+
+Examples:
+  vibespace %s forward remove 3000
+  vibespace %s forward remove 8080 --agent claude-2
+`, vibespace, vibespace, vibespace)
+			return nil
+		}
+	}
+
 	if len(args) == 0 {
 		return fmt.Errorf("remote port required. Usage: vibespace %s forward remove PORT [--agent AGENT]", vibespace)
 	}
