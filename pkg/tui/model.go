@@ -87,6 +87,9 @@ type Model struct {
 	permissionServer *permission.Server
 	pendingPerms     []*permission.Request // Queue of pending permission requests
 	permissionPrompt *PermissionPrompt     // Current permission prompt (nil if none showing)
+
+	// Reconnection tracking
+	reconnecting map[string]bool // Agents currently being reconnected
 }
 
 // NewModel creates a new TUI model
@@ -143,6 +146,7 @@ func NewModel(sess *session.Session, resume bool) *Model {
 		incomingMsgs:     make(chan RichMessageMsg, 100), // Buffered channel for agent messages
 		permissionServer: permServer,
 		pendingPerms:     make([]*permission.Request, 0),
+		reconnecting:     make(map[string]bool),
 	}
 }
 
