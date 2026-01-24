@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+// colimaProfile is the dedicated Colima profile name for vibespace
+// Using a dedicated profile avoids conflicts with user's default Colima setup
+const colimaProfile = "vibespace"
+
 // ColimaManager manages the Colima-based Kubernetes cluster on macOS
 type ColimaManager struct {
 	platform      Platform
@@ -31,6 +35,12 @@ func NewColimaManager(p Platform, vibespaceHome string) *ColimaManager {
 		vibespaceHome: vibespaceHome,
 		binDir:        filepath.Join(vibespaceHome, "bin"),
 	}
+}
+
+// colimaProfileDir returns the path to the Colima profile config directory
+func (m *ColimaManager) colimaProfileDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".colima", colimaProfile)
 }
 
 // Binary paths
@@ -182,37 +192,71 @@ func (m *ColimaManager) downloadKubectl(ctx context.Context) error {
 	return downloadBinary(ctx, url, m.kubectlBin())
 }
 
-// IsRunning checks if the Colima VM is running
+// IsRunning checks if the Colima VM is running WITH Kubernetes enabled
 func (m *ColimaManager) IsRunning() (bool, error) {
 	// Build PATH with lima/bin and bin directories
 	currentPath := os.Getenv("PATH")
 	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
 
-	cmd := exec.Command(m.colimaBin(), "status")
+	cmd := exec.Command(m.colimaBin(), "--profile", colimaProfile, "status")
 	cmd.Env = append(os.Environ(), "PATH="+newPath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// "colima status" returns non-zero if not running
 		return false, nil
 	}
-	// Colima outputs to stderr, check for "colima is running"
-	return strings.Contains(string(output), "is running"), nil
+
+	outputStr := string(output)
+	// Check if Colima is running
+	if !strings.Contains(outputStr, "is running") {
+		return false, nil
+	}
+
+	// Check if Kubernetes is actually reachable via kubectl
+	// Note: colima status doesn't always report "docker+k3s" reliably
+	kubeconfig := m.KubeconfigPath()
+	kubectlCmd := exec.Command(m.kubectlBin(), "--kubeconfig", kubeconfig, "cluster-info")
+	if err := kubectlCmd.Run(); err != nil {
+		slog.Debug("colima running but kubernetes not reachable", "error", err)
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // Start starts the Colima VM with k3s
 func (m *ColimaManager) Start(ctx context.Context, config ClusterConfig) error {
 	// Build PATH with lima/bin and bin directories
-	// This matches the Tauri app approach
 	currentPath := os.Getenv("PATH")
 	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
 
+	// Delete existing profile config directory to ensure fresh kubernetes-enabled config
+	// This is necessary because Colima's --kubernetes flag is ignored if profile config exists
+	profileDir := m.colimaProfileDir()
+	if _, err := os.Stat(profileDir); err == nil {
+		slog.Debug("removing existing colima profile config", "path", profileDir)
+		// First try to delete the VM gracefully
+		deleteCmd := exec.CommandContext(ctx, m.colimaBin(), "--profile", colimaProfile, "delete", "--force")
+		deleteCmd.Env = append(os.Environ(), "PATH="+newPath)
+		stdout, stderr := subprocessWriters("colima delete")
+		deleteCmd.Stdout = stdout
+		deleteCmd.Stderr = stderr
+		_ = deleteCmd.Run() // Ignore errors - VM might not exist
+
+		// Remove the profile config directory to ensure fresh config with kubernetes
+		if err := os.RemoveAll(profileDir); err != nil {
+			slog.Warn("failed to remove profile config directory", "path", profileDir, "error", err)
+		}
+	}
+
 	// Use bash -c to run colima with PATH set
 	// This ensures the environment is properly inherited by Colima's subprocesses (like limactl)
-	// Note: We use the default profile (no --profile flag) and Colima updates ~/.kube/config automatically
+	// Using dedicated "vibespace" profile to avoid conflicts with user's default Colima setup
 	commandStr := fmt.Sprintf(
-		"PATH='%s' '%s' start --kubernetes --cpu %d --memory %d --disk %d",
+		"PATH='%s' '%s' --profile %s start --kubernetes --cpu %d --memory %d --disk %d",
 		newPath,
 		m.colimaBin(),
+		colimaProfile,
 		config.CPU,
 		config.Memory,
 		config.Disk,
@@ -242,7 +286,7 @@ func (m *ColimaManager) Stop(ctx context.Context) error {
 
 	slog.Debug("executing colima stop")
 
-	cmd := exec.CommandContext(ctx, m.colimaBin(), "stop")
+	cmd := exec.CommandContext(ctx, m.colimaBin(), "--profile", colimaProfile, "stop")
 	cmd.Env = append(os.Environ(), "PATH="+newPath)
 	stdout, stderr := subprocessWriters("colima stop")
 	cmd.Stdout = stdout
@@ -289,10 +333,13 @@ func (m *ColimaManager) Uninstall(ctx context.Context) error {
 	// Stop if running
 	_ = m.Stop(ctx)
 
-	// Delete the Colima VM (default profile)
-	cmd := exec.CommandContext(ctx, m.colimaBin(), "delete", "--force")
+	// Delete the Colima VM (vibespace profile)
+	cmd := exec.CommandContext(ctx, m.colimaBin(), "--profile", colimaProfile, "delete", "--force")
 	cmd.Env = append(os.Environ(), "PATH="+newPath)
 	_ = cmd.Run()
+
+	// Remove profile config directory
+	_ = os.RemoveAll(m.colimaProfileDir())
 
 	// Remove binaries
 	_ = os.Remove(m.colimaBin())
@@ -303,7 +350,7 @@ func (m *ColimaManager) Uninstall(ctx context.Context) error {
 }
 
 // KubeconfigPath returns the path to the kubeconfig file
-// Colima automatically updates ~/.kube/config with the "colima" context
+// Colima automatically updates ~/.kube/config with the "colima-vibespace" context
 func (m *ColimaManager) KubeconfigPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".kube", "config")
