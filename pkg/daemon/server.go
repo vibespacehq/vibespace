@@ -303,8 +303,11 @@ func (s *Server) buildAgentStatusList(vibespace string) []AgentStatus {
 		// Get agent state to look up forward types
 		agentState := vsState.GetAgentState(agentName)
 
+		// Use composite key to look up forwards (vibespace/agentName)
+		key := vibespace + "/" + agentName
+
 		var fwdInfos []ForwardInfo
-		if forwards, ok := allForwards[agentName]; ok {
+		if forwards, ok := allForwards[key]; ok {
 			for _, fwd := range forwards {
 				// Look up type from daemon state by matching remote port
 				fwdType := ""
@@ -353,12 +356,14 @@ func (s *Server) handleAddForward(req Request) Response {
 		return NewErrorResponse(fmt.Errorf("remote port required"))
 	}
 
-	localPort, err := s.manager.AddForward(req.Agent, req.Port, portforward.TypeManual, req.Local)
+	// Use composite key for manager
+	key := req.Vibespace + "/" + req.Agent
+	localPort, err := s.manager.AddForward(key, req.Port, portforward.TypeManual, req.Local)
 	if err != nil {
 		return NewErrorResponse(err)
 	}
 
-	// Update desired state
+	// Update desired state (uses simple agent name)
 	desired := s.desiredMgr.GetOrCreate(req.Vibespace)
 	desired.AddForward(req.Agent, DesiredForward{
 		ContainerPort: req.Port,
@@ -366,7 +371,7 @@ func (s *Server) handleAddForward(req Request) Response {
 	})
 	s.desiredMgr.Save(req.Vibespace)
 
-	// Update runtime state
+	// Update runtime state (uses simple agent name)
 	vsState := s.state.GetOrCreateVibespace(req.Vibespace)
 	vsState.AddForward(req.Agent, &ForwardState{
 		LocalPort:  localPort,
@@ -394,7 +399,9 @@ func (s *Server) handleRemoveForward(req Request) Response {
 		return NewErrorResponse(fmt.Errorf("remote port required"))
 	}
 
-	if err := s.manager.RemoveForward(req.Agent, req.Port); err != nil {
+	// Use composite key for manager
+	key := req.Vibespace + "/" + req.Agent
+	if err := s.manager.RemoveForward(key, req.Port); err != nil {
 		return NewErrorResponse(err)
 	}
 

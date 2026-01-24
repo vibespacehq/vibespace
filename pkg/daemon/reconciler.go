@@ -174,6 +174,11 @@ func (r *Reconciler) groupByVibespace(pods []PodInfo) map[string][]PodInfo {
 	return result
 }
 
+// agentKey creates a unique key for an agent across vibespaces
+func agentKey(vibespace, agentName string) string {
+	return vibespace + "/" + agentName
+}
+
 // reconcileVibespace reconciles a single vibespace's forwards
 func (r *Reconciler) reconcileVibespace(ctx context.Context, vibespace string, pods []PodInfo) {
 	slog.Debug("reconciling vibespace", "vibespace", vibespace, "pod_count", len(pods))
@@ -201,8 +206,9 @@ func (r *Reconciler) reconcileVibespace(ctx context.Context, vibespace string, p
 			continue
 		}
 
-		// Update pod mapping
-		r.manager.SetAgentPod(agentName, podName)
+		// Update pod mapping (use composite key for manager, simple name for state)
+		key := agentKey(vibespace, agentName)
+		r.manager.SetAgentPod(key, podName)
 		vsState.SetAgentPod(agentName, podName)
 
 		// Ensure forwards exist
@@ -214,8 +220,9 @@ func (r *Reconciler) reconcileVibespace(ctx context.Context, vibespace string, p
 	// For agents with running pods but no desired forwards, create default forwards (SSH + ttyd)
 	for agentName, podName := range runningPods {
 		if _, hasDesired := desired.Agents[agentName]; !hasDesired {
-			// Create default forwards
-			r.manager.SetAgentPod(agentName, podName)
+			// Create default forwards (use composite key for manager, simple name for state)
+			key := agentKey(vibespace, agentName)
+			r.manager.SetAgentPod(key, podName)
 			vsState.SetAgentPod(agentName, podName)
 			r.createDefaultForwards(vibespace, agentName)
 		}
@@ -252,9 +259,11 @@ func (r *Reconciler) cleanupEmptyVibespaces(currentVibespaces map[string][]PodIn
 
 // ensureForward ensures a forward exists for an agent
 func (r *Reconciler) ensureForward(vibespace, agentName string, fwd DesiredForward) {
+	key := agentKey(vibespace, agentName)
+
 	// Check if forward already exists
 	allForwards := r.manager.ListAllForwards()
-	if forwards, ok := allForwards[agentName]; ok {
+	if forwards, ok := allForwards[key]; ok {
 		for _, existing := range forwards {
 			if existing.RemotePort == fwd.ContainerPort {
 				return // Already exists
@@ -263,7 +272,7 @@ func (r *Reconciler) ensureForward(vibespace, agentName string, fwd DesiredForwa
 	}
 
 	// Create forward
-	localPort, err := r.manager.AddForward(agentName, fwd.ContainerPort, portforward.TypeManual, fwd.LocalPort)
+	localPort, err := r.manager.AddForward(key, fwd.ContainerPort, portforward.TypeManual, fwd.LocalPort)
 	if err != nil {
 		slog.Error("failed to create forward",
 			"vibespace", vibespace,
@@ -300,8 +309,10 @@ func (r *Reconciler) createDefaultForwards(vibespace, agentName string) {
 		return
 	}
 
+	key := agentKey(vibespace, agentName)
+
 	// SSH forward
-	sshLocalPort, err := r.manager.AddForward(agentName, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
+	sshLocalPort, err := r.manager.AddForward(key, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
 	if err != nil {
 		slog.Error("failed to create SSH forward", "agent", agentName, "error", err)
 	} else {
@@ -315,7 +326,7 @@ func (r *Reconciler) createDefaultForwards(vibespace, agentName string) {
 	}
 
 	// ttyd forward
-	ttydLocalPort, err := r.manager.AddForward(agentName, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
+	ttydLocalPort, err := r.manager.AddForward(key, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
 	if err != nil {
 		slog.Error("failed to create ttyd forward", "agent", agentName, "error", err)
 	} else {
@@ -332,5 +343,6 @@ func (r *Reconciler) createDefaultForwards(vibespace, agentName string) {
 // teardownAgentForwards removes all forwards for an agent
 func (r *Reconciler) teardownAgentForwards(vibespace, agentName string) {
 	slog.Debug("tearing down agent forwards", "vibespace", vibespace, "agent", agentName)
-	r.manager.RemoveAgentForwards(agentName)
+	key := agentKey(vibespace, agentName)
+	r.manager.RemoveAgentForwards(key)
 }
