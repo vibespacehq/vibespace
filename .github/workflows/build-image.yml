@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - vibespace-wip-configurable-agent
+      - vibespace-wip-daemon-v2
     paths:
       - 'build/package/**'
       - '.github/workflows/build-image.yml'
