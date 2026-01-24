@@ -128,7 +128,9 @@ func (f *Forwarder) Start() error {
 
 		f.mu.Lock()
 		if f.status == StatusActive {
-			f.status = StatusStopped
+			// Use StatusError for unexpected terminations (not intentional Stop())
+			// This allows the manager to attempt reconnection
+			f.status = StatusError
 		}
 		f.mu.Unlock()
 
