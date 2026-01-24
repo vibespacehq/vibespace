@@ -3,14 +3,17 @@ package tui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
+	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/permission"
 	"github.com/yagizdagabak/vibespace/pkg/session"
+	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -318,9 +321,19 @@ func (m *Model) connectAgent(addr session.AgentAddress) error {
 		return fmt.Errorf("no active SSH forward for %s", addr.String())
 	}
 
+	// Get agent config from vibespace service
+	var claudeConfig *model.ClaudeConfig
+	svc := vibespace.NewService(nil) // Service will initialize k8s client on first use
+	config, err := svc.GetAgentConfig(m.ctx, addr.Vibespace, addr.Agent)
+	if err != nil {
+		slog.Warn("failed to get agent config, using defaults", "agent", addr.String(), "error", err)
+	} else {
+		claudeConfig = config
+	}
+
 	// Create agent connection with shared session manager
-	// Pass the multi-session ID (sessionName) and resume flag
-	conn := NewAgentConn(addr, sshPort, m.sessionManager, m.sessionName, m.resume)
+	// Pass the multi-session ID (sessionName), resume flag, and config
+	conn := NewAgentConn(addr, sshPort, m.sessionManager, m.sessionName, m.resume, claudeConfig)
 	if err := conn.Connect(); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}

@@ -1,11 +1,14 @@
 package deployment
 
+import "github.com/yagizdagabak/vibespace/pkg/model"
+
 // AgentInfo contains information about an agent
 type AgentInfo struct {
-	ClaudeID       string // "1", "2", etc.
-	AgentName      string // "claude-1", "claude-2", etc.
-	DeploymentName string // Deployment name
-	Status         string // "running", "stopped", "creating"
+	ClaudeID       string              // "1", "2", etc.
+	AgentName      string              // "claude-1", "claude-2", etc.
+	DeploymentName string              // Deployment name
+	Status         string              // "running", "stopped", "creating"
+	ClaudeConfig   *model.ClaudeConfig // Claude configuration for this agent
 }
 
 // CreateDeploymentRequest contains parameters for creating a Deployment
@@ -18,7 +21,8 @@ type CreateDeploymentRequest struct {
 	Env              map[string]string
 	Persistent       bool
 	PVCName          string
-	ShareCredentials bool // Share credentials with other agents via /vibespace/.vibespace
+	ShareCredentials bool                // Share credentials with other agents via /vibespace/.vibespace
+	ClaudeConfig     *model.ClaudeConfig // Claude agent configuration
 }
 
 // CreateAgentRequest contains parameters for creating an agent deployment
@@ -30,8 +34,9 @@ type CreateAgentRequest struct {
 	Image            string
 	Resources        Resources
 	Env              map[string]string
-	PVCName          string // Shared PVC name for all agents
-	ShareCredentials bool   // Share credentials with other agents via /vibespace/.vibespace
+	PVCName          string              // Shared PVC name for all agents
+	ShareCredentials bool                // Share credentials with other agents via /vibespace/.vibespace
+	ClaudeConfig     *model.ClaudeConfig // Claude agent configuration
 }
 
 // Resources defines compute resources for a deployment

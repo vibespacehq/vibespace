@@ -212,6 +212,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		Persistent:       req.Persistent,
 		PVCName:          pvcName,
 		ShareCredentials: req.ShareCredentials,
+		ClaudeConfig:     req.ClaudeConfig,
 	})
 	if err != nil {
 		slog.Error("failed to create Deployment", "vibespace_id", id, "error", err)
@@ -606,6 +607,9 @@ type SpawnAgentOptions struct {
 	// ShareCredentials enables credential sharing via /vibespace/.vibespace
 	// When enabled, Claude config, git config, and SSH keys are shared across agents
 	ShareCredentials bool
+
+	// ClaudeConfig overrides the vibespace default (nil = inherit from vibespace)
+	ClaudeConfig *model.ClaudeConfig
 }
 
 // SpawnAgent creates a new Claude agent in a vibespace
@@ -694,6 +698,7 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		Env:              nil,
 		PVCName:          pvcName,
 		ShareCredentials: opts.ShareCredentials,
+		ClaudeConfig:     opts.ClaudeConfig,
 	})
 	if err != nil {
 		slog.Error("failed to spawn agent", "vibespace_id", vs.ID, "agent_name", agentName, "error", err)
@@ -779,6 +784,44 @@ func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo,
 	}
 
 	return agents, nil
+}
+
+// GetAgentConfig returns the ClaudeConfig for an agent
+func (s *Service) GetAgentConfig(ctx context.Context, vibespaceNameOrID, agentName string) (*model.ClaudeConfig, error) {
+	if err := s.ensureClients(); err != nil {
+		return nil, fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
+	}
+
+	if s.deploymentManager == nil {
+		return nil, vserrors.ErrDeploymentManagerNotInitialized
+	}
+
+	// Get vibespace to find deployment name
+	vs, err := s.Get(ctx, vibespaceNameOrID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.deploymentManager.GetAgentConfig(ctx, vs.ID, agentName)
+}
+
+// UpdateAgentConfig updates the ClaudeConfig for an agent (triggers pod restart)
+func (s *Service) UpdateAgentConfig(ctx context.Context, vibespaceNameOrID, agentName string, config *model.ClaudeConfig) error {
+	if err := s.ensureClients(); err != nil {
+		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
+	}
+
+	if s.deploymentManager == nil {
+		return vserrors.ErrDeploymentManagerNotInitialized
+	}
+
+	// Get vibespace to find deployment name
+	vs, err := s.Get(ctx, vibespaceNameOrID)
+	if err != nil {
+		return err
+	}
+
+	return s.deploymentManager.UpdateAgentConfig(ctx, vs.ID, agentName, config)
 }
 
 // createSSHKeySecret creates a Kubernetes Secret containing the SSH public key

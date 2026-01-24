@@ -227,6 +227,7 @@ func handleVibespaceCommand(args []string) error {
 		fmt.Println("  spawn      Create a new Claude instance")
 		fmt.Println("  kill       Remove a Claude instance")
 		fmt.Println("  connect    Connect to a Claude instance")
+		fmt.Println("  config     View/modify agent configuration")
 		fmt.Println("  multi      Multi-agent terminal mode")
 		fmt.Println("  ports      List detected ports")
 		fmt.Println("  up         Start port-forward daemon")
@@ -249,6 +250,8 @@ func handleVibespaceCommand(args []string) error {
 		return runKill(vibespace, cmdArgs)
 	case "connect":
 		return runConnect(vibespace, cmdArgs)
+	case "config":
+		return runConfig(vibespace, cmdArgs)
 	case "multi":
 		return runMulti(vibespace, cmdArgs)
 	case "ports":

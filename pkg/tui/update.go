@@ -348,17 +348,9 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Build Claude command - if session exists, always use --resume
-		// (the session was already created on the pod when we sent messages)
-		var claudeCmd string
+		// Build Claude command with agent's config
 		sessionID := m.sessionManager.GetSession(m.sessionName, key)
-		if sessionID != "" {
-			// Session exists on pod - resume it
-			claudeCmd = fmt.Sprintf("claude --resume %s", sessionID)
-		} else {
-			// No session yet, just start claude
-			claudeCmd = "claude"
-		}
+		claudeCmd := BuildInteractiveClaudeCommand(conn.Config(), sessionID)
 
 		// tmux session name based on agent (sanitize for tmux)
 		tmuxSession := fmt.Sprintf("claude-%s", addr.Agent)

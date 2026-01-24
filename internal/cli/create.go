@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
 	"github.com/yagizdagabak/vibespace/pkg/model"
@@ -35,6 +36,12 @@ var (
 	createMemory           string
 	createStorage          string
 	createShareCredentials bool
+	// Claude config flags
+	createSkipPermissions bool
+	createAllowedTools    string
+	createDisallowedTools string
+	createModel           string
+	createMaxTurns        int
 )
 
 // Default resource values - can be overridden via environment variables
@@ -63,6 +70,13 @@ func init() {
 	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
 	createCmd.Flags().StringVar(&createStorage, "storage", storageDefault, "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
 	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share Claude credentials across all agents")
+
+	// Claude configuration flags
+	createCmd.Flags().BoolVar(&createSkipPermissions, "skip-permissions", false, "Enable --dangerously-skip-permissions for Claude")
+	createCmd.Flags().StringVar(&createAllowedTools, "allowed-tools", "", "Comma-separated allowed tools (replaces default)")
+	createCmd.Flags().StringVar(&createDisallowedTools, "disallowed-tools", "", "Comma-separated disallowed tools")
+	createCmd.Flags().StringVar(&createModel, "model", "", "Claude model to use (e.g., opus, sonnet)")
+	createCmd.Flags().IntVar(&createMaxTurns, "max-turns", 0, "Maximum conversation turns")
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
@@ -81,6 +95,22 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Build ClaudeConfig if any config flags are set
+	var claudeConfig *model.ClaudeConfig
+	if createSkipPermissions || createAllowedTools != "" || createDisallowedTools != "" || createModel != "" || createMaxTurns > 0 {
+		claudeConfig = &model.ClaudeConfig{
+			SkipPermissions: createSkipPermissions,
+			Model:           createModel,
+			MaxTurns:        createMaxTurns,
+		}
+		if createAllowedTools != "" {
+			claudeConfig.AllowedTools = strings.Split(createAllowedTools, ",")
+		}
+		if createDisallowedTools != "" {
+			claudeConfig.DisallowedTools = strings.Split(createDisallowedTools, ",")
+		}
+	}
+
 	// Build create request
 	req := &model.CreateVibespaceRequest{
 		Name:             name,
@@ -91,6 +121,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 			Memory:  createMemory,
 			Storage: createStorage,
 		},
+		ClaudeConfig: claudeConfig,
 	}
 	if createRepo != "" {
 		req.GithubRepo = createRepo
