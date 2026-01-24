@@ -48,8 +48,8 @@ type Model struct {
 	// Claude session management (--session-id vs --resume)
 	sessionManager *ClaudeSessionManager
 
-	// Daemon clients (one per vibespace)
-	daemons map[string]*daemon.Client
+	// Global daemon client
+	daemonClient *daemon.Client
 
 	// UI components
 	input    textinput.Model
@@ -131,7 +131,6 @@ func NewModel(sess *session.Session, resume bool) *Model {
 		agentOrder:       make([]string, 0),
 		agentStates:      make(map[string]*AgentState),
 		sessionManager:   sessionManager,
-		daemons:          make(map[string]*daemon.Client),
 		input:            ti,
 		history:          NewChatHistory(1000),
 		historyStore:     historyStore,
@@ -210,13 +209,13 @@ func (m *Model) initConnections() tea.Cmd {
 			return InitCompleteMsg{Errors: nil}
 		}
 
-		// Ensure daemons are running for each vibespace
-		for _, vs := range m.session.Vibespaces {
-			if err := m.ensureDaemon(vs.Name); err != nil {
-				errors = append(errors, fmt.Errorf("%s: %w", vs.Name, err))
-				continue
-			}
+		// Ensure daemon is running
+		if err := m.ensureDaemon(); err != nil {
+			return InitCompleteMsg{Errors: []error{fmt.Errorf("daemon: %w", err)}}
+		}
 
+		// Connect to agents for each vibespace
+		for _, vs := range m.session.Vibespaces {
 			// Get agents for this vibespace
 			agents, err := m.getAgentsForVibespace(vs)
 			if err != nil {
@@ -237,31 +236,31 @@ func (m *Model) initConnections() tea.Cmd {
 	}
 }
 
-// ensureDaemon ensures the daemon is running for a vibespace
-func (m *Model) ensureDaemon(vsName string) error {
+// ensureDaemon ensures the daemon is running
+func (m *Model) ensureDaemon() error {
 	// Check if already have client
-	if _, ok := m.daemons[vsName]; ok {
+	if m.daemonClient != nil {
 		return nil
 	}
 
 	// Check if daemon is running, start if not
-	if !daemon.IsRunning(vsName) {
-		if err := daemon.SpawnDaemon(vsName); err != nil {
+	if !daemon.IsDaemonRunning() {
+		if err := daemon.SpawnDaemon(); err != nil {
 			return fmt.Errorf("failed to start daemon: %w", err)
 		}
 		// Wait for daemon to be ready
-		if err := daemon.WaitForReady(vsName, 10*time.Second); err != nil {
+		if err := daemon.WaitForDaemonReady(10 * time.Second); err != nil {
 			return fmt.Errorf("daemon failed to start: %w", err)
 		}
 	}
 
 	// Create client
-	client, err := daemon.NewClient(vsName)
+	client, err := daemon.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create daemon client: %w", err)
 	}
 
-	m.daemons[vsName] = client
+	m.daemonClient = client
 	return nil
 }
 
@@ -273,18 +272,17 @@ func (m *Model) getAgentsForVibespace(vs session.VibespaceEntry) ([]string, erro
 	}
 
 	// Otherwise, get all agents from the daemon
-	client, ok := m.daemons[vs.Name]
-	if !ok {
-		return nil, fmt.Errorf("no daemon client for %s", vs.Name)
+	if m.daemonClient == nil {
+		return nil, fmt.Errorf("daemon client not initialized")
 	}
 
-	status, err := client.Status()
+	forwards, err := m.daemonClient.ListForwardsForVibespace(vs.Name)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get daemon status: %w", err)
+		return nil, fmt.Errorf("failed to get agents: %w", err)
 	}
 
-	agents := make([]string, 0, len(status.Agents))
-	for _, a := range status.Agents {
+	agents := make([]string, 0, len(forwards.Agents))
+	for _, a := range forwards.Agents {
 		agents = append(agents, a.Name)
 	}
 
@@ -294,12 +292,11 @@ func (m *Model) getAgentsForVibespace(vs session.VibespaceEntry) ([]string, erro
 // connectAgent connects to an agent
 func (m *Model) connectAgent(addr session.AgentAddress) error {
 	// Get SSH port from daemon
-	client, ok := m.daemons[addr.Vibespace]
-	if !ok {
-		return fmt.Errorf("no daemon client for %s", addr.Vibespace)
+	if m.daemonClient == nil {
+		return fmt.Errorf("daemon client not initialized")
 	}
 
-	forwards, err := client.ListForwards()
+	forwards, err := m.daemonClient.ListForwardsForVibespace(addr.Vibespace)
 	if err != nil {
 		return fmt.Errorf("failed to list forwards: %w", err)
 	}

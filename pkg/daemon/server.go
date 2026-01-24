@@ -14,23 +14,15 @@ import (
 	"github.com/yagizdagabak/vibespace/pkg/portforward"
 )
 
-// RefreshCallback is called to re-discover pods when deployments scale (may block waiting for pods)
-type RefreshCallback func() (map[string]string, error)
-
-// HealthCheckCallback is called to quickly check current pod state (non-blocking)
-// Returns map of agent name -> pod name for currently running pods
-type HealthCheckCallback func() (map[string]string, error)
-
-// Server is the daemon server that listens on a Unix socket
+// Server is the daemon server that manages all vibespaces
 type Server struct {
-	vibespace           string
-	sockPath            string
-	listener            net.Listener
-	manager             *portforward.Manager
-	state               *DaemonState
-	onRefresh           RefreshCallback
-	onHealthCheck       HealthCheckCallback
-	healthCheckInterval time.Duration
+	sockPath   string
+	listener   net.Listener
+	watcher    *PodWatcher
+	reconciler *Reconciler
+	state      *DaemonState
+	desiredMgr *DesiredStateManager
+	manager    *portforward.Manager
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -39,56 +31,34 @@ type Server struct {
 
 // ServerConfig contains configuration for creating a Server
 type ServerConfig struct {
-	Vibespace           string
-	Manager             *portforward.Manager
-	State               *DaemonState
-	OnRefresh           RefreshCallback
-	OnHealthCheck       HealthCheckCallback // Quick non-blocking pod check (falls back to OnRefresh if nil)
-	HealthCheckInterval time.Duration       // How often to check for stale pods (default: 30s)
+	Watcher    *PodWatcher
+	Reconciler *Reconciler
+	State      *DaemonState
+	DesiredMgr *DesiredStateManager
+	Manager    *portforward.Manager
 }
 
 // NewServer creates a new daemon server
 func NewServer(cfg ServerConfig) (*Server, error) {
-	paths, err := GetDaemonPaths(cfg.Vibespace)
+	paths, err := GetDaemonPaths()
 	if err != nil {
-		return nil, err
-	}
-
-	// Ensure daemon directory exists
-	if err := EnsureDaemonDir(); err != nil {
 		return nil, err
 	}
 
 	// Remove existing socket if present
 	os.Remove(paths.SockFile)
 
-	// Default health check interval
-	healthCheckInterval := cfg.HealthCheckInterval
-	if healthCheckInterval == 0 {
-		healthCheckInterval = 30 * time.Second
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Use OnHealthCheck if provided, otherwise fall back to OnRefresh
-	healthCheckCallback := cfg.OnHealthCheck
-	if healthCheckCallback == nil && cfg.OnRefresh != nil {
-		// Wrap OnRefresh as HealthCheckCallback (same signature)
-		healthCheckCallback = func() (map[string]string, error) {
-			return cfg.OnRefresh()
-		}
-	}
-
 	return &Server{
-		vibespace:           cfg.Vibespace,
-		sockPath:            paths.SockFile,
-		manager:             cfg.Manager,
-		state:               cfg.State,
-		onRefresh:           cfg.OnRefresh,
-		onHealthCheck:       healthCheckCallback,
-		healthCheckInterval: healthCheckInterval,
-		ctx:                 ctx,
-		cancel:              cancel,
+		sockPath:   paths.SockFile,
+		watcher:    cfg.Watcher,
+		reconciler: cfg.Reconciler,
+		state:      cfg.State,
+		desiredMgr: cfg.DesiredMgr,
+		manager:    cfg.Manager,
+		ctx:        ctx,
+		cancel:     cancel,
 	}, nil
 }
 
@@ -110,7 +80,7 @@ func (s *Server) Start() error {
 
 	s.wg.Add(2)
 	go s.acceptLoop()
-	go s.healthCheckLoop()
+	go s.watchLoop()
 
 	return nil
 }
@@ -125,7 +95,11 @@ func (s *Server) Stop() {
 		s.listener.Close()
 	}
 
-	// Wait for accept loop to finish
+	if s.watcher != nil {
+		s.watcher.Stop()
+	}
+
+	// Wait for loops to finish
 	s.wg.Wait()
 
 	// Cleanup socket file
@@ -155,83 +129,36 @@ func (s *Server) acceptLoop() {
 	}
 }
 
-// healthCheckLoop periodically checks if pods have changed and triggers a refresh
-func (s *Server) healthCheckLoop() {
+// watchLoop watches for pod changes and triggers reconciliation
+func (s *Server) watchLoop() {
 	defer s.wg.Done()
 
-	if s.onHealthCheck == nil {
-		slog.Debug("health check disabled: no health check callback configured")
-		return
-	}
+	// Start watcher in background
+	go func() {
+		if err := s.watcher.Start(s.ctx); err != nil {
+			slog.Error("watcher error", "error", err)
+		}
+	}()
 
-	ticker := time.NewTicker(s.healthCheckInterval)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-
-	slog.Info("health check started", "interval", s.healthCheckInterval)
 
 	for {
 		select {
 		case <-s.ctx.Done():
-			slog.Debug("health check stopped")
 			return
+		case event := <-s.watcher.Events():
+			slog.Debug("pod event received", "type", event.Type, "vibespace", event.Vibespace, "agent", event.Agent)
+			if err := s.reconciler.ReconcileVibespace(s.ctx, event.Vibespace); err != nil {
+				slog.Error("reconciliation failed", "vibespace", event.Vibespace, "error", err)
+			}
 		case <-ticker.C:
-			s.checkPodHealth()
+			// Periodic full reconciliation
+			if err := s.reconciler.Reconcile(s.ctx); err != nil {
+				slog.Error("periodic reconciliation failed", "error", err)
+			}
 		}
 	}
-}
-
-// checkPodHealth checks if any pods have changed and triggers a refresh if needed
-func (s *Server) checkPodHealth() {
-	// Get current pods from k8s (quick, non-blocking check)
-	currentPods, err := s.onHealthCheck()
-	if err != nil {
-		slog.Debug("health check: failed to get current pods", "error", err)
-		return
-	}
-
-	// If no pods returned, might be a transient state (pod recreating)
-	// Don't take action yet - wait for next health check
-	if len(currentPods) == 0 {
-		slog.Debug("health check: no running pods found, will retry")
-		return
-	}
-
-	// Compare against cached pods
-	needsRefresh := false
-
-	// Check if any current pods differ from cached
-	for agentName, currentPod := range currentPods {
-		cachedPod, exists := s.manager.GetAgentPod(agentName)
-		if !exists {
-			slog.Info("health check: new agent detected", "agent", agentName, "pod", currentPod)
-			needsRefresh = true
-			break
-		}
-		if cachedPod != currentPod {
-			slog.Info("health check: pod changed", "agent", agentName, "old_pod", cachedPod, "new_pod", currentPod)
-			needsRefresh = true
-			break
-		}
-	}
-
-	if !needsRefresh {
-		return
-	}
-
-	slog.Info("health check: triggering refresh due to pod changes")
-
-	// Update pod mappings
-	for agentName, podName := range currentPods {
-		s.manager.SetAgentPod(agentName, podName)
-		s.state.SetAgentPod(agentName, podName)
-	}
-
-	// Restart all forwards with new pod mappings
-	if err := s.manager.RestartAll(); err != nil {
-		slog.Error("health check: failed to restart forwards", "error", err)
-	}
-
-	s.state.Save()
 }
 
 // handleConnection handles a single client connection
@@ -257,6 +184,7 @@ func (s *Server) handleConnection(conn net.Conn) {
 
 	slog.Debug("received request",
 		"type", req.Type,
+		"vibespace", req.Vibespace,
 		"agent", req.Agent,
 		"port", req.Port)
 
@@ -284,21 +212,13 @@ func (s *Server) handleRequest(req Request) Response {
 	case RequestStatus:
 		return s.handleStatus()
 	case RequestListForwards:
-		return s.handleListForwards()
+		return s.handleListForwards(req)
 	case RequestAddForward:
 		return s.handleAddForward(req)
 	case RequestRemoveForward:
 		return s.handleRemoveForward(req)
-	case RequestStartForward:
-		return s.handleStartForward(req)
-	case RequestStopForward:
-		return s.handleStopForward(req)
-	case RequestRestartForward:
-		return s.handleRestartForward(req)
-	case RequestRestartAll:
-		return s.handleRestartAll()
 	case RequestRefresh:
-		return s.handleRefresh()
+		return s.handleRefresh(req)
 	case RequestShutdown:
 		return s.handleShutdown()
 	default:
@@ -309,72 +229,91 @@ func (s *Server) handleRequest(req Request) Response {
 // handlePing handles a ping request
 func (s *Server) handlePing() Response {
 	return NewSuccessResponse(PingResponse{
-		Vibespace: s.vibespace,
-		Pid:       os.Getpid(),
+		Pid: os.Getpid(),
 	})
 }
 
 // handleStatus handles a status request
 func (s *Server) handleStatus() Response {
-	agents := s.buildAgentStatusList()
+	uptime := time.Since(s.state.StartedAt)
 
-	var totalPorts, activePorts int
-	for _, agent := range agents {
-		for _, fwd := range agent.Forwards {
-			totalPorts++
-			if fwd.Status == string(portforward.StatusActive) {
-				activePorts++
+	vibespaces := make(map[string]*StatusResponse)
+	for _, vsName := range s.state.GetAllVibespaces() {
+		vsState := s.state.GetVibespace(vsName)
+		if vsState == nil {
+			continue
+		}
+
+		agents := s.buildAgentStatusList(vsName)
+		var totalPorts, activePorts int
+		for _, agent := range agents {
+			for _, fwd := range agent.Forwards {
+				totalPorts++
+				if fwd.Status == string(portforward.StatusActive) {
+					activePorts++
+				}
 			}
+		}
+
+		vibespaces[vsName] = &StatusResponse{
+			Vibespace:   vsName,
+			Running:     true,
+			StartedAt:   s.state.StartedAt.Format(time.RFC3339),
+			Uptime:      uptime.Round(time.Second).String(),
+			Agents:      agents,
+			TotalPorts:  totalPorts,
+			ActivePorts: activePorts,
 		}
 	}
 
-	uptime := time.Since(s.state.StartedAt)
-
-	return NewSuccessResponse(StatusResponse{
-		Vibespace:   s.vibespace,
-		Running:     true,
-		StartedAt:   s.state.StartedAt.Format(time.RFC3339),
-		Uptime:      uptime.Round(time.Second).String(),
-		Agents:      agents,
-		TotalPorts:  totalPorts,
-		ActivePorts: activePorts,
+	return NewSuccessResponse(DaemonStatusResponse{
+		Running:    true,
+		StartedAt:  s.state.StartedAt.Format(time.RFC3339),
+		Uptime:     uptime.Round(time.Second).String(),
+		Pid:        os.Getpid(),
+		Vibespaces: vibespaces,
 	})
 }
 
 // handleListForwards handles a list_forwards request
-func (s *Server) handleListForwards() Response {
-	agents := s.buildAgentStatusList()
+func (s *Server) handleListForwards(req Request) Response {
+	if req.Vibespace == "" {
+		return NewErrorResponse(fmt.Errorf("vibespace name required"))
+	}
+
+	agents := s.buildAgentStatusList(req.Vibespace)
 	return NewSuccessResponse(ListForwardsResponse{
 		Agents: agents,
 	})
 }
 
-// buildAgentStatusList builds the list of agent statuses
-func (s *Server) buildAgentStatusList() []AgentStatus {
+// buildAgentStatusList builds the list of agent statuses for a vibespace
+func (s *Server) buildAgentStatusList(vibespace string) []AgentStatus {
+	vsState := s.state.GetVibespace(vibespace)
+	if vsState == nil {
+		return nil
+	}
+
 	allForwards := s.manager.ListAllForwards()
 	var agents []AgentStatus
 
-	for agentName, forwards := range allForwards {
-		podName, _ := s.manager.GetAgentPod(agentName)
+	for _, agentName := range vsState.GetAllAgentNames() {
+		podName, _ := vsState.GetAgentPod(agentName)
 
 		var fwdInfos []ForwardInfo
-		for _, fwd := range forwards {
-			info := ForwardInfo{
-				LocalPort:  fwd.LocalPort,
-				RemotePort: fwd.RemotePort,
-				Status:     string(fwd.Status),
-				Reconnects: fwd.Reconnects,
+		if forwards, ok := allForwards[agentName]; ok {
+			for _, fwd := range forwards {
+				info := ForwardInfo{
+					LocalPort:  fwd.LocalPort,
+					RemotePort: fwd.RemotePort,
+					Status:     string(fwd.Status),
+					Reconnects: fwd.Reconnects,
+				}
+				if fwd.Error != nil {
+					info.Error = fwd.Error.Error()
+				}
+				fwdInfos = append(fwdInfos, info)
 			}
-			if fwd.Error != nil {
-				info.Error = fwd.Error.Error()
-			}
-
-			// Get type from state
-			if stateFwd := s.state.GetForward(agentName, fwd.RemotePort); stateFwd != nil {
-				info.Type = string(stateFwd.Type)
-			}
-
-			fwdInfos = append(fwdInfos, info)
 		}
 
 		agents = append(agents, AgentStatus{
@@ -389,6 +328,9 @@ func (s *Server) buildAgentStatusList() []AgentStatus {
 
 // handleAddForward handles an add_forward request
 func (s *Server) handleAddForward(req Request) Response {
+	if req.Vibespace == "" {
+		return NewErrorResponse(fmt.Errorf("vibespace name required"))
+	}
 	if req.Agent == "" {
 		return NewErrorResponse(fmt.Errorf("agent name required"))
 	}
@@ -401,14 +343,22 @@ func (s *Server) handleAddForward(req Request) Response {
 		return NewErrorResponse(err)
 	}
 
-	// Update state
-	s.state.AddForward(req.Agent, &ForwardState{
+	// Update desired state
+	desired := s.desiredMgr.GetOrCreate(req.Vibespace)
+	desired.AddForward(req.Agent, DesiredForward{
+		ContainerPort: req.Port,
+		LocalPort:     localPort,
+	})
+	s.desiredMgr.Save(req.Vibespace)
+
+	// Update runtime state
+	vsState := s.state.GetOrCreateVibespace(req.Vibespace)
+	vsState.AddForward(req.Agent, &ForwardState{
 		LocalPort:  localPort,
 		RemotePort: req.Port,
 		Type:       portforward.TypeManual,
 		Status:     portforward.StatusActive,
 	})
-	s.state.Save()
 
 	return NewSuccessResponse(AddForwardResponse{
 		LocalPort:  localPort,
@@ -419,6 +369,9 @@ func (s *Server) handleAddForward(req Request) Response {
 
 // handleRemoveForward handles a remove_forward request
 func (s *Server) handleRemoveForward(req Request) Response {
+	if req.Vibespace == "" {
+		return NewErrorResponse(fmt.Errorf("vibespace name required"))
+	}
 	if req.Agent == "" {
 		return NewErrorResponse(fmt.Errorf("agent name required"))
 	}
@@ -430,159 +383,31 @@ func (s *Server) handleRemoveForward(req Request) Response {
 		return NewErrorResponse(err)
 	}
 
-	// Update state
-	s.state.RemoveForward(req.Agent, req.Port)
-	s.state.Save()
-
-	return NewSuccessResponse(nil)
-}
-
-// handleStartForward handles a start_forward request
-func (s *Server) handleStartForward(req Request) Response {
-	if req.Agent == "" {
-		return NewErrorResponse(fmt.Errorf("agent name required"))
-	}
-	if req.Port == 0 {
-		return NewErrorResponse(fmt.Errorf("remote port required"))
-	}
-
-	if err := s.manager.StartForward(req.Agent, req.Port); err != nil {
-		return NewErrorResponse(err)
-	}
-
-	// Update state
-	s.state.UpdateForwardStatus(req.Agent, req.Port, portforward.StatusActive, "")
-	s.state.Save()
-
-	return NewSuccessResponse(nil)
-}
-
-// handleStopForward handles a stop_forward request
-func (s *Server) handleStopForward(req Request) Response {
-	if req.Agent == "" {
-		return NewErrorResponse(fmt.Errorf("agent name required"))
-	}
-	if req.Port == 0 {
-		return NewErrorResponse(fmt.Errorf("remote port required"))
-	}
-
-	if err := s.manager.StopForward(req.Agent, req.Port); err != nil {
-		return NewErrorResponse(err)
-	}
-
-	// Update state
-	s.state.UpdateForwardStatus(req.Agent, req.Port, portforward.StatusStopped, "")
-	s.state.Save()
-
-	return NewSuccessResponse(nil)
-}
-
-// handleRestartForward handles a restart_forward request
-func (s *Server) handleRestartForward(req Request) Response {
-	if req.Agent == "" {
-		return NewErrorResponse(fmt.Errorf("agent name required"))
-	}
-	if req.Port == 0 {
-		return NewErrorResponse(fmt.Errorf("remote port required"))
-	}
-
-	if err := s.manager.RestartForward(req.Agent, req.Port); err != nil {
-		return NewErrorResponse(err)
-	}
-
-	// Update state
-	s.state.UpdateForwardStatus(req.Agent, req.Port, portforward.StatusActive, "")
-	s.state.Save()
-
-	return NewSuccessResponse(nil)
-}
-
-// handleRestartAll handles a restart_all request
-func (s *Server) handleRestartAll() Response {
-	if err := s.manager.RestartAll(); err != nil {
-		return NewErrorResponse(err)
+	// Update desired state
+	desired := s.desiredMgr.Get(req.Vibespace)
+	if desired != nil {
+		desired.RemoveForward(req.Agent, req.Port)
+		s.desiredMgr.Save(req.Vibespace)
 	}
 
 	return NewSuccessResponse(nil)
 }
 
-// handleRefresh handles a refresh request - re-discovers pods and restarts forwards
-func (s *Server) handleRefresh() Response {
-	if s.onRefresh == nil {
-		return NewErrorResponse(fmt.Errorf("refresh not configured"))
-	}
+// handleRefresh handles a refresh request - triggers reconciliation
+func (s *Server) handleRefresh(req Request) Response {
+	slog.Info("refresh requested", "vibespace", req.Vibespace)
 
-	slog.Info("refreshing pods")
-
-	// Re-discover pods
-	agents, err := s.onRefresh()
-	if err != nil {
-		return NewErrorResponse(fmt.Errorf("failed to discover pods: %w", err))
-	}
-
-	// Find and remove agents that no longer exist
-	currentAgents := s.state.GetAllAgents()
-	for _, agentName := range currentAgents {
-		if _, exists := agents[agentName]; !exists {
-			slog.Info("removing forwards for deleted agent", "agent", agentName)
-			s.manager.RemoveAgentForwards(agentName)
-			s.state.RemoveAgent(agentName)
+	if req.Vibespace != "" {
+		// Reconcile specific vibespace
+		if err := s.reconciler.ReconcileVibespace(s.ctx, req.Vibespace); err != nil {
+			return NewErrorResponse(err)
+		}
+	} else {
+		// Reconcile all
+		if err := s.reconciler.Reconcile(s.ctx); err != nil {
+			return NewErrorResponse(err)
 		}
 	}
-
-	// Update pod mappings and create forwards for new agents
-	for agentName, podName := range agents {
-		oldPod, exists := s.manager.GetAgentPod(agentName)
-
-		// Always update pod mapping
-		s.manager.SetAgentPod(agentName, podName)
-		s.state.SetAgentPod(agentName, podName)
-
-		// Check if agent needs forwards created (new agent or agent without forwards)
-		agentState := s.state.GetAgent(agentName)
-		hasForwards := agentState != nil && len(agentState.Forwards) > 0
-
-		if !hasForwards {
-			// New agent or agent without forwards - create them
-			slog.Info("creating forwards for agent", "agent", agentName, "pod", podName)
-
-			// Create SSH forward
-			sshLocalPort, err := s.manager.AddForward(agentName, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
-			if err != nil {
-				slog.Error("failed to create SSH forward for new agent", "agent", agentName, "error", err)
-			} else {
-				s.state.AddForward(agentName, &ForwardState{
-					LocalPort:  sshLocalPort,
-					RemotePort: portforward.DefaultSSHPort,
-					Type:       portforward.TypeSSH,
-					Status:     portforward.StatusActive,
-				})
-			}
-
-			// Create TTYD forward
-			ttydLocalPort, err := s.manager.AddForward(agentName, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
-			if err != nil {
-				slog.Error("failed to create TTYD forward for new agent", "agent", agentName, "error", err)
-			} else {
-				s.state.AddForward(agentName, &ForwardState{
-					LocalPort:  ttydLocalPort,
-					RemotePort: portforward.DefaultTTYDPort,
-					Type:       portforward.TypeTTYD,
-					Status:     portforward.StatusActive,
-				})
-			}
-		} else if exists && oldPod != podName {
-			// Existing agent with new pod - just log the update
-			slog.Info("updated agent pod", "agent", agentName, "old_pod", oldPod, "new_pod", podName)
-		}
-	}
-
-	// Restart all forwards with new pod mappings
-	if err := s.manager.RestartAll(); err != nil {
-		slog.Error("failed to restart forwards after refresh", "error", err)
-	}
-
-	s.state.Save()
 
 	return NewSuccessResponse(nil)
 }

@@ -605,12 +605,16 @@ func (m *Model) listAgents() string {
 
 // listPorts returns a string listing all forwarded ports
 func (m *Model) listPorts() string {
+	if m.daemonClient == nil {
+		return "Daemon not connected"
+	}
+
 	var parts []string
 
-	for vsName, client := range m.daemons {
-		forwards, err := client.ListForwards()
+	for _, vs := range m.session.Vibespaces {
+		forwards, err := m.daemonClient.ListForwardsForVibespace(vs.Name)
 		if err != nil {
-			parts = append(parts, fmt.Sprintf("%s: error", vsName))
+			parts = append(parts, fmt.Sprintf("%s: error", vs.Name))
 			continue
 		}
 
@@ -618,7 +622,7 @@ func (m *Model) listPorts() string {
 			for _, fwd := range agent.Forwards {
 				parts = append(parts, fmt.Sprintf(
 					"%s@%s: localhost:%d → %d (%s)",
-					agent.Name, vsName, fwd.LocalPort, fwd.RemotePort, fwd.Type,
+					agent.Name, vs.Name, fwd.LocalPort, fwd.RemotePort, fwd.Type,
 				))
 			}
 		}
@@ -729,9 +733,9 @@ func (m *Model) executeAddCommand(args []string) (tea.Model, tea.Cmd) {
 		vsName = arg
 	}
 
-	// Ensure daemon is running - this will fail if vibespace doesn't exist or isn't running
-	if err := m.ensureDaemon(vsName); err != nil {
-		m.statusMsg = fmt.Sprintf("Failed to connect to %s: %s", vsName, err.Error())
+	// Ensure daemon is running
+	if err := m.ensureDaemon(); err != nil {
+		m.statusMsg = fmt.Sprintf("Failed to connect to daemon: %s", err.Error())
 		return m, nil
 	}
 
@@ -741,13 +745,12 @@ func (m *Model) executeAddCommand(args []string) (tea.Model, tea.Cmd) {
 		agentsToConnect = []string{specificAgent}
 	} else {
 		// Get all agents from daemon
-		client := m.daemons[vsName]
-		status, err := client.Status()
+		forwards, err := m.daemonClient.ListForwardsForVibespace(vsName)
 		if err != nil {
-			m.statusMsg = fmt.Sprintf("Failed to get status for %s: %s", vsName, err.Error())
+			m.statusMsg = fmt.Sprintf("Failed to get agents for %s: %s", vsName, err.Error())
 			return m, nil
 		}
-		for _, a := range status.Agents {
+		for _, a := range forwards.Agents {
 			agentsToConnect = append(agentsToConnect, a.Name)
 		}
 	}

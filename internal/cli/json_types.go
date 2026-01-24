@@ -40,8 +40,9 @@ type VibespaceListItem struct {
 
 // StatusOutput is the JSON output for the status command
 type StatusOutput struct {
-	Cluster    ClusterStatus    `json:"cluster"`
+	Cluster    ClusterStatus     `json:"cluster"`
 	Components []ComponentStatus `json:"components,omitempty"`
+	Daemon     *DaemonStatus     `json:"daemon,omitempty"`
 }
 
 // ClusterStatus represents the cluster status
@@ -53,8 +54,21 @@ type ClusterStatus struct {
 
 // ComponentStatus represents a component status
 type ComponentStatus struct {
-	Name   string `json:"name"`
-	Ready  bool   `json:"ready"`
+	Name  string `json:"name"`
+	Ready bool   `json:"ready"`
+}
+
+// DaemonStatus represents the daemon status for JSON output
+type DaemonStatus struct {
+	Running     bool                         `json:"running"`
+	Pid         int                          `json:"pid,omitempty"`
+	Uptime      string                       `json:"uptime,omitempty"`
+	Vibespaces  map[string]DaemonVibespace   `json:"vibespaces,omitempty"`
+}
+
+// DaemonVibespace represents a vibespace managed by the daemon
+type DaemonVibespace struct {
+	AgentCount int `json:"agent_count"`
 }
 
 // AgentsOutput is the JSON output for the agents command
@@ -136,12 +150,3 @@ type CreateOutput struct {
 	ID   string `json:"id"`
 }
 
-// DaemonStatusOutput is the JSON output for daemon status
-type DaemonStatusOutput struct {
-	Vibespace   string              `json:"vibespace"`
-	Running     bool                `json:"running"`
-	Uptime      string              `json:"uptime,omitempty"`
-	ActivePorts int                 `json:"active_ports"`
-	TotalPorts  int                 `json:"total_ports"`
-	Agents      []AgentForwardInfo  `json:"agents,omitempty"`
-}

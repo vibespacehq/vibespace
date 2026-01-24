@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 
 	"github.com/spf13/cobra"
@@ -120,15 +119,6 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		if !confirmed {
 			fmt.Println("Cancelled")
 			return nil
-		}
-	}
-
-	// Stop daemon if running
-	if daemon.IsRunning(name) {
-		slog.Info("stopping daemon before delete", "vibespace", name)
-		if err := daemon.StopDaemon(name); err != nil {
-			slog.Warn("failed to stop daemon", "vibespace", name, "error", err)
-			// Continue with deletion anyway
 		}
 	}
 

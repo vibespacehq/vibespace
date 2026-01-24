@@ -384,6 +384,64 @@ func (s *Service) Stop(ctx context.Context, nameOrID string) error {
 	return nil
 }
 
+// StartAgent starts a specific agent in a vibespace
+func (s *Service) StartAgent(ctx context.Context, nameOrID string, agentName string) error {
+	if err := s.ensureClients(); err != nil {
+		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
+	}
+
+	if s.deploymentManager == nil {
+		return vserrors.ErrDeploymentManagerNotInitialized
+	}
+
+	// Resolve name to internal ID
+	vibespace, err := s.Get(ctx, nameOrID)
+	if err != nil {
+		return fmt.Errorf("vibespace not found: %w", err)
+	}
+
+	slog.Info("starting agent", "vibespace_id", vibespace.ID, "agent", agentName)
+
+	// Scale the agent's deployment to 1 replica
+	err = s.deploymentManager.ScaleAgentDeployment(ctx, vibespace.ID, agentName, 1)
+	if err != nil {
+		slog.Error("failed to start agent", "vibespace_id", vibespace.ID, "agent", agentName, "error", err)
+		return fmt.Errorf("failed to start agent: %w", err)
+	}
+
+	slog.Info("agent started successfully", "vibespace_id", vibespace.ID, "agent", agentName)
+	return nil
+}
+
+// StopAgent stops a specific agent in a vibespace
+func (s *Service) StopAgent(ctx context.Context, nameOrID string, agentName string) error {
+	if err := s.ensureClients(); err != nil {
+		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
+	}
+
+	if s.deploymentManager == nil {
+		return vserrors.ErrDeploymentManagerNotInitialized
+	}
+
+	// Resolve name to internal ID
+	vibespace, err := s.Get(ctx, nameOrID)
+	if err != nil {
+		return fmt.Errorf("vibespace not found: %w", err)
+	}
+
+	slog.Info("stopping agent", "vibespace_id", vibespace.ID, "agent", agentName)
+
+	// Scale the agent's deployment to 0 replicas
+	err = s.deploymentManager.ScaleAgentDeployment(ctx, vibespace.ID, agentName, 0)
+	if err != nil {
+		slog.Error("failed to stop agent", "vibespace_id", vibespace.ID, "agent", agentName, "error", err)
+		return fmt.Errorf("failed to stop agent: %w", err)
+	}
+
+	slog.Info("agent stopped successfully", "vibespace_id", vibespace.ID, "agent", agentName)
+	return nil
+}
+
 // Helper functions
 
 // ensureClients attempts to initialize k8s client if not already done

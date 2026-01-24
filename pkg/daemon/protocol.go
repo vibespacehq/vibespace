@@ -14,30 +14,23 @@ const (
 	RequestAddForward RequestType = "add_forward"
 	// RequestRemoveForward removes a forward
 	RequestRemoveForward RequestType = "remove_forward"
-	// RequestStartForward starts a stopped forward
-	RequestStartForward RequestType = "start_forward"
-	// RequestStopForward stops a running forward
-	RequestStopForward RequestType = "stop_forward"
-	// RequestRestartForward restarts a forward
-	RequestRestartForward RequestType = "restart_forward"
-	// RequestRestartAll restarts all forwards
-	RequestRestartAll RequestType = "restart_all"
 	// RequestStatus gets daemon status
 	RequestStatus RequestType = "status"
 	// RequestShutdown requests daemon shutdown
 	RequestShutdown RequestType = "shutdown"
 	// RequestPing checks if daemon is alive
 	RequestPing RequestType = "ping"
-	// RequestRefresh re-discovers pods for agents (useful when deployments scale)
+	// RequestRefresh triggers reconciliation
 	RequestRefresh RequestType = "refresh"
 )
 
 // Request is an IPC request from client to daemon
 type Request struct {
-	Type   RequestType `json:"type"`
-	Agent  string      `json:"agent,omitempty"`   // Agent name (e.g., "claude-1")
-	Port   int         `json:"port,omitempty"`    // Remote port
-	Local  int         `json:"local,omitempty"`   // Local port override (0 = auto-allocate)
+	Type      RequestType `json:"type"`
+	Vibespace string      `json:"vibespace,omitempty"` // Vibespace name (required for most operations)
+	Agent     string      `json:"agent,omitempty"`     // Agent name (e.g., "claude-1")
+	Port      int         `json:"port,omitempty"`      // Remote port
+	Local     int         `json:"local,omitempty"`     // Local port override (0 = auto-allocate)
 }
 
 // Response is an IPC response from daemon to client
@@ -107,8 +100,16 @@ type AddForwardResponse struct {
 	Status     string `json:"status"`
 }
 
+// DaemonStatusResponse is the data for a daemon status request
+type DaemonStatusResponse struct {
+	Running    bool                       `json:"running"`
+	StartedAt  string                     `json:"started_at"`
+	Uptime     string                     `json:"uptime"`
+	Pid        int                        `json:"pid"`
+	Vibespaces map[string]*StatusResponse `json:"vibespaces"` // vibespace name -> status
+}
+
 // PingResponse is the data for a ping request
 type PingResponse struct {
-	Vibespace string `json:"vibespace"`
-	Pid       int    `json:"pid"`
+	Pid int `json:"pid"`
 }

@@ -21,7 +21,7 @@ type HeadlessRunner struct {
 	agentOrder     []string
 	agentStates    map[string]*AgentState
 	sessionManager *ClaudeSessionManager
-	daemons        map[string]*daemon.Client
+	daemonClient   *daemon.Client
 	mu             sync.RWMutex
 
 	// Configuration
@@ -41,7 +41,6 @@ func NewHeadlessRunner() *HeadlessRunner {
 		agentOrder:     make([]string, 0),
 		agentStates:    make(map[string]*AgentState),
 		sessionManager: NewClaudeSessionManager(),
-		daemons:        make(map[string]*daemon.Client),
 		timeout:        2 * time.Minute, // Default timeout
 		historyStore:   historyStore,
 	}
@@ -61,24 +60,17 @@ func (r *HeadlessRunner) SetTimeout(d time.Duration) {
 
 // Connect connects to agents in the specified vibespaces
 func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.VibespaceEntry) error {
+	// Ensure daemon is running
+	if err := r.ensureDaemon(); err != nil {
+		return fmt.Errorf("failed to start daemon: %w", err)
+	}
+
 	for _, vsEntry := range vibespaces {
 		vsName := vsEntry.Name
 		agentFilter := vsEntry.Agents // nil means all agents
 
-		// Ensure daemon is running
-		if err := r.ensureDaemon(vsName); err != nil {
-			return fmt.Errorf("failed to start daemon for %s: %w", vsName, err)
-		}
-
-		// Get agents for this vibespace
-		client := r.daemons[vsName]
-		status, err := client.Status()
-		if err != nil {
-			return fmt.Errorf("failed to get status for %s: %w", vsName, err)
-		}
-
-		// Get forwards to find SSH ports
-		forwards, err := client.ListForwards()
+		// Get forwards to find SSH ports and agent list
+		forwards, err := r.daemonClient.ListForwardsForVibespace(vsName)
 		if err != nil {
 			return fmt.Errorf("failed to list forwards for %s: %w", vsName, err)
 		}
@@ -103,7 +95,7 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 		}
 
 		// Connect to each agent (filtered if specified)
-		for _, a := range status.Agents {
+		for _, a := range forwards.Agents {
 			// Apply filter if specified
 			if len(filterSet) > 0 && !filterSet[a.Name] {
 				continue
@@ -142,27 +134,27 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 	return nil
 }
 
-// ensureDaemon ensures the daemon is running for a vibespace
-func (r *HeadlessRunner) ensureDaemon(vsName string) error {
-	if _, ok := r.daemons[vsName]; ok {
+// ensureDaemon ensures the daemon is running
+func (r *HeadlessRunner) ensureDaemon() error {
+	if r.daemonClient != nil {
 		return nil
 	}
 
-	if !daemon.IsRunning(vsName) {
-		if err := daemon.SpawnDaemon(vsName); err != nil {
+	if !daemon.IsDaemonRunning() {
+		if err := daemon.SpawnDaemon(); err != nil {
 			return fmt.Errorf("failed to start daemon: %w", err)
 		}
-		if err := daemon.WaitForReady(vsName, 10*time.Second); err != nil {
+		if err := daemon.WaitForDaemonReady(10 * time.Second); err != nil {
 			return fmt.Errorf("daemon failed to start: %w", err)
 		}
 	}
 
-	client, err := daemon.NewClient(vsName)
+	client, err := daemon.NewClient()
 	if err != nil {
 		return fmt.Errorf("failed to create daemon client: %w", err)
 	}
 
-	r.daemons[vsName] = client
+	r.daemonClient = client
 	return nil
 }
 

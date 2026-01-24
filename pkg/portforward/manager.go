@@ -78,14 +78,6 @@ func (m *Manager) SetAgentPod(agentName, podName string) {
 	}
 }
 
-// GetAgentPod returns the pod name for an agent
-func (m *Manager) GetAgentPod(agentName string) (string, bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	podName, exists := m.agents[agentName]
-	return podName, exists
-}
-
 // AddForward adds and starts a new port-forward
 func (m *Manager) AddForward(agentName string, remotePort int, forwardType ForwardType, localPortOverride int) (int, error) {
 	m.mu.Lock()
@@ -229,106 +221,6 @@ func (m *Manager) RemoveAgentForwards(agentName string) {
 	m.mu.Unlock()
 
 	slog.Info("removed all forwards for agent", "agent", agentName, "count", len(toRemove))
-}
-
-// StopForward stops a forward without removing it (can be restarted)
-func (m *Manager) StopForward(agentName string, remotePort int) error {
-	m.mu.RLock()
-	key := fmt.Sprintf("%s:%d", agentName, remotePort)
-	fwd, exists := m.forwarders[key]
-	m.mu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("%s port %d: %w", agentName, remotePort, vserrors.ErrForwardNotFound)
-	}
-
-	fwd.Stop()
-
-	if m.onStateChange != nil {
-		m.onStateChange(agentName, remotePort, StatusStopped, "")
-	}
-
-	return nil
-}
-
-// StartForward starts a stopped forward
-func (m *Manager) StartForward(agentName string, remotePort int) error {
-	m.mu.RLock()
-	key := fmt.Sprintf("%s:%d", agentName, remotePort)
-	fwd, exists := m.forwarders[key]
-	m.mu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("%s port %d: %w", agentName, remotePort, vserrors.ErrForwardNotFound)
-	}
-
-	if fwd.Status() == StatusActive {
-		return nil // Already running
-	}
-
-	fwd.Reset()
-	if err := fwd.Start(); err != nil {
-		if m.onStateChange != nil {
-			m.onStateChange(agentName, remotePort, StatusError, err.Error())
-		}
-		return err
-	}
-
-	if m.onStateChange != nil {
-		m.onStateChange(agentName, remotePort, StatusActive, "")
-	}
-
-	return nil
-}
-
-// RestartForward restarts a forward
-func (m *Manager) RestartForward(agentName string, remotePort int) error {
-	if err := m.StopForward(agentName, remotePort); err != nil {
-		return err
-	}
-
-	// Brief delay for cleanup
-	time.Sleep(100 * time.Millisecond)
-
-	return m.StartForward(agentName, remotePort)
-}
-
-// RestartAll restarts all forwards
-func (m *Manager) RestartAll() error {
-	m.mu.RLock()
-	keys := make([]string, 0, len(m.forwarders))
-	for key := range m.forwarders {
-		keys = append(keys, key)
-	}
-	m.mu.RUnlock()
-
-	var lastErr error
-	for _, key := range keys {
-		// Key format is "agentName:remotePort"
-		lastColon := -1
-		for i := len(key) - 1; i >= 0; i-- {
-			if key[i] == ':' {
-				lastColon = i
-				break
-			}
-		}
-		if lastColon == -1 {
-			continue
-		}
-		agentName := key[:lastColon]
-		var remotePort int
-		fmt.Sscanf(key[lastColon+1:], "%d", &remotePort)
-
-		if err := m.RestartForward(agentName, remotePort); err != nil {
-			lastErr = err
-			slog.Error("failed to restart forward",
-				"agent", agentName,
-				"remote_port", remotePort,
-				"error", err)
-		}
-	}
-
-	return lastErr
 }
 
 // ForwardInfo contains information about a forward

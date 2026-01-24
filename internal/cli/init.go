@@ -75,9 +75,11 @@ func runInit(cmd *cobra.Command, args []string) error {
 	slog.Info("init command started")
 	ctx := context.Background()
 
-	// Clean up any stale daemon state from previous runs
-	daemon.StopAllDaemons()
-	slog.Debug("cleaned up daemon state")
+	// Clean up any stale daemon from previous runs
+	if daemon.IsDaemonRunning() {
+		daemon.StopDaemon()
+		slog.Debug("stopped stale daemon")
+	}
 
 	// Determine vibespace home directory
 	home, err := os.UserHomeDir()
@@ -198,6 +200,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	slog.Debug("cluster components installed")
 	printSuccess("Cluster components installed")
+
+	// Start daemon after cluster is ready
+	if !daemon.IsDaemonRunning() {
+		printStep("Starting daemon...")
+		if err := daemon.SpawnDaemon(); err != nil {
+			// Non-fatal - daemon can be started later
+			slog.Warn("failed to start daemon", "error", err)
+			printWarning("Daemon failed to start (will start on first connect)")
+		} else {
+			slog.Info("daemon started")
+			printSuccess("Daemon started")
+		}
+	}
 
 	slog.Info("init completed successfully")
 	printSuccess("vibespace is ready!")

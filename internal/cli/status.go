@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/yagizdagabak/vibespace/internal/platform"
+	"github.com/yagizdagabak/vibespace/pkg/daemon"
 
 	"github.com/spf13/cobra"
 )
@@ -71,6 +72,26 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// Add daemon status
+		if daemon.IsDaemonRunning() {
+			daemonStatus, err := daemon.GetDaemonStatus()
+			if err == nil {
+				statusOut.Daemon = &DaemonStatus{
+					Running:    true,
+					Pid:        daemonStatus.Pid,
+					Uptime:     daemonStatus.Uptime,
+					Vibespaces: make(map[string]DaemonVibespace),
+				}
+				for name, vs := range daemonStatus.Vibespaces {
+					statusOut.Daemon.Vibespaces[name] = DaemonVibespace{
+						AgentCount: len(vs.Agents),
+					}
+				}
+			}
+		} else {
+			statusOut.Daemon = &DaemonStatus{Running: false}
+		}
+
 		return out.JSON(JSONOutput{
 			Success: true,
 			Data:    statusOut,
@@ -113,6 +134,26 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Check daemon status
+	fmt.Println()
+	if daemon.IsDaemonRunning() {
+		daemonStatus, err := daemon.GetDaemonStatus()
+		if err != nil {
+			fmt.Printf("Daemon: %s (%v)\n", yellow("error"), err)
+		} else {
+			fmt.Printf("Daemon: %s (uptime: %s, pid: %d)\n", green("running"), daemonStatus.Uptime, daemonStatus.Pid)
+			if len(daemonStatus.Vibespaces) > 0 {
+				fmt.Println("  Managed vibespaces:")
+				for name, vs := range daemonStatus.Vibespaces {
+					agentCount := len(vs.Agents)
+					fmt.Printf("    %s: %d agent(s)\n", name, agentCount)
+				}
+			}
+		}
+	} else {
+		fmt.Println("Daemon: not running")
+	}
+
 	return nil
 }
 
@@ -145,6 +186,16 @@ var stopCmd = &cobra.Command{
 
 func runStop(cmd *cobra.Command, args []string) error {
 	slog.Info("stop command started")
+
+	// Stop daemon first
+	if daemon.IsDaemonRunning() {
+		printStep("Stopping daemon...")
+		if err := daemon.StopDaemon(); err != nil {
+			slog.Warn("failed to stop daemon", "error", err)
+		} else {
+			printSuccess("Daemon stopped")
+		}
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
