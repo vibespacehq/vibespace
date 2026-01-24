@@ -149,12 +149,12 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 // getVibespaceService creates the vibespace service with all dependencies
 func getVibespaceService() (*vibespace.Service, error) {
-	// Get kubeconfig path - Colima updates ~/.kube/config with the "colima" context
+	// Get isolated kubeconfig path
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
-	kubeconfig := filepath.Join(home, ".kube", "config")
+	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
 
 	// Check if kubeconfig exists
 	if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {

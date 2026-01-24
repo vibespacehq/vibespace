@@ -300,12 +300,27 @@ func (s *Server) buildAgentStatusList(vibespace string) []AgentStatus {
 	for _, agentName := range vsState.GetAllAgentNames() {
 		podName, _ := vsState.GetAgentPod(agentName)
 
+		// Get agent state to look up forward types
+		agentState := vsState.GetAgentState(agentName)
+
 		var fwdInfos []ForwardInfo
 		if forwards, ok := allForwards[agentName]; ok {
 			for _, fwd := range forwards {
+				// Look up type from daemon state by matching remote port
+				fwdType := ""
+				if agentState != nil {
+					for _, fs := range agentState.Forwards {
+						if fs.RemotePort == fwd.RemotePort {
+							fwdType = string(fs.Type)
+							break
+						}
+					}
+				}
+
 				info := ForwardInfo{
 					LocalPort:  fwd.LocalPort,
 					RemotePort: fwd.RemotePort,
+					Type:       fwdType,
 					Status:     string(fwd.Status),
 					Reconnects: fwd.Reconnects,
 				}

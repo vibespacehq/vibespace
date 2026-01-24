@@ -5,12 +5,6 @@ import (
 	"github.com/yagizdagabak/vibespace/pkg/session"
 )
 
-// AgentOutputMsg is sent when an agent produces output (legacy, kept for compatibility)
-type AgentOutputMsg struct {
-	Address session.AgentAddress
-	Output  string
-}
-
 // RichMessageMsg is sent when an agent produces a rich message
 type RichMessageMsg struct {
 	AgentKey string

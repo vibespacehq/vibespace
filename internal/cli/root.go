@@ -172,6 +172,7 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.AddCommand(createCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(deleteCmd)
@@ -185,7 +186,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&globalQuiet, "quiet", "q", false, "Suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVar(&globalNoColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&globalPlain, "plain", false, "Plain output for scripting")
-	rootCmd.PersistentFlags().String("kubeconfig", "", "Path to kubeconfig file (default: ~/.kube/config)")
 }
 
 var versionCmd = &cobra.Command{

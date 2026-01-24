@@ -69,8 +69,7 @@ func getK8sConfig() (*rest.Config, error) {
 }
 
 // getBundledKubeconfigPath returns the kubeconfig path for bundled Kubernetes (LOCAL MODE).
-// - macOS (Colima): ~/.kube/config (Colima updates the standard kubeconfig with "colima" context)
-// - Linux (k3s): ~/.kube/config
+// Uses isolated kubeconfig at ~/.vibespace/kubeconfig to avoid touching user's ~/.kube/config.
 //
 // For REMOTE MODE (planned Post-MVP), this would likely use in-cluster config or
 // a configurable kubeconfig path from environment variables.
@@ -80,9 +79,8 @@ func getBundledKubeconfigPath() (string, error) {
 		return "", fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
-	// Both macOS (Colima) and Linux (k3s) use ~/.kube/config
-	// Colima updates this file with the "colima" context instead of creating a separate file
-	return filepath.Join(home, ".kube", "config"), nil
+	// Use isolated kubeconfig to avoid conflicts with user's other clusters
+	return filepath.Join(home, ".vibespace", "kubeconfig"), nil
 }
 
 // Clientset returns the underlying Kubernetes clientset

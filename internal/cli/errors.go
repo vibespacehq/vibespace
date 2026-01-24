@@ -24,7 +24,8 @@ func checkClusterInitialized() error {
 		return fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	kubeconfig := filepath.Join(home, ".kube", "config")
+	// Use isolated kubeconfig at ~/.vibespace/kubeconfig
+	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
 	if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {
 		return fmt.Errorf("run 'vibespace init' first: %w", vserrors.ErrClusterNotInitialized)
 	}
@@ -64,12 +65,12 @@ func getVibespaceServiceWithCheck() (*vibespace.Service, error) {
 		return nil, err
 	}
 
-	// Get kubeconfig path
+	// Get isolated kubeconfig path
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
-	kubeconfig := filepath.Join(home, ".kube", "config")
+	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
 
 	// Set KUBECONFIG environment variable for the k8s client
 	os.Setenv("KUBECONFIG", kubeconfig)

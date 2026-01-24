@@ -46,9 +46,9 @@ func runPorts(vibespace string, args []string) error {
 		return fmt.Errorf("vibespace '%s' is not running", vibespace)
 	}
 
-	// Get paths
+	// Get paths - use isolated kubeconfig
 	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".kube", "config")
+	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
 	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
 
 	// Find the pod using internal ID

@@ -94,7 +94,6 @@ func runInit(cmd *cobra.Command, args []string) error {
 	dirs := []string{
 		vibespaceHome,
 		filepath.Join(vibespaceHome, "bin"),
-		filepath.Join(vibespaceHome, "cache"),
 	}
 	for _, dir := range dirs {
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -151,32 +150,66 @@ func runInit(cmd *cobra.Command, args []string) error {
 		printSuccess("Binaries already installed")
 	}
 
-	// Check if running
-	running, err := manager.IsRunning()
-	if err != nil {
-		slog.Error("failed to check cluster status", "error", err)
-		return fmt.Errorf("failed to check cluster status: %w", err)
-	}
-	slog.Debug("cluster status check", "running", running)
+	// Smart state-based init: detect VM state and take appropriate action
+	state := manager.GetVMState(ctx)
+	slog.Debug("detected VM state", "state", state)
 
-	if !running {
-		spinner := NewSpinner(fmt.Sprintf("Starting cluster (CPU: %d, Memory: %dGB, Disk: %dGB)...", initCPU, initMemory, initDisk))
+	config := platform.ClusterConfig{
+		CPU:    initCPU,
+		Memory: initMemory,
+		Disk:   initDisk,
+	}
+
+	switch state {
+	case platform.VMStateRunning:
+		// Already running, just verify and continue
+		slog.Debug("cluster already running")
+		printSuccess("Cluster already running")
+
+	case platform.VMStateStopped:
+		// Resume existing VM (preserves data)
+		spinner := NewSpinner("Resuming stopped cluster...")
 		spinner.Start()
-		slog.Info("starting cluster", "cpu", initCPU, "memory_gb", initMemory, "disk_gb", initDisk)
-		config := platform.ClusterConfig{
-			CPU:    initCPU,
-			Memory: initMemory,
-			Disk:   initDisk,
+		slog.Info("resuming stopped cluster")
+		if err := manager.Resume(ctx); err != nil {
+			spinner.Fail("Failed to resume cluster")
+			slog.Error("failed to resume cluster", "error", err)
+			return fmt.Errorf("failed to resume cluster: %w", err)
 		}
+		spinner.Success("Cluster resumed")
+
+	case platform.VMStateBroken:
+		// Recover from broken state, then create fresh
+		spinner := NewSpinner("Recovering from broken state...")
+		spinner.Start()
+		slog.Warn("recovering from broken cluster state")
+		if err := manager.Recover(ctx); err != nil {
+			slog.Warn("recovery cleanup failed", "error", err)
+		}
+		spinner.Success("Recovery cleanup completed")
+
+		// Now start fresh
+		spinner = NewSpinner(fmt.Sprintf("Starting cluster (CPU: %d, Memory: %dGB, Disk: %dGB)...", initCPU, initMemory, initDisk))
+		spinner.Start()
+		slog.Info("starting fresh cluster after recovery", "cpu", initCPU, "memory_gb", initMemory, "disk_gb", initDisk)
 		if err := manager.Start(ctx, config); err != nil {
 			spinner.Fail("Failed to start cluster")
 			slog.Error("failed to start cluster", "error", err)
 			return fmt.Errorf("failed to start cluster: %w", err)
 		}
 		spinner.Success("Cluster started")
-		slog.Debug("cluster start command completed")
-	} else {
-		slog.Debug("cluster already running")
+
+	case platform.VMStateNotExists:
+		// Create fresh VM
+		spinner := NewSpinner(fmt.Sprintf("Starting cluster (CPU: %d, Memory: %dGB, Disk: %dGB)...", initCPU, initMemory, initDisk))
+		spinner.Start()
+		slog.Info("starting fresh cluster", "cpu", initCPU, "memory_gb", initMemory, "disk_gb", initDisk)
+		if err := manager.Start(ctx, config); err != nil {
+			spinner.Fail("Failed to start cluster")
+			slog.Error("failed to start cluster", "error", err)
+			return fmt.Errorf("failed to start cluster: %w", err)
+		}
+		spinner.Success("Cluster started")
 	}
 
 	// Wait for cluster to be ready
@@ -194,7 +227,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Install cluster components (namespace)
 	printStep("Installing cluster components...")
 	slog.Debug("installing cluster components")
-	if err := installClusterComponents(ctx, vibespaceHome); err != nil {
+	if err := installClusterComponents(ctx, vibespaceHome, manager.KubeconfigPath()); err != nil {
 		slog.Error("failed to install cluster components", "error", err)
 		return fmt.Errorf("failed to install cluster components: %w", err)
 	}
@@ -252,10 +285,10 @@ func initExternalCluster(vibespaceHome, kubeconfig string) error {
 
 	printSuccess("Using external cluster from %s", kubeconfig)
 
-	// TODO: Verify cluster connectivity and install components
+	// Install cluster components using the isolated kubeconfig
 	printStep("Installing cluster components...")
 	ctx := context.Background()
-	if err := installClusterComponents(ctx, vibespaceHome); err != nil {
+	if err := installClusterComponents(ctx, vibespaceHome, vibespaceKubeconfig); err != nil {
 		return fmt.Errorf("failed to install cluster components: %w", err)
 	}
 	printSuccess("Cluster components installed")
@@ -286,9 +319,7 @@ func waitForCluster(ctx context.Context, manager platform.ClusterManager) error 
 	return fmt.Errorf("timeout waiting for cluster")
 }
 
-func installClusterComponents(ctx context.Context, vibespaceHome string) error {
-	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".kube", "config")
+func installClusterComponents(ctx context.Context, vibespaceHome, kubeconfig string) error {
 	kubectlBin := filepath.Join(vibespaceHome, "bin", "kubectl")
 
 	// Create vibespace namespace

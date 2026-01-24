@@ -23,8 +23,18 @@ type ClusterManager interface {
 	// IsRunning checks if the cluster is currently running
 	IsRunning() (bool, error)
 
-	// Start starts the cluster with the given configuration
+	// GetVMState returns the current state of the cluster VM
+	// Used for smart init logic (resume stopped, recover broken, create fresh)
+	GetVMState(ctx context.Context) VMState
+
+	// Start starts the cluster with the given configuration (creates fresh)
 	Start(ctx context.Context, config ClusterConfig) error
+
+	// Resume starts a stopped cluster without recreating it
+	Resume(ctx context.Context) error
+
+	// Recover cleans up a broken cluster state so Start can succeed
+	Recover(ctx context.Context) error
 
 	// Stop stops the cluster (preserves data)
 	Stop(ctx context.Context) error
