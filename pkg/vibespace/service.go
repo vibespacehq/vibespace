@@ -8,6 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yagizdagabak/vibespace/pkg/agent"
+	// Import agent implementations to trigger init() registration
+	_ "github.com/yagizdagabak/vibespace/pkg/agent/claude"
+	_ "github.com/yagizdagabak/vibespace/pkg/agent/codex"
 	"github.com/yagizdagabak/vibespace/pkg/deployment"
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
@@ -21,9 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// DefaultImage is the single container image used for all vibespaces
-// Contains a minimal Linux distro with Claude Code CLI pre-installed
-const DefaultImage = "ghcr.io/yagizdagabak/vibespace/claude:latest"
 
 // Service handles vibespace operations
 type Service struct {
@@ -189,20 +190,39 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		return nil, fmt.Errorf("invalid GitHub repository URL: must be a valid HTTPS or SSH Git URL")
 	}
 
-	// Get image from environment or use default
-	image := getVibespaceImage()
+	// Determine agent type and get the appropriate image
+	agentType := req.AgentType
+	if agentType == "" {
+		agentType = agent.TypeClaudeCode // Default
+	}
+
+	agentImpl, err := agent.Get(agentType)
+	if err != nil {
+		return nil, fmt.Errorf("unknown agent type '%s': %w", agentType, err)
+	}
+
+	// Get image: environment override, or agent default
+	image := getVibespaceImage(agentType)
+	if image == "" {
+		image = agentImpl.ContainerImage()
+	}
 
 	slog.Info("creating vibespace with Deployment",
 		"vibespace_id", id,
 		"name", req.Name,
+		"agent_type", agentType,
 		"image", image)
+
+	// Get agent configuration
+	config := req.AgentConfig
 
 	// Create Deployment
 	err = s.deploymentManager.CreateDeployment(ctx, &deployment.CreateDeploymentRequest{
-		VibespaceID:      id,
-		Name:             req.Name,
-		ClaudeID:         "1", // First Claude instance
-		Image:            image,
+		VibespaceID: id,
+		Name:        req.Name,
+		AgentType:   agentType,
+		AgentNum:    1, // First agent
+		Image:       image,
 		Resources: deployment.Resources{
 			CPU:     resources.CPU,
 			Memory:  resources.Memory,
@@ -212,7 +232,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		Persistent:       req.Persistent,
 		PVCName:          pvcName,
 		ShareCredentials: req.ShareCredentials,
-		ClaudeConfig:     req.ClaudeConfig,
+		Config:           config,
 	})
 	if err != nil {
 		slog.Error("failed to create Deployment", "vibespace_id", id, "error", err)
@@ -267,13 +287,13 @@ func (s *Service) Delete(ctx context.Context, nameOrID string, opts *DeleteOptio
 		}
 	}
 
-	// Delete all agent deployments first
-	agents, err := s.deploymentManager.ListAgentsForVibespace(ctx, vibespace.ID)
+	// Delete all agent deployments first (except primary agent which is handled with main deployment)
+	agentList, err := s.deploymentManager.ListAgentsForVibespace(ctx, vibespace.ID)
 	if err == nil {
-		for _, agent := range agents {
-			if agent.ClaudeID != "1" {
-				if err := s.deploymentManager.DeleteAgentDeployment(ctx, vibespace.ID, agent.ClaudeID); err != nil {
-					slog.Warn("failed to delete agent deployment", "agent", agent.AgentName, "error", err)
+		for _, ag := range agentList {
+			if ag.AgentNum != 1 {
+				if err := s.deploymentManager.DeleteAgentDeployment(ctx, vibespace.ID, ag.AgentName); err != nil {
+					slog.Warn("failed to delete agent deployment", "agent", ag.AgentName, "error", err)
 				}
 			}
 		}
@@ -580,13 +600,21 @@ func stringPtr(s string) *string {
 	return &s
 }
 
-// getVibespaceImage returns the container image to use for vibespaces
-func getVibespaceImage() string {
-	image := os.Getenv("VIBESPACE_IMAGE")
-	if image == "" {
-		return DefaultImage
+// getVibespaceImage returns the container image override for a given agent type.
+// Returns empty string if no override is set (caller should use agent's default).
+func getVibespaceImage(agentType agent.Type) string {
+	// Check for type-specific override first
+	typeEnvVar := fmt.Sprintf("VIBESPACE_IMAGE_%s", strings.ToUpper(strings.ReplaceAll(string(agentType), "-", "_")))
+	if image := os.Getenv(typeEnvVar); image != "" {
+		return image
 	}
-	return image
+
+	// Fall back to generic override
+	if image := os.Getenv("VIBESPACE_IMAGE"); image != "" {
+		return image
+	}
+
+	return "" // No override - use agent's default
 }
 
 // isValidGitURL validates a Git repository URL
@@ -652,9 +680,20 @@ func ValidateName(name string) error {
 
 // AgentInfo contains information about an agent
 type AgentInfo struct {
-	ClaudeID  string // "1", "2", etc.
-	AgentName string // "claude-1", "claude-2", etc.
-	Status    string // running, stopped, creating
+	// ID is the agent's UUID (may be empty for legacy agents)
+	ID string
+
+	// AgentType is the type of agent (claude-code, codex, etc.)
+	AgentType agent.Type
+
+	// AgentNum is the sequential number within the agent type (1, 2, 3...)
+	AgentNum int
+
+	// AgentName is the display name (e.g., "claude-1", "codex-2")
+	AgentName string
+
+	// Status is the current status: running, stopped, creating
+	Status string
 }
 
 // SpawnAgentOptions contains options for spawning an agent
@@ -662,15 +701,18 @@ type SpawnAgentOptions struct {
 	// Name is an optional custom agent name (auto-generated if empty)
 	Name string
 
+	// AgentType specifies the type of agent to spawn (default: same as first agent)
+	AgentType agent.Type
+
 	// ShareCredentials enables credential sharing via /vibespace/.vibespace
 	// When enabled, Claude config, git config, and SSH keys are shared across agents
 	ShareCredentials bool
 
-	// ClaudeConfig overrides the vibespace default (nil = inherit from vibespace)
-	ClaudeConfig *model.ClaudeConfig
+	// Config is the agent configuration (nil = inherit from vibespace)
+	Config *agent.Config
 }
 
-// SpawnAgent creates a new Claude agent in a vibespace
+// SpawnAgent creates a new agent in a vibespace
 // Returns the agent name (e.g., "claude-2" or custom name)
 func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAgentOptions) (string, error) {
 	if err := s.ensureClients(); err != nil {
@@ -692,15 +734,36 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		return "", fmt.Errorf("vibespace not found: %w", err)
 	}
 
-	// Get existing agents for uniqueness check
+	// Get existing agents for uniqueness check and to determine default agent type
 	existingAgents, err := s.ListAgents(ctx, vs.ID)
 	if err != nil {
 		return "", fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	var agentName string
-	var claudeID string
+	// Determine agent type: use specified type, or match first agent's type
+	agentType := opts.AgentType
+	if agentType == "" {
+		if len(existingAgents) > 0 {
+			agentType = existingAgents[0].AgentType
+		} else {
+			agentType = agent.TypeClaudeCode
+		}
+	}
 
+	agentImpl, err := agent.Get(agentType)
+	if err != nil {
+		return "", fmt.Errorf("unknown agent type '%s': %w", agentType, err)
+	}
+
+	// Calculate next agent number for this type
+	nextNum := 1
+	for _, a := range existingAgents {
+		if a.AgentType == agentType && a.AgentNum >= nextNum {
+			nextNum = a.AgentNum + 1
+		}
+	}
+
+	var agentName string
 	if opts.Name != "" {
 		// Custom name provided - validate format
 		if err := ValidateName(opts.Name); err != nil {
@@ -708,33 +771,30 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		}
 
 		// Check uniqueness
-		for _, agent := range existingAgents {
-			if agent.AgentName == opts.Name {
+		for _, a := range existingAgents {
+			if a.AgentName == opts.Name {
 				return "", fmt.Errorf("agent '%s' already exists in this vibespace", opts.Name)
 			}
 		}
-
 		agentName = opts.Name
-		// Generate a unique claude ID for internal use
-		nextID, err := s.deploymentManager.GetNextAgentID(ctx, vs.ID)
-		if err != nil {
-			return "", fmt.Errorf("failed to get next agent ID: %w", err)
-		}
-		claudeID = nextID
 	} else {
-		// Auto-generate name from claude ID
-		nextID, err := s.deploymentManager.GetNextAgentID(ctx, vs.ID)
-		if err != nil {
-			return "", fmt.Errorf("failed to get next agent ID: %w", err)
-		}
-		claudeID = nextID
-		agentName = fmt.Sprintf("claude-%s", nextID)
+		// Auto-generate name from agent type and number
+		agentName = fmt.Sprintf("%s-%d", agentImpl.DefaultAgentPrefix(), nextNum)
 	}
 
-	slog.Info("spawning agent", "vibespace_id", vs.ID, "vibespace_name", vs.Name, "agent_name", agentName, "claude_id", claudeID, "share_credentials", opts.ShareCredentials)
+	slog.Info("spawning agent",
+		"vibespace_id", vs.ID,
+		"vibespace_name", vs.Name,
+		"agent_type", agentType,
+		"agent_name", agentName,
+		"agent_num", nextNum,
+		"share_credentials", opts.ShareCredentials)
 
 	// Get the image
-	image := getVibespaceImage()
+	image := getVibespaceImage(agentType)
+	if image == "" {
+		image = agentImpl.ContainerImage()
+	}
 
 	// Create the agent deployment
 	pvcName := ""
@@ -742,11 +802,15 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		pvcName = fmt.Sprintf("vibespace-%s-pvc", vs.ID)
 	}
 
+	// Get agent configuration
+	config := opts.Config
+
 	err = s.deploymentManager.CreateAgentDeployment(ctx, &deployment.CreateAgentRequest{
 		VibespaceID: vs.ID,
 		Name:        vs.Name,
+		AgentType:   agentType,
+		AgentNum:    nextNum,
 		AgentName:   agentName,
-		ClaudeID:    claudeID,
 		Image:       image,
 		Resources: deployment.Resources{
 			CPU:     vs.Resources.CPU,
@@ -756,7 +820,7 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		Env:              nil,
 		PVCName:          pvcName,
 		ShareCredentials: opts.ShareCredentials,
-		ClaudeConfig:     opts.ClaudeConfig,
+		Config:           config,
 	})
 	if err != nil {
 		slog.Error("failed to spawn agent", "vibespace_id", vs.ID, "agent_name", agentName, "error", err)
@@ -768,9 +832,9 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 	return agentName, nil
 }
 
-// KillAgent removes a Claude agent from a vibespace
-// Cannot kill claude-1 (the main agent)
-func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentID string) error {
+// KillAgent removes an agent from a vibespace
+// Cannot kill the primary agent (agent number 1)
+func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentName string) error {
 	if err := s.ensureClients(); err != nil {
 		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
@@ -779,33 +843,45 @@ func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentID string
 		return vserrors.ErrDeploymentManagerNotInitialized
 	}
 
-	// Parse agent name to get claude ID
-	claudeID := agentID
-	if strings.HasPrefix(agentID, "claude-") {
-		claudeID = strings.TrimPrefix(agentID, "claude-")
-	}
-
-	// Cannot kill claude-1
-	if claudeID == "1" {
-		return fmt.Errorf("cannot kill claude-1: it is the main agent. Delete the vibespace to remove it")
-	}
-
 	// Get the vibespace
 	vs, err := s.Get(ctx, nameOrID)
 	if err != nil {
 		return fmt.Errorf("vibespace not found: %w", err)
 	}
 
-	slog.Info("killing agent", "vibespace_id", vs.ID, "name", vs.Name, "claude_id", claudeID)
+	// Find the agent to check if it's the primary one
+	agents, err := s.ListAgents(ctx, vs.ID)
+	if err != nil {
+		return fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	var targetAgent *AgentInfo
+	for i := range agents {
+		if agents[i].AgentName == agentName {
+			targetAgent = &agents[i]
+			break
+		}
+	}
+
+	if targetAgent == nil {
+		return fmt.Errorf("agent '%s' not found", agentName)
+	}
+
+	// Cannot kill the primary agent (number 1)
+	if targetAgent.AgentNum == 1 {
+		return fmt.Errorf("cannot kill %s: it is the primary agent. Delete the vibespace to remove it", agentName)
+	}
+
+	slog.Info("killing agent", "vibespace_id", vs.ID, "name", vs.Name, "agent", agentName)
 
 	// Delete the agent deployment
-	err = s.deploymentManager.DeleteAgentDeployment(ctx, vs.ID, claudeID)
+	err = s.deploymentManager.DeleteAgentDeployment(ctx, vs.ID, agentName)
 	if err != nil {
-		slog.Error("failed to kill agent", "vibespace_id", vs.ID, "claude_id", claudeID, "error", err)
+		slog.Error("failed to kill agent", "vibespace_id", vs.ID, "agent", agentName, "error", err)
 		return fmt.Errorf("failed to kill agent: %w", err)
 	}
 
-	slog.Info("agent killed successfully", "vibespace_id", vs.ID, "claude_id", claudeID)
+	slog.Info("agent killed successfully", "vibespace_id", vs.ID, "agent", agentName)
 	return nil
 }
 
@@ -835,7 +911,9 @@ func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo,
 	agents := make([]AgentInfo, len(deploymentAgents))
 	for i, da := range deploymentAgents {
 		agents[i] = AgentInfo{
-			ClaudeID:  da.ClaudeID,
+			ID:        da.ID,
+			AgentType: da.AgentType,
+			AgentNum:  da.AgentNum,
 			AgentName: da.AgentName,
 			Status:    da.Status,
 		}
@@ -844,8 +922,8 @@ func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo,
 	return agents, nil
 }
 
-// GetAgentConfig returns the ClaudeConfig for an agent
-func (s *Service) GetAgentConfig(ctx context.Context, vibespaceNameOrID, agentName string) (*model.ClaudeConfig, error) {
+// GetAgentConfig returns the configuration for an agent
+func (s *Service) GetAgentConfig(ctx context.Context, vibespaceNameOrID, agentName string) (*agent.Config, error) {
 	if err := s.ensureClients(); err != nil {
 		return nil, fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}
@@ -863,8 +941,8 @@ func (s *Service) GetAgentConfig(ctx context.Context, vibespaceNameOrID, agentNa
 	return s.deploymentManager.GetAgentConfig(ctx, vs.ID, agentName)
 }
 
-// UpdateAgentConfig updates the ClaudeConfig for an agent (triggers pod restart)
-func (s *Service) UpdateAgentConfig(ctx context.Context, vibespaceNameOrID, agentName string, config *model.ClaudeConfig) error {
+// UpdateAgentConfig updates the configuration for an agent (triggers pod restart)
+func (s *Service) UpdateAgentConfig(ctx context.Context, vibespaceNameOrID, agentName string, config *agent.Config) error {
 	if err := s.ensureClients(); err != nil {
 		return fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
 	}

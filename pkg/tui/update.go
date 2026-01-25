@@ -377,17 +377,17 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Build Claude command with agent's config
+		// Build agent command with agent's config
 		sessionID := m.sessionManager.GetSession(m.sessionName, key)
-		claudeCmd := BuildInteractiveClaudeCommand(conn.Config(), sessionID)
+		agentCmd := BuildInteractiveAgentCommand(conn.AgentType(), conn.Config(), sessionID)
 
 		// tmux session name based on agent (sanitize for tmux)
-		tmuxSession := fmt.Sprintf("claude-%s", addr.Agent)
+		tmuxSession := fmt.Sprintf("agent-%s", addr.Agent)
 
-		// Use tmux: attach to existing session or create new one with Claude
+		// Use tmux: attach to existing session or create new one with agent
 		// tmux new-session -A: attach if exists, create if not
 		// Set TERM=xterm-256color to avoid issues with non-standard terminals (e.g., ghostty)
-		tmuxCmd := fmt.Sprintf("TERM=xterm-256color tmux new-session -A -s %s '%s'", tmuxSession, claudeCmd)
+		tmuxCmd := fmt.Sprintf("TERM=xterm-256color tmux new-session -A -s %s '%s'", tmuxSession, agentCmd)
 
 		// Launch interactive Claude session via tmux
 		// User can detach with Ctrl+B D to return to TUI without killing Claude
@@ -647,11 +647,11 @@ func (m *Model) listPorts() string {
 			continue
 		}
 
-		for _, agent := range forwards.Agents {
-			for _, fwd := range agent.Forwards {
+		for _, agentFwd := range forwards.Agents {
+			for _, fwd := range agentFwd.Forwards {
 				parts = append(parts, fmt.Sprintf(
 					"%s@%s: localhost:%d → %d (%s)",
-					agent.Name, vs.Name, fwd.LocalPort, fwd.RemotePort, fwd.Type,
+					agentFwd.Name, vs.Name, fwd.LocalPort, fwd.RemotePort, fwd.Type,
 				))
 			}
 		}
@@ -961,15 +961,15 @@ func (m *Model) handleReconnect(msg AgentReconnectMsg) tea.Cmd {
 		if err != nil {
 			slog.Debug("failed to get forwards from daemon", "agent", key, "error", err)
 		} else {
-			for _, agent := range forwards.Agents {
-				if agent.Name == msg.Address.Agent {
-					for _, fwd := range agent.Forwards {
+			for _, agentFwd := range forwards.Agents {
+				if agentFwd.Name == msg.Address.Agent {
+					for _, fwd := range agentFwd.Forwards {
 						if fwd.Type == "ssh" && fwd.Status == "active" {
 							slog.Debug("found SSH forward, creating new connection",
 								"agent", key, "old_port", conn.LocalPort(), "new_port", fwd.LocalPort)
 							// Always close old connection and create new one with fresh port
 							conn.Close()
-							newConn := NewAgentConn(msg.Address, fwd.LocalPort, m.sessionManager, m.sessionName, true, conn.Config())
+							newConn := NewAgentConn(msg.Address, fwd.LocalPort, m.sessionManager, m.sessionName, true, conn.AgentType(), conn.Config())
 							if err := newConn.Connect(); err == nil {
 								m.agentMu.Lock()
 								m.agents[key] = newConn

@@ -1,0 +1,128 @@
+#!/bin/bash
+# vibespace Permission Hook for Claude Code (PreToolUse)
+#
+# This script is called by Claude Code before each tool use.
+# It checks agent configuration and either auto-allows or
+# POSTs to the TUI's permission server for user approval.
+#
+# Input (stdin): JSON from Claude with tool information
+# Output (stdout): JSON with the permission decision (PreToolUse format)
+#
+# Environment variables:
+#   VIBESPACE_SKIP_PERMISSIONS - If "true", auto-allow all tools
+#   VIBESPACE_ALLOWED_TOOLS    - Comma-separated list of allowed tools (auto-allow these)
+#   VIBESPACE_DISALLOWED_TOOLS - Comma-separated list of disallowed tools (auto-deny these)
+#   VIBESPACE_PERMISSION_PORT  - Port for permission server (default: 18080)
+#   VIBESPACE_AGENT            - Agent name (e.g., "claude-1")
+#   VIBESPACE_NAME             - Vibespace name
+
+set -e
+
+# Helper to output allow decision
+allow() {
+    local reason="${1:-Auto-allowed by vibespace}"
+    cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "allow",
+    "permissionDecisionReason": "$reason"
+  }
+}
+EOF
+    exit 0
+}
+
+# Helper to output deny decision
+deny() {
+    local reason="${1:-Denied by vibespace}"
+    cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "$reason"
+  }
+}
+EOF
+    exit 0
+}
+
+# Read request from stdin (Claude provides tool info as JSON)
+REQUEST=$(cat)
+
+# Extract tool name from request
+# Claude sends: {"tool_name": "Bash", "tool_input": {...}}
+TOOL_NAME=$(echo "$REQUEST" | jq -r '.tool_name // empty')
+
+# Debug logging (uncomment for troubleshooting)
+# echo "[vibespace-hook] Tool: $TOOL_NAME, Skip: $VIBESPACE_SKIP_PERMISSIONS, Allowed: $VIBESPACE_ALLOWED_TOOLS" >&2
+
+# Check 1: If skip_permissions is enabled, auto-allow everything
+if [ "$VIBESPACE_SKIP_PERMISSIONS" = "true" ]; then
+    allow "skip_permissions enabled"
+fi
+
+# Check 2: If tool is in disallowed list, deny
+if [ -n "$VIBESPACE_DISALLOWED_TOOLS" ] && [ -n "$TOOL_NAME" ]; then
+    # Check if tool name is in the comma-separated disallowed list
+    if echo ",$VIBESPACE_DISALLOWED_TOOLS," | grep -qi ",$TOOL_NAME,"; then
+        deny "Tool '$TOOL_NAME' is disallowed"
+    fi
+fi
+
+# Check 3: If allowed_tools is set and tool is in the list, auto-allow
+if [ -n "$VIBESPACE_ALLOWED_TOOLS" ] && [ -n "$TOOL_NAME" ]; then
+    # Handle tool names with parameters like "Bash(read_only:true)"
+    # Extract base tool name for comparison
+    BASE_TOOL=$(echo "$TOOL_NAME" | sed 's/(.*//')
+
+    # Check if tool name or base name is in the comma-separated allowed list
+    if echo ",$VIBESPACE_ALLOWED_TOOLS," | grep -qi ",$TOOL_NAME," || \
+       echo ",$VIBESPACE_ALLOWED_TOOLS," | grep -qi ",$BASE_TOOL,"; then
+        allow "Tool '$TOOL_NAME' is in allowed_tools"
+    fi
+
+    # Also check if allowed list contains parameterized version
+    # e.g., allowed="Bash(read_only:true)" should match tool="Bash"
+    if echo ",$VIBESPACE_ALLOWED_TOOLS," | grep -qi ",$BASE_TOOL("; then
+        allow "Tool '$TOOL_NAME' matches allowed_tools pattern"
+    fi
+fi
+
+# Not auto-allowed/denied - contact permission server for user decision
+PERMISSION_PORT="${VIBESPACE_PERMISSION_PORT:-18080}"
+PERMISSION_HOST="${VIBESPACE_PERMISSION_HOST:-localhost}"
+TIMEOUT="${VIBESPACE_PERMISSION_TIMEOUT:-300}"
+
+# Build agent key from environment
+AGENT_KEY="${VIBESPACE_AGENT:-unknown}@${VIBESPACE_NAME:-unknown}"
+
+# Add agent identifier to request
+REQUEST=$(echo "$REQUEST" | jq --arg agent "$AGENT_KEY" '. + {agent_key: $agent}')
+
+# POST to permission server (blocks until TUI responds or timeout)
+RESPONSE=$(echo "$REQUEST" | curl -s -X POST \
+    -H "Content-Type: application/json" \
+    --data @- \
+    --max-time "$TIMEOUT" \
+    --connect-timeout 5 \
+    "http://${PERMISSION_HOST}:${PERMISSION_PORT}/permission" 2>/dev/null) || {
+    # Connection failed - default to deny for safety
+    deny "Permission server unavailable"
+}
+
+# Parse decision from response
+DECISION=$(echo "$RESPONSE" | jq -r '.decision // "deny"')
+REASON=$(echo "$RESPONSE" | jq -r '.reason // "Controlled by vibespace"')
+
+# Return PreToolUse hook output format expected by Claude
+cat <<EOF
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "$DECISION",
+    "permissionDecisionReason": "$REASON"
+  }
+}
+EOF

@@ -1,5 +1,7 @@
 package model
 
+import "github.com/yagizdagabak/vibespace/pkg/agent"
+
 // Vibespace represents an isolated development environment with Claude Code.
 //
 // Each vibespace runs as a Kubernetes Deployment with:
@@ -53,8 +55,11 @@ type CreateVibespaceRequest struct {
 	// GithubRepo is an optional GitHub repo URL to clone on startup
 	GithubRepo string `json:"github_repo,omitempty"`
 
-	// ClaudeConfig configures the Claude Code agent (nil = defaults)
-	ClaudeConfig *ClaudeConfig `json:"claude_config,omitempty"`
+	// AgentType specifies the type of AI agent to use (default: claude-code)
+	AgentType agent.Type `json:"agent_type,omitempty"`
+
+	// AgentConfig configures the AI agent (nil = defaults)
+	AgentConfig *agent.Config `json:"agent_config,omitempty"`
 }
 
 // UpdateVibespaceRequest represents the request to update a vibespace

@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yagizdagabak/vibespace/pkg/agent"
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
-	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/permission"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
@@ -46,7 +46,7 @@ type Model struct {
 	agentStates map[string]*AgentState
 
 	// Claude session management (--session-id vs --resume)
-	sessionManager *ClaudeSessionManager
+	sessionManager *AgentSessionManager
 
 	// Global daemon client
 	daemonClient *daemon.Client
@@ -121,7 +121,7 @@ func NewModel(sess *session.Session, resume bool) *Model {
 	sessionStore, _ := session.NewStore()
 
 	// Create Claude session manager for --session-id vs --resume logic
-	sessionManager := NewClaudeSessionManager()
+	sessionManager := NewAgentSessionManager()
 
 	// Create permission server
 	permServer := permission.NewServer(permission.DefaultPermissionPort)
@@ -323,18 +323,19 @@ func (m *Model) connectAgent(addr session.AgentAddress) error {
 	}
 
 	// Get agent config from vibespace service
-	var claudeConfig *model.ClaudeConfig
+	var agentConfig *agent.Config
 	svc := vibespace.NewService(nil) // Service will initialize k8s client on first use
 	config, err := svc.GetAgentConfig(m.ctx, addr.Vibespace, addr.Agent)
 	if err != nil {
 		slog.Warn("failed to get agent config, using defaults", "agent", addr.String(), "error", err)
 	} else {
-		claudeConfig = config
+		agentConfig = config
 	}
 
 	// Create agent connection with shared session manager
-	// Pass the multi-session ID (sessionName), resume flag, and config
-	conn := NewAgentConn(addr, sshPort, m.sessionManager, m.sessionName, m.resume, claudeConfig)
+	// Pass the multi-session ID (sessionName), resume flag, agent type, and config
+	// TODO: Get actual agent type from daemon/service when available
+	conn := NewAgentConn(addr, sshPort, m.sessionManager, m.sessionName, m.resume, agent.TypeClaudeCode, agentConfig)
 	if err := conn.Connect(); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}

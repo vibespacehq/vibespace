@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/model"
+	"github.com/yagizdagabak/vibespace/pkg/agent"
 	vspkg "github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
@@ -31,9 +31,9 @@ func runAgents(vibespace string, args []string) error {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// Sort agents by claude ID
+	// Sort agents by agent number
 	sort.Slice(agents, func(i, j int) bool {
-		return agents[i].ClaudeID < agents[j].ClaudeID
+		return agents[i].AgentNum < agents[j].AgentNum
 	})
 
 	// JSON output mode
@@ -96,23 +96,25 @@ func runSpawn(vibespace string, args []string) error {
 	// Handle help flag
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
-			fmt.Println(`Spawn a new Claude agent in a vibespace
+			fmt.Println(`Spawn a new agent in a vibespace
 
 Usage:
   vibespace <name> spawn [flags]
 
 Flags:
-  -n, --name string            Custom name for the agent (default: claude-N)
-  -s, --share-credentials      Share Claude credentials across all agents
-      --skip-permissions       Enable --dangerously-skip-permissions for Claude
+  -n, --name string            Custom name for the agent (default: <type>-N)
+  -t, --agent-type string      Agent type: claude-code, codex (default: claude-code)
+  -s, --share-credentials      Share credentials across all agents
+      --skip-permissions       Enable --dangerously-skip-permissions
       --allowed-tools string   Comma-separated allowed tools (replaces default)
       --disallowed-tools string Comma-separated disallowed tools
-      --model string           Claude model to use (e.g., opus, sonnet)
+      --model string           Model to use (e.g., opus, sonnet)
       --max-turns int          Maximum conversation turns
   -h, --help                   Help for spawn
 
 Examples:
   vibespace myproject spawn
+  vibespace myproject spawn --agent-type codex
   vibespace myproject spawn --name researcher
   vibespace myproject spawn --share-credentials
   vibespace myproject spawn --skip-permissions
@@ -126,6 +128,7 @@ Examples:
 	// Parse flags
 	shareCredentials := false
 	customName := ""
+	agentTypeStr := "claude-code"
 	skipPermissions := false
 	allowedTools := ""
 	disallowedTools := ""
@@ -146,6 +149,13 @@ Examples:
 			customName = arg[7:]
 		case strings.HasPrefix(arg, "-n="):
 			customName = arg[3:]
+		case (arg == "--agent-type" || arg == "-t") && i+1 < len(args):
+			agentTypeStr = args[i+1]
+			i++
+		case strings.HasPrefix(arg, "--agent-type="):
+			agentTypeStr = arg[13:]
+		case strings.HasPrefix(arg, "-t="):
+			agentTypeStr = arg[3:]
 		case arg == "--allowed-tools" && i+1 < len(args):
 			allowedTools = args[i+1]
 			i++
@@ -169,7 +179,13 @@ Examples:
 		}
 	}
 
-	slog.Info("spawn command started", "vibespace", vibespace, "name", customName, "share_credentials", shareCredentials)
+	// Parse and validate agent type
+	agentType := agent.ParseType(agentTypeStr)
+	if !agentType.IsValid() {
+		return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", agentTypeStr)
+	}
+
+	slog.Info("spawn command started", "vibespace", vibespace, "name", customName, "agent_type", agentType, "share_credentials", shareCredentials)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -187,30 +203,31 @@ Examples:
 	if customName != "" {
 		printStep("Spawning agent '%s' in '%s'...", customName, vibespace)
 	} else {
-		printStep("Spawning new agent in '%s'...", vibespace)
+		printStep("Spawning new %s agent in '%s'...", agentType, vibespace)
 	}
 
-	// Build ClaudeConfig if any config flags are set
-	var claudeConfig *model.ClaudeConfig
+	// Build AgentConfig if any config flags are set
+	var agentConfig *agent.Config
 	if skipPermissions || allowedTools != "" || disallowedTools != "" || modelName != "" || maxTurns > 0 {
-		claudeConfig = &model.ClaudeConfig{
+		agentConfig = &agent.Config{
 			SkipPermissions: skipPermissions,
 			Model:           modelName,
 			MaxTurns:        maxTurns,
 		}
 		if allowedTools != "" {
-			claudeConfig.AllowedTools = strings.Split(allowedTools, ",")
+			agentConfig.AllowedTools = strings.Split(allowedTools, ",")
 		}
 		if disallowedTools != "" {
-			claudeConfig.DisallowedTools = strings.Split(disallowedTools, ",")
+			agentConfig.DisallowedTools = strings.Split(disallowedTools, ",")
 		}
 	}
 
 	// Spawn the agent with options
 	opts := &vspkg.SpawnAgentOptions{
 		Name:             customName,
+		AgentType:        agentType,
 		ShareCredentials: shareCredentials,
-		ClaudeConfig:     claudeConfig,
+		Config:           agentConfig,
 	}
 	agentName, err := svc.SpawnAgent(ctx, vs.ID, opts)
 	if err != nil {
@@ -223,15 +240,15 @@ Examples:
 	if shareCredentials {
 		fmt.Println("  Credential sharing enabled via /vibespace/.vibespace")
 	}
-	if claudeConfig != nil {
-		if claudeConfig.SkipPermissions {
+	if agentConfig != nil {
+		if agentConfig.SkipPermissions {
 			fmt.Println("  Skip permissions enabled")
 		}
-		if len(claudeConfig.AllowedTools) > 0 {
-			fmt.Printf("  Allowed tools: %s\n", claudeConfig.AllowedToolsString())
+		if len(agentConfig.AllowedTools) > 0 {
+			fmt.Printf("  Allowed tools: %s\n", strings.Join(agentConfig.AllowedTools, ","))
 		}
-		if claudeConfig.Model != "" {
-			fmt.Printf("  Model: %s\n", claudeConfig.Model)
+		if agentConfig.Model != "" {
+			fmt.Printf("  Model: %s\n", agentConfig.Model)
 		}
 	}
 	fmt.Println()

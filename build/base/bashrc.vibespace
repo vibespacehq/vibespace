@@ -1,0 +1,99 @@
+# vibespace shell configuration
+
+# ============================================================================
+# Non-interactive shell guard (prevents banner on SSH commands like `ls`)
+# ============================================================================
+[[ $- != *i* ]] && return
+
+# ============================================================================
+# Brand Colors (true color)
+# ============================================================================
+# Teal:   #00ABAB → 38;2;0;171;171
+# Pink:   #F102F3 → 38;2;241;2;243
+# Orange: #FF7D4B → 38;2;255;125;75
+# Yellow: #F5F50A → 38;2;245;245;10
+
+_C_TEAL='\e[38;2;0;171;171m'
+_C_PINK='\e[38;2;241;2;243m'
+_C_ORANGE='\e[38;2;255;125;75m'
+_C_YELLOW='\e[38;2;245;245;10m'
+_C_GRAY='\e[38;5;245m'
+_C_RESET='\e[0m'
+
+# ============================================================================
+# Environment
+# ============================================================================
+export EDITOR=vim
+export VISUAL=vim
+export PAGER=less
+export HISTSIZE=10000
+export HISTFILESIZE=20000
+export HISTCONTROL=ignoreboth:erasedups
+
+# ============================================================================
+# Prompt
+# ============================================================================
+# Format: [vibespace:agent] ~/path $
+_vs_prompt() {
+    local vs_name="${VIBESPACE_NAME:-vibespace}"
+    local agent="${VIBESPACE_AGENT:-claude-1}"
+    PS1="\[\e[38;2;241;2;243m\][\[\e[38;2;255;125;75m\]${vs_name}\[\e[38;5;245m\]:\[\e[38;2;0;171;171m\]${agent}\[\e[38;2;241;2;243m\]]\[\e[0m\] \[\e[38;5;245m\]\w\[\e[0m\] \$ "
+}
+_vs_prompt
+
+# ============================================================================
+# Aliases
+# ============================================================================
+alias ll='ls -la --color=auto'
+alias la='ls -A --color=auto'
+alias l='ls -CF --color=auto'
+alias ls='ls --color=auto'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias grep='grep --color=auto'
+alias c='clear'
+
+# Git shortcuts
+alias gs='git status'
+alias gd='git diff'
+alias gl='git log --oneline -10'
+alias gp='git pull'
+alias ga='git add'
+alias gc='git commit'
+
+# ============================================================================
+# Functions
+# ============================================================================
+# Quick vibespace info
+info() {
+    echo ""
+    echo -e "  Vibespace: ${_C_ORANGE}${VIBESPACE_NAME:-unknown}${_C_RESET}"
+    echo -e "  Agent:     ${_C_TEAL}${VIBESPACE_AGENT:-claude-1}${_C_RESET}"
+    if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
+        echo -e "  Sharing:   ${_C_YELLOW}credentials enabled${_C_RESET}"
+    fi
+    echo ""
+}
+
+# ============================================================================
+# Welcome Banner
+# ============================================================================
+echo ""
+echo -e "${_C_PINK}"
+cat ~/.banner.txt 2>/dev/null
+echo -e "${_C_RESET}"
+echo -e "  ${_C_GRAY}AI-Powered Development Environment${_C_RESET}"
+echo ""
+echo -e "  Vibespace: ${_C_ORANGE}${VIBESPACE_NAME:-unknown}${_C_RESET}"
+echo -e "  Agent:     ${_C_TEAL}${VIBESPACE_AGENT:-claude-1}${_C_RESET}"
+echo ""
+echo -e "  ${_C_GRAY}Commands:${_C_RESET}"
+echo -e "    ${_C_YELLOW}claude${_C_RESET}        Start Claude Code AI assistant"
+echo -e "    ${_C_YELLOW}claude /login${_C_RESET} Authenticate with Anthropic"
+echo -e "    ${_C_YELLOW}info${_C_RESET}          Show environment info"
+echo ""
+
+# ============================================================================
+# Start in /vibespace directory
+# ============================================================================
+cd /vibespace 2>/dev/null
