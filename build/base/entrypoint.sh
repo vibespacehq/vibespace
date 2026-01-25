@@ -69,6 +69,7 @@ fi
 # Shell configuration
 # ============================================================================
 cat > /etc/profile.d/vibespace.sh <<EOF
+export PATH="/home/user/.local/bin:/home/user/.npm-global/bin:\$PATH"
 export VIBESPACE_ID="${VIBESPACE_ID}"
 export VIBESPACE_NAME="${VIBESPACE_NAME}"
 export VIBESPACE_AGENT="${VIBESPACE_AGENT}"
