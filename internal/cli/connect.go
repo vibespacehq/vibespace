@@ -151,8 +151,8 @@ func runConnect(vsName string, args []string) error {
 func buildInteractiveCommand(agentImpl agent.CodingAgent, config *agent.Config) string {
 	// Use the agent's BuildInteractiveCommand method
 	agentCmd := agentImpl.BuildInteractiveCommand("", config)
-	// Wrap with cd to vibespace directory
-	return fmt.Sprintf("cd /vibespace && %s", agentCmd)
+	// Wrap with cd and bash login shell to ensure PATH is set correctly
+	return fmt.Sprintf("bash -l -c 'cd /vibespace && %s'", agentCmd)
 }
 
 // connectViaSSH connects to the vibespace via native SSH
