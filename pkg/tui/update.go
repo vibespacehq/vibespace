@@ -387,15 +387,32 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 		// Use tmux: attach to existing session or create new one with agent
 		// tmux new-session -A: attach if exists, create if not
 		// Set TERM=xterm-256color to avoid issues with non-standard terminals (e.g., ghostty)
-		tmuxCmd := fmt.Sprintf("TERM=xterm-256color tmux new-session -A -s %s '%s'", tmuxSession, agentCmd)
+		// Wrap in bash -l -c to ensure PATH is set and cd to /vibespace
+		// Escape double quotes in agentCmd since they'll be inside bash -l -c "..."
+		escapedAgentCmd := strings.ReplaceAll(agentCmd, `"`, `\"`)
+		tmuxCmd := fmt.Sprintf(`TERM=xterm-256color tmux new-session -A -s %s 'bash -l -c "cd /vibespace && %s"'`, tmuxSession, escapedAgentCmd)
+
+		// Debug logging
+		sshKeyPath := vibespace.GetSSHPrivateKeyPath()
+		sshPort := fmt.Sprintf("%d", conn.LocalPort())
+		slog.Debug("focus: launching",
+			"agent", key,
+			"agentType", conn.AgentType(),
+			"sessionID", sessionID,
+			"agentCmd", agentCmd,
+			"tmuxSession", tmuxSession,
+			"tmuxCmd", tmuxCmd,
+			"sshKeyPath", sshKeyPath,
+			"sshPort", sshPort,
+		)
 
 		// Launch interactive Claude session via tmux
 		// User can detach with Ctrl+B D to return to TUI without killing Claude
 		m.statusMsg = fmt.Sprintf("Launching %s (Ctrl+B D to detach)...", key)
 		return m, tea.ExecProcess(
 			exec.Command("ssh",
-				"-i", vibespace.GetSSHPrivateKeyPath(),
-				"-p", fmt.Sprintf("%d", conn.LocalPort()),
+				"-i", sshKeyPath,
+				"-p", sshPort,
 				"-o", "StrictHostKeyChecking=no",
 				"-o", "UserKnownHostsFile=/dev/null",
 				"-o", "LogLevel=ERROR",
@@ -404,6 +421,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				tmuxCmd,
 			),
 			func(err error) tea.Msg {
+				slog.Debug("focus: process returned", "agent", key, "error", err)
 				if err != nil {
 					return AgentErrorMsg{Address: addr, Error: err}
 				}
