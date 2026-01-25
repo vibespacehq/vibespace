@@ -97,15 +97,33 @@ fi
 chown user:user "$USER_HOME/.bashrc"
 
 # ============================================================================
-# Claude Code settings (permission hooks)
+# Agent-specific settings
 # ============================================================================
-CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
-mkdir -p "$CLAUDE_CONFIG_DIR"
-# Always update settings to ensure PreToolUse hooks are configured
-# User customizations should go in project-level .claude/settings.json
-cp /etc/vibespace/claude-settings.json "$CLAUDE_CONFIG_DIR/settings.json"
-chown -R user:user "$CLAUDE_CONFIG_DIR"
-log "Claude Code permission hooks configured"
+case "$VIBESPACE_AGENT_TYPE" in
+    claude-code)
+        CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
+        mkdir -p "$CLAUDE_CONFIG_DIR"
+        # Only copy Claude settings if the file exists (from claude-code image layer)
+        if [ -f /etc/vibespace/claude-settings.json ]; then
+            cp /etc/vibespace/claude-settings.json "$CLAUDE_CONFIG_DIR/settings.json"
+            log "Claude Code permission hooks configured"
+        fi
+        chown -R user:user "$CLAUDE_CONFIG_DIR"
+        ;;
+    codex)
+        CODEX_CONFIG_DIR="$USER_HOME/.codex"
+        mkdir -p "$CODEX_CONFIG_DIR"
+        # Only copy Codex settings if the file exists
+        if [ -f /etc/vibespace/codex-settings.toml ]; then
+            cp /etc/vibespace/codex-settings.toml "$CODEX_CONFIG_DIR/config.toml"
+            log "Codex settings configured"
+        fi
+        chown -R user:user "$CODEX_CONFIG_DIR"
+        ;;
+    *)
+        log "Unknown agent type: ${VIBESPACE_AGENT_TYPE:-unset}, skipping agent setup"
+        ;;
+esac
 
 # ============================================================================
 # Startup
