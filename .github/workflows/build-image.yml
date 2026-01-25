@@ -44,8 +44,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.REPO }}/base
+          flavor: |
+            latest=true
           tags: |
-            type=raw,value=latest
             type=sha,prefix=
 
       - name: Build and push base image
@@ -92,8 +93,9 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.agent }}
+          flavor: |
+            latest=true
           tags: |
-            type=raw,value=latest
             type=sha,prefix=
 
       - name: Build and push ${{ matrix.agent }} image
