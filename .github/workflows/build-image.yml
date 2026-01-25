@@ -44,10 +44,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.REPO }}/base
-          flavor: |
-            latest=true
           tags: |
             type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest
 
       - name: Build and push base image
         id: build
@@ -93,10 +93,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.agent }}
-          flavor: |
-            latest=true
           tags: |
             type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest
 
       - name: Build and push ${{ matrix.agent }} image
         uses: docker/build-push-action@v5
