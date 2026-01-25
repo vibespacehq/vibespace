@@ -217,15 +217,13 @@ func (r *Reconciler) reconcileVibespace(ctx context.Context, vibespace string, p
 		}
 	}
 
-	// For agents with running pods but no desired forwards, create default forwards (SSH + ttyd)
+	// For all running pods, ensure default forwards (SSH + ttyd) exist
+	// This covers both agents with and without desired forwards
 	for agentName, podName := range runningPods {
-		if _, hasDesired := desired.Agents[agentName]; !hasDesired {
-			// Create default forwards (use composite key for manager, simple name for state)
-			key := agentKey(vibespace, agentName)
-			r.manager.SetAgentPod(key, podName)
-			vsState.SetAgentPod(agentName, podName)
-			r.createDefaultForwards(vibespace, agentName)
-		}
+		key := agentKey(vibespace, agentName)
+		r.manager.SetAgentPod(key, podName)
+		vsState.SetAgentPod(agentName, podName)
+		r.ensureDefaultForwards(vibespace, agentName)
 	}
 
 	// Remove agents that no longer have running pods
@@ -300,43 +298,60 @@ func (r *Reconciler) ensureForward(vibespace, agentName string, fwd DesiredForwa
 		"remote", fwd.ContainerPort)
 }
 
-// createDefaultForwards creates SSH and ttyd forwards for an agent
-func (r *Reconciler) createDefaultForwards(vibespace, agentName string) {
-	slog.Debug("creating default forwards", "vibespace", vibespace, "agent", agentName)
+// ensureDefaultForwards ensures SSH and ttyd forwards exist for an agent
+func (r *Reconciler) ensureDefaultForwards(vibespace, agentName string) {
+	key := agentKey(vibespace, agentName)
+
+	// Check which defaults already exist
+	allForwards := r.manager.ListAllForwards()
+	existingForwards := allForwards[key]
+
+	hasSSH := false
+	hasTTYD := false
+	for _, fwd := range existingForwards {
+		if fwd.RemotePort == portforward.DefaultSSHPort {
+			hasSSH = true
+		}
+		if fwd.RemotePort == portforward.DefaultTTYDPort {
+			hasTTYD = true
+		}
+	}
 
 	vsState := r.state.GetVibespace(vibespace)
 	if vsState == nil {
 		return
 	}
 
-	key := agentKey(vibespace, agentName)
-
-	// SSH forward
-	sshLocalPort, err := r.manager.AddForward(key, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
-	if err != nil {
-		slog.Error("failed to create SSH forward", "agent", agentName, "error", err)
-	} else {
-		vsState.AddForward(agentName, &ForwardState{
-			LocalPort:  sshLocalPort,
-			RemotePort: portforward.DefaultSSHPort,
-			Type:       portforward.TypeSSH,
-			Status:     portforward.StatusActive,
-		})
-		slog.Info("created SSH forward", "vibespace", vibespace, "agent", agentName, "local_port", sshLocalPort)
+	// Create SSH forward if missing
+	if !hasSSH {
+		sshLocalPort, err := r.manager.AddForward(key, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
+		if err != nil {
+			slog.Error("failed to create SSH forward", "agent", agentName, "error", err)
+		} else {
+			vsState.AddForward(agentName, &ForwardState{
+				LocalPort:  sshLocalPort,
+				RemotePort: portforward.DefaultSSHPort,
+				Type:       portforward.TypeSSH,
+				Status:     portforward.StatusActive,
+			})
+			slog.Info("created default SSH forward", "vibespace", vibespace, "agent", agentName, "local_port", sshLocalPort)
+		}
 	}
 
-	// ttyd forward
-	ttydLocalPort, err := r.manager.AddForward(key, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
-	if err != nil {
-		slog.Error("failed to create ttyd forward", "agent", agentName, "error", err)
-	} else {
-		vsState.AddForward(agentName, &ForwardState{
-			LocalPort:  ttydLocalPort,
-			RemotePort: portforward.DefaultTTYDPort,
-			Type:       portforward.TypeTTYD,
-			Status:     portforward.StatusActive,
-		})
-		slog.Info("created ttyd forward", "vibespace", vibespace, "agent", agentName, "local_port", ttydLocalPort)
+	// Create ttyd forward if missing
+	if !hasTTYD {
+		ttydLocalPort, err := r.manager.AddForward(key, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
+		if err != nil {
+			slog.Error("failed to create ttyd forward", "agent", agentName, "error", err)
+		} else {
+			vsState.AddForward(agentName, &ForwardState{
+				LocalPort:  ttydLocalPort,
+				RemotePort: portforward.DefaultTTYDPort,
+				Type:       portforward.TypeTTYD,
+				Status:     portforward.StatusActive,
+			})
+			slog.Info("created default ttyd forward", "vibespace", vibespace, "agent", agentName, "local_port", ttydLocalPort)
+		}
 	}
 }
 

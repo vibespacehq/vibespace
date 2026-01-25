@@ -549,8 +549,19 @@ func (c *AgentConn) SendAndReconnect(msg string) error {
 
 		slog.Debug("sendAndReconnect: proceeding with async reconnect", "agent", c.address.String(), "gen", currentGen)
 
-		// Reconnect for next message
-		c.Reconnect()
+		// Reconnect for next message - if it fails, notify via output channel
+		if err := c.Reconnect(); err != nil {
+			slog.Debug("sendAndReconnect: reconnect failed, notifying TUI", "agent", c.address.String(), "error", err)
+			// Send error message to trigger TUI reconnect logic
+			select {
+			case c.outputCh <- &Message{
+				Type:    MessageTypeError,
+				Content: fmt.Sprintf("Connection refused: %v", err),
+			}:
+			default:
+				// Channel full or closed, ignore
+			}
+		}
 	}()
 
 	return nil
