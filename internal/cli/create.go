@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/yagizdagabak/vibespace/pkg/agent"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
 	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
@@ -36,7 +37,8 @@ var (
 	createMemory           string
 	createStorage          string
 	createShareCredentials bool
-	// Claude config flags
+	createAgentType        string // Agent type (claude-code, codex)
+	// Agent config flags
 	createSkipPermissions bool
 	createAllowedTools    string
 	createDisallowedTools string
@@ -69,9 +71,10 @@ func init() {
 	createCmd.Flags().StringVar(&createCPU, "cpu", cpuDefault, "CPU request/limit (e.g., 400m, 500m, 1)")
 	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
 	createCmd.Flags().StringVar(&createStorage, "storage", storageDefault, "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
-	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share Claude credentials across all agents")
+	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share credentials across all agents")
+	createCmd.Flags().StringVar(&createAgentType, "agent-type", "claude-code", "Agent type: claude-code, codex")
 
-	// Claude configuration flags
+	// Agent configuration flags
 	createCmd.Flags().BoolVar(&createSkipPermissions, "skip-permissions", false, "Enable --dangerously-skip-permissions for Claude")
 	createCmd.Flags().StringVar(&createAllowedTools, "allowed-tools", "", "Comma-separated allowed tools (replaces default)")
 	createCmd.Flags().StringVar(&createDisallowedTools, "disallowed-tools", "", "Comma-separated disallowed tools")
@@ -86,7 +89,13 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		name = args[0]
 	}
-	slog.Info("create command started", "name", name, "repo", createRepo)
+	slog.Info("create command started", "name", name, "repo", createRepo, "agent_type", createAgentType)
+
+	// Parse and validate agent type
+	agentType := agent.ParseType(createAgentType)
+	if !agentType.IsValid() {
+		return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", createAgentType)
+	}
 
 	// Get vibespace service
 	svc, err := getVibespaceService()
@@ -95,19 +104,19 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Build ClaudeConfig if any config flags are set
-	var claudeConfig *model.ClaudeConfig
+	// Build AgentConfig if any config flags are set
+	var agentConfig *agent.Config
 	if createSkipPermissions || createAllowedTools != "" || createDisallowedTools != "" || createModel != "" || createMaxTurns > 0 {
-		claudeConfig = &model.ClaudeConfig{
+		agentConfig = &agent.Config{
 			SkipPermissions: createSkipPermissions,
 			Model:           createModel,
 			MaxTurns:        createMaxTurns,
 		}
 		if createAllowedTools != "" {
-			claudeConfig.AllowedTools = strings.Split(createAllowedTools, ",")
+			agentConfig.AllowedTools = strings.Split(createAllowedTools, ",")
 		}
 		if createDisallowedTools != "" {
-			claudeConfig.DisallowedTools = strings.Split(createDisallowedTools, ",")
+			agentConfig.DisallowedTools = strings.Split(createDisallowedTools, ",")
 		}
 	}
 
@@ -116,12 +125,13 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		Name:             name,
 		Persistent:       true, // Always use persistent storage for shared filesystem between agents
 		ShareCredentials: createShareCredentials,
+		AgentType:        agentType,
+		AgentConfig:      agentConfig,
 		Resources: &model.Resources{
 			CPU:     createCPU,
 			Memory:  createMemory,
 			Storage: createStorage,
 		},
-		ClaudeConfig: claudeConfig,
 	}
 	if createRepo != "" {
 		req.GithubRepo = createRepo

@@ -521,7 +521,7 @@ func runPlainText(ctx context.Context, vibespaces []session.VibespaceEntry, targ
 }
 
 // runMulti handles the vibespace-scoped multi command: vibespace <name> multi
-// This provides backward compatibility with the old command style
+// This provides an alternative syntax to "vibespace multi <name>"
 func runMulti(vsName string, args []string) error {
 	ctx := context.Background()
 

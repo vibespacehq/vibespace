@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/yagizdagabak/vibespace/pkg/agent"
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
@@ -20,7 +20,7 @@ type HeadlessRunner struct {
 	agents         map[string]*AgentConn
 	agentOrder     []string
 	agentStates    map[string]*AgentState
-	sessionManager *ClaudeSessionManager
+	sessionManager *AgentSessionManager
 	daemonClient   *daemon.Client
 	mu             sync.RWMutex
 
@@ -40,7 +40,7 @@ func NewHeadlessRunner() *HeadlessRunner {
 		agents:         make(map[string]*AgentConn),
 		agentOrder:     make([]string, 0),
 		agentStates:    make(map[string]*AgentState),
-		sessionManager: NewClaudeSessionManager(),
+		sessionManager: NewAgentSessionManager(),
 		timeout:        2 * time.Minute, // Default timeout
 		historyStore:   historyStore,
 	}
@@ -109,17 +109,18 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 			addr := session.AgentAddress{Agent: a.Name, Vibespace: vsName}
 
 			// Get agent config from vibespace service
-			var claudeConfig *model.ClaudeConfig
+			var agentConfig *agent.Config
 			svc := vibespace.NewService(nil) // Service will initialize k8s client on first use
 			config, err := svc.GetAgentConfig(context.Background(), vsName, a.Name)
 			if err != nil {
 				slog.Warn("failed to get agent config, using defaults", "agent", addr.String(), "error", err)
 			} else {
-				claudeConfig = config
+				agentConfig = config
 			}
 
 			// Pass sessionName as multi-session ID, resume flag, and config
-			conn := NewAgentConn(addr, port, r.sessionManager, r.sessionName, r.resume, claudeConfig)
+			// TODO: Get actual agent type from daemon/service when available
+			conn := NewAgentConn(addr, port, r.sessionManager, r.sessionName, r.resume, agent.TypeClaudeCode, agentConfig)
 			if err := conn.Connect(); err != nil {
 				return fmt.Errorf("failed to connect to %s: %w", addr.String(), err)
 			}

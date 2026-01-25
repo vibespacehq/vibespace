@@ -13,8 +13,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/yagizdagabak/vibespace/pkg/agent"
+	// Import agent implementations to trigger init() registration
+	_ "github.com/yagizdagabak/vibespace/pkg/agent/claude"
+	_ "github.com/yagizdagabak/vibespace/pkg/agent/codex"
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
@@ -56,17 +59,21 @@ type ClaudeMessage struct {
 	IsError bool   `json:"is_error,omitempty"`
 }
 
-// AgentConn represents a connection to a Claude agent in print mode
+// AgentConn represents a connection to a coding agent in print mode
 type AgentConn struct {
 	address        session.AgentAddress
 	localPort      int
-	sessionManager *ClaudeSessionManager // Shared session manager for --session-id vs --resume
+	sessionManager *AgentSessionManager // Shared session manager for --session-id vs --resume
 	multiSessionID string                // Multi-session ID for session isolation
 	resume         bool                  // If true, use --resume with existing session; if false, use --session-id
 	forceNewSession bool                 // If true, use --session-id even if session exists (for /session @agent new)
-	claudeConfig   *model.ClaudeConfig   // Claude configuration for this agent
 
-	// SSH process running claude in print mode
+	// Agent type and configuration
+	agentType   agent.Type        // Type of agent (claude-code, codex)
+	agentImpl   agent.CodingAgent // Agent implementation for building commands
+	agentConfig *agent.Config     // Agent configuration
+
+	// SSH process running agent in print mode
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout io.Reader
@@ -79,7 +86,7 @@ type AgentConn struct {
 
 	// Output channel for parsed messages (now rich Message types)
 	outputCh chan *Message
-	// Signals when Claude has finished responding (received "result" message)
+	// Signals when agent has finished responding (received "result" message)
 	responseDone chan struct{}
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -88,16 +95,34 @@ type AgentConn struct {
 // NewAgentConn creates a new agent connection
 // multiSessionID is the multi-session ID for session isolation
 // resume indicates whether to resume an existing session (--resume) or start fresh (--session-id)
-// claudeConfig optionally provides agent-specific Claude configuration
-func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *ClaudeSessionManager, multiSessionID string, resume bool, claudeConfig *model.ClaudeConfig) *AgentConn {
+// agentType specifies the type of agent (defaults to claude-code)
+// config optionally provides agent-specific configuration
+func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *AgentSessionManager, multiSessionID string, resume bool, agentType agent.Type, config *agent.Config) *AgentConn {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// Default to Claude Code if not specified
+	if agentType == "" {
+		agentType = agent.TypeClaudeCode
+	}
+
+	// Get agent implementation
+	agentImpl, err := agent.Get(agentType)
+	if err != nil {
+		// Fall back to Claude Code if unknown type
+		slog.Warn("unknown agent type, defaulting to claude-code", "type", agentType, "error", err)
+		agentType = agent.TypeClaudeCode
+		agentImpl = agent.MustGet(agent.TypeClaudeCode)
+	}
+
 	return &AgentConn{
 		address:        addr,
 		localPort:      localPort,
 		sessionManager: sessionMgr,
 		multiSessionID: multiSessionID,
 		resume:         resume,
-		claudeConfig:   claudeConfig,
+		agentType:      agentType,
+		agentImpl:      agentImpl,
+		agentConfig:    config,
 		outputCh:       make(chan *Message, 100),
 		responseDone:   make(chan struct{}),
 		ctx:            ctx,
@@ -105,7 +130,7 @@ func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *ClaudeSe
 	}
 }
 
-// Connect establishes the SSH connection and starts Claude in print mode
+// Connect establishes the SSH connection and starts the agent in print mode
 func (c *AgentConn) Connect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -152,7 +177,7 @@ func (c *AgentConn) Connect() error {
 	}
 	slog.Debug("connect: using mode", "agent", agentAddr, "mode", sessionMode)
 
-	claudeCmd := c.buildClaudeCommand(sessionID, useResume)
+	agentCmd := c.buildAgentCommand(sessionID, useResume)
 
 	sshArgs := []string{
 		"-i", keyPath,
@@ -163,7 +188,7 @@ func (c *AgentConn) Connect() error {
 		// Reverse tunnel: pod's localhost:18080 -> host's localhost:18080 (permission server)
 		"-R", "18080:localhost:18080",
 		"user@localhost",
-		claudeCmd,
+		agentCmd,
 	}
 
 	c.cmd = exec.CommandContext(c.ctx, "ssh", sshArgs...)
@@ -624,48 +649,46 @@ func (c *AgentConn) LocalPort() int {
 	return c.localPort
 }
 
-// Config returns the Claude configuration for this agent
-func (c *AgentConn) Config() *model.ClaudeConfig {
-	return c.claudeConfig
+// Config returns the agent configuration
+func (c *AgentConn) Config() *agent.Config {
+	return c.agentConfig
 }
 
-// BuildInteractiveClaudeCommand builds a claude command for interactive (non-print) mode
-// This is used by /focus to launch an interactive Claude session with the agent's config
-func BuildInteractiveClaudeCommand(config *model.ClaudeConfig, sessionID string) string {
-	args := []string{"claude"}
-
-	// Session handling
-	if sessionID != "" {
-		args = append(args, "--resume", sessionID)
-	}
-
-	// Config-based flags
-	if config != nil {
-		if config.SkipPermissions {
-			args = append(args, "--dangerously-skip-permissions")
-		}
-		if len(config.AllowedTools) > 0 {
-			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, config.AllowedToolsString()))
-		} else if !config.SkipPermissions {
-			// Only use restrictive defaults if NOT skipping permissions
-			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(model.DefaultAllowedTools(), ",")))
-		}
-		if len(config.DisallowedTools) > 0 {
-			args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, config.DisallowedToolsString()))
-		}
-		if config.Model != "" {
-			args = append(args, "--model", config.Model)
-		}
-		if config.MaxTurns > 0 {
-			args = append(args, "--max-turns", fmt.Sprintf("%d", config.MaxTurns))
-		}
-	}
-
-	return strings.Join(args, " ")
+// AgentType returns the type of agent for this connection
+func (c *AgentConn) AgentType() agent.Type {
+	return c.agentType
 }
 
-// buildClaudeCommand builds the claude print-mode command with config-based flags
-func (c *AgentConn) buildClaudeCommand(sessionID string, useResume bool) string {
+// AgentImpl returns the agent implementation
+func (c *AgentConn) AgentImpl() agent.CodingAgent {
+	return c.agentImpl
+}
+
+// BuildInteractiveAgentCommand builds an interactive command for any agent type
+// This is used by /focus to launch an interactive session with the agent's config
+func BuildInteractiveAgentCommand(agentType agent.Type, config *agent.Config, sessionID string) string {
+	agentImpl, err := agent.Get(agentType)
+	if err != nil {
+		// Fall back to Claude Code
+		agentImpl = agent.MustGet(agent.TypeClaudeCode)
+	}
+	return agentImpl.BuildInteractiveCommand(sessionID, config)
+}
+
+// buildAgentCommand builds the agent's print-mode command using the agent abstraction
+func (c *AgentConn) buildAgentCommand(sessionID string, useResume bool) string {
+	// Use the agent implementation to build the command
+	if c.agentImpl != nil {
+		return c.agentImpl.BuildPrintModeCommand(sessionID, useResume, c.agentConfig)
+	}
+
+	// Fallback to default Claude Code behavior (should rarely happen)
+	return c.buildClaudeCommandFallback(sessionID, useResume)
+}
+
+// buildClaudeCommandFallback is a fallback for when agentImpl is nil.
+// This should rarely happen since agentImpl is always initialized.
+func (c *AgentConn) buildClaudeCommandFallback(sessionID string, useResume bool) string {
 	args := []string{"claude", "-p", "--verbose", "--output-format", "stream-json"}
 
 	// Session handling
@@ -676,33 +699,28 @@ func (c *AgentConn) buildClaudeCommand(sessionID string, useResume bool) string 
 	}
 
 	// Config-based flags
-	if c.claudeConfig != nil {
-		if c.claudeConfig.SkipPermissions {
+	if c.agentConfig != nil {
+		if c.agentConfig.SkipPermissions {
 			args = append(args, "--dangerously-skip-permissions")
 		}
-		if len(c.claudeConfig.AllowedTools) > 0 {
-			// Explicit allowed tools always take precedence
-			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, c.claudeConfig.AllowedToolsString()))
-		} else if !c.claudeConfig.SkipPermissions {
-			// Only use restrictive defaults if NOT skipping permissions
-			// With skip_permissions, omit --allowedTools for full access
-			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(model.DefaultAllowedTools(), ",")))
+		if len(c.agentConfig.AllowedTools) > 0 {
+			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, c.agentConfig.AllowedToolsString()))
+		} else if !c.agentConfig.SkipPermissions {
+			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(agent.DefaultAllowedTools(), ",")))
 		}
-		if len(c.claudeConfig.DisallowedTools) > 0 {
-			args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, c.claudeConfig.DisallowedToolsString()))
+		if len(c.agentConfig.DisallowedTools) > 0 {
+			args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, c.agentConfig.DisallowedToolsString()))
 		}
-		if c.claudeConfig.Model != "" {
-			args = append(args, "--model", c.claudeConfig.Model)
+		if c.agentConfig.Model != "" {
+			args = append(args, "--model", c.agentConfig.Model)
 		}
-		if c.claudeConfig.MaxTurns > 0 {
-			args = append(args, "--max-turns", fmt.Sprintf("%d", c.claudeConfig.MaxTurns))
+		if c.agentConfig.MaxTurns > 0 {
+			args = append(args, "--max-turns", fmt.Sprintf("%d", c.agentConfig.MaxTurns))
 		}
 	} else {
-		// Fallback: no config available, use restrictive defaults
 		args = append(args, "--allowedTools", `"Bash(read_only:true),Read,Write,Edit,Glob,Grep"`)
 	}
 
-	// Wrap in bash -l -c to ensure proper shell environment
 	return fmt.Sprintf(`bash -l -c '%s'`, strings.Join(args, " "))
 }
 
@@ -725,7 +743,7 @@ func (c *AgentConn) Close() {
 
 // Reconnect attempts to reconnect to the agent
 // Keeps the same output channel so listeners continue working
-// Session continuity is managed by ClaudeSessionManager (--session-id vs --resume)
+// Session continuity is managed by AgentSessionManager (--session-id vs --resume)
 func (c *AgentConn) Reconnect() error {
 	slog.Debug("reconnect: starting", "agent", c.address.String(), "forceNewSession", c.forceNewSession)
 

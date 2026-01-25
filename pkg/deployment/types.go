@@ -1,42 +1,76 @@
 package deployment
 
-import "github.com/yagizdagabak/vibespace/pkg/model"
+import (
+	"github.com/yagizdagabak/vibespace/pkg/agent"
+)
 
 // AgentInfo contains information about an agent
 type AgentInfo struct {
-	ClaudeID       string              // "1", "2", etc.
-	AgentName      string              // "claude-1", "claude-2", etc.
-	DeploymentName string              // Deployment name
-	Status         string              // "running", "stopped", "creating"
-	ClaudeConfig   *model.ClaudeConfig // Claude configuration for this agent
+	// ID is the unique identifier (UUID) for this agent
+	ID string
+
+	// AgentType is the type of agent (claude-code, codex, etc.)
+	AgentType agent.Type
+
+	// AgentNum is the sequential number within the agent type (1, 2, 3...)
+	AgentNum int
+
+	// AgentName is the display name (e.g., "claude-1", "codex-2")
+	AgentName string
+
+	// DeploymentName is the Kubernetes Deployment name
+	DeploymentName string
+
+	// Status is the current status ("running", "stopped", "creating")
+	Status string
+
+	// Config holds agent configuration
+	Config *agent.Config
 }
 
 // CreateDeploymentRequest contains parameters for creating a Deployment
 type CreateDeploymentRequest struct {
-	VibespaceID      string
-	Name             string
-	ClaudeID         string // Claude instance ID (1, 2, 3, etc.)
-	Image            string
-	Resources        Resources
+	VibespaceID string
+	Name        string
+
+	// Agent identification
+	AgentID   string     // UUID for this agent
+	AgentType agent.Type // Type of agent (claude-code, codex, etc.)
+	AgentNum  int        // Sequential number (1, 2, 3...)
+	AgentName string     // Display name (claude-1, codex-2)
+
+	// Container
+	Image     string
+	Resources Resources
+
+	// Configuration
 	Env              map[string]string
 	Persistent       bool
 	PVCName          string
-	ShareCredentials bool                // Share credentials with other agents via /vibespace/.vibespace
-	ClaudeConfig     *model.ClaudeConfig // Claude agent configuration
+	ShareCredentials bool          // Share credentials with other agents
+	Config           *agent.Config // Agent configuration
 }
 
 // CreateAgentRequest contains parameters for creating an agent deployment
 type CreateAgentRequest struct {
-	VibespaceID      string
-	Name             string // Vibespace name
-	AgentName        string // Agent name (custom or auto-generated like "claude-2")
-	ClaudeID         string // Claude instance ID (2, 3, 4, etc.)
-	Image            string
-	Resources        Resources
+	VibespaceID string
+	Name        string // Vibespace name
+
+	// Agent identification
+	AgentID   string     // UUID for this agent
+	AgentType agent.Type // Type of agent (claude-code, codex, etc.)
+	AgentNum  int        // Sequential number (1, 2, 3...)
+	AgentName string     // Display name (e.g., "claude-2", "codex-1")
+
+	// Container
+	Image     string
+	Resources Resources
+
+	// Configuration
 	Env              map[string]string
-	PVCName          string              // Shared PVC name for all agents
-	ShareCredentials bool                // Share credentials with other agents via /vibespace/.vibespace
-	ClaudeConfig     *model.ClaudeConfig // Claude agent configuration
+	PVCName          string        // Shared PVC name for all agents
+	ShareCredentials bool          // Share credentials with other agents
+	Config           *agent.Config // Agent configuration
 }
 
 // Resources defines compute resources for a deployment

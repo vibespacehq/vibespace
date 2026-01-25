@@ -170,16 +170,22 @@ func (w *PodWatcher) podToEvent(eventType watch.EventType, pod *corev1.Pod) *Pod
 		vibespace = vibespaceID // Fall back to ID if name not known
 	}
 
-	// Get agent name (prefer agent-name, fall back to claude-id)
-	agentName := ""
-	if name, ok := labels["vibespace.dev/agent-name"]; ok && name != "" {
-		agentName = name
-	} else if cid, ok := labels["vibespace.dev/claude-id"]; ok && cid != "" {
-		agentName = fmt.Sprintf("claude-%s", cid)
-	}
-
+	// Get agent name from label
+	agentName := labels["vibespace.dev/agent-name"]
 	if agentName == "" {
-		agentName = "claude-1"
+		// Fallback: derive from agent type and number
+		agentType := labels["vibespace.dev/agent-type"]
+		agentNum := labels["vibespace.dev/agent-num"]
+		if agentNum == "" {
+			agentNum = "1"
+		}
+		if agentType == "" || agentType == "claude-code" {
+			agentName = fmt.Sprintf("claude-%s", agentNum)
+		} else if agentType == "codex" {
+			agentName = fmt.Sprintf("codex-%s", agentNum)
+		} else {
+			agentName = fmt.Sprintf("agent-%s", agentNum)
+		}
 	}
 
 	slog.Debug("pod event",

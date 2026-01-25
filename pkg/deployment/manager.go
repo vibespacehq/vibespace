@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/yagizdagabak/vibespace/pkg/agent"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
-	"github.com/yagizdagabak/vibespace/pkg/model"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,18 +33,41 @@ func NewDeploymentManager(k8sClient *k8s.Client) *DeploymentManager {
 func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDeploymentRequest) error {
 	deploymentName := fmt.Sprintf("vibespace-%s", req.VibespaceID)
 
-	// Build labels (claude-1 is always the first agent)
-	agentName := fmt.Sprintf("claude-%s", req.ClaudeID)
+	// Determine agent type and name
+	agentType := req.AgentType
+	if agentType == "" {
+		agentType = agent.TypeClaudeCode // Default
+	}
+
+	agentNum := req.AgentNum
+	if agentNum == 0 {
+		agentNum = 1 // First agent
+	}
+
+	// Get agent implementation for naming
+	agentImpl, err := agent.Get(agentType)
+	if err != nil {
+		return fmt.Errorf("unknown agent type %s: %w", agentType, err)
+	}
+
+	agentName := req.AgentName
+	if agentName == "" {
+		agentName = fmt.Sprintf("%s-%d", agentImpl.DefaultAgentPrefix(), agentNum)
+	}
+
+	// Build labels
 	labels := map[string]string{
 		"app.kubernetes.io/name":       req.Name,
 		"app.kubernetes.io/managed-by": "vibespace",
 		"vibespace.dev/id":             req.VibespaceID,
-		"vibespace.dev/claude-id":      req.ClaudeID,
+		"vibespace.dev/agent-id":       req.AgentID,
+		"vibespace.dev/agent-type":     string(agentType),
+		"vibespace.dev/agent-num":      fmt.Sprintf("%d", agentNum),
 		"vibespace.dev/agent-name":     agentName,
 	}
 
 	// Build environment variables
-	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, req.ClaudeID, req.Env, req.ShareCredentials, req.ClaudeConfig)
+	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, agentType, req.Env, req.ShareCredentials, req.Config)
 
 	// Build volumes and volume mounts
 	volumes, volumeMounts := m.buildVolumesAndMounts(req.Persistent, req.PVCName)
@@ -71,8 +94,8 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"vibespace.dev/id":        req.VibespaceID,
-					"vibespace.dev/claude-id": req.ClaudeID,
+					"vibespace.dev/id":         req.VibespaceID,
+					"vibespace.dev/agent-name": agentName,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
@@ -117,13 +140,13 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 		},
 	}
 
-	_, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Create(ctx, deployment, metav1.CreateOptions{})
+	_, err = m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Create(ctx, deployment, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create Deployment: %w", err)
 	}
 
 	// Create the Service
-	if err := m.createService(ctx, deploymentName, req.VibespaceID, req.ClaudeID, labels); err != nil {
+	if err := m.createService(ctx, deploymentName, req.VibespaceID, agentName, labels); err != nil {
 		return fmt.Errorf("failed to create Service: %w", err)
 	}
 
@@ -131,7 +154,7 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 }
 
 // createService creates a ClusterIP Service for a deployment
-func (m *DeploymentManager) createService(ctx context.Context, name, vibespaceID, claudeID string, labels map[string]string) error {
+func (m *DeploymentManager) createService(ctx context.Context, name, vibespaceID, agentName string, labels map[string]string) error {
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -141,8 +164,8 @@ func (m *DeploymentManager) createService(ctx context.Context, name, vibespaceID
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
 			Selector: map[string]string{
-				"vibespace.dev/id":        vibespaceID,
-				"vibespace.dev/claude-id": claudeID,
+				"vibespace.dev/id":         vibespaceID,
+				"vibespace.dev/agent-name": agentName,
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -170,20 +193,45 @@ func (m *DeploymentManager) createService(ctx context.Context, name, vibespaceID
 
 // CreateAgentDeployment creates a Deployment for an additional agent in a vibespace
 func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *CreateAgentRequest) error {
-	deploymentName := fmt.Sprintf("vibespace-%s-claude-%s", req.VibespaceID, req.ClaudeID)
+	// Determine agent type
+	agentType := req.AgentType
+	if agentType == "" {
+		agentType = agent.TypeClaudeCode // Default
+	}
+
+	agentNum := req.AgentNum
+	if agentNum == 0 {
+		agentNum = 1
+	}
+
+	// Get agent implementation for naming
+	agentImpl, err := agent.Get(agentType)
+	if err != nil {
+		return fmt.Errorf("unknown agent type %s: %w", agentType, err)
+	}
+
+	agentName := req.AgentName
+	if agentName == "" {
+		agentName = fmt.Sprintf("%s-%d", agentImpl.DefaultAgentPrefix(), agentNum)
+	}
+
+	// Deployment naming: vibespace-{id}-{agent-name}
+	deploymentName := fmt.Sprintf("vibespace-%s-%s", req.VibespaceID, agentName)
 
 	// Build labels
 	labels := map[string]string{
 		"app.kubernetes.io/name":       req.Name,
 		"app.kubernetes.io/managed-by": "vibespace",
 		"vibespace.dev/id":             req.VibespaceID,
-		"vibespace.dev/claude-id":      req.ClaudeID,
-		"vibespace.dev/agent-name":     req.AgentName,
+		"vibespace.dev/agent-id":       req.AgentID,
+		"vibespace.dev/agent-type":     string(agentType),
+		"vibespace.dev/agent-num":      fmt.Sprintf("%d", agentNum),
+		"vibespace.dev/agent-name":     agentName,
 		"vibespace.dev/is-agent":       "true",
 	}
 
 	// Build environment variables
-	env := m.buildEnvironment(req.VibespaceID, req.Name, req.AgentName, req.ClaudeID, req.Env, req.ShareCredentials, req.ClaudeConfig)
+	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, agentType, req.Env, req.ShareCredentials, req.Config)
 
 	// Build volumes and volume mounts (share the same PVC)
 	var volumes []corev1.Volume
@@ -226,8 +274,8 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"vibespace.dev/id":        req.VibespaceID,
-					"vibespace.dev/claude-id": req.ClaudeID,
+					"vibespace.dev/id":         req.VibespaceID,
+					"vibespace.dev/agent-name": agentName,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
@@ -271,13 +319,13 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 		},
 	}
 
-	_, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Create(ctx, deployment, metav1.CreateOptions{})
+	_, err = m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Create(ctx, deployment, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create agent Deployment: %w", err)
 	}
 
 	// Create the Service
-	if err := m.createService(ctx, deploymentName, req.VibespaceID, req.ClaudeID, labels); err != nil {
+	if err := m.createService(ctx, deploymentName, req.VibespaceID, agentName, labels); err != nil {
 		return fmt.Errorf("failed to create agent Service: %w", err)
 	}
 
@@ -341,8 +389,8 @@ func (m *DeploymentManager) DeleteDeployment(ctx context.Context, vibespaceID st
 }
 
 // DeleteAgentDeployment deletes an agent's Deployment and Service
-func (m *DeploymentManager) DeleteAgentDeployment(ctx context.Context, vibespaceID string, claudeID string) error {
-	deploymentName := fmt.Sprintf("vibespace-%s-claude-%s", vibespaceID, claudeID)
+func (m *DeploymentManager) DeleteAgentDeployment(ctx context.Context, vibespaceID string, agentName string) error {
+	deploymentName := fmt.Sprintf("vibespace-%s-%s", vibespaceID, agentName)
 
 	// Delete the Deployment
 	err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Delete(ctx, deploymentName, metav1.DeleteOptions{})
@@ -415,21 +463,39 @@ func (m *DeploymentManager) ListAgentsForVibespace(ctx context.Context, vibespac
 
 	agents := make([]AgentInfo, 0, len(deployments.Items))
 	for _, deploy := range deployments.Items {
-		claudeID := "1" // Default for main deployment
-		if cid, ok := deploy.Labels["vibespace.dev/claude-id"]; ok {
-			claudeID = cid
+		// Get agent type from labels (default: claude-code for backward compat)
+		agentType := agent.TypeClaudeCode
+		if t, ok := deploy.Labels["vibespace.dev/agent-type"]; ok && t != "" {
+			agentType = agent.Type(t)
 		}
 
-		// Get agent name from label, fallback to claude-{id} for backward compatibility
-		agentName := fmt.Sprintf("claude-%s", claudeID)
-		if name, ok := deploy.Labels["vibespace.dev/agent-name"]; ok && name != "" {
-			agentName = name
+		// Get agent number from labels
+		agentNum := 1
+		if n, ok := deploy.Labels["vibespace.dev/agent-num"]; ok {
+			fmt.Sscanf(n, "%d", &agentNum)
 		}
+
+		// Get agent name from label
+		agentName := deploy.Labels["vibespace.dev/agent-name"]
+		if agentName == "" {
+			// Fallback: derive from agent type and number
+			agentImpl, _ := agent.Get(agentType)
+			if agentImpl != nil {
+				agentName = fmt.Sprintf("%s-%d", agentImpl.DefaultAgentPrefix(), agentNum)
+			} else {
+				agentName = fmt.Sprintf("agent-%d", agentNum)
+			}
+		}
+
+		// Get agent ID (UUID)
+		agentID := deploy.Labels["vibespace.dev/agent-id"]
 
 		status := deploymentStatusToString(&deploy)
 
 		agents = append(agents, AgentInfo{
-			ClaudeID:       claudeID,
+			ID:             agentID,
+			AgentType:      agentType,
+			AgentNum:       agentNum,
 			AgentName:      agentName,
 			DeploymentName: deploy.Name,
 			Status:         status,
@@ -439,29 +505,8 @@ func (m *DeploymentManager) ListAgentsForVibespace(ctx context.Context, vibespac
 	return agents, nil
 }
 
-// GetNextAgentID returns the next available claude ID for a vibespace
-func (m *DeploymentManager) GetNextAgentID(ctx context.Context, vibespaceID string) (string, error) {
-	agents, err := m.ListAgentsForVibespace(ctx, vibespaceID)
-	if err != nil {
-		return "", err
-	}
-
-	// Find the highest existing ID
-	maxID := 0
-	for _, agent := range agents {
-		var id int
-		if _, err := fmt.Sscanf(agent.ClaudeID, "%d", &id); err == nil {
-			if id > maxID {
-				maxID = id
-			}
-		}
-	}
-
-	return fmt.Sprintf("%d", maxID+1), nil
-}
-
-// GetAgentConfig extracts ClaudeConfig from deployment env vars
-func (m *DeploymentManager) GetAgentConfig(ctx context.Context, vibespaceID, agentName string) (*model.ClaudeConfig, error) {
+// GetAgentConfig extracts agent config from deployment env vars
+func (m *DeploymentManager) GetAgentConfig(ctx context.Context, vibespaceID, agentName string) (*agent.Config, error) {
 	// Find the deployment for this agent
 	deployments, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
@@ -486,9 +531,9 @@ func (m *DeploymentManager) GetAgentConfig(ctx context.Context, vibespaceID, age
 	return m.extractConfigFromDeployment(deploy), nil
 }
 
-// extractConfigFromDeployment extracts ClaudeConfig from deployment env vars
-func (m *DeploymentManager) extractConfigFromDeployment(deploy *appsv1.Deployment) *model.ClaudeConfig {
-	config := &model.ClaudeConfig{}
+// extractConfigFromDeployment extracts agent config from deployment env vars
+func (m *DeploymentManager) extractConfigFromDeployment(deploy *appsv1.Deployment) *agent.Config {
+	config := &agent.Config{}
 
 	if len(deploy.Spec.Template.Spec.Containers) == 0 {
 		return config
@@ -522,8 +567,8 @@ func (m *DeploymentManager) extractConfigFromDeployment(deploy *appsv1.Deploymen
 	return config
 }
 
-// UpdateAgentConfig updates the ClaudeConfig for an agent (triggers pod restart)
-func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, agentName string, config *model.ClaudeConfig) error {
+// UpdateAgentConfig updates the agent config (triggers pod restart)
+func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, agentName string, config *agent.Config) error {
 	// Find the deployment for this agent
 	deployments, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
@@ -563,8 +608,8 @@ func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, 
 	return nil
 }
 
-// updateEnvVars updates or adds Claude config env vars
-func (m *DeploymentManager) updateEnvVars(env []corev1.EnvVar, config *model.ClaudeConfig) []corev1.EnvVar {
+// updateEnvVars updates or adds agent config env vars
+func (m *DeploymentManager) updateEnvVars(env []corev1.EnvVar, config *agent.Config) []corev1.EnvVar {
 	// Map of env vars to update
 	configVars := map[string]string{
 		"VIBESPACE_SKIP_PERMISSIONS": "",
@@ -617,7 +662,7 @@ func (m *DeploymentManager) updateEnvVars(env []corev1.EnvVar, config *model.Cla
 // Helper functions
 
 // buildEnvironment creates environment variables for the vibespace
-func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentName, claudeID string, userEnv map[string]string, shareCredentials bool, claudeConfig *model.ClaudeConfig) []corev1.EnvVar {
+func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentName string, agentType agent.Type, userEnv map[string]string, shareCredentials bool, config *agent.Config) []corev1.EnvVar {
 	env := []corev1.EnvVar{}
 
 	// Add user-provided environment variables
@@ -642,8 +687,8 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentNam
 		Value: agentName,
 	})
 	env = append(env, corev1.EnvVar{
-		Name:  "VIBESPACE_CLAUDE_ID",
-		Value: claudeID,
+		Name:  "VIBESPACE_AGENT_TYPE",
+		Value: string(agentType),
 	})
 
 	// SSH authorized keys from secret (optional - allows SSH access)
@@ -668,42 +713,42 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentNam
 		})
 	}
 
-	// Claude configuration environment variables
-	if claudeConfig != nil {
-		if claudeConfig.SkipPermissions {
+	// Agent configuration environment variables
+	if config != nil {
+		if config.SkipPermissions {
 			env = append(env, corev1.EnvVar{
 				Name:  "VIBESPACE_SKIP_PERMISSIONS",
 				Value: "true",
 			})
 		}
-		if len(claudeConfig.AllowedTools) > 0 {
+		if len(config.AllowedTools) > 0 {
 			env = append(env, corev1.EnvVar{
 				Name:  "VIBESPACE_ALLOWED_TOOLS",
-				Value: claudeConfig.AllowedToolsString(),
+				Value: config.AllowedToolsString(),
 			})
 		}
-		if len(claudeConfig.DisallowedTools) > 0 {
+		if len(config.DisallowedTools) > 0 {
 			env = append(env, corev1.EnvVar{
 				Name:  "VIBESPACE_DISALLOWED_TOOLS",
-				Value: claudeConfig.DisallowedToolsString(),
+				Value: config.DisallowedToolsString(),
 			})
 		}
-		if claudeConfig.Model != "" {
+		if config.Model != "" {
 			env = append(env, corev1.EnvVar{
 				Name:  "VIBESPACE_MODEL",
-				Value: claudeConfig.Model,
+				Value: config.Model,
 			})
 		}
-		if claudeConfig.MaxTurns > 0 {
+		if config.MaxTurns > 0 {
 			env = append(env, corev1.EnvVar{
 				Name:  "VIBESPACE_MAX_TURNS",
-				Value: strconv.Itoa(claudeConfig.MaxTurns),
+				Value: strconv.Itoa(config.MaxTurns),
 			})
 		}
-		if claudeConfig.SystemPrompt != "" {
+		if config.SystemPrompt != "" {
 			env = append(env, corev1.EnvVar{
 				Name:  "VIBESPACE_SYSTEM_PROMPT",
-				Value: claudeConfig.SystemPrompt,
+				Value: config.SystemPrompt,
 			})
 		}
 	}

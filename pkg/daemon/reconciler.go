@@ -17,7 +17,8 @@ import (
 // PodInfo contains information about a running pod
 type PodInfo struct {
 	Name      string
-	Agent     string
+	Agent     string          // Agent display name (e.g., "claude-1", "codex-2")
+	AgentType string          // Agent type (e.g., "claude-code", "codex")
 	Vibespace string
 	Phase     corev1.PodPhase
 }
@@ -145,19 +146,33 @@ func (r *Reconciler) podListToInfo(podList *corev1.PodList) []PodInfo {
 			vibespace = labels["vibespace.dev/id"]
 		}
 
-		// Get agent name
+		// Get agent type (default: claude-code)
+		agentType := labels["vibespace.dev/agent-type"]
+		if agentType == "" {
+			agentType = "claude-code"
+		}
+
+		// Get agent name from label
 		agentName := labels["vibespace.dev/agent-name"]
 		if agentName == "" {
-			if cid := labels["vibespace.dev/claude-id"]; cid != "" {
-				agentName = fmt.Sprintf("claude-%s", cid)
+			// Fallback: derive from agent type and number
+			agentNum := labels["vibespace.dev/agent-num"]
+			if agentNum == "" {
+				agentNum = "1"
+			}
+			if agentType == "claude-code" {
+				agentName = fmt.Sprintf("claude-%s", agentNum)
+			} else if agentType == "codex" {
+				agentName = fmt.Sprintf("codex-%s", agentNum)
 			} else {
-				agentName = "claude-1"
+				agentName = fmt.Sprintf("agent-%s", agentNum)
 			}
 		}
 
 		pods = append(pods, PodInfo{
 			Name:      pod.Name,
 			Agent:     agentName,
+			AgentType: agentType,
 			Vibespace: vibespace,
 			Phase:     pod.Status.Phase,
 		})

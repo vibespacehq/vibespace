@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/model"
+	"github.com/yagizdagabak/vibespace/pkg/agent"
 )
 
 // runConfig routes to config subcommands
@@ -151,7 +151,7 @@ Examples:
 	return nil
 }
 
-func printAgentConfig(agentName string, config *model.ClaudeConfig) {
+func printAgentConfig(agentName string, config *agent.Config) {
 	out := getOutput()
 
 	// Header with agent name
@@ -183,7 +183,7 @@ func printAgentConfig(agentName string, config *model.ClaudeConfig) {
 	} else if config.SkipPermissions {
 		printRow("⚙", "allowed_tools", "all", out.Green)
 	} else {
-		printRow("⚙", "allowed_tools", strings.Join(model.DefaultAllowedTools(), ", ")+" "+out.Dim("(default)"), func(s string) string { return s })
+		printRow("⚙", "allowed_tools", strings.Join(agent.DefaultAllowedTools(), ", ")+" "+out.Dim("(default)"), func(s string) string { return s })
 	}
 
 	// disallowed_tools
