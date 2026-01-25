@@ -60,8 +60,8 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 	// Apply configuration
 	args = a.applyConfig(args, config)
 
-	// Wrap in bash -l -c to ensure proper shell environment
-	return fmt.Sprintf(`bash -l -c '%s'`, strings.Join(args, " "))
+	// Wrap in bash -l -c to ensure proper shell environment and cd to /vibespace
+	return fmt.Sprintf(`bash -l -c 'cd /vibespace && %s'`, strings.Join(args, " "))
 }
 
 // BuildInteractiveCommand builds a Claude command for interactive terminal mode.

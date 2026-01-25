@@ -252,7 +252,7 @@ func (c *AgentConn) readLoop() {
 	scanner.Buffer(buf, 1024*1024)
 
 	// Debug: log raw JSON to file
-	debugFile, _ := os.OpenFile("/tmp/claude_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	debugFile, _ := os.OpenFile("/tmp/agents_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	defer func() {
 		if debugFile != nil {
 			debugFile.Close()
@@ -273,29 +273,28 @@ func (c *AgentConn) readLoop() {
 
 		// Debug: log raw line
 		if debugFile != nil {
-			debugFile.WriteString(fmt.Sprintf("[%s] RAW: %s\n", c.address.String(), line))
+			debugFile.WriteString(fmt.Sprintf("[%s][%s] RAW: %s\n", c.address.String(), c.agentType, line))
 		}
 
-		// Try to parse as JSON
-		var msg ClaudeMessage
-		if err := json.Unmarshal([]byte(line), &msg); err != nil {
-			// Not JSON, send as raw text
-			c.sendOutput(NewAssistantMessage(c.address.String(), line))
-			continue
-		}
+		// Use agent-specific parsing via the abstraction
+		streamMsg, _ := c.agentImpl.ParseStreamLine(line)
 
-		// Debug: log parsed type
+		// Debug: log parsed result
 		if debugFile != nil {
-			debugFile.WriteString(fmt.Sprintf("[%s] TYPE: %s, ContentLen: %d\n", c.address.String(), msg.Type, len(msg.Message.Content)))
-			for i, block := range msg.Message.Content {
-				debugFile.WriteString(fmt.Sprintf("[%s]   Block[%d]: type=%s, name=%s, text=%q\n", c.address.String(), i, block.Type, block.Name, truncateString(block.Text, 50)))
+			if streamMsg != nil {
+				debugFile.WriteString(fmt.Sprintf("[%s][%s] PARSED: type=%s, text=%q, tool=%s\n",
+					c.address.String(), c.agentType, streamMsg.Type, truncateString(streamMsg.Text, 50), streamMsg.ToolName))
+			} else {
+				debugFile.WriteString(fmt.Sprintf("[%s][%s] PARSED: nil (skipped)\n", c.address.String(), c.agentType))
 			}
 		}
 
-		// Parse the message and send rich message types
-		messages := c.parseClaudeMessage(&msg)
-		for _, m := range messages {
-			c.sendOutput(m)
+		// Convert agent.StreamMessage to TUI Message types
+		if streamMsg != nil {
+			messages := c.convertStreamMessage(streamMsg)
+			for _, m := range messages {
+				c.sendOutput(m)
+			}
 		}
 	}
 
@@ -308,6 +307,43 @@ func (c *AgentConn) readLoop() {
 		slog.Debug("readLoop: stale loop exiting, not modifying state", "agent", c.address.String(), "myGen", myGen, "currentGen", c.reconnectGen)
 	}
 	c.mu.Unlock()
+}
+
+// convertStreamMessage converts an agent.StreamMessage to TUI Message types
+func (c *AgentConn) convertStreamMessage(msg *agent.StreamMessage) []*Message {
+	var messages []*Message
+	sender := c.address.String()
+
+	switch msg.Type {
+	case "text":
+		if msg.Text != "" {
+			messages = append(messages, NewAssistantMessage(sender, msg.Text))
+		}
+
+	case "tool_use":
+		messages = append(messages, NewToolUseMessage(sender, msg.ToolName, msg.ToolInput))
+
+	case "tool_result":
+		// Tool results are typically not shown in TUI
+		// Could add if needed
+
+	case "done":
+		// Signal response complete
+		c.signalResponseDone()
+		if msg.IsError && msg.Result != "" {
+			messages = append(messages, NewErrorMessage(sender, msg.Result))
+		}
+
+	case "error":
+		messages = append(messages, NewErrorMessage(sender, msg.Text))
+
+	case "system":
+		if msg.Text != "" {
+			messages = append(messages, NewSystemMessage(msg.Text))
+		}
+	}
+
+	return messages
 }
 
 // readStderr reads stderr output and displays errors

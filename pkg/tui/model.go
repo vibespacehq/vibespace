@@ -322,9 +322,24 @@ func (m *Model) connectAgent(addr session.AgentAddress) error {
 		return fmt.Errorf("no active SSH forward for %s", addr.String())
 	}
 
-	// Get agent config from vibespace service
+	// Get agent info and config from vibespace service
 	var agentConfig *agent.Config
-	svc := vibespace.NewService(nil) // Service will initialize k8s client on first use
+	var agentType agent.Type = agent.TypeClaudeCode // Default
+	svc := vibespace.NewService(nil)                // Service will initialize k8s client on first use
+
+	// Get agent type from service
+	agentInfos, err := svc.ListAgents(m.ctx, addr.Vibespace)
+	if err != nil {
+		slog.Warn("failed to get agent info, using default type", "agent", addr.String(), "error", err)
+	} else {
+		for _, info := range agentInfos {
+			if info.AgentName == addr.Agent {
+				agentType = info.AgentType
+				break
+			}
+		}
+	}
+
 	config, err := svc.GetAgentConfig(m.ctx, addr.Vibespace, addr.Agent)
 	if err != nil {
 		slog.Warn("failed to get agent config, using defaults", "agent", addr.String(), "error", err)
@@ -333,9 +348,7 @@ func (m *Model) connectAgent(addr session.AgentAddress) error {
 	}
 
 	// Create agent connection with shared session manager
-	// Pass the multi-session ID (sessionName), resume flag, agent type, and config
-	// TODO: Get actual agent type from daemon/service when available
-	conn := NewAgentConn(addr, sshPort, m.sessionManager, m.sessionName, m.resume, agent.TypeClaudeCode, agentConfig)
+	conn := NewAgentConn(addr, sshPort, m.sessionManager, m.sessionName, m.resume, agentType, agentConfig)
 	if err := conn.Connect(); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}

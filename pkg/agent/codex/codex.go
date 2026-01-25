@@ -52,19 +52,24 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 	var args []string
 
 	if resume && sessionID != "" {
-		// Resume existing session: codex exec resume <session-id> --json
-		args = []string{"codex", "exec", "resume", sessionID, "--json"}
+		// Resume existing session: codex exec resume <session-id> [flags] -
+		args = []string{"codex", "exec", "resume", sessionID}
 	} else {
-		// New session: codex exec --json
-		// The prompt will be passed via stdin
-		args = []string{"codex", "exec", "--json"}
+		// New session: codex exec [flags] -
+		args = []string{"codex", "exec"}
 	}
+
+	// Add flags
+	args = append(args, "--json", "--skip-git-repo-check")
 
 	// Apply configuration
 	args = a.applyConfig(args, config)
 
-	// Wrap in bash -l -c to ensure proper shell environment
-	return fmt.Sprintf(`bash -l -c '%s'`, strings.Join(args, " "))
+	// Add - at the end to read prompt from stdin
+	args = append(args, "-")
+
+	// Wrap in bash -l -c to ensure proper shell environment and cd to /vibespace
+	return fmt.Sprintf(`bash -l -c 'cd /vibespace && %s'`, strings.Join(args, " "))
 }
 
 // BuildInteractiveCommand builds a Codex command for interactive terminal mode.
@@ -88,8 +93,8 @@ func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) 
 // applyConfig adds configuration flags to the command arguments.
 func (a *Agent) applyConfig(args []string, config *agent.Config) []string {
 	if config == nil {
-		// Default: require approval for safety
-		args = append(args, "--ask-for-approval", "never")
+		// Default: use full-auto for TUI (workspace-write + on-request approvals)
+		args = append(args, "--full-auto")
 		return args
 	}
 
@@ -97,8 +102,8 @@ func (a *Agent) applyConfig(args []string, config *agent.Config) []string {
 		// --yolo is short for --dangerously-bypass-approvals-and-sandbox
 		args = append(args, "--yolo")
 	} else {
-		// TUI handles approvals, so disable Codex's built-in approval
-		args = append(args, "--ask-for-approval", "never")
+		// Use full-auto mode for TUI (allows writes, on-request approvals)
+		args = append(args, "--full-auto")
 	}
 
 	if config.Model != "" {
@@ -124,6 +129,7 @@ func (a *Agent) ResumeFlag() string {
 }
 
 // ParseStreamLine parses a line of Codex's JSONL output.
+// Codex outputs: thread.started, turn.started, item.completed, turn.completed
 func (a *Agent) ParseStreamLine(line string) (*agent.StreamMessage, bool) {
 	if line == "" {
 		return nil, false
@@ -142,45 +148,54 @@ func (a *Agent) ParseStreamLine(line string) (*agent.StreamMessage, bool) {
 		Raw: json.RawMessage(line),
 	}
 
-	// Codex JSONL format - adjust based on actual CLI output
-	// This is a placeholder implementation based on expected format
+	// Actual Codex CLI JSONL format based on observed output
 	switch msg.Type {
-	case "message":
-		if msg.Role == "assistant" {
+	case "thread.started":
+		// Thread started - skip, no content to display
+		return nil, true
+
+	case "turn.started":
+		// Turn started - skip, no content to display
+		return nil, true
+
+	case "item.completed":
+		// Item completed - contains the actual content
+		if msg.Item.Type == "agent_message" {
 			result.Type = "text"
-			result.Text = msg.Content
+			result.Text = msg.Item.Text
+			return result, true
+		}
+		if msg.Item.Type == "reasoning" {
+			// Reasoning/thinking - could skip or show differently
+			// For now, skip it to match Claude behavior (thinking is hidden)
+			return nil, true
+		}
+		if msg.Item.Type == "tool_call" || msg.Item.Type == "function_call" {
+			result.Type = "tool_use"
+			result.ToolName = msg.Item.Name
+			result.ToolID = msg.Item.ID
+			result.ToolInput = extractCodexToolInput(msg.Item.Name, msg.Item.Arguments)
+			return result, true
+		}
+		if msg.Item.Type == "tool_result" || msg.Item.Type == "function_result" {
+			result.Type = "tool_result"
+			result.Text = msg.Item.Output
 			return result, true
 		}
 
-	case "tool_call", "function_call":
-		result.Type = "tool_use"
-		result.ToolName = msg.Name
-		result.ToolID = msg.ID
-		result.ToolInput = extractCodexToolInput(msg.Name, msg.Arguments)
-		return result, true
-
-	case "tool_result", "function_result":
-		result.Type = "tool_result"
-		result.Text = msg.Output
+	case "turn.completed":
+		// Turn completed - signal done
+		result.Type = "done"
 		return result, true
 
 	case "error":
 		result.Type = "error"
 		result.Text = msg.Message
+		if msg.Item.Text != "" {
+			result.Text = msg.Item.Text
+		}
 		result.IsError = true
 		return result, true
-
-	case "done", "complete":
-		result.Type = "done"
-		result.IsError = msg.Status == "error"
-		result.Result = msg.Message
-		return result, true
-
-	case "status":
-		if msg.Status == "complete" || msg.Status == "done" {
-			result.Type = "done"
-			return result, true
-		}
 	}
 
 	return nil, true
@@ -211,17 +226,33 @@ func (a *Agent) ValidateConfig(config *agent.Config) error {
 }
 
 // codexStreamMessage represents a JSONL message from Codex.
-// Structure is based on expected Codex CLI output format.
+// Actual format from Codex CLI:
+//   {"type":"thread.started","thread_id":"..."}
+//   {"type":"turn.started"}
+//   {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"..."}}
+//   {"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"..."}}
+//   {"type":"turn.completed","usage":{...}}
 type codexStreamMessage struct {
-	Type      string          `json:"type"`
-	Role      string          `json:"role,omitempty"`
-	Content   string          `json:"content,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	ID        string          `json:"id,omitempty"`
-	Arguments json.RawMessage `json:"arguments,omitempty"`
-	Output    string          `json:"output,omitempty"`
-	Status    string          `json:"status,omitempty"`
-	Message   string          `json:"message,omitempty"`
+	Type     string `json:"type"`
+	ThreadID string `json:"thread_id,omitempty"`
+	Message  string `json:"message,omitempty"` // For errors
+
+	// Item contains the actual content for item.completed events
+	Item struct {
+		ID        string          `json:"id,omitempty"`
+		Type      string          `json:"type,omitempty"`      // "agent_message", "reasoning", "tool_call", etc.
+		Text      string          `json:"text,omitempty"`      // For agent_message and reasoning
+		Name      string          `json:"name,omitempty"`      // For tool calls
+		Arguments json.RawMessage `json:"arguments,omitempty"` // For tool calls
+		Output    string          `json:"output,omitempty"`    // For tool results
+	} `json:"item,omitempty"`
+
+	// Usage for turn.completed
+	Usage struct {
+		InputTokens       int `json:"input_tokens,omitempty"`
+		CachedInputTokens int `json:"cached_input_tokens,omitempty"`
+		OutputTokens      int `json:"output_tokens,omitempty"`
+	} `json:"usage,omitempty"`
 }
 
 // extractCodexToolInput extracts relevant input from Codex tool parameters.
