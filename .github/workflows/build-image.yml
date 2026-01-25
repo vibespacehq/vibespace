@@ -45,9 +45,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.REPO }}/base
           tags: |
-            type=sha,prefix=
-            type=ref,event=branch
             type=raw,value=latest
+            type=sha,prefix=
 
       - name: Build and push base image
         id: build
@@ -94,9 +93,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.agent }}
           tags: |
-            type=sha,prefix=
-            type=ref,event=branch
             type=raw,value=latest
+            type=sha,prefix=
 
       - name: Build and push ${{ matrix.agent }} image
         uses: docker/build-push-action@v5
