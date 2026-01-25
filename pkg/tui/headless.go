@@ -94,6 +94,19 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 			}
 		}
 
+		// Get agent info from vibespace service to determine agent types
+		svc := vibespace.NewService(nil) // Service will initialize k8s client on first use
+		agentInfos, err := svc.ListAgents(context.Background(), vsName)
+		if err != nil {
+			slog.Warn("failed to get agent info, using defaults", "vibespace", vsName, "error", err)
+		}
+
+		// Build a map of agent name to type
+		agentTypes := make(map[string]agent.Type)
+		for _, info := range agentInfos {
+			agentTypes[info.AgentName] = info.AgentType
+		}
+
 		// Connect to each agent (filtered if specified)
 		for _, a := range forwards.Agents {
 			// Apply filter if specified
@@ -110,7 +123,6 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 
 			// Get agent config from vibespace service
 			var agentConfig *agent.Config
-			svc := vibespace.NewService(nil) // Service will initialize k8s client on first use
 			config, err := svc.GetAgentConfig(context.Background(), vsName, a.Name)
 			if err != nil {
 				slog.Warn("failed to get agent config, using defaults", "agent", addr.String(), "error", err)
@@ -118,9 +130,14 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 				agentConfig = config
 			}
 
-			// Pass sessionName as multi-session ID, resume flag, and config
-			// TODO: Get actual agent type from daemon/service when available
-			conn := NewAgentConn(addr, port, r.sessionManager, r.sessionName, r.resume, agent.TypeClaudeCode, agentConfig)
+			// Get agent type (default to claude-code if not found)
+			agentType := agentTypes[a.Name]
+			if agentType == "" {
+				agentType = agent.TypeClaudeCode
+			}
+
+			// Pass sessionName as multi-session ID, resume flag, agent type, and config
+			conn := NewAgentConn(addr, port, r.sessionManager, r.sessionName, r.resume, agentType, agentConfig)
 			if err := conn.Connect(); err != nil {
 				return fmt.Errorf("failed to connect to %s: %w", addr.String(), err)
 			}

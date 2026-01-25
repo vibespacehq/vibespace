@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
-	"strings"
 
 	"github.com/yagizdagabak/vibespace/pkg/agent"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
@@ -17,13 +16,13 @@ import (
 // browserFlag tracks whether to open browser instead of terminal
 var connectBrowserFlag bool
 
-func runConnect(vibespace string, args []string) error {
+func runConnect(vsName string, args []string) error {
 	ctx := context.Background()
 
 	// Parse flags from args
 	browser := false
-	agentName := "claude-1" // Default to primary agent
-	runAgent := false       // Whether to run agent or just shell
+	agentName := "" // Will be determined from vibespace if not specified
+	runAgent := false
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -49,57 +48,111 @@ func runConnect(vibespace string, args []string) error {
 		browser = true
 	}
 
+	// Get the vibespace service to look up agent info
+	svc, err := getVibespaceService()
+	if err != nil {
+		return fmt.Errorf("failed to get vibespace service: %w", err)
+	}
+
+	// Get the list of agents to determine the default/validate the specified one
+	agents, err := svc.ListAgents(ctx, vsName)
+	if err != nil {
+		return fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	if len(agents) == 0 {
+		return fmt.Errorf("no agents found in vibespace '%s'", vsName)
+	}
+
+	// If no agent specified, use the primary agent (agent-num=1)
+	if agentName == "" {
+		for _, ag := range agents {
+			if ag.AgentNum == 1 {
+				agentName = ag.AgentName
+				break
+			}
+		}
+		// Fallback to first agent if no agent-num=1 found
+		if agentName == "" {
+			agentName = agents[0].AgentName
+		}
+	}
+
+	// Find the specified agent's info
+	var targetAgent *vibespace.AgentInfo
+	for i := range agents {
+		if agents[i].AgentName == agentName {
+			targetAgent = &agents[i]
+			break
+		}
+	}
+
+	if targetAgent == nil {
+		return fmt.Errorf("agent '%s' not found in vibespace '%s'", agentName, vsName)
+	}
+
 	mode := "ssh"
 	if browser {
 		mode = "browser"
 	}
-	slog.Info("connect command started", "vibespace", vibespace, "mode", mode, "agent", agentName)
+	slog.Info("connect command started", "vibespace", vsName, "mode", mode, "agent", agentName, "agent_type", targetAgent.AgentType)
 
 	if browser {
 		// For browser access, use ttyd port
-		localPort, err := ensureDaemonRunningForAgent(ctx, vibespace, agentName, "ttyd")
+		localPort, err := ensureDaemonRunningForAgent(ctx, vsName, agentName, "ttyd")
 		if err != nil {
-			slog.Error("failed to ensure daemon running for ttyd", "vibespace", vibespace, "agent", agentName, "error", err)
+			slog.Error("failed to ensure daemon running for ttyd", "vibespace", vsName, "agent", agentName, "error", err)
 			return err
 		}
 		url := fmt.Sprintf("http://localhost:%d", localPort)
-		printStep("Opening browser for %s in %s...", agentName, vibespace)
-		slog.Info("connect command completed", "vibespace", vibespace, "mode", "browser", "url", url)
+		printStep("Opening browser for %s in %s...", agentName, vsName)
+		slog.Info("connect command completed", "vibespace", vsName, "mode", "browser", "url", url)
 		return openBrowser(url)
 	}
 
-	// For CLI access, use SSH port (always use claude-1 by default)
-	localPort, err := ensureDaemonRunningForAgent(ctx, vibespace, agentName, "ssh")
+	// For CLI access, use SSH port
+	localPort, err := ensureDaemonRunningForAgent(ctx, vsName, agentName, "ssh")
 	if err != nil {
-		slog.Error("failed to ensure daemon running for ssh", "vibespace", vibespace, "agent", agentName, "error", err)
+		slog.Error("failed to ensure daemon running for ssh", "vibespace", vsName, "agent", agentName, "error", err)
 		return err
 	}
 
 	// If agent was explicitly specified, run agent interactively
 	// Otherwise just give a shell (all agents share the same filesystem)
 	if runAgent {
-		// Get agent config from service
-		svc, err := getVibespaceService()
-		var config *agent.Config
+		// Get agent config
+		config, err := svc.GetAgentConfig(ctx, vsName, agentName)
 		if err != nil {
-			slog.Warn("failed to get vibespace service for config", "error", err)
-		} else {
-			config, err = svc.GetAgentConfig(ctx, vibespace, agentName)
-			if err != nil {
-				slog.Warn("failed to get agent config, using defaults", "error", err)
-				config = nil
-			}
+			slog.Warn("failed to get agent config, using defaults", "error", err)
+			config = nil
 		}
 
-		cmd := buildClaudeInteractiveCommand(config)
-		printStep("Connecting to %s in %s...", agentName, vibespace)
-		slog.Info("connect command completed", "vibespace", vibespace, "mode", "ssh", "agent", agentName, "local_port", localPort)
+		// Get the agent implementation based on the agent's type
+		agentImpl, err := agent.Get(targetAgent.AgentType)
+		if err != nil {
+			// Fallback to Claude Code if unknown type
+			slog.Warn("unknown agent type, falling back to claude-code", "type", targetAgent.AgentType)
+			agentImpl = agent.MustGet(agent.TypeClaudeCode)
+		}
+
+		// Build the interactive command using the agent abstraction
+		cmd := buildInteractiveCommand(agentImpl, config)
+		printStep("Connecting to %s in %s...", agentName, vsName)
+		slog.Info("connect command completed", "vibespace", vsName, "mode", "ssh", "agent", agentName, "local_port", localPort)
 		return connectViaSSH(localPort, cmd)
 	}
 
-	printStep("Connecting to shell in %s...", vibespace)
-	slog.Info("connect command completed", "vibespace", vibespace, "mode", "ssh-shell", "local_port", localPort)
+	printStep("Connecting to shell in %s...", vsName)
+	slog.Info("connect command completed", "vibespace", vsName, "mode", "ssh-shell", "local_port", localPort)
 	return connectViaSSH(localPort, "")
+}
+
+// buildInteractiveCommand builds the command to run the agent interactively
+func buildInteractiveCommand(agentImpl agent.CodingAgent, config *agent.Config) string {
+	// Use the agent's BuildInteractiveCommand method
+	agentCmd := agentImpl.BuildInteractiveCommand("", config)
+	// Wrap with cd to vibespace directory
+	return fmt.Sprintf("cd /vibespace && %s", agentCmd)
 }
 
 // connectViaSSH connects to the vibespace via native SSH
@@ -158,34 +211,4 @@ func openBrowser(url string) error {
 
 	printSuccess("Browser opened: %s", url)
 	return nil
-}
-
-// buildClaudeInteractiveCommand builds the claude command for interactive mode
-func buildClaudeInteractiveCommand(config *agent.Config) string {
-	args := []string{"cd /vibespace &&", "claude"}
-
-	if config != nil {
-		if config.SkipPermissions {
-			args = append(args, "--dangerously-skip-permissions")
-		}
-		if len(config.AllowedTools) > 0 {
-			// Explicit allowed tools always take precedence
-			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, config.AllowedToolsString()))
-		} else if !config.SkipPermissions {
-			// Only use restrictive defaults if NOT skipping permissions
-			// With skip_permissions, omit --allowedTools for full access
-			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(agent.DefaultAllowedTools(), ",")))
-		}
-		if len(config.DisallowedTools) > 0 {
-			args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, config.DisallowedToolsString()))
-		}
-		if config.Model != "" {
-			args = append(args, "--model", config.Model)
-		}
-		if config.MaxTurns > 0 {
-			args = append(args, "--max-turns", fmt.Sprintf("%d", config.MaxTurns))
-		}
-	}
-
-	return strings.Join(args, " ")
 }
