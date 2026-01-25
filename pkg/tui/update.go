@@ -312,6 +312,7 @@ func (m *Model) executeSend(action SendAction) (tea.Model, tea.Cmd) {
 	m.agentMu.RUnlock()
 
 	// Now send to each target (no lock held)
+	var reconnectCmds []tea.Cmd
 	for _, t := range targets {
 		// Mark agent as thinking
 		m.SetAgentThinking(t.key, true)
@@ -319,6 +320,12 @@ func (m *Model) executeSend(action SendAction) (tea.Model, tea.Cmd) {
 		if err := t.conn.SendAndReconnect(action.Message); err != nil {
 			m.statusMsg = fmt.Sprintf("Failed to send to %s: %s", t.key, err.Error())
 			m.SetAgentThinking(t.key, false)
+			// Trigger reconnect if agent is not connected
+			if !m.reconnecting[t.key] {
+				m.reconnecting[t.key] = true
+				m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s disconnected, will retry...", t.key)))
+				reconnectCmds = append(reconnectCmds, m.scheduleReconnect(t.conn.Address(), 1, 5))
+			}
 		} else {
 			sentTo = append(sentTo, t.key)
 		}
@@ -335,6 +342,10 @@ func (m *Model) executeSend(action SendAction) (tea.Model, tea.Cmd) {
 		m.viewport.GotoBottom()
 	}
 
+	// Return reconnect commands if any
+	if len(reconnectCmds) > 0 {
+		return m, tea.Batch(reconnectCmds...)
+	}
 	return m, nil
 }
 
@@ -672,21 +683,24 @@ func (m *Model) handleRichMessage(msg RichMessageMsg) (needsReconnect bool, addr
 	// Check if we should auto-scroll (before adding message)
 	wasAtBottom := m.history.IsAtBottom()
 
-	// Check for disconnection errors - don't add these to history, trigger reconnect instead
+	// Check for disconnection errors - only trigger reconnect if agent is actually disconnected
+	// Note: "Connection to localhost closed" is normal in print mode (SSH closes after each message)
+	// Only reconnect for "Connection refused" which indicates the port-forward is down
 	if msg.Message.Type == MessageTypeError {
 		content := msg.Message.Content
-		if strings.Contains(content, "Connection to localhost closed") ||
-			strings.Contains(content, "Connection refused") ||
+		if strings.Contains(content, "Connection refused") ||
 			strings.Contains(content, "Connection reset") {
-			// Parse agent address from the key
+			// Parse agent address from the key - only if not already connected
 			m.agentMu.RLock()
-			if conn, ok := m.agents[msg.AgentKey]; ok {
+			if conn, ok := m.agents[msg.AgentKey]; ok && !conn.IsConnected() {
 				addr = conn.Address()
 				needsReconnect = true
 			}
 			m.agentMu.RUnlock()
-			// Don't add disconnect error to history - we'll show reconnect message instead
-			return needsReconnect, addr
+			if needsReconnect {
+				// Don't add disconnect error to history - we'll show reconnect message instead
+				return needsReconnect, addr
+			}
 		}
 	}
 
@@ -941,47 +955,49 @@ func (m *Model) handleReconnect(msg AgentReconnectMsg) tea.Cmd {
 		return nil
 	}
 
-	// Try to get fresh port info from daemon (port may have changed after pod restart)
+	// Always get fresh port info from daemon (port changes after pod restart)
 	if m.daemonClient != nil {
 		forwards, err := m.daemonClient.ListForwardsForVibespace(msg.Address.Vibespace)
-		if err == nil {
+		if err != nil {
+			slog.Debug("failed to get forwards from daemon", "agent", key, "error", err)
+		} else {
 			for _, agent := range forwards.Agents {
 				if agent.Name == msg.Address.Agent {
 					for _, fwd := range agent.Forwards {
 						if fwd.Type == "ssh" && fwd.Status == "active" {
-							// Update port if changed
-							if fwd.LocalPort != conn.LocalPort() {
-								slog.Debug("SSH port changed, creating new connection",
-									"agent", key, "old_port", conn.LocalPort(), "new_port", fwd.LocalPort)
-								// Close old connection and create new one with updated port
-								conn.Close()
-								newConn := NewAgentConn(msg.Address, fwd.LocalPort, m.sessionManager, m.sessionName, true, conn.Config())
-								if err := newConn.Connect(); err == nil {
-									m.agentMu.Lock()
-									m.agents[key] = newConn
-									m.agentMu.Unlock()
-									delete(m.reconnecting, key)
-									m.statusMsg = fmt.Sprintf("Reconnected: %s", key)
-									m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s reconnected", key)))
-									// Start listening to the new connection's output
-									go func(c *AgentConn) {
-										for msg := range c.OutputChan() {
-											select {
-											case m.incomingMsgs <- RichMessageMsg{
-												AgentKey: c.Address().String(),
-												Message:  msg,
-											}:
-											case <-m.ctx.Done():
-												return
-											}
+							slog.Debug("found SSH forward, creating new connection",
+								"agent", key, "old_port", conn.LocalPort(), "new_port", fwd.LocalPort)
+							// Always close old connection and create new one with fresh port
+							conn.Close()
+							newConn := NewAgentConn(msg.Address, fwd.LocalPort, m.sessionManager, m.sessionName, true, conn.Config())
+							if err := newConn.Connect(); err == nil {
+								m.agentMu.Lock()
+								m.agents[key] = newConn
+								m.agentMu.Unlock()
+								delete(m.reconnecting, key)
+								m.statusMsg = fmt.Sprintf("Reconnected: %s", key)
+								m.AddMessage(NewSystemMessage(fmt.Sprintf("Agent %s reconnected", key)))
+								// Start listening to the new connection's output
+								go func(c *AgentConn) {
+									for msg := range c.OutputChan() {
+										select {
+										case m.incomingMsgs <- RichMessageMsg{
+											AgentKey: c.Address().String(),
+											Message:  msg,
+										}:
+										case <-m.ctx.Done():
+											return
 										}
-									}(newConn)
-									return nil
-								}
+									}
+								}(newConn)
+								return nil
+							} else {
+								slog.Debug("new connection failed", "agent", key, "port", fwd.LocalPort, "error", err)
 							}
 							break
 						}
 					}
+					break
 				}
 			}
 		}
