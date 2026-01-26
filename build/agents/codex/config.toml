@@ -1,0 +1,8 @@
+# Codex CLI configuration for vibespace
+# See: https://developers.openai.com/codex
+
+[auth]
+# Use file-based credential storage instead of OS keyring.
+# This allows credentials to persist in ~/.codex/auth.json,
+# which works with vibespace's shared home directory feature.
+cli_auth_credentials_store = "file"

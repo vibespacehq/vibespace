@@ -114,12 +114,10 @@ case "$VIBESPACE_AGENT_TYPE" in
     codex)
         CODEX_CONFIG_DIR="$USER_HOME/.codex"
         mkdir -p "$CODEX_CONFIG_DIR"
-        # Only copy Codex settings if the file exists
-        if [ -f /etc/vibespace/codex-settings.toml ]; then
-            cp /etc/vibespace/codex-settings.toml "$CODEX_CONFIG_DIR/config.toml"
-            log "Codex settings configured"
-        fi
+        # Copy Codex config (file-based credential storage, tool settings, etc.)
+        cp /etc/vibespace/codex/config.toml "$CODEX_CONFIG_DIR/config.toml"
         chown -R user:user "$CODEX_CONFIG_DIR"
+        log "Codex configuration applied"
         ;;
     *)
         log "Unknown agent type: ${VIBESPACE_AGENT_TYPE:-unset}, skipping agent setup"
