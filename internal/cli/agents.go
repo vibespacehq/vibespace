@@ -42,6 +42,7 @@ func runAgents(vibespace string, args []string) error {
 		for i, agent := range agents {
 			items[i] = AgentListItem{
 				Name:      agent.AgentName,
+				Type:      agent.AgentType.String(),
 				Vibespace: vibespace,
 				Status:    agent.Status,
 			}
@@ -66,13 +67,13 @@ func runAgents(vibespace string, args []string) error {
 	// Plain output mode
 	if out.IsPlainMode() {
 		for _, agent := range agents {
-			fmt.Printf("%s\t%s\t%s\n", agent.AgentName, vibespace, agent.Status)
+			fmt.Printf("%s\t%s\t%s\t%s\n", agent.AgentName, agent.AgentType.String(), vibespace, agent.Status)
 		}
 		return nil
 	}
 
 	// Print as table with fixed-width columns
-	fmt.Printf("%-12s %-20s %-10s\n", "AGENT", "VIBESPACE", "STATUS")
+	fmt.Printf("%-12s %-12s %-20s %-10s\n", "AGENT", "TYPE", "VIBESPACE", "STATUS")
 
 	for _, agent := range agents {
 		// Colorize status after formatting to maintain alignment
@@ -85,7 +86,7 @@ func runAgents(vibespace string, args []string) error {
 		case "creating":
 			status = yellow(agent.Status) + "  " // "creating" is 8 chars, pad to 10
 		}
-		fmt.Printf("%-12s %-20s %s\n", agent.AgentName, vibespace, status)
+		fmt.Printf("%-12s %-12s %-20s %s\n", agent.AgentName, agent.AgentType.String(), vibespace, status)
 	}
 
 	slog.Debug("agents command completed", "vibespace", vibespace, "count", len(agents))
