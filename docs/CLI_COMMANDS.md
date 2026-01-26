@@ -147,8 +147,8 @@ Remove vibespace completely. **Requires interactive confirmation.**
 ### `vibespace create [name]`
 
 ```bash
-./vibespace create myproject
-./vibespace create myproject --repo https://github.com/user/repo
+./vibespace create myproject -t claude-code
+./vibespace create myproject -t codex --repo https://github.com/user/repo
 ./vibespace create myproject --agent-type codex --skip-permissions
 ```
 
@@ -159,7 +159,7 @@ Remove vibespace completely. **Requires interactive confirmation.**
 | `--memory` | 1Gi | Memory request/limit |
 | `--storage` | 10Gi | Storage size |
 | `-s, --share-credentials` | false | Share credentials across agents |
-| `--agent-type` | claude-code | Agent type: claude-code, codex |
+| `-t, --agent-type` | **required** | Agent type: claude-code, codex |
 | `--skip-permissions` | false | Enable --dangerously-skip-permissions |
 | `--allowed-tools` | | Comma-separated allowed tools |
 | `--disallowed-tools` | | Comma-separated disallowed tools |
@@ -326,16 +326,16 @@ echo '{"target":"claude-1@test","message":"hello"}' | ./vibespace multi --vibesp
 
 ```bash
 ./vibespace test-mixed agents
-# AGENT        VIBESPACE            STATUS
-# claude-1     test-mixed           running
-# codex-1      test-mixed           running
+# AGENT        TYPE         VIBESPACE            STATUS
+# claude-1     claude-code  test-mixed           running
+# codex-1      codex        test-mixed           running
 
 ./vibespace test-mixed agents --json
-# {"success":true,"data":{"vibespace":"test-mixed","agents":[...],"count":2}}
+# {"success":true,"data":{"vibespace":"test-mixed","agents":[{"name":"claude-1","type":"claude-code",...}],"count":2}}
 
 ./vibespace test-mixed agents --plain
-# claude-1	test-mixed	running
-# codex-1	test-mixed	running
+# claude-1	claude-code	test-mixed	running
+# codex-1	codex	test-mixed	running
 ```
 
 **Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ✅ (tab-separated)
@@ -345,16 +345,16 @@ echo '{"target":"claude-1@test","message":"hello"}' | ./vibespace multi --vibesp
 ### `vibespace <name> spawn`
 
 ```bash
-./vibespace myproject spawn
+./vibespace myproject spawn                    # Inherits type from primary agent
 ./vibespace myproject spawn --name researcher
-./vibespace myproject spawn --agent-type codex
+./vibespace myproject spawn --agent-type codex # Explicit type
 ./vibespace myproject spawn --skip-permissions
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-n, --name` | auto | Custom agent name |
-| `-t, --agent-type` | claude-code | Agent type |
+| `-t, --agent-type` | inherit | Agent type (inherits from primary if not specified) |
 | `-s, --share-credentials` | false | Share credentials |
 | `--skip-permissions` | false | Skip permissions |
 | `--allowed-tools` | | Allowed tools |
