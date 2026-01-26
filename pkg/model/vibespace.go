@@ -58,6 +58,9 @@ type CreateVibespaceRequest struct {
 	// AgentType specifies the type of AI agent to use (default: claude-code)
 	AgentType agent.Type `json:"agent_type,omitempty"`
 
+	// AgentName is an optional custom name for the primary agent (default: <type>-1)
+	AgentName string `json:"agent_name,omitempty"`
+
 	// AgentConfig configures the AI agent (nil = defaults)
 	AgentConfig *agent.Config `json:"agent_config,omitempty"`
 }

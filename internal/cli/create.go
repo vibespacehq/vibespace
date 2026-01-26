@@ -35,6 +35,7 @@ var (
 	createStorage          string
 	createShareCredentials bool
 	createAgentType        string // Agent type (claude-code, codex)
+	createAgentName        string // Custom name for primary agent
 	// Agent config flags
 	createSkipPermissions bool
 	createAllowedTools    string
@@ -71,6 +72,7 @@ func init() {
 	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share credentials across all agents")
 	createCmd.Flags().StringVarP(&createAgentType, "agent-type", "t", "", "Agent type: claude-code, codex (required)")
 	createCmd.MarkFlagRequired("agent-type")
+	createCmd.Flags().StringVarP(&createAgentName, "name", "n", "", "Custom name for the primary agent (default: <type>-1)")
 
 	// Agent configuration flags
 	createCmd.Flags().BoolVar(&createSkipPermissions, "skip-permissions", false, "Enable --dangerously-skip-permissions for Claude")
@@ -121,6 +123,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		Persistent:       true, // Always use persistent storage for shared filesystem between agents
 		ShareCredentials: createShareCredentials,
 		AgentType:        agentType,
+		AgentName:        createAgentName,
 		AgentConfig:      agentConfig,
 		Resources: &model.Resources{
 			CPU:     createCPU,

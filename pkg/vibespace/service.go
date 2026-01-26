@@ -222,6 +222,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		Name:        req.Name,
 		AgentType:   agentType,
 		AgentNum:    1, // First agent
+		AgentName:   req.AgentName, // Custom name or empty for default
 		Primary:     true, // This is the original agent created with the vibespace
 		Image:       image,
 		Resources: deployment.Resources{
