@@ -222,6 +222,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		Name:        req.Name,
 		AgentType:   agentType,
 		AgentNum:    1, // First agent
+		Primary:     true, // This is the original agent created with the vibespace
 		Image:       image,
 		Resources: deployment.Resources{
 			CPU:     resources.CPU,
@@ -692,6 +693,9 @@ type AgentInfo struct {
 	// AgentName is the display name (e.g., "claude-1", "codex-2")
 	AgentName string
 
+	// IsPrimary indicates this is the original agent created with the vibespace
+	IsPrimary bool
+
 	// Status is the current status: running, stopped, creating
 	Status string
 }
@@ -867,8 +871,8 @@ func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentName stri
 		return fmt.Errorf("agent '%s' not found", agentName)
 	}
 
-	// Cannot kill the primary agent (number 1)
-	if targetAgent.AgentNum == 1 {
+	// Cannot kill the primary agent (the original agent created with the vibespace)
+	if targetAgent.IsPrimary {
 		return fmt.Errorf("cannot kill %s: it is the primary agent. Delete the vibespace to remove it", agentName)
 	}
 
@@ -915,6 +919,7 @@ func (s *Service) ListAgents(ctx context.Context, nameOrID string) ([]AgentInfo,
 			AgentType: da.AgentType,
 			AgentNum:  da.AgentNum,
 			AgentName: da.AgentName,
+			IsPrimary: da.IsPrimary,
 			Status:    da.Status,
 		}
 	}
