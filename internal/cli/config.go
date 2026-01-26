@@ -89,6 +89,43 @@ Examples:
 		agentName = args[0]
 	}
 
+	// Always get agents list to find agent type
+	agents, err := svc.ListAgents(ctx, vs.ID)
+	if err != nil {
+		return fmt.Errorf("failed to list agents: %w", err)
+	}
+
+	// Helper to find agent type by name
+	findAgentType := func(name string) string {
+		for _, a := range agents {
+			if a.AgentName == name {
+				return a.AgentType.String()
+			}
+		}
+		return "unknown"
+	}
+
+	// Helper to convert config to output format (with all fields, no omitempty)
+	configToOutput := func(config *agent.Config) AgentConfigOutput {
+		allowedTools := config.AllowedTools
+		if allowedTools == nil {
+			allowedTools = []string{}
+		}
+		disallowedTools := config.DisallowedTools
+		if disallowedTools == nil {
+			disallowedTools = []string{}
+		}
+		return AgentConfigOutput{
+			SkipPermissions:  config.SkipPermissions,
+			ShareCredentials: config.ShareCredentials,
+			AllowedTools:     allowedTools,
+			DisallowedTools:  disallowedTools,
+			Model:            config.Model,
+			MaxTurns:         config.MaxTurns,
+			SystemPrompt:     config.SystemPrompt,
+		}
+	}
+
 	if agentName != "" {
 		// Show config for specific agent
 		config, err := svc.GetAgentConfig(ctx, vs.ID, agentName)
@@ -99,10 +136,11 @@ Examples:
 		if out.IsJSONMode() {
 			return out.JSON(JSONOutput{
 				Success: true,
-				Data: map[string]interface{}{
-					"vibespace": vibespace,
-					"agent":     agentName,
-					"config":    config,
+				Data: ConfigShowOutput{
+					Vibespace: vibespace,
+					Agent:     agentName,
+					Type:      findAgentType(agentName),
+					Config:    configToOutput(config),
 				},
 			})
 		}
@@ -110,40 +148,36 @@ Examples:
 		printAgentConfig(agentName, config)
 	} else {
 		// Show config for all agents
-		agents, err := svc.ListAgents(ctx, vs.ID)
-		if err != nil {
-			return fmt.Errorf("failed to list agents: %w", err)
-		}
-
 		if out.IsJSONMode() {
-			configs := make([]map[string]interface{}, 0, len(agents))
-			for _, agent := range agents {
-				config, err := svc.GetAgentConfig(ctx, vs.ID, agent.AgentName)
+			configs := make([]AgentConfigItem, 0, len(agents))
+			for _, a := range agents {
+				config, err := svc.GetAgentConfig(ctx, vs.ID, a.AgentName)
 				if err != nil {
-					slog.Warn("failed to get config for agent", "agent", agent.AgentName, "error", err)
+					slog.Warn("failed to get config for agent", "agent", a.AgentName, "error", err)
 					continue
 				}
-				configs = append(configs, map[string]interface{}{
-					"agent":  agent.AgentName,
-					"config": config,
+				configs = append(configs, AgentConfigItem{
+					Agent:  a.AgentName,
+					Type:   a.AgentType.String(),
+					Config: configToOutput(config),
 				})
 			}
 			return out.JSON(JSONOutput{
 				Success: true,
-				Data: map[string]interface{}{
-					"vibespace": vibespace,
-					"agents":    configs,
+				Data: ConfigShowAllOutput{
+					Vibespace: vibespace,
+					Agents:    configs,
 				},
 			})
 		}
 
-		for _, agent := range agents {
-			config, err := svc.GetAgentConfig(ctx, vs.ID, agent.AgentName)
+		for _, a := range agents {
+			config, err := svc.GetAgentConfig(ctx, vs.ID, a.AgentName)
 			if err != nil {
-				printWarning("Failed to get config for %s: %v", agent.AgentName, err)
+				printWarning("Failed to get config for %s: %v", a.AgentName, err)
 				continue
 			}
-			printAgentConfig(agent.AgentName, config)
+			printAgentConfig(a.AgentName, config)
 			fmt.Println()
 		}
 	}

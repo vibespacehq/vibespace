@@ -151,3 +151,35 @@ type CreateOutput struct {
 	ID   string `json:"id"`
 }
 
+// ConfigShowOutput is the JSON output for config show command (single agent)
+type ConfigShowOutput struct {
+	Vibespace string            `json:"vibespace"`
+	Agent     string            `json:"agent"`
+	Type      string            `json:"type"`
+	Config    AgentConfigOutput `json:"config"`
+}
+
+// ConfigShowAllOutput is the JSON output for config show command (all agents)
+type ConfigShowAllOutput struct {
+	Vibespace string              `json:"vibespace"`
+	Agents    []AgentConfigItem   `json:"agents"`
+}
+
+// AgentConfigItem represents an agent with its config in list output
+type AgentConfigItem struct {
+	Agent  string            `json:"agent"`
+	Type   string            `json:"type"`
+	Config AgentConfigOutput `json:"config"`
+}
+
+// AgentConfigOutput represents agent config with all fields (no omitempty)
+type AgentConfigOutput struct {
+	SkipPermissions  bool     `json:"skip_permissions"`
+	ShareCredentials bool     `json:"share_credentials"`
+	AllowedTools     []string `json:"allowed_tools"`
+	DisallowedTools  []string `json:"disallowed_tools"`
+	Model            string   `json:"model"`
+	MaxTurns         int      `json:"max_turns"`
+	SystemPrompt     string   `json:"system_prompt"`
+}
+
