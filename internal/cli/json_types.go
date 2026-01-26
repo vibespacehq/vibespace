@@ -81,6 +81,7 @@ type AgentsOutput struct {
 // AgentListItem represents an agent in list output
 type AgentListItem struct {
 	Name      string `json:"name"`
+	Type      string `json:"type"`
 	Vibespace string `json:"vibespace"`
 	Status    string `json:"status"`
 }
