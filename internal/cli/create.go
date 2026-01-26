@@ -17,17 +17,14 @@ import (
 )
 
 var createCmd = &cobra.Command{
-	Use:   "create [name]",
+	Use:   "create <name>",
 	Short: "Create a new vibespace",
-	Long: `Create a new vibespace with a Claude Code instance.
-
-If no name is provided, a random name will be generated.`,
-	Example: `  vibespace create
-  vibespace create myproject
-  vibespace create myproject --repo https://github.com/user/repo
-  vibespace create myproject --cpu 500m --memory 512Mi
-  vibespace create myproject --share-credentials`,
-	Args: cobra.MaximumNArgs(1),
+	Long:  `Create a new vibespace with an AI coding agent.`,
+	Example: `  vibespace create myproject -t claude-code
+  vibespace create myproject -t codex --repo https://github.com/user/repo
+  vibespace create myproject -t claude-code --cpu 500m --memory 512Mi
+  vibespace create myproject -t claude-code --share-credentials`,
+	Args: cobra.ExactArgs(1),
 	RunE: runCreate,
 }
 
@@ -86,10 +83,7 @@ func init() {
 func runCreate(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	name := ""
-	if len(args) > 0 {
-		name = args[0]
-	}
+	name := args[0]
 	slog.Info("create command started", "name", name, "repo", createRepo, "agent_type", createAgentType)
 
 	// Parse and validate agent type
