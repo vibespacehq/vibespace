@@ -292,7 +292,7 @@ func (s *Service) Delete(ctx context.Context, nameOrID string, opts *DeleteOptio
 	agentList, err := s.deploymentManager.ListAgentsForVibespace(ctx, vibespace.ID)
 	if err == nil {
 		for _, ag := range agentList {
-			if ag.AgentNum != 1 {
+			if !ag.IsPrimary {
 				if err := s.deploymentManager.DeleteAgentDeployment(ctx, vibespace.ID, ag.AgentName); err != nil {
 					slog.Warn("failed to delete agent deployment", "agent", ag.AgentName, "error", err)
 				}
