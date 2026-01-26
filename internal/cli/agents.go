@@ -104,7 +104,7 @@ Usage:
 
 Flags:
   -n, --name string            Custom name for the agent (default: <type>-N)
-  -t, --agent-type string      Agent type: claude-code, codex (default: claude-code)
+  -t, --agent-type string      Agent type: claude-code, codex (default: inherit from primary)
   -s, --share-credentials      Share credentials across all agents
       --skip-permissions       Enable --dangerously-skip-permissions
       --allowed-tools string   Comma-separated allowed tools (replaces default)
@@ -114,8 +114,8 @@ Flags:
   -h, --help                   Help for spawn
 
 Examples:
-  vibespace myproject spawn
-  vibespace myproject spawn --agent-type codex
+  vibespace myproject spawn                        # Inherits type from primary agent
+  vibespace myproject spawn --agent-type codex     # Explicit codex type
   vibespace myproject spawn --name researcher
   vibespace myproject spawn --share-credentials
   vibespace myproject spawn --skip-permissions
@@ -129,7 +129,7 @@ Examples:
 	// Parse flags
 	shareCredentials := false
 	customName := ""
-	agentTypeStr := "claude-code"
+	agentTypeStr := "" // Empty means inherit from primary agent
 	skipPermissions := false
 	allowedTools := ""
 	disallowedTools := ""
@@ -180,10 +180,13 @@ Examples:
 		}
 	}
 
-	// Parse and validate agent type
-	agentType := agent.ParseType(agentTypeStr)
-	if !agentType.IsValid() {
-		return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", agentTypeStr)
+	// Parse and validate agent type (only if explicitly specified)
+	var agentType agent.Type
+	if agentTypeStr != "" {
+		agentType = agent.ParseType(agentTypeStr)
+		if !agentType.IsValid() {
+			return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", agentTypeStr)
+		}
 	}
 
 	slog.Info("spawn command started", "vibespace", vibespace, "name", customName, "agent_type", agentType, "share_credentials", shareCredentials)
@@ -203,8 +206,10 @@ Examples:
 
 	if customName != "" {
 		printStep("Spawning agent '%s' in '%s'...", customName, vibespace)
-	} else {
+	} else if agentType != "" {
 		printStep("Spawning new %s agent in '%s'...", agentType, vibespace)
+	} else {
+		printStep("Spawning new agent in '%s'...", vibespace)
 	}
 
 	// Build AgentConfig if any config flags are set

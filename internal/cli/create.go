@@ -72,7 +72,8 @@ func init() {
 	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
 	createCmd.Flags().StringVar(&createStorage, "storage", storageDefault, "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
 	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share credentials across all agents")
-	createCmd.Flags().StringVar(&createAgentType, "agent-type", "claude-code", "Agent type: claude-code, codex")
+	createCmd.Flags().StringVarP(&createAgentType, "agent-type", "t", "", "Agent type: claude-code, codex (required)")
+	createCmd.MarkFlagRequired("agent-type")
 
 	// Agent configuration flags
 	createCmd.Flags().BoolVar(&createSkipPermissions, "skip-permissions", false, "Enable --dangerously-skip-permissions for Claude")

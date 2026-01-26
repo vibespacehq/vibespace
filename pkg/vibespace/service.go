@@ -744,12 +744,22 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		return "", fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// Determine agent type: use specified type, or match first agent's type
+	// Determine agent type: use specified type, or inherit from primary agent's type
 	agentType := opts.AgentType
 	if agentType == "" {
-		if len(existingAgents) > 0 {
+		// Find the primary agent and inherit its type
+		for _, a := range existingAgents {
+			if a.IsPrimary {
+				agentType = a.AgentType
+				break
+			}
+		}
+		// Fallback to first agent if no primary found (shouldn't happen)
+		if agentType == "" && len(existingAgents) > 0 {
 			agentType = existingAgents[0].AgentType
-		} else {
+		}
+		// Final fallback to default
+		if agentType == "" {
 			agentType = agent.TypeClaudeCode
 		}
 	}
