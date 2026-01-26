@@ -237,7 +237,7 @@ Examples:
 	}
 
 	slog.Info("spawn command completed", "vibespace", vibespace, "agent", agentName)
-	printSuccess("Agent '%s' created", agentName)
+	printSuccess("Agent '%s' scheduled (starting...)", agentName)
 	if shareCredentials {
 		fmt.Println("  Credential sharing enabled via /vibespace/.vibespace")
 	}

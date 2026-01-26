@@ -148,7 +148,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 
 	slog.Info("create command completed", "name", vs.Name, "id", vs.ID)
-	spinner.Success(fmt.Sprintf("Vibespace created: %s", vs.Name))
+	spinner.Success(fmt.Sprintf("Vibespace created: %s (starting...)", vs.Name))
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Printf("  vibespace %s agents    List Claude instances\n", vs.Name)
