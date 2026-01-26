@@ -64,6 +64,7 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 		"vibespace.dev/agent-type":     string(agentType),
 		"vibespace.dev/agent-num":      fmt.Sprintf("%d", agentNum),
 		"vibespace.dev/agent-name":     agentName,
+		"vibespace.dev/primary":        fmt.Sprintf("%t", req.Primary),
 	}
 
 	// Build environment variables
@@ -227,6 +228,7 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 		"vibespace.dev/agent-type":     string(agentType),
 		"vibespace.dev/agent-num":      fmt.Sprintf("%d", agentNum),
 		"vibespace.dev/agent-name":     agentName,
+		"vibespace.dev/primary":        fmt.Sprintf("%t", req.Primary),
 		"vibespace.dev/is-agent":       "true",
 	}
 
@@ -490,6 +492,9 @@ func (m *DeploymentManager) ListAgentsForVibespace(ctx context.Context, vibespac
 		// Get agent ID (UUID)
 		agentID := deploy.Labels["vibespace.dev/agent-id"]
 
+		// Get primary flag from labels
+		isPrimary := deploy.Labels["vibespace.dev/primary"] == "true"
+
 		status := deploymentStatusToString(&deploy)
 
 		agents = append(agents, AgentInfo{
@@ -497,6 +502,7 @@ func (m *DeploymentManager) ListAgentsForVibespace(ctx context.Context, vibespac
 			AgentType:      agentType,
 			AgentNum:       agentNum,
 			AgentName:      agentName,
+			IsPrimary:      isPrimary,
 			DeploymentName: deploy.Name,
 			Status:         status,
 		})

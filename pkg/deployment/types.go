@@ -18,6 +18,9 @@ type AgentInfo struct {
 	// AgentName is the display name (e.g., "claude-1", "codex-2")
 	AgentName string
 
+	// IsPrimary indicates this is the original agent created with the vibespace
+	IsPrimary bool
+
 	// DeploymentName is the Kubernetes Deployment name
 	DeploymentName string
 
@@ -38,6 +41,7 @@ type CreateDeploymentRequest struct {
 	AgentType agent.Type // Type of agent (claude-code, codex, etc.)
 	AgentNum  int        // Sequential number (1, 2, 3...)
 	AgentName string     // Display name (claude-1, codex-2)
+	Primary   bool       // True if this is the original agent created with the vibespace
 
 	// Container
 	Image     string
@@ -61,6 +65,7 @@ type CreateAgentRequest struct {
 	AgentType agent.Type // Type of agent (claude-code, codex, etc.)
 	AgentNum  int        // Sequential number (1, 2, 3...)
 	AgentName string     // Display name (e.g., "claude-2", "codex-1")
+	Primary   bool       // True if this is the original agent created with the vibespace
 
 	// Container
 	Image     string
