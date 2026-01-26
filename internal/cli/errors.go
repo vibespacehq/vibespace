@@ -212,10 +212,15 @@ func ensureDaemonRunningForAgent(ctx context.Context, vibespaceNameOrID string, 
 		}
 	}
 
-	return 0, fmt.Errorf("agent '%s' not found. Available: %s", agentName, formatAvailableAgents(result.Agents))
+	// Get all agents from Kubernetes to show proper status
+	allAgents, listErr := svc.ListAgents(ctx, vs.ID)
+	if listErr != nil {
+		return 0, fmt.Errorf("agent '%s' not found. Available: %s", agentName, formatAvailableAgents(result.Agents))
+	}
+	return 0, fmt.Errorf("agent '%s' not found or not ready. Available: %s", agentName, formatAllAgents(allAgents))
 }
 
-// formatAvailableAgents formats a list of agent names for error messages
+// formatAvailableAgents formats a list of agent names for error messages (from daemon forwards)
 func formatAvailableAgents(agents []daemon.AgentStatus) string {
 	if len(agents) == 0 {
 		return "(none)"
@@ -225,6 +230,22 @@ func formatAvailableAgents(agents []daemon.AgentStatus) string {
 		names[i] = a.Name
 	}
 	return strings.Join(names, ", ")
+}
+
+// formatAllAgents formats a list of all agents with their status
+func formatAllAgents(agents []vibespace.AgentInfo) string {
+	if len(agents) == 0 {
+		return "(none)"
+	}
+	parts := make([]string, len(agents))
+	for i, a := range agents {
+		if a.Status == "running" {
+			parts[i] = a.AgentName
+		} else {
+			parts[i] = fmt.Sprintf("%s (%s)", a.AgentName, a.Status)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 // ensureDaemonRunningSimple ensures the daemon is running (auto-starts if needed).
