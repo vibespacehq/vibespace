@@ -17,8 +17,8 @@ RUN npm install -g @openai/codex
 RUN mkdir -p /home/user/.codex && \
     chown -R user:user /home/user/.codex
 
-# Copy Codex-specific configuration (if any)
-# COPY codex-settings.toml /etc/vibespace/codex-settings.toml
+# Copy Codex configuration (file-based credential storage for shared home)
+COPY config.toml /etc/vibespace/codex/config.toml
 
 # Set agent type environment variable
 ENV VIBESPACE_AGENT_TYPE=codex
