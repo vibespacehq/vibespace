@@ -123,6 +123,13 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		return nil, fmt.Errorf("invalid vibespace name: %w", err)
 	}
 
+	// Validate agent name format if custom name provided
+	if req.AgentName != "" {
+		if err := ValidateName(req.AgentName); err != nil {
+			return nil, fmt.Errorf("invalid agent name: %w", err)
+		}
+	}
+
 	slog.Info("creating vibespace",
 		"name", req.Name,
 		"github_repo", req.GithubRepo,
