@@ -11,43 +11,48 @@ chown -R user:user /vibespace 2>/dev/null || true
 USER_HOME="/home/user"
 
 # ============================================================================
-# Credential sharing (--share-credentials mode)
+# Credential persistence
 # ============================================================================
+# Agent name is required for persistent storage
+AGENT_NAME="${VIBESPACE_AGENT:-agent}"
+
 if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
+    # Shared mode: all agents share credentials via common home directory
     log "Credential sharing enabled"
-
     USER_HOME="/vibespace/.home"
+else
+    # Isolated mode: each agent has its own persistent home on PVC
+    # Credentials persist across pod restarts but are not shared between agents
+    log "Isolated credentials mode"
+    USER_HOME="/vibespace/.agents/$AGENT_NAME"
+fi
 
-    # Create shared home if it doesn't exist (first agent)
-    if [ ! -d "$USER_HOME" ]; then
-        log "Creating shared home directory"
-        mkdir -p "$USER_HOME"
-        cp -a /home/user/. "$USER_HOME/" 2>/dev/null || true
-    fi
+# Create persistent home if it doesn't exist
+if [ ! -d "$USER_HOME" ]; then
+    log "Creating persistent home at $USER_HOME"
+    mkdir -p "$USER_HOME"
+    cp -a /home/user/. "$USER_HOME/" 2>/dev/null || true
+fi
 
-    # Handle SSH authorized_keys
-    mkdir -p "$USER_HOME/.ssh"
-    chmod 700 "$USER_HOME/.ssh"
-    if [ -n "$AUTHORIZED_KEYS" ]; then
+# Handle SSH authorized_keys
+mkdir -p "$USER_HOME/.ssh"
+chmod 700 "$USER_HOME/.ssh"
+if [ -n "$AUTHORIZED_KEYS" ]; then
+    if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
+        # Shared mode: append and deduplicate
         echo "$AUTHORIZED_KEYS" >> "$USER_HOME/.ssh/authorized_keys"
         sort -u "$USER_HOME/.ssh/authorized_keys" -o "$USER_HOME/.ssh/authorized_keys" 2>/dev/null || true
-        chmod 600 "$USER_HOME/.ssh/authorized_keys"
-    fi
-
-    chown -R user:user "$USER_HOME"
-
-    # Update /etc/passwd to use shared home
-    sed -i "s|/home/user|$USER_HOME|g" /etc/passwd
-else
-    # Non-shared mode: set up SSH in regular home
-    if [ -n "$AUTHORIZED_KEYS" ]; then
-        mkdir -p "$USER_HOME/.ssh"
+    else
+        # Isolated mode: overwrite
         echo "$AUTHORIZED_KEYS" > "$USER_HOME/.ssh/authorized_keys"
-        chmod 700 "$USER_HOME/.ssh"
-        chmod 600 "$USER_HOME/.ssh/authorized_keys"
-        chown -R user:user "$USER_HOME/.ssh"
     fi
+    chmod 600 "$USER_HOME/.ssh/authorized_keys"
 fi
+
+chown -R user:user "$USER_HOME"
+
+# Update /etc/passwd to use persistent home
+sed -i "s|/home/user|$USER_HOME|g" /etc/passwd
 
 # ============================================================================
 # Git config
@@ -104,7 +109,7 @@ case "$VIBESPACE_AGENT_TYPE" in
     claude-code)
         CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
         mkdir -p "$CLAUDE_CONFIG_DIR"
-        # Only copy Claude settings if the file exists (from claude-code image layer)
+        # Copy Claude settings if the file exists (from claude-code image layer)
         if [ -f /etc/vibespace/claude-settings.json ]; then
             cp /etc/vibespace/claude-settings.json "$CLAUDE_CONFIG_DIR/settings.json"
             log "Claude Code permission hooks configured"
