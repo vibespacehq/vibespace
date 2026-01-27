@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/list"
 	"github.com/yagizdagabak/vibespace/internal/platform"
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
+	"github.com/yagizdagabak/vibespace/pkg/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -59,17 +61,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		if installed {
 			running, _ := manager.IsRunning()
 			statusOut.Cluster.Running = running
-
-			if running {
-				ctx := context.Background()
-				components := checkClusterComponents(ctx, vibespaceHome)
-				for name, ready := range components {
-					statusOut.Components = append(statusOut.Components, ComponentStatus{
-						Name:  name,
-						Ready: ready,
-					})
-				}
-			}
 		}
 
 		// Add daemon status
@@ -92,16 +83,13 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			statusOut.Daemon = &DaemonStatus{Running: false}
 		}
 
-		return out.JSON(JSONOutput{
-			Success: true,
-			Data:    statusOut,
-		})
+		return out.JSON(NewJSONOutput(true, statusOut, nil))
 	}
 
 	if !installed {
-		fmt.Println("Cluster: not installed")
+		fmt.Printf("Cluster: %s\n", out.Orange("not installed"))
 		fmt.Println()
-		fmt.Println("Run 'vibespace init' to set up the cluster")
+		fmt.Printf("Run %s to set up the cluster\n", out.Teal("vibespace init"))
 		return nil
 	}
 
@@ -111,77 +99,67 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to check cluster status: %w", err)
 	}
 
-	if running {
-		fmt.Printf("Cluster: %s\n", green("running"))
-	} else {
-		fmt.Printf("Cluster: %s\n", yellow("stopped"))
+	if !running {
+		fmt.Printf("Cluster: %s\n", out.Yellow("stopped"))
 		fmt.Println()
-		fmt.Println("Run 'vibespace init' to start the cluster")
+		fmt.Printf("Run %s to start the cluster\n", out.Teal("vibespace init"))
 		return nil
 	}
 
-	// Check cluster components
-	ctx := context.Background()
-	components := checkClusterComponents(ctx, vibespaceHome)
+	// Styles
+	tealStyle := lipgloss.NewStyle().Foreground(ui.Teal)
+	pinkStyle := lipgloss.NewStyle().Foreground(ui.Pink)
+	orangeStyle := lipgloss.NewStyle().Foreground(ui.Orange)
+	boldStyle := lipgloss.NewStyle().Bold(true)
 
-	fmt.Println()
-	fmt.Println("Components:")
-	for name, status := range components {
-		if status {
-			fmt.Printf("  %s: %s\n", name, green("ready"))
-		} else {
-			fmt.Printf("  %s: %s\n", name, yellow("not ready"))
-		}
-	}
+	// Main list
+	l := list.New(
+		fmt.Sprintf("%s %s", boldStyle.Render("Cluster"), tealStyle.Render("running")),
+	)
 
-	// Check daemon status
-	fmt.Println()
+	// Daemon section
 	if daemon.IsDaemonRunning() {
 		daemonStatus, err := daemon.GetDaemonStatus()
 		if err != nil {
-			fmt.Printf("Daemon: %s (%v)\n", yellow("error"), err)
+			l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Daemon"), out.Yellow("error")))
+			l.Item(list.New(out.Dim(err.Error())))
 		} else {
-			fmt.Printf("Daemon: %s (uptime: %s, pid: %d)\n", green("running"), daemonStatus.Uptime, daemonStatus.Pid)
+			l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Daemon"), tealStyle.Render("running")))
+			l.Item(list.New(
+				fmt.Sprintf("uptime %s", pinkStyle.Render(daemonStatus.Uptime)),
+				fmt.Sprintf("pid %s", pinkStyle.Render(fmt.Sprintf("%d", daemonStatus.Pid))),
+			))
+
+			// Vibespaces as separate top-level item
 			if len(daemonStatus.Vibespaces) > 0 {
-				fmt.Println("  Managed vibespaces:")
+				var vsItems []any
 				for name, vs := range daemonStatus.Vibespaces {
 					agentCount := len(vs.Agents)
-					fmt.Printf("    %s: %d agent(s)\n", name, agentCount)
+					suffix := ""
+					if agentCount != 1 {
+						suffix = "s"
+					}
+					vsItems = append(vsItems, fmt.Sprintf("%s %s", orangeStyle.Render(name), out.Dim(fmt.Sprintf("(%d agent%s)", agentCount, suffix))))
 				}
+				l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Vibespaces"), out.Dim(fmt.Sprintf("(%d)", len(daemonStatus.Vibespaces)))))
+				l.Item(list.New(vsItems...))
 			}
 		}
 	} else {
-		fmt.Println("Daemon: not running")
+		l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Daemon"), out.Dim("not running")))
 	}
 
+	fmt.Println(l)
 	return nil
 }
 
-func checkClusterComponents(ctx context.Context, vibespaceHome string) map[string]bool {
-	// Use isolated kubeconfig
-	kubeconfig := filepath.Join(vibespaceHome, "kubeconfig")
-	kubectlBin := filepath.Join(vibespaceHome, "bin", "kubectl")
-
-	result := map[string]bool{
-		"Namespace": false,
-	}
-
-	// Check if vibespace namespace exists
-	cmd := exec.CommandContext(ctx, kubectlBin, "--kubeconfig", kubeconfig,
-		"get", "namespace", "vibespace", "-o", "name")
-	if err := cmd.Run(); err == nil {
-		result["Namespace"] = true
-	}
-
-	return result
-}
 
 var stopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the cluster",
 	Long:  `Stop the vibespace cluster. Data is preserved and can be started again with 'vibespace init'.`,
 	Example: `  vibespace stop`,
-	RunE: runStop,
+	RunE: runClusterStop,
 }
 
 var uninstallCmd = &cobra.Command{
@@ -197,8 +175,9 @@ This action cannot be undone. Your ~/.kube/config is NOT affected.`,
 	RunE:    runUninstall,
 }
 
-func runStop(cmd *cobra.Command, args []string) error {
+func runClusterStop(cmd *cobra.Command, args []string) error {
 	slog.Info("stop command started")
+	out := getOutput()
 
 	// Stop daemon first
 	if daemon.IsDaemonRunning() {
@@ -238,6 +217,12 @@ func runStop(cmd *cobra.Command, args []string) error {
 
 	if !running {
 		slog.Debug("cluster already stopped")
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, StopOutput{
+				Stopped: true,
+				Target:  "cluster",
+			}, nil))
+		}
 		fmt.Println("Cluster is already stopped")
 		return nil
 	}
@@ -254,6 +239,15 @@ func runStop(cmd *cobra.Command, args []string) error {
 
 	slog.Info("stop completed successfully")
 	spinner.Success("Cluster stopped")
+
+	// JSON output
+	if out.IsJSONMode() {
+		return out.JSON(NewJSONOutput(true, StopOutput{
+			Stopped: true,
+			Target:  "cluster",
+		}, nil))
+	}
+
 	return nil
 }
 

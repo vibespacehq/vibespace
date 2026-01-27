@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"text/tabwriter"
 	"time"
 )
 
@@ -25,6 +24,25 @@ type DetectedPorts struct {
 
 func runPorts(vibespace string, args []string) error {
 	ctx := context.Background()
+	out := getOutput()
+
+	// Handle help flag
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Printf(`List detected ports in a vibespace
+
+Usage:
+  vibespace %s ports
+
+Ports are automatically detected when agents start dev servers.
+
+Examples:
+  vibespace %s ports
+  vibespace %s ports --json
+`, vibespace, vibespace, vibespace)
+			return nil
+		}
+	}
 
 	// Ensure daemon is running (auto-start if needed)
 	if err := ensureDaemonRunningSimple(ctx, vibespace); err != nil {
@@ -79,6 +97,18 @@ func runPorts(vibespace string, args []string) error {
 	)
 	output, err := readCmd.Output()
 	if err != nil {
+		// JSON output for empty result
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, PortsOutput{
+				Vibespace: vibespace,
+				Ports:     []DetectedPort{},
+				Count:     0,
+			}, nil))
+		}
+		// Plain mode - no output for empty result
+		if out.IsPlainMode() {
+			return nil
+		}
 		// File might not exist yet
 		fmt.Println("No ports detected yet")
 		fmt.Println()
@@ -91,24 +121,45 @@ func runPorts(vibespace string, args []string) error {
 		return fmt.Errorf("failed to parse ports data: %w", err)
 	}
 
+	// JSON output mode
+	if out.IsJSONMode() {
+		return out.JSON(NewJSONOutput(true, PortsOutput{
+			Vibespace: vibespace,
+			Ports:     ports.Ports,
+			Count:     len(ports.Ports),
+		}, nil))
+	}
+
 	if len(ports.Ports) == 0 {
+		// Plain mode - no output for empty result
+		if out.IsPlainMode() {
+			return nil
+		}
 		fmt.Println("No ports detected")
 		fmt.Println()
 		fmt.Println("Ports are detected when Claude starts a dev server")
 		return nil
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PORT\tPROCESS\tDETECTED")
-
-	for _, port := range ports.Ports {
+	// Build table rows
+	headers := []string{"PORT", "PROCESS", "DETECTED"}
+	rows := make([][]string, len(ports.Ports))
+	for i, port := range ports.Ports {
 		ago := time.Since(port.DetectedAt).Round(time.Second)
-		fmt.Fprintf(w, "%d\t%s\t%s ago\n", port.Port, port.Process, ago)
+		rows[i] = []string{
+			fmt.Sprintf("%d", port.Port),
+			port.Process,
+			fmt.Sprintf("%s ago", ago),
+		}
 	}
 
-	w.Flush()
-	fmt.Println()
-	fmt.Printf("Forward a port with: vibespace %s forward <port>\n", vibespace)
+	out.Table(headers, rows)
+
+	// Don't print footer in plain mode
+	if !out.IsPlainMode() {
+		fmt.Println()
+		fmt.Printf("Forward a port with: vibespace %s forward add <port>\n", vibespace)
+	}
 
 	return nil
 }

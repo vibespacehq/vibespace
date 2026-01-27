@@ -4,6 +4,47 @@ package errors
 
 import "errors"
 
+// Exit codes for CLI
+const (
+	ExitSuccess     = 0  // Successful execution
+	ExitInternal    = 1  // Internal/unknown error
+	ExitUsage       = 2  // Invalid usage (bad flags, args)
+	ExitNotFound    = 10 // Resource not found (vibespace, agent)
+	ExitConflict    = 11 // Resource conflict (already exists)
+	ExitPermission  = 12 // Permission denied
+	ExitTimeout     = 13 // Operation timed out
+	ExitCancelled   = 14 // Operation cancelled by user
+	ExitUnavailable = 15 // Service unavailable (cluster/daemon not running)
+)
+
+// ErrorCode returns the appropriate exit code and error code string for an error.
+func ErrorCode(err error) (exitCode int, code string) {
+	switch {
+	case errors.Is(err, ErrVibespaceNotFound), errors.Is(err, ErrAgentNotFound), errors.Is(err, ErrForwardNotFound):
+		return ExitNotFound, "NOT_FOUND"
+	case errors.Is(err, ErrVibespaceExists):
+		return ExitConflict, "CONFLICT"
+	case errors.Is(err, ErrClusterNotRunning), errors.Is(err, ErrClusterNotInitialized), errors.Is(err, ErrClusterUnreachable):
+		return ExitUnavailable, "CLUSTER_UNAVAILABLE"
+	case errors.Is(err, ErrDaemonNotRunning):
+		return ExitUnavailable, "DAEMON_UNAVAILABLE"
+	case errors.Is(err, ErrKubernetesNotAvailable):
+		return ExitUnavailable, "K8S_UNAVAILABLE"
+	case errors.Is(err, ErrDaemonStartTimeout):
+		return ExitTimeout, "TIMEOUT"
+	case errors.Is(err, ErrInvalidName):
+		return ExitUsage, "INVALID_INPUT"
+	case errors.Is(err, ErrSSHKeyNotFound):
+		return ExitNotFound, "SSH_KEY_NOT_FOUND"
+	case errors.Is(err, ErrNoAgents):
+		return ExitNotFound, "NO_AGENTS"
+	case errors.Is(err, ErrNotConnected):
+		return ExitUnavailable, "NOT_CONNECTED"
+	default:
+		return ExitInternal, "INTERNAL"
+	}
+}
+
 // ErrClusterNotInitialized indicates the Kubernetes cluster has not been initialized.
 // Run 'vibespace init' to initialize.
 var ErrClusterNotInitialized = errors.New("cluster not initialized")

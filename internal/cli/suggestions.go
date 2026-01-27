@@ -39,18 +39,14 @@ func levenshtein(a, b string) int {
 
 // knownVibespaceSubcommands is the list of known subcommands for a vibespace
 var knownVibespaceSubcommands = []string{
-	"agents",
-	"spawn",
-	"kill",
+	"agent",
 	"connect",
 	"config",
 	"multi",
 	"ports",
-	"up",
-	"down",
+	"start",
+	"stop",
 	"forward",
-	"start", // alias for up
-	"stop",  // alias for down
 }
 
 // suggestVibespaceCommand suggests a command based on input typo

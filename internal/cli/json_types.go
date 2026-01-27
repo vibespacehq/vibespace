@@ -2,17 +2,39 @@ package cli
 
 import "time"
 
+// JSONMeta contains metadata about the CLI response
+type JSONMeta struct {
+	SchemaVersion string `json:"schema_version"`
+	CLIVersion    string `json:"cli_version"`
+	Timestamp     string `json:"timestamp"`
+}
+
 // JSONOutput is the standard wrapper for all JSON output
 type JSONOutput struct {
 	Success bool        `json:"success"`
 	Data    interface{} `json:"data,omitempty"`
 	Error   *JSONError  `json:"error,omitempty"`
+	Meta    JSONMeta    `json:"meta"`
 }
 
 // JSONError represents an error in JSON output
 type JSONError struct {
 	Message string `json:"message"`
 	Code    string `json:"code,omitempty"`
+}
+
+// NewJSONOutput creates a new JSONOutput with metadata populated.
+func NewJSONOutput(success bool, data interface{}, err *JSONError) JSONOutput {
+	return JSONOutput{
+		Success: success,
+		Data:    data,
+		Error:   err,
+		Meta: JSONMeta{
+			SchemaVersion: "1",
+			CLIVersion:    Version,
+			Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		},
+	}
 }
 
 // VersionOutput is the JSON output for the version command
@@ -182,5 +204,72 @@ type AgentConfigOutput struct {
 	MaxTurns         int      `json:"max_turns"`
 	SystemPrompt     string   `json:"system_prompt"`
 	ReasoningEffort  string   `json:"reasoning_effort,omitempty"`
+}
+
+// InitOutput is the JSON output for the init command
+type InitOutput struct {
+	Platform string `json:"platform"`
+	CPU      int    `json:"cpu"`
+	Memory   int    `json:"memory"`
+	Disk     int    `json:"disk"`
+}
+
+// StopOutput is the JSON output for the stop command (cluster or vibespace)
+type StopOutput struct {
+	Stopped bool   `json:"stopped"`
+	Target  string `json:"target,omitempty"` // "cluster" or vibespace name
+}
+
+// AgentCreateOutput is the JSON output for agent create command
+type AgentCreateOutput struct {
+	Vibespace string `json:"vibespace"`
+	Agent     string `json:"agent"`
+	Type      string `json:"type"`
+}
+
+// AgentDeleteOutput is the JSON output for agent delete command
+type AgentDeleteOutput struct {
+	Vibespace string `json:"vibespace"`
+	Agent     string `json:"agent"`
+}
+
+// StartOutput is the JSON output for start command
+type StartOutput struct {
+	Vibespace string `json:"vibespace"`
+	Agent     string `json:"agent,omitempty"` // Empty if starting all agents
+}
+
+// ConfigSetOutput is the JSON output for config set command
+type ConfigSetOutput struct {
+	Vibespace string            `json:"vibespace"`
+	Agent     string            `json:"agent"`
+	Config    AgentConfigOutput `json:"config"`
+}
+
+// ForwardAddOutput is the JSON output for forward add command
+type ForwardAddOutput struct {
+	Vibespace  string `json:"vibespace"`
+	Agent      string `json:"agent"`
+	LocalPort  int    `json:"local_port"`
+	RemotePort int    `json:"remote_port"`
+}
+
+// ForwardRemoveOutput is the JSON output for forward remove command
+type ForwardRemoveOutput struct {
+	Vibespace  string `json:"vibespace"`
+	Agent      string `json:"agent"`
+	RemotePort int    `json:"remote_port"`
+}
+
+// PortsOutput is the JSON output for ports command
+type PortsOutput struct {
+	Vibespace string         `json:"vibespace"`
+	Ports     []DetectedPort `json:"ports"`
+	Count     int            `json:"count"`
+}
+
+// SessionDeleteOutput is the JSON output for session delete command
+type SessionDeleteOutput struct {
+	Name string `json:"name"`
 }
 

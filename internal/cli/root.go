@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+
 	"github.com/spf13/cobra"
 )
 
@@ -21,6 +23,7 @@ var (
 	globalQuiet   bool
 	globalNoColor bool
 	globalPlain   bool
+	globalHeader  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -80,6 +83,7 @@ func initOutputFromFlags() {
 	initOutput(OutputConfig{
 		JSONMode:  globalJSON,
 		PlainMode: globalPlain,
+		Header:    globalHeader,
 		Verbosity: verbosity,
 		NoColor:   globalNoColor,
 	})
@@ -104,6 +108,8 @@ func parseGlobalFlags() {
 			globalNoColor = true
 		case "--plain":
 			globalPlain = true
+		case "--header":
+			globalHeader = true
 		case "--help", "-h":
 			// Keep help flags for cobra to handle
 			newArgs = append(newArgs, arg)
@@ -113,7 +119,8 @@ func parseGlobalFlags() {
 				strings.HasPrefix(arg, "--verbose=") ||
 				strings.HasPrefix(arg, "--quiet=") ||
 				strings.HasPrefix(arg, "--no-color=") ||
-				strings.HasPrefix(arg, "--plain=") {
+				strings.HasPrefix(arg, "--plain=") ||
+				strings.HasPrefix(arg, "--header=") {
 				// Parse boolean flag with value (--flag=true/false)
 				parts := strings.SplitN(arg, "=", 2)
 				flag := parts[0]
@@ -130,6 +137,8 @@ func parseGlobalFlags() {
 					globalNoColor = isTrue
 				case "--plain":
 					globalPlain = isTrue
+				case "--header":
+					globalHeader = isTrue
 				}
 			} else {
 				newArgs = append(newArgs, arg)
@@ -154,17 +163,21 @@ func Execute() error {
 
 	err := rootCmd.Execute()
 	if err != nil {
+		exitCode, code := vserrors.ErrorCode(err)
+
 		// In JSON mode, output error as JSON
 		if globalJSON {
-			getOutput().JSON(JSONOutput{
-				Success: false,
-				Error:   &JSONError{Message: err.Error()},
-			})
+			getOutput().JSON(NewJSONOutput(false, nil, &JSONError{
+				Message: err.Error(),
+				Code:    code,
+			}))
 		} else {
 			printError("%v", err)
 		}
+
+		os.Exit(exitCode)
 	}
-	return err
+	return nil
 }
 
 func init() {
@@ -186,6 +199,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&globalQuiet, "quiet", "q", false, "Suppress non-essential output")
 	rootCmd.PersistentFlags().BoolVar(&globalNoColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&globalPlain, "plain", false, "Plain output for scripting")
+	rootCmd.PersistentFlags().BoolVar(&globalHeader, "header", false, "Include headers in plain output")
 }
 
 var versionCmd = &cobra.Command{
@@ -196,13 +210,10 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		out := getOutput()
 		if out.IsJSONMode() {
-			out.JSON(JSONOutput{
-				Success: true,
-				Data: VersionOutput{
-					Version: Version,
-					Commit:  Commit,
-				},
-			})
+			out.JSON(NewJSONOutput(true, VersionOutput{
+				Version: Version,
+				Commit:  Commit,
+			}, nil))
 			return
 		}
 		fmt.Printf("vibespace %s (%s)\n", Version, Commit)
@@ -223,18 +234,14 @@ func handleVibespaceCommand(args []string) error {
 		// Show help for this vibespace
 		fmt.Printf("Vibespace: %s\n\n", vibespace)
 		fmt.Println("Available commands:")
-		fmt.Println("  agents     List Claude instances")
-		fmt.Println("  spawn      Create a new Claude instance")
-		fmt.Println("  kill       Remove a Claude instance")
-		fmt.Println("  connect    Connect to a Claude instance")
+		fmt.Println("  agent      Manage agents (list, create, delete)")
+		fmt.Println("  connect    Connect to an agent")
 		fmt.Println("  config     View/modify agent configuration")
 		fmt.Println("  multi      Multi-agent terminal mode")
 		fmt.Println("  ports      List detected ports")
-		fmt.Println("  up         Scale up agents (start pods)")
-		fmt.Println("  down       Scale down agents (stop pods)")
-		fmt.Println("  forward    Manage port-forwards (list, add, remove, ...)")
-		fmt.Println("  start      Start the vibespace (alias for 'up')")
-		fmt.Println("  stop       Stop the vibespace (alias for 'down')")
+		fmt.Println("  start      Start agents")
+		fmt.Println("  stop       Stop agents")
+		fmt.Println("  forward    Manage port-forwards (list, add, remove)")
 		return nil
 	}
 
@@ -242,12 +249,8 @@ func handleVibespaceCommand(args []string) error {
 	cmdArgs := subArgs[1:]
 
 	switch subCmd {
-	case "agents":
-		return runAgents(vibespace, cmdArgs)
-	case "spawn":
-		return runSpawn(vibespace, cmdArgs)
-	case "kill":
-		return runKill(vibespace, cmdArgs)
+	case "agent":
+		return runAgent(vibespace, cmdArgs)
 	case "connect":
 		return runConnect(vibespace, cmdArgs)
 	case "config":
@@ -256,10 +259,10 @@ func handleVibespaceCommand(args []string) error {
 		return runMulti(vibespace, cmdArgs)
 	case "ports":
 		return runPorts(vibespace, cmdArgs)
-	case "up", "start":
-		return runUp(vibespace, cmdArgs)
-	case "down", "stop":
-		return runDown(vibespace, cmdArgs)
+	case "start":
+		return runStart(vibespace, cmdArgs)
+	case "stop":
+		return runStop(vibespace, cmdArgs)
 	case "forward":
 		return runForwardCmd(vibespace, cmdArgs)
 	default:
