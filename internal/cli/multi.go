@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/tui"
 	"github.com/yagizdagabak/vibespace/pkg/ui"
@@ -285,9 +286,10 @@ func buildSession(name string, vibespaces []string, agents []string) *session.Se
 
 // runListSessions lists all available sessions (for scripting)
 func runListSessions(jsonOutput bool) error {
+	out := getOutput()
 	store, err := session.NewStore()
 	if err != nil {
-		if jsonOutput {
+		if jsonOutput || out.IsJSONMode() {
 			outputJSONError(err)
 			return nil
 		}
@@ -296,66 +298,57 @@ func runListSessions(jsonOutput bool) error {
 
 	sessions, err := store.List()
 	if err != nil {
-		if jsonOutput {
+		if jsonOutput || out.IsJSONMode() {
 			outputJSONError(err)
 			return nil
 		}
 		return err
 	}
 
-	if jsonOutput {
-		type sessionInfo struct {
-			Name       string    `json:"name"`
-			Vibespaces []string  `json:"vibespaces"`
-			CreatedAt  time.Time `json:"created_at"`
-			LastUsed   time.Time `json:"last_used"`
-		}
-
-		output := struct {
-			Sessions []sessionInfo `json:"sessions"`
-		}{
-			Sessions: make([]sessionInfo, len(sessions)),
-		}
-
+	if jsonOutput || out.IsJSONMode() {
+		items := make([]MultiSessionItem, len(sessions))
 		for i, sess := range sessions {
 			vsNames := make([]string, len(sess.Vibespaces))
 			for j, vs := range sess.Vibespaces {
 				vsNames[j] = vs.Name
 			}
-			output.Sessions[i] = sessionInfo{
+			items[i] = MultiSessionItem{
 				Name:       sess.Name,
 				Vibespaces: vsNames,
-				CreatedAt:  sess.CreatedAt,
-				LastUsed:   sess.LastUsed,
+				CreatedAt:  sess.CreatedAt.Format(time.RFC3339),
+				LastUsed:   sess.LastUsed.Format(time.RFC3339),
 			}
 		}
-
-		data, err := json.MarshalIndent(output, "", "  ")
-		if err != nil {
-			outputJSONError(err)
-			return nil
-		}
-		fmt.Println(string(data))
-	} else {
-		if len(sessions) == 0 {
-			fmt.Println("No sessions found.")
-			return nil
-		}
-
-		fmt.Println("SESSION        VIBESPACES       LAST USED")
-		for _, sess := range sessions {
-			vsNames := make([]string, len(sess.Vibespaces))
-			for i, vs := range sess.Vibespaces {
-				vsNames[i] = vs.Name
-			}
-			vsInfo := strings.Join(vsNames, ", ")
-			if vsInfo == "" {
-				vsInfo = "(empty)"
-			}
-			fmt.Printf("%-14s %-16s %s\n", sess.Name, vsInfo, formatRelativeTime(sess.LastUsed))
-		}
+		return out.JSON(NewJSONOutput(true, MultiListSessionsOutput{
+			Sessions: items,
+			Count:    len(items),
+		}, nil))
 	}
 
+	if len(sessions) == 0 {
+		if out.IsPlainMode() {
+			return nil
+		}
+		fmt.Println("No sessions found.")
+		return nil
+	}
+
+	// Build table
+	headers := []string{"SESSION", "VIBESPACES", "LAST USED"}
+	rows := make([][]string, len(sessions))
+	for i, sess := range sessions {
+		vsNames := make([]string, len(sess.Vibespaces))
+		for j, vs := range sess.Vibespaces {
+			vsNames[j] = vs.Name
+		}
+		vsInfo := strings.Join(vsNames, ", ")
+		if vsInfo == "" {
+			vsInfo = "(empty)"
+		}
+		rows[i] = []string{sess.Name, vsInfo, formatRelativeTime(sess.LastUsed)}
+	}
+
+	out.Table(headers, rows)
 	return nil
 }
 
@@ -437,11 +430,8 @@ func runSessionResume(ctx context.Context, sessionID string, nonInteractive, jso
 		response.Session = sess.Name
 
 		if jsonOutput {
-			data, err := response.ToJSON()
-			if err != nil {
-				return fmt.Errorf("failed to marshal response: %w", err)
-			}
-			fmt.Println(string(data))
+			out := getOutput()
+			_ = out.JSON(NewJSONOutput(true, convertMultiResponse(response), nil))
 		} else {
 			for _, agentResp := range response.Responses {
 				fmt.Printf("[%s] %s\n", agentResp.Agent, agentResp.Content)
@@ -582,13 +572,38 @@ func runNonInteractive(ctx context.Context, vibespaces []session.VibespaceEntry,
 
 	response.Session = sessionName
 
-	data, err := response.ToJSON()
-	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
-	}
-	fmt.Println(string(data))
+	// Convert to standard JSON envelope
+	out := getOutput()
+	return out.JSON(NewJSONOutput(true, convertMultiResponse(response), nil))
+}
 
-	return nil
+// convertMultiResponse converts tui.MultiResponse to MultiMessageOutput for JSON envelope
+func convertMultiResponse(resp *tui.MultiResponse) MultiMessageOutput {
+	responses := make([]MultiAgentResponse, len(resp.Responses))
+	for i, r := range resp.Responses {
+		toolUses := make([]MultiToolUse, len(r.ToolUses))
+		for j, tu := range r.ToolUses {
+			toolUses[j] = MultiToolUse{
+				Tool:  tu.Tool,
+				Input: tu.Input,
+			}
+		}
+		responses[i] = MultiAgentResponse{
+			Agent:     r.Agent,
+			Timestamp: r.Timestamp.Format(time.RFC3339),
+			Content:   r.Content,
+			ToolUses:  toolUses,
+			Error:     r.Error,
+		}
+	}
+	return MultiMessageOutput{
+		Session: resp.Session,
+		Request: MultiRequestInfo{
+			Target:  resp.Request.Target,
+			Message: resp.Request.Message,
+		},
+		Responses: responses,
+	}
 }
 
 // runBatchMode processes multiple messages from stdin (JSONL format)
@@ -624,12 +639,9 @@ func runBatchMode(ctx context.Context, vibespaces []session.VibespaceEntry, time
 
 		response.Session = sessionName
 
-		data, err := response.ToJSON()
-		if err != nil {
-			outputJSONError(fmt.Errorf("failed to marshal response: %w", err))
-			continue
-		}
-		fmt.Println(string(data))
+		// Use standard JSON envelope
+		out := getOutput()
+		_ = out.JSON(NewJSONOutput(true, convertMultiResponse(response), nil))
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -639,13 +651,17 @@ func runBatchMode(ctx context.Context, vibespaces []session.VibespaceEntry, time
 	return nil
 }
 
-// outputJSONError outputs an error in JSON format
+// outputJSONError outputs an error in JSON format using standard envelope
 func outputJSONError(err error) {
-	response := &tui.MultiResponse{
-		Error: err.Error(),
-	}
-	data, _ := json.MarshalIndent(response, "", "  ")
-	fmt.Println(string(data))
+	out := getOutput()
+	exitCode, code := vserrors.ErrorCode(err)
+	hint := getErrorHint(err)
+	_ = out.JSON(NewJSONOutput(false, nil, &JSONError{
+		Message:  err.Error(),
+		Code:     code,
+		ExitCode: exitCode,
+		Hint:     hint,
+	}))
 }
 
 // runListAgents lists connected agents without sending a message
@@ -672,18 +688,22 @@ func runListAgents(ctx context.Context, vibespaces []session.VibespaceEntry, jso
 	sessionName := strings.Join(vsNames, "-")
 
 	if jsonOutput {
-		response := struct {
-			Session string   `json:"session"`
-			Agents  []string `json:"agents"`
-		}{
+		out := getOutput()
+		return out.JSON(NewJSONOutput(true, MultiListAgentsOutput{
 			Session: sessionName,
 			Agents:  agents,
+			Count:   len(agents),
+		}, nil))
+	}
+
+	out := getOutput()
+	if out.IsPlainMode() {
+		if out.Header() {
+			fmt.Println("SESSION\tAGENT")
 		}
-		data, err := json.MarshalIndent(response, "", "  ")
-		if err != nil {
-			return err
+		for _, agent := range agents {
+			fmt.Printf("%s\t%s\n", sessionName, agent)
 		}
-		fmt.Println(string(data))
 	} else {
 		fmt.Printf("Session: %s\n", sessionName)
 		fmt.Printf("Agents (%d):\n", len(agents))
@@ -735,41 +755,6 @@ func runPlainText(ctx context.Context, vibespaces []session.VibespaceEntry, targ
 	}
 
 	return nil
-}
-
-// runMulti handles the vibespace-scoped multi command: vibespace <name> multi
-// This provides an alternative syntax to "vibespace multi <name>"
-func runMulti(vsName string, args []string) error {
-	ctx := context.Background()
-
-	// Verify vibespace exists and is running
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		return err
-	}
-
-	if _, err := checkVibespaceRunning(ctx, svc, vsName); err != nil {
-		return err
-	}
-
-	// Build session with single vibespace
-	sess := buildSession("", []string{vsName}, nil)
-
-	// Save session
-	store, err := session.NewStore()
-	if err != nil {
-		return err
-	}
-
-	if err := store.Save(sess); err != nil {
-		return err
-	}
-
-	// Setup TUI logging
-	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
-	defer cleanup()
-
-	return tui.Run(sess, false)
 }
 
 // runStreamingPlain runs in streaming plain text mode

@@ -19,8 +19,10 @@ type JSONOutput struct {
 
 // JSONError represents an error in JSON output
 type JSONError struct {
-	Message string `json:"message"`
-	Code    string `json:"code,omitempty"`
+	Message  string `json:"message"`
+	Code     string `json:"code,omitempty"`
+	ExitCode int    `json:"exit_code,omitempty"`
+	Hint     string `json:"hint,omitempty"`
 }
 
 // NewJSONOutput creates a new JSONOutput with metadata populated.
@@ -271,5 +273,54 @@ type PortsOutput struct {
 // SessionDeleteOutput is the JSON output for session delete command
 type SessionDeleteOutput struct {
 	Name string `json:"name"`
+}
+
+// MultiListSessionsOutput is the JSON output for multi --list-sessions
+type MultiListSessionsOutput struct {
+	Sessions []MultiSessionItem `json:"sessions"`
+	Count    int                `json:"count"`
+}
+
+// MultiSessionItem represents a session in multi list output
+type MultiSessionItem struct {
+	Name       string   `json:"name"`
+	Vibespaces []string `json:"vibespaces"`
+	CreatedAt  string   `json:"created_at"`
+	LastUsed   string   `json:"last_used"`
+}
+
+// MultiListAgentsOutput is the JSON output for multi --list-agents
+type MultiListAgentsOutput struct {
+	Session string   `json:"session"`
+	Agents  []string `json:"agents"`
+	Count   int      `json:"count"`
+}
+
+// MultiMessageOutput is the JSON output for multi message responses
+type MultiMessageOutput struct {
+	Session   string               `json:"session"`
+	Request   MultiRequestInfo     `json:"request"`
+	Responses []MultiAgentResponse `json:"responses"`
+}
+
+// MultiRequestInfo contains request details
+type MultiRequestInfo struct {
+	Target  string `json:"target"`
+	Message string `json:"message"`
+}
+
+// MultiAgentResponse represents a response from a single agent
+type MultiAgentResponse struct {
+	Agent     string             `json:"agent"`
+	Timestamp string             `json:"timestamp"`
+	Content   string             `json:"content"`
+	ToolUses  []MultiToolUse     `json:"tool_uses,omitempty"`
+	Error     string             `json:"error,omitempty"`
+}
+
+// MultiToolUse represents a tool use in an agent response
+type MultiToolUse struct {
+	Tool   string `json:"tool"`
+	Input  string `json:"input,omitempty"`
 }
 

@@ -10,6 +10,7 @@ import (
 	"strconv"
 
 	"github.com/yagizdagabak/vibespace/pkg/agent"
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
@@ -88,7 +89,7 @@ func runConnect(vsName string, args []string) error {
 	}
 
 	if targetAgent == nil {
-		return fmt.Errorf("agent '%s' not found in vibespace '%s'", agentName, vsName)
+		return fmt.Errorf("agent '%s' not found in vibespace '%s': %w", agentName, vsName, vserrors.ErrAgentNotFound)
 	}
 
 	mode := "ssh"

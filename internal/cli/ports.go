@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 )
 
 // DetectedPort represents a port detected by the port detector daemon
@@ -57,7 +59,7 @@ Examples:
 	// Verify vibespace exists and is running
 	vs, err := svc.Get(ctx, vibespace)
 	if err != nil {
-		return fmt.Errorf("vibespace '%s' not found", vibespace)
+		return fmt.Errorf("vibespace '%s' not found: %w", vibespace, vserrors.ErrVibespaceNotFound)
 	}
 
 	if vs.Status != "running" {

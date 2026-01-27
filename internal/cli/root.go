@@ -167,9 +167,12 @@ func Execute() error {
 
 		// In JSON mode, output error as JSON
 		if globalJSON {
+			hint := getErrorHint(err)
 			getOutput().JSON(NewJSONOutput(false, nil, &JSONError{
-				Message: err.Error(),
-				Code:    code,
+				Message:  err.Error(),
+				Code:     code,
+				ExitCode: exitCode,
+				Hint:     hint,
 			}))
 		} else {
 			printError("%v", err)
@@ -255,8 +258,6 @@ func handleVibespaceCommand(args []string) error {
 		return runConnect(vibespace, cmdArgs)
 	case "config":
 		return runConfig(vibespace, cmdArgs)
-	case "multi":
-		return runMulti(vibespace, cmdArgs)
 	case "ports":
 		return runPorts(vibespace, cmdArgs)
 	case "start":

@@ -886,7 +886,7 @@ func (s *Service) KillAgent(ctx context.Context, nameOrID string, agentName stri
 	}
 
 	if targetAgent == nil {
-		return fmt.Errorf("agent '%s' not found", agentName)
+		return fmt.Errorf("agent '%s' not found: %w", agentName, vserrors.ErrAgentNotFound)
 	}
 
 	// Cannot kill the primary agent (the original agent created with the vibespace)
