@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/yagizdagabak/vibespace/pkg/agent"
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	vspkg "github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
@@ -136,6 +137,30 @@ Examples:
 		}
 	}
 
+	// Helper to format config as plain row
+	configToPlainRow := func(name string, agentType agent.Type, config *agent.Config) string {
+		isCodex := agentType == agent.TypeCodex
+		skipPerm := "false"
+		if isCodex {
+			skipPerm = "always"
+		} else if config.SkipPermissions {
+			skipPerm = "true"
+		}
+		model := config.Model
+		if model == "" {
+			model = "default"
+		}
+		maxTurns := "unlimited"
+		if config.MaxTurns > 0 {
+			maxTurns = strconv.Itoa(config.MaxTurns)
+		}
+		reasoning := config.ReasoningEffort
+		if reasoning == "" {
+			reasoning = "-"
+		}
+		return fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", name, agentType.String(), skipPerm, model, maxTurns, reasoning)
+	}
+
 	if agentName != "" {
 		// Show config for specific agent
 		config, err := svc.GetAgentConfig(ctx, vs.ID, agentName)
@@ -154,8 +179,17 @@ Examples:
 
 		agentInfo := findAgent(agentName)
 		if agentInfo == nil {
-			return fmt.Errorf("agent '%s' not found", agentName)
+			return fmt.Errorf("agent '%s' not found: %w", agentName, vserrors.ErrAgentNotFound)
 		}
+
+		if out.IsPlainMode() {
+			if out.Header() {
+				fmt.Println("AGENT\tTYPE\tSKIP_PERMISSIONS\tMODEL\tMAX_TURNS\tREASONING_EFFORT")
+			}
+			fmt.Println(configToPlainRow(agentName, agentInfo.AgentType, config))
+			return nil
+		}
+
 		printAgentConfig(agentName, agentInfo.AgentType, config)
 	} else {
 		// Show config for all agents
@@ -177,6 +211,20 @@ Examples:
 				Vibespace: vibespace,
 				Agents:    configs,
 			}, nil))
+		}
+
+		if out.IsPlainMode() {
+			if out.Header() {
+				fmt.Println("AGENT\tTYPE\tSKIP_PERMISSIONS\tMODEL\tMAX_TURNS\tREASONING_EFFORT")
+			}
+			for _, a := range agents {
+				config, err := svc.GetAgentConfig(ctx, vs.ID, a.AgentName)
+				if err != nil {
+					continue
+				}
+				fmt.Println(configToPlainRow(a.AgentName, a.AgentType, config))
+			}
+			return nil
 		}
 
 		for _, a := range agents {

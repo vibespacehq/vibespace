@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/yagizdagabak/vibespace/pkg/agent"
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -354,7 +355,7 @@ func (m *DeploymentManager) GetDeploymentByName(ctx context.Context, name string
 	}
 
 	if len(deployments.Items) == 0 {
-		return nil, fmt.Errorf("vibespace '%s' not found", name)
+		return nil, fmt.Errorf("vibespace '%s' not found: %w", name, vserrors.ErrVibespaceNotFound)
 	}
 
 	return &deployments.Items[0], nil
@@ -440,7 +441,7 @@ func (m *DeploymentManager) ScaleAgentDeployment(ctx context.Context, vibespaceI
 	}
 
 	if len(deployments.Items) == 0 {
-		return fmt.Errorf("agent '%s' not found in vibespace", agentName)
+		return fmt.Errorf("agent '%s' not found in vibespace: %w", agentName, vserrors.ErrAgentNotFound)
 	}
 
 	for _, deployment := range deployments.Items {
@@ -531,7 +532,7 @@ func (m *DeploymentManager) GetAgentConfig(ctx context.Context, vibespaceID, age
 	}
 
 	if deploy == nil {
-		return nil, fmt.Errorf("agent '%s' not found", agentName)
+		return nil, fmt.Errorf("agent '%s' not found: %w", agentName, vserrors.ErrAgentNotFound)
 	}
 
 	return m.extractConfigFromDeployment(deploy), nil
@@ -595,7 +596,7 @@ func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, 
 	}
 
 	if deploy == nil {
-		return fmt.Errorf("agent '%s' not found", agentName)
+		return fmt.Errorf("agent '%s' not found: %w", agentName, vserrors.ErrAgentNotFound)
 	}
 
 	// Update environment variables

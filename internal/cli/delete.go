@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 
 	"github.com/spf13/cobra"
@@ -61,7 +62,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	vs, err := svc.Get(ctx, name)
 	if err != nil {
 		slog.Error("vibespace not found", "name", name, "error", err)
-		return fmt.Errorf("vibespace '%s' not found", name)
+		return fmt.Errorf("vibespace '%s' not found: %w", name, vserrors.ErrVibespaceNotFound)
 	}
 
 	// List resources that would be deleted

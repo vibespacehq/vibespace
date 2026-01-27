@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/ui"
 )
 
@@ -336,4 +338,26 @@ func printWarning(format string, args ...interface{}) {
 // printError prints an error message to stderr (uses global Output)
 func printError(format string, args ...interface{}) {
 	getOutput().Fail(format, args...)
+}
+
+// getErrorHint returns a helpful hint for common errors
+func getErrorHint(err error) string {
+	switch {
+	case errors.Is(err, vserrors.ErrVibespaceNotFound):
+		return "Use 'vibespace list' to see available vibespaces"
+	case errors.Is(err, vserrors.ErrAgentNotFound):
+		return "Use 'vibespace <name> agent list' to see available agents"
+	case errors.Is(err, vserrors.ErrClusterNotInitialized):
+		return "Run 'vibespace init' to initialize the cluster"
+	case errors.Is(err, vserrors.ErrClusterNotRunning):
+		return "Run 'vibespace init' to start the cluster"
+	case errors.Is(err, vserrors.ErrDaemonNotRunning):
+		return "The daemon will auto-start on next command"
+	case errors.Is(err, vserrors.ErrForwardNotFound):
+		return "Use 'vibespace <name> forward list' to see active forwards"
+	case errors.Is(err, vserrors.ErrNoAgents):
+		return "Use 'vibespace <name> agent create' to add an agent"
+	default:
+		return ""
+	}
 }

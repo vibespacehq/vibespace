@@ -42,7 +42,6 @@ var knownVibespaceSubcommands = []string{
 	"agent",
 	"connect",
 	"config",
-	"multi",
 	"ports",
 	"start",
 	"stop",

@@ -90,7 +90,7 @@ func getVibespaceServiceWithCheck() (*vibespace.Service, error) {
 func checkVibespaceExists(ctx context.Context, svc *vibespace.Service, name string) (*model.Vibespace, error) {
 	vs, err := svc.Get(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("vibespace '%s' not found. List available: vibespace list", name)
+		return nil, fmt.Errorf("vibespace '%s' not found. List available: vibespace list: %w", name, vserrors.ErrVibespaceNotFound)
 	}
 	return vs, nil
 }
