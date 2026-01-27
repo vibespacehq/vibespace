@@ -8,8 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/fatih/color"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-isatty"
+	"github.com/yagizdagabak/vibespace/pkg/ui"
 )
 
 // Output handles all CLI output with support for TTY detection, colors, JSON mode, etc.
@@ -19,22 +20,20 @@ type Output struct {
 	noColor   bool
 	jsonMode  bool
 	plainMode bool
-	verbosity int // -1=quiet, 0=normal, 1=verbose
+	header    bool  // Include headers in plain mode
+	verbosity int   // -1=quiet, 0=normal, 1=verbose
 
 	mu sync.Mutex // protects concurrent writes
 
-	// Color functions - set based on noColor
-	green  func(a ...interface{}) string
-	yellow func(a ...interface{}) string
-	red    func(a ...interface{}) string
-	cyan   func(a ...interface{}) string
-	bold   func(a ...interface{}) string
+	// Lipgloss styles
+	styles ui.Styles
 }
 
 // OutputConfig holds configuration for creating a new Output instance
 type OutputConfig struct {
 	JSONMode  bool
 	PlainMode bool
+	Header    bool
 	Verbosity int // -1=quiet, 0=normal, 1=verbose
 	NoColor   bool
 }
@@ -81,32 +80,24 @@ func NewOutput(cfg OutputConfig) *Output {
 		noColor = true
 	}
 
-	o := &Output{
+	// Setup styles based on color mode
+	var styles ui.Styles
+	if noColor {
+		styles = ui.PlainStyles()
+	} else {
+		styles = ui.NewStyles()
+	}
+
+	return &Output{
 		stdoutTTY: stdoutTTY,
 		stdinTTY:  stdinTTY,
 		noColor:   noColor,
 		jsonMode:  cfg.JSONMode,
 		plainMode: cfg.PlainMode,
+		header:    cfg.Header,
 		verbosity: cfg.Verbosity,
+		styles:    styles,
 	}
-
-	// Setup color functions
-	if noColor {
-		// No-op functions when colors are disabled
-		o.green = fmt.Sprint
-		o.yellow = fmt.Sprint
-		o.red = fmt.Sprint
-		o.cyan = fmt.Sprint
-		o.bold = fmt.Sprint
-	} else {
-		o.green = color.New(color.FgGreen).SprintFunc()
-		o.yellow = color.New(color.FgYellow).SprintFunc()
-		o.red = color.New(color.FgRed).SprintFunc()
-		o.cyan = color.New(color.FgCyan).SprintFunc()
-		o.bold = color.New(color.Bold).SprintFunc()
-	}
-
-	return o
 }
 
 // IsTTY returns true if stdout is a terminal
@@ -135,8 +126,17 @@ func (o *Output) IsQuiet() bool {
 	return o.verbosity < 0
 }
 
+// NoColor returns true if colors are disabled
+func (o *Output) NoColor() bool {
+	return o.noColor
+}
 
-// Step prints a progress step message with a cyan arrow prefix
+// Header returns true if headers should be included in plain mode
+func (o *Output) Header() bool {
+	return o.header
+}
+
+// Step prints a progress step message with an arrow prefix
 func (o *Output) Step(format string, args ...interface{}) {
 	if o.jsonMode || o.IsQuiet() {
 		return
@@ -144,10 +144,14 @@ func (o *Output) Step(format string, args ...interface{}) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Printf("%s %s\n", o.cyan("->"), msg)
+	prefix := ui.StepPrefix(o.noColor)
+	if !o.noColor {
+		prefix = lipgloss.NewStyle().Foreground(ui.Teal).Render(prefix)
+	}
+	fmt.Printf("%s %s\n", prefix, msg)
 }
 
-// Success prints a success message with a green checkmark prefix
+// Success prints a success message with a checkmark prefix
 func (o *Output) Success(format string, args ...interface{}) {
 	if o.jsonMode || o.IsQuiet() {
 		return
@@ -155,10 +159,14 @@ func (o *Output) Success(format string, args ...interface{}) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Printf("%s %s\n", o.green("ok"), msg)
+	prefix := ui.SuccessPrefix(o.noColor)
+	if !o.noColor {
+		prefix = o.styles.Success.Render(prefix)
+	}
+	fmt.Printf("%s %s\n", prefix, msg)
 }
 
-// Warning prints a warning message with a yellow warning prefix
+// Warning prints a warning message with a warning prefix
 func (o *Output) Warning(format string, args ...interface{}) {
 	if o.jsonMode || o.IsQuiet() {
 		return
@@ -166,10 +174,14 @@ func (o *Output) Warning(format string, args ...interface{}) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Printf("%s %s\n", o.yellow("!!"), msg)
+	prefix := ui.WarningPrefix(o.noColor)
+	if !o.noColor {
+		prefix = o.styles.Warning.Render(prefix)
+	}
+	fmt.Printf("%s %s\n", prefix, msg)
 }
 
-// Fail prints an error message to stderr with a red X prefix
+// Fail prints an error message to stderr with an error prefix
 func (o *Output) Fail(format string, args ...interface{}) {
 	if o.jsonMode {
 		return
@@ -177,9 +189,12 @@ func (o *Output) Fail(format string, args ...interface{}) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(os.Stderr, "%s %s\n", o.red("error"), msg)
+	prefix := ui.ErrorPrefix(o.noColor)
+	if !o.noColor {
+		prefix = o.styles.Error.Render(prefix)
+	}
+	fmt.Fprintf(os.Stderr, "%s %s\n", prefix, msg)
 }
-
 
 // JSON outputs the value as JSON
 func (o *Output) JSON(v interface{}) error {
@@ -225,33 +240,80 @@ func (o *Output) Confirm(prompt string, defaultNo bool) (bool, error) {
 
 // Color helpers for use in tables and other formatted output
 
-// Green returns the string wrapped in green color (if colors enabled)
+// Green returns the string in success/green color (if colors enabled)
 func (o *Output) Green(s string) string {
-	return o.green(s)
+	if o.noColor {
+		return s
+	}
+	return o.styles.Success.Render(s)
 }
 
-// Yellow returns the string wrapped in yellow color (if colors enabled)
+// Yellow returns the string in warning/yellow color (if colors enabled)
 func (o *Output) Yellow(s string) string {
-	return o.yellow(s)
+	if o.noColor {
+		return s
+	}
+	return o.styles.Warning.Render(s)
 }
 
-// Red returns the string wrapped in red color (if colors enabled)
+// Red returns the string in error/red color (if colors enabled)
 func (o *Output) Red(s string) string {
-	return o.red(s)
+	if o.noColor {
+		return s
+	}
+	return o.styles.Error.Render(s)
 }
 
-
-// Bold returns the string wrapped in bold (if colors enabled)
+// Bold returns the string in bold (if colors enabled)
 func (o *Output) Bold(s string) string {
-	return o.bold(s)
+	if o.noColor {
+		return s
+	}
+	return o.styles.Bold.Render(s)
 }
 
 // Dim returns the string in dim/faint color (if colors enabled)
 func (o *Output) Dim(s string) string {
-	if o.noColor || !o.stdoutTTY {
+	if o.noColor {
 		return s
 	}
-	return color.New(color.Faint).Sprint(s)
+	return o.styles.Dim.Render(s)
+}
+
+// Teal returns the string in brand teal color (if colors enabled)
+func (o *Output) Teal(s string) string {
+	if o.noColor {
+		return s
+	}
+	return lipgloss.NewStyle().Foreground(ui.Teal).Render(s)
+}
+
+// Pink returns the string in brand pink color (if colors enabled)
+func (o *Output) Pink(s string) string {
+	if o.noColor {
+		return s
+	}
+	return lipgloss.NewStyle().Foreground(ui.Pink).Render(s)
+}
+
+// Orange returns the string in brand orange color (if colors enabled)
+func (o *Output) Orange(s string) string {
+	if o.noColor {
+		return s
+	}
+	return lipgloss.NewStyle().Foreground(ui.Orange).Render(s)
+}
+
+// Table prints a formatted table using ui.NewTable
+func (o *Output) Table(headers []string, rows [][]string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if o.plainMode {
+		fmt.Print(ui.PlainTableWithHeader(headers, rows, o.header))
+	} else {
+		fmt.Println(ui.NewTable(headers, rows, o.noColor))
+	}
 }
 
 // Package-level convenience functions that use the global Output instance

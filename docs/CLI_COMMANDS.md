@@ -1,45 +1,159 @@
-# vibespace CLI Commands Reference
+# vibespace CLI Reference
 
-Complete reference for all CLI commands, their output modes, and non-TTY compatibility.
-
-**Verified on:** 2026-01-26
+Complete reference for CLI commands, design philosophy, and implementation status.
 
 ---
 
-## Quick Reference Table
+## Design Philosophy
 
-| Command | Non-TTY | JSON | Plain | Notes |
-|---------|:-------:|:----:|:-----:|-------|
-| `version` | ✅ | ✅ | ❌ | |
-| `init` | ✅ | ❌ | ❌ | Spinner degrades to single line |
-| `status` | ✅ | ✅ | ❌ | |
-| `stop` | ✅ | ❌ | ❌ | Spinner degrades to single line |
-| `uninstall` | ❌ | ❌ | ❌ | Requires interactive confirmation |
-| `create` | ✅ | ❌ | ❌ | Spinner degrades to single line |
-| `list` | ✅ | ✅ | ✅ | |
-| `delete` | ✅ | ✅ | ❌ | Requires `--force` in non-TTY |
-| `session list` | ✅ | ✅ | ❌ | |
-| `session show` | ✅ | ✅ | ❌ | |
-| `session delete` | ✅ | ❌ | ❌ | |
-| `multi` | ✅ | ✅ | ✅ | Full headless support |
-| `<vs> agents` | ✅ | ✅ | ✅ | |
-| `<vs> spawn` | ✅ | ❌ | ❌ | Prints progress messages |
-| `<vs> kill` | ✅ | ❌ | ❌ | |
-| `<vs> up` | ✅ | ❌ | ❌ | Prints progress messages |
-| `<vs> down` | ✅ | ❌ | ❌ | Prints progress messages |
-| `<vs> connect` | ❌ | ❌ | ❌ | Requires interactive SSH |
-| `<vs> config show` | ✅ | ✅ | ❌ | |
-| `<vs> config set` | ✅ | ❌ | ❌ | JSON flag ignored |
-| `<vs> forward list` | ✅ | ✅ | ✅ | |
-| `<vs> forward add` | ✅ | ❌ | ❌ | Prints success message |
-| `<vs> forward remove` | ✅ | ❌ | ❌ | |
-| `<vs> ports` | ✅ | ❌ | ❌ | |
-| `<vs> multi` | ❌ | ❌ | ❌ | Use top-level `multi` instead |
+### Core Principles
 
-**Legend:**
-- ✅ Supported
-- ❌ Not supported
-- `<vs>` = vibespace name (e.g., `vibespace myproject agents`)
+1. **Scriptability First** - Every command must work in CI/CD pipelines with predictable, parseable output
+2. **Graceful Degradation** - Respect `NO_COLOR`, non-TTY environments, and provide text fallbacks
+3. **Consistent Interface** - Same flags, same output patterns, same error handling across all commands
+4. **Progressive Disclosure** - Simple defaults, advanced options available but not required
+
+### Output Modes
+
+| Mode | Flag | Default When | Format |
+|------|------|--------------|--------|
+| Human | (default) | TTY | Colored, formatted tables, spinners |
+| JSON | `--json` | Non-TTY piping | Standard envelope with metadata |
+| Plain | `--plain` | Scripting | Tab-separated, no colors, stable columns |
+
+### Brand Color Palette
+
+```
+Teal     #00ABAB   Status (running), success, primary actions
+Pink     #F102F3   Metadata values, highlights, active states
+Orange   #FF7D4B   Entity names, titles, warnings
+Yellow   #F5F50A   Caution, pending states
+Red      #FF4D4D   Errors, failed states
+Gray     #666666   Dim/secondary text
+```
+
+### Color Usage Guidelines
+
+| Element | Color | Example |
+|---------|-------|---------|
+| Status indicators | Teal | `running`, `ready` |
+| Metadata values | Pink | uptime `37m19s`, pid `15918` |
+| Entity names | Orange | vibespace names, agent names |
+| Section titles | Bold | `Cluster`, `Daemon`, `Vibespaces` |
+| Success messages | Teal | `ok Agent created` |
+| Warnings | Orange | `warning 'spawn' is deprecated` |
+| Errors | Red | `error not found` |
+
+### Message Prefixes
+
+| Type | TTY | NO_COLOR |
+|------|-----|----------|
+| Success | `ok` (teal) | `[ok]` |
+| Error | `error` (red) | `[error]` |
+| Warning | `warning` (orange) | `[!]` |
+| Step | `->` (teal) | `[->]` |
+
+### Exit Codes
+
+| Code | Meaning | JSON `error.code` |
+|------|---------|-------------------|
+| 0 | Success | N/A |
+| 1 | Internal error | `INTERNAL` |
+| 2 | Usage error (bad args/flags) | `USAGE` |
+| 10 | Not found | `NOT_FOUND` |
+| 11 | Conflict (exists, state) | `CONFLICT` |
+| 12 | Permission denied | `PERMISSION` |
+| 13 | Timeout | `TIMEOUT` |
+| 14 | Cancelled | `CANCELLED` |
+| 15 | Unavailable (cluster down) | `UNAVAILABLE` |
+
+### JSON Envelope
+
+All JSON output uses this structure:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "error": null,
+  "meta": {
+    "schema_version": "1",
+    "cli_version": "1.0.0",
+    "timestamp": "2026-01-27T10:30:00Z"
+  }
+}
+```
+
+Error response:
+```json
+{
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "vibespace 'foo' not found"
+  },
+  "meta": { ... }
+}
+```
+
+---
+
+## Implementation Checklist
+
+### Foundation
+
+- [x] `pkg/ui` package with brand colors and styles
+- [x] Lipgloss-based CLI output (replaced fatih/color)
+- [x] Unified table component with `ui.NewTable()`
+- [x] NO_COLOR and non-TTY detection
+- [x] Exit codes in `pkg/errors`
+- [x] JSON envelope with metadata
+
+### Output Modes
+
+| Command | Human | JSON | Plain | Notes |
+|---------|:-----:|:----:|:-----:|-------|
+| `version` | [x] | [x] | - | |
+| `init` | [x] | [ ] | - | Spinner degrades |
+| `status` | [x] | [x] | - | Uses lipgloss/list |
+| `stop` | [x] | [ ] | - | Spinner degrades |
+| `create` | [x] | [ ] | - | Spinner degrades |
+| `list` | [x] | [x] | [x] | |
+| `delete` | [x] | [x] | - | Requires `--force` in non-TTY |
+| `session list` | [x] | [x] | - | |
+| `session show` | [x] | [x] | - | |
+| `session delete` | [x] | - | - | |
+| `multi` | [x] | [x] | [x] | Full headless support |
+| `<vs> agents` | [x] | [x] | [x] | |
+| `<vs> spawn` | [x] | - | - | |
+| `<vs> kill` | [x] | - | - | |
+| `<vs> up/down` | [x] | - | - | |
+| `<vs> connect` | [x] | - | - | Requires TTY |
+| `<vs> config show` | [x] | [x] | - | |
+| `<vs> config set` | [x] | - | - | |
+| `<vs> forward list` | [x] | [x] | [x] | |
+| `<vs> forward add` | [x] | - | - | |
+| `<vs> forward remove` | [x] | - | - | |
+| `<vs> ports` | [x] | - | - | |
+
+### Styling
+
+- [x] Tables use lipgloss with rounded borders
+- [x] Table headers teal, borders muted gray
+- [x] Status command uses lipgloss/list
+- [x] Config show uses indented key-value format
+- [x] Interactive forms (huh) use brand colors
+- [x] TUI uses shared brand colors from pkg/ui
+
+### Deferred (Future)
+
+- [ ] `vibespace wait` - wait for ready state
+- [ ] `vibespace doctor` - diagnose issues
+- [ ] `vibespace apply/diff/export` - declarative config
+- [ ] `--plan`/`--apply` flags for delete/uninstall
+- [ ] Filtering/sorting/pagination flags
+- [ ] Command renames: `agents` -> `agent list`, `spawn` -> `agent create`
 
 ---
 
@@ -47,157 +161,104 @@ Complete reference for all CLI commands, their output modes, and non-TTY compati
 
 | Flag | Description |
 |------|-------------|
-| `--json` | Output in JSON format |
-| `--plain` | Plain output for scripting (tab-separated, no colors) |
-| `-v, --verbose` | Enable verbose output |
+| `--json` | JSON output |
+| `--plain` | Plain text (tab-separated, no colors) |
+| `--header` | Include headers in plain output |
+| `-v, --verbose` | Verbose output |
 | `-q, --quiet` | Suppress non-essential output |
-| `--no-color` | Disable colored output |
-| `-h, --help` | Show help information |
+| `--no-color` | Disable colors |
+| `-h, --help` | Help |
 
 **Environment Variables:**
+
 | Variable | Description |
 |----------|-------------|
+| `NO_COLOR` | Disable colors globally |
 | `VIBESPACE_DEBUG=1` | Enable debug logging |
 | `VIBESPACE_LOG_LEVEL` | Log level: debug, info, warn, error |
-| `NO_COLOR` | Disable colors globally |
 
 ---
 
-## Root Commands
+## Command Reference
 
-### `vibespace version`
+### Root Commands
+
+#### `vibespace version`
 
 ```bash
-./vibespace version
-# vibespace dev (unknown)
-
-./vibespace version --json
-# {"success":true,"data":{"version":"dev","commit":"unknown"}}
+vibespace version           # vibespace dev (unknown)
+vibespace version --json    # {"success":true,"data":{"version":"dev","commit":"unknown"},"meta":{...}}
 ```
 
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ❌
-
----
-
-### `vibespace init`
+#### `vibespace init`
 
 Initialize the cluster.
 
 ```bash
-./vibespace init
-./vibespace init --cpu 4 --memory 8 --disk 60
-./vibespace init --external --kubeconfig ~/.kube/config
-```
-
-| Flag | Default | Env Var | Description |
-|------|---------|---------|-------------|
-| `--external` | false | | Use external Kubernetes cluster |
-| `--kubeconfig` | | | Path to external kubeconfig |
-| `--cpu` | 4 | `VIBESPACE_CLUSTER_CPU` | CPU cores |
-| `--memory` | 8 | `VIBESPACE_CLUSTER_MEMORY` | Memory in GB |
-| `--disk` | 60 | `VIBESPACE_CLUSTER_DISK` | Disk size in GB |
-
-**Non-TTY:** ✅ (spinner degrades to `-> message`) | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace status`
-
-```bash
-./vibespace status
-# Cluster: running
-# Components:
-#   Namespace: ready
-# Daemon: running (uptime: 2h35m, pid: 87608)
-
-./vibespace status --json
-# {"success":true,"data":{"cluster":{"installed":true,"running":true,...}}}
-```
-
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ❌
-
----
-
-### `vibespace stop`
-
-Stop the cluster.
-
-```bash
-./vibespace stop
-```
-
-**Non-TTY:** ✅ (spinner degrades) | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace uninstall`
-
-Remove vibespace completely. **Requires interactive confirmation.**
-
-```bash
-./vibespace uninstall
-# This will remove ALL vibespace data...
-# Continue? [y/N]
-```
-
-**Non-TTY:** ❌ (no `--force` option) | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace create [name]`
-
-```bash
-./vibespace create myproject -t claude-code
-./vibespace create myproject -t codex --repo https://github.com/user/repo
-./vibespace create myproject --agent-type codex --skip-permissions
+vibespace init
+vibespace init --cpu 4 --memory 8 --disk 60
+vibespace init --external --kubeconfig ~/.kube/config
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--repo` | | GitHub repository to clone |
-| `--cpu` | 1000m | CPU request/limit |
-| `--memory` | 1Gi | Memory request/limit |
-| `--storage` | 10Gi | Storage size |
-| `-s, --share-credentials` | false | Share credentials across agents |
-| `-t, --agent-type` | **required** | Agent type: claude-code, codex |
-| `--skip-permissions` | false | Enable --dangerously-skip-permissions |
-| `--allowed-tools` | | Comma-separated allowed tools |
-| `--disallowed-tools` | | Comma-separated disallowed tools |
-| `--model` | | Claude model |
-| `--max-turns` | | Maximum conversation turns |
+| `--external` | false | Use external Kubernetes |
+| `--kubeconfig` | | Path to kubeconfig |
+| `--cpu` | 4 | CPU cores |
+| `--memory` | 8 | Memory (GB) |
+| `--disk` | 60 | Disk size (GB) |
 
-**Non-TTY:** ✅ (spinner degrades) | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace list`
+#### `vibespace status`
 
 ```bash
-./vibespace list
-# NAME             STATUS     AGENTS   CPU      MEMORY   STORAGE  CREATED
-# test-mixed       running    2        1        1Gi      10Gi     2026-01-25T21:10:30Z
-
-./vibespace list --json
-# {"success":true,"data":{"vibespaces":[...],"count":1}}
-
-./vibespace list --plain
-# test-mixed	running	2	1	1Gi	10Gi	2026-01-25T21:10:30Z
+vibespace status            # Formatted list output
+vibespace status --json     # {"success":true,"data":{"cluster":{...},"daemon":{...}},"meta":{...}}
 ```
 
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ✅ (tab-separated)
+#### `vibespace stop`
 
----
-
-### `vibespace delete <name>`
+Stop the cluster.
 
 ```bash
-./vibespace delete myproject              # Prompts for confirmation
-./vibespace delete myproject --force      # No prompt
-./vibespace delete myproject --dry-run    # Show what would be deleted
-./vibespace delete myproject --keep-data  # Preserve PVC
+vibespace stop
+```
 
-./vibespace delete myproject --dry-run --json
-# {"success":true,"data":{"name":"myproject","keep_data":false,"dry_run":true,"resources":[...]}}
+#### `vibespace create <name>`
+
+```bash
+vibespace create myproject -t claude-code
+vibespace create myproject -t codex --repo https://github.com/user/repo
+vibespace create myproject -t claude-code --skip-permissions --model opus
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-t, --agent-type` | **required** | `claude-code` or `codex` |
+| `-n, --name` | auto | Custom agent name |
+| `--repo` | | GitHub repo to clone |
+| `--cpu` | 1000m | CPU request |
+| `--memory` | 1Gi | Memory request |
+| `--storage` | 10Gi | Storage size |
+| `--skip-permissions` | false | Skip permissions (Claude only) |
+| `--allowed-tools` | | Allowed tools (Claude only) |
+| `--disallowed-tools` | | Disallowed tools (Claude only) |
+| `--model` | | Model to use |
+| `--max-turns` | | Max conversation turns |
+
+#### `vibespace list`
+
+```bash
+vibespace list              # Table output
+vibespace list --json       # {"success":true,"data":{"vibespaces":[...],"count":1},"meta":{...}}
+vibespace list --plain      # name<TAB>status<TAB>agents<TAB>...
+```
+
+#### `vibespace delete <name>`
+
+```bash
+vibespace delete myproject              # Prompts for confirmation
+vibespace delete myproject --force      # No prompt
+vibespace delete myproject --dry-run    # Show what would be deleted
 ```
 
 | Flag | Description |
@@ -206,327 +267,250 @@ Remove vibespace completely. **Requires interactive confirmation.**
 | `--keep-data` | Preserve persistent storage |
 | `-n, --dry-run` | Show what would be deleted |
 
-**Non-TTY:** ✅ (requires `--force`) | **JSON:** ✅ | **Plain:** ❌
+---
 
-**Non-TTY without --force:**
+### Session Commands
+
+#### `vibespace session list`
+
+```bash
+vibespace session list
+vibespace session list --json
 ```
-error cannot prompt for confirmation (stdin is not a terminal). Use --force to skip confirmation
+
+#### `vibespace session show <name>`
+
+```bash
+vibespace session show abc123
+vibespace session show abc123 --json
+```
+
+#### `vibespace session delete <name>`
+
+```bash
+vibespace session delete mywork
 ```
 
 ---
 
-## Session Commands
+### Multi-Agent Commands
 
-### `vibespace session list`
+#### `vibespace multi`
 
+Interactive TUI or headless mode.
+
+**Interactive (TUI):**
 ```bash
-./vibespace session list
-# ╭──────────┬────────────┬────────┬────────────────╮
-# │ NAME     │ VIBESPACES │ AGENTS │ LAST USED      │
-# ...
-
-./vibespace session list --json
-# {"success":true,"data":{"sessions":[...],"count":17}}
+vibespace multi --vibespaces test
+vibespace multi --resume                 # Select from previous sessions
+vibespace multi -r abc123                # Resume specific session
 ```
 
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ❌
-
----
-
-### `vibespace session show <name>`
-
+**Non-Interactive:**
 ```bash
-./vibespace session show 2dab7d1e
-# Session: 2dab7d1e
-# Created: 2026-01-26 00:01
-# Last used: 12 minutes ago
-# ...
+# JSON output
+vibespace multi --vibespaces test --json "what is 2+2?"
 
-./vibespace session show 2dab7d1e --json
-# {"success":true,"data":{"name":"2dab7d1e","created_at":"...","vibespaces":[...]}}
-```
+# Plain text
+vibespace multi --vibespaces test --plain "what is 2+2?"
 
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ❌
-
----
-
-### `vibespace session delete <name>`
-
-```bash
-./vibespace session delete mywork
-# ok Deleted session 'mywork'
-```
-
-**Non-TTY:** ✅ | **JSON:** ❌ | **Plain:** ❌
-
----
-
-## Multi-Agent Commands
-
-### `vibespace multi`
-
-Full headless support via `HeadlessRunner`. Auto-detects non-TTY.
-
-#### Interactive Mode (TUI)
-
-```bash
-./vibespace multi --vibespaces test
-./vibespace multi --resume
-```
-
-#### Non-Interactive Mode
-
-```bash
-# JSON output (default in non-TTY)
-./vibespace multi --vibespaces test --json "what is 2+2?"
-# {"session":"...","request":{...},"responses":[{"agent":"claude-1@test","content":"4"}]}
-
-# Plain text output
-./vibespace multi --vibespaces test --plain "what is 2+2?"
-# [claude-1@test]
-# 4
-
-# Streaming (real-time)
-./vibespace multi --vibespaces test --plain --stream "count to 5"
-# [claude-1@test] 1
-# 2
-# 3
-# ...
+# Streaming
+vibespace multi --vibespaces test --plain --stream "count to 5"
 
 # Target specific agent
-./vibespace multi --vibespaces test --agent claude-1@test --json "hello"
+vibespace multi --vibespaces test --agent claude-1@test --json "hello"
 
-# List agents only
-./vibespace multi --vibespaces test --list-agents --json
-# {"session":"test","agents":["claude-1@test","codex-1@test"]}
+# List agents
+vibespace multi --vibespaces test --list-agents --json
+
+# List sessions
+vibespace multi --list-sessions --json
 
 # Batch mode (JSONL from stdin)
-echo '{"target":"claude-1@test","message":"hello"}' | ./vibespace multi --vibespaces test --batch
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--vibespaces` | | Comma-separated vibespaces |
-| `--agents` | | Specific agents (agent@vibespace) |
-| `--name` | auto-UUID | Session name |
-| `--agent` | all | Target agent |
-| `--batch` | false | JSONL batch mode from stdin |
-| `--list-agents` | false | List agents and exit |
-| `--stream` | false | Stream responses (plain mode) |
-| `--timeout` | 2m | Response timeout |
-| `-r, --resume` | false | Resume existing session |
-
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ✅ | **Streaming:** ✅ | **Batch:** ✅
-
----
-
-## Vibespace-Scoped Commands
-
-### `vibespace <name> agents`
-
-```bash
-./vibespace test-mixed agents
-# AGENT        TYPE         VIBESPACE            STATUS
-# claude-1     claude-code  test-mixed           running
-# codex-1      codex        test-mixed           running
-
-./vibespace test-mixed agents --json
-# {"success":true,"data":{"vibespace":"test-mixed","agents":[{"name":"claude-1","type":"claude-code",...}],"count":2}}
-
-./vibespace test-mixed agents --plain
-# claude-1	claude-code	test-mixed	running
-# codex-1	codex	test-mixed	running
-```
-
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ✅ (tab-separated)
-
----
-
-### `vibespace <name> spawn`
-
-```bash
-./vibespace myproject spawn                    # Inherits type from primary agent
-./vibespace myproject spawn --name researcher
-./vibespace myproject spawn --agent-type codex # Explicit type
-./vibespace myproject spawn --skip-permissions
-```
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-n, --name` | auto | Custom agent name |
-| `-t, --agent-type` | inherit | Agent type (inherits from primary if not specified) |
-| `-s, --share-credentials` | false | Share credentials |
-| `--skip-permissions` | false | Skip permissions |
-| `--allowed-tools` | | Allowed tools |
-| `--disallowed-tools` | | Disallowed tools |
-| `--model` | | Model to use |
-| `--max-turns` | | Max turns |
-
-**Non-TTY:** ✅ | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace <name> kill <agent>`
-
-```bash
-./vibespace myproject kill claude-2
-# ok Agent 'claude-2' removed
-```
-
-**Non-TTY:** ✅ | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace <name> up [agent]` / `start`
-
-```bash
-./vibespace myproject up           # All agents
-./vibespace myproject up claude-2  # Specific agent
-```
-
-**Non-TTY:** ✅ | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace <name> down [agent]` / `stop`
-
-```bash
-./vibespace myproject down           # All agents
-./vibespace myproject down claude-1  # Specific agent
-```
-
-**Non-TTY:** ✅ | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace <name> connect [agent]`
-
-Interactive SSH connection. **Requires TTY.**
-
-```bash
-./vibespace myproject connect
-./vibespace myproject connect claude-2
-./vibespace myproject connect --browser  # Opens ttyd in browser
-```
-
-**Non-TTY:** ❌ | **JSON:** ❌ | **Plain:** ❌
-
----
-
-### `vibespace <name> config show [agent]`
-
-```bash
-./vibespace test-mixed config show
-#   ⬡ claude-1
-#     ◉ skip_permissions     enabled
-#     ...
-
-./vibespace test-mixed config show claude-1 --json
-# {"success":true,"data":{"agent":"claude-1","config":{"skip_permissions":true},...}}
-```
-
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ❌
-
----
-
-### `vibespace <name> config set <agent>`
-
-```bash
-./vibespace myproject config set claude-1 --skip-permissions
-./vibespace myproject config set claude-1 --no-skip-permissions
-./vibespace myproject config set claude-1 --model opus
-./vibespace myproject config set claude-1 --max-turns 50
-./vibespace myproject config set claude-1 --allowed-tools "Bash,Read,Write"
+echo '{"target":"claude-1@test","message":"hello"}' | vibespace multi --vibespaces test --batch
 ```
 
 | Flag | Description |
 |------|-------------|
-| `--skip-permissions` | Enable skip permissions |
-| `--no-skip-permissions` | Disable skip permissions |
-| `--allowed-tools` | Comma-separated allowed tools |
-| `--disallowed-tools` | Comma-separated disallowed tools |
-| `--model` | Claude model |
-| `--max-turns` | Max turns (0 = unlimited) |
-| `--system-prompt` | Custom system prompt |
-
-**Non-TTY:** ✅ | **JSON:** ❌ (flag ignored) | **Plain:** ❌
-
----
-
-### `vibespace <name> forward list`
-
-```bash
-./vibespace test-mixed forward list
-# AGENT     LOCAL  REMOTE  TYPE  STATUS
-# claude-1  61119  22      ssh   active
-# ...
-
-./vibespace test-mixed forward list --json
-# {"success":true,"data":{"vibespace":"test-mixed","agents":[...]}}
-
-./vibespace test-mixed forward list --plain
-# claude-1	61119	22	ssh	active
-```
-
-**Non-TTY:** ✅ | **JSON:** ✅ | **Plain:** ✅ (tab-separated)
+| `--vibespaces` | Comma-separated vibespaces |
+| `--agents` | Specific agents (agent@vibespace) |
+| `--name` | Session name |
+| `--agent` | Target agent |
+| `--batch` | JSONL batch mode |
+| `--list-agents` | List agents and exit |
+| `--list-sessions` | List sessions and exit |
+| `--stream` | Stream responses |
+| `--timeout` | Response timeout |
+| `-r, --resume` | Resume session |
 
 ---
 
-### `vibespace <name> forward add <port>`
+### Vibespace-Scoped Commands
+
+#### `vibespace <vs> agents`
 
 ```bash
-./vibespace myproject forward add 3000
-./vibespace myproject forward add 8080 --agent claude-2 --local 9000
-# ok Forward added: localhost:9000 → 8080
+vibespace myproject agents
+vibespace myproject agents --json
+vibespace myproject agents --plain
 ```
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-a, --agent` | claude-1 | Agent to forward from |
-| `-l, --local` | auto | Local port |
+#### `vibespace <vs> spawn`
 
-**Non-TTY:** ✅ | **JSON:** ❌ | **Plain:** ❌
+Add an agent.
+
+```bash
+vibespace myproject spawn
+vibespace myproject spawn --name researcher
+vibespace myproject spawn --agent-type codex
+vibespace myproject spawn --skip-permissions --model opus
+```
+
+| Flag | Description |
+|------|-------------|
+| `-n, --name` | Custom name |
+| `-t, --agent-type` | Agent type (inherits if not specified) |
+| `--skip-permissions` | Skip permissions (Claude only) |
+| `--model` | Model to use |
+| `--max-turns` | Max turns |
+
+#### `vibespace <vs> kill <agent>`
+
+Remove an agent.
+
+```bash
+vibespace myproject kill claude-2
+```
+
+#### `vibespace <vs> up [agent]` / `vibespace <vs> start`
+
+Scale up agents.
+
+```bash
+vibespace myproject up            # All agents
+vibespace myproject up claude-2   # Specific agent
+```
+
+#### `vibespace <vs> down [agent]` / `vibespace <vs> stop`
+
+Scale down agents.
+
+```bash
+vibespace myproject down
+vibespace myproject down claude-1
+```
+
+#### `vibespace <vs> connect [agent]`
+
+SSH to an agent. **Requires TTY.**
+
+```bash
+vibespace myproject connect
+vibespace myproject connect claude-2
+vibespace myproject connect --browser   # Opens ttyd in browser
+```
+
+#### `vibespace <vs> config show [agent]`
+
+```bash
+vibespace myproject config show
+vibespace myproject config show claude-1 --json
+```
+
+#### `vibespace <vs> config set <agent>`
+
+```bash
+# Claude Code agents
+vibespace myproject config set claude-1 --skip-permissions
+vibespace myproject config set claude-1 --model opus
+vibespace myproject config set claude-1 --allowed-tools "Bash,Read,Write"
+
+# Codex agents
+vibespace myproject config set codex-1 --model gpt-5.2-codex
+vibespace myproject config set codex-1 --reasoning-effort high
+```
+
+| Flag | Description |
+|------|-------------|
+| `--skip-permissions` | Enable (Claude only) |
+| `--no-skip-permissions` | Disable (Claude only) |
+| `--allowed-tools` | Allowed tools (Claude only) |
+| `--disallowed-tools` | Disallowed tools (Claude only) |
+| `--model` | Model |
+| `--max-turns` | Max turns |
+| `--reasoning-effort` | low, medium, high, xhigh (Codex only) |
+
+#### `vibespace <vs> forward list`
+
+```bash
+vibespace myproject forward list
+vibespace myproject forward list --json
+vibespace myproject forward list --plain
+```
+
+#### `vibespace <vs> forward add <port>`
+
+```bash
+vibespace myproject forward add 3000
+vibespace myproject forward add 8080 --agent claude-2 --local 9000
+```
+
+#### `vibespace <vs> forward remove <port>`
+
+```bash
+vibespace myproject forward remove 3000
+vibespace myproject forward remove 8080 --agent claude-2
+```
+
+#### `vibespace <vs> ports`
+
+List detected ports in the agent.
+
+```bash
+vibespace myproject ports
+```
 
 ---
 
-### `vibespace <name> forward remove <port>`
+## Agent Types
 
-```bash
-./vibespace myproject forward remove 3000
-./vibespace myproject forward remove 8080 --agent claude-2
-# ok Forward removed: port 8080
-```
+### Claude Code (`claude-code`)
 
-**Non-TTY:** ✅ | **JSON:** ❌ | **Plain:** ❌
+| Model | Description |
+|-------|-------------|
+| `sonnet` | Sonnet 4.5 for daily coding (default) |
+| `opus` | Opus 4.5 for complex reasoning |
+| `haiku` | Fast for simple tasks |
+| `opusplan` | Opus for planning, Sonnet for execution |
+
+Config: `--skip-permissions`, `--allowed-tools`, `--disallowed-tools`, `--model`, `--max-turns`, `--system-prompt`
+
+### Codex (`codex`)
+
+| Model | Description |
+|-------|-------------|
+| `gpt-5.2-codex` | Most advanced (recommended) |
+| `gpt-5.1-codex-mini` | Smaller, cost-effective |
+| `gpt-5.1-codex-max` | Long-horizon tasks |
+| `gpt-5.2` | General agentic model |
+
+Config: `--model`, `--max-turns`, `--reasoning-effort`
+
+**Note:** Codex always runs in yolo mode - `--skip-permissions` and tool restrictions don't apply.
 
 ---
 
-### `vibespace <name> ports`
+## Shell Completion
 
 ```bash
-./vibespace myproject ports
-# PORT  PROCESS  DETECTED
-# 3000  node     2m ago
-```
+# zsh
+source <(vibespace completion zsh)
 
-**Non-TTY:** ✅ | **JSON:** ❌ | **Plain:** ❌
+# bash
+source <(vibespace completion bash)
 
----
-
-### `vibespace <name> multi`
-
-Vibespace-scoped multi (TUI only). **Use top-level `multi` for non-interactive.**
-
-```bash
-./vibespace myproject multi  # TTY only
-# error TUI requires an interactive terminal (stdin is not a TTY); use --json for non-interactive mode
-```
-
-**Non-TTY:** ❌ | **JSON:** ❌ | **Plain:** ❌
-
-**Alternative for non-TTY:**
-```bash
-./vibespace multi --vibespaces myproject --json "message"
+# fish
+vibespace completion fish | source
 ```
 
 ---
@@ -535,40 +519,22 @@ Vibespace-scoped multi (TUI only). **Use top-level `multi` for non-interactive.*
 
 ```bash
 # Check cluster status
-./vibespace status --json | jq -e '.data.cluster.running'
+vibespace status --json | jq -e '.data.cluster.running'
 
 # List vibespace names
-./vibespace list --json | jq -r '.data.vibespaces[].name'
+vibespace list --json | jq -r '.data.vibespaces[].name'
 
 # Count agents
-./vibespace myproject agents --json | jq '.data.count'
+vibespace myproject agents --json | jq '.data.count'
 
 # Send message to agents
-./vibespace multi --vibespaces myproject --json "list files"
-
-# Batch process
-cat <<EOF | ./vibespace multi --vibespaces test --batch
-{"target":"claude-1@test","message":"task 1"}
-{"target":"claude-2@test","message":"task 2"}
-EOF
+vibespace multi --vibespaces myproject --json "list files"
 
 # Delete without prompt
-./vibespace delete myproject --force
+vibespace delete myproject --force
 
 # Wait for agent ready
-while ! ./vibespace myproject agents --json | jq -e '.data.agents[] | select(.status == "running")' >/dev/null 2>&1; do
+while ! vibespace myproject agents --json | jq -e '.data.agents[] | select(.status == "running")' >/dev/null 2>&1; do
   sleep 2
 done
-```
-
----
-
-## Error Handling in JSON Mode
-
-```bash
-./vibespace nonexistent agents --json
-# {"success":false,"error":{"message":"failed to list agents: vibespace not found..."}}
-
-./vibespace multi --vibespaces nonexistent --json --list-agents
-# {"session":"","request":{"target":"","message":""},"responses":null,"error":"vibespace 'nonexistent' not found..."}
 ```

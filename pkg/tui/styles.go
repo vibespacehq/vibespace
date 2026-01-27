@@ -2,39 +2,32 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+	"github.com/yagizdagabak/vibespace/pkg/ui"
 )
 
-// Colors
+// Colors - imported from shared ui package with TUI-specific additions
 var (
-	primaryColor   = lipgloss.Color("#7B61FF") // Purple
-	secondaryColor = lipgloss.Color("#00D9FF") // Cyan
-	successColor   = lipgloss.Color("#00FF9F") // Green
-	warningColor   = lipgloss.Color("#FFB800") // Yellow
-	errorColor     = lipgloss.Color("#FF4D4D") // Red
-	dimColor       = lipgloss.Color("#666666") // Gray
-	whiteColor     = lipgloss.Color("#FFFFFF")
-	blackColor     = lipgloss.Color("#000000")
+	// Brand colors from ui package
+	primaryColor   = ui.Teal   // #00ABAB
+	secondaryColor = ui.Pink   // #F102F3
+	successColor   = ui.Teal   // Use brand teal for success
+	warningColor   = ui.Orange // #FF7D4B
+	errorColor     = ui.ColorError
+	dimColor       = ui.ColorDim
+	whiteColor     = ui.ColorWhite
+	blackColor     = ui.ColorBlack
 
-	// New colors for chat view
-	userColor      = lipgloss.Color("#00FF9F") // Green for user messages
-	toolColor      = lipgloss.Color("#FFB800") // Yellow for tool use
-	timestampColor = lipgloss.Color("#555555") // Darker gray for timestamps
-	codeBlockBg    = lipgloss.Color("#1a1a2e") // Dark blue background for code
-	codeBlockFg    = lipgloss.Color("#87CEEB") // Light blue text for code
-	thinkingColor  = lipgloss.Color("#FF6B9D") // Pink for thinking indicator
+	// TUI-specific colors
+	userColor      = ui.ColorUser      // Green for user messages
+	toolColor      = ui.ColorTool      // Tool use highlights
+	timestampColor = ui.ColorTimestamp // Subtle timestamps
+	codeBlockBg    = ui.ColorCodeBg    // Code block background
+	codeBlockFg    = ui.ColorCodeFg    // Code block text
+	thinkingColor  = ui.ColorThinking  // Pink for thinking indicator
 )
 
-// Agent colors palette
-var agentColors = []lipgloss.Color{
-	lipgloss.Color("#00D9FF"), // Cyan
-	lipgloss.Color("#FF6B9D"), // Pink
-	lipgloss.Color("#7B61FF"), // Purple
-	lipgloss.Color("#00FF9F"), // Green
-	lipgloss.Color("#FFB800"), // Yellow
-	lipgloss.Color("#FF8C42"), // Orange
-	lipgloss.Color("#4ECDC4"), // Teal
-	lipgloss.Color("#F7DC6F"), // Light yellow
-}
+// Agent colors palette - use shared palette from ui package
+var agentColors = ui.AgentColors
 
 // Styles contains all TUI styles
 type Styles struct {
@@ -173,14 +166,12 @@ func NewStyles() Styles {
 
 // GetAgentColor returns a color for an agent based on index
 func GetAgentColor(index int) lipgloss.Color {
-	return agentColors[index%len(agentColors)]
+	return ui.GetAgentColor(index)
 }
 
 // AgentLabelStyle returns a style for an agent label with their assigned color
 func AgentLabelStyle(color lipgloss.Color) lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(color).
-		Bold(true)
+	return ui.AgentLabelStyle(color)
 }
 
 // UserLabelWithTarget returns styled user label with target

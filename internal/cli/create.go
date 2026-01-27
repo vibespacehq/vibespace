@@ -147,10 +147,20 @@ func runCreate(cmd *cobra.Command, args []string) error {
 
 	slog.Info("create command completed", "name", vs.Name, "id", vs.ID)
 	spinner.Success(fmt.Sprintf("Vibespace created: %s (starting...)", vs.Name))
+
+	// JSON output
+	out := getOutput()
+	if out.IsJSONMode() {
+		return out.JSON(NewJSONOutput(true, CreateOutput{
+			Name: vs.Name,
+			ID:   vs.ID,
+		}, nil))
+	}
+
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Printf("  vibespace %s agents    List Claude instances\n", vs.Name)
-	fmt.Printf("  vibespace %s connect   Connect to Claude\n", vs.Name)
+	fmt.Printf("  vibespace %s agent     List agents\n", vs.Name)
+	fmt.Printf("  vibespace %s connect   Connect to an agent\n", vs.Name)
 
 	return nil
 }

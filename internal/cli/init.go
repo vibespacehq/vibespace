@@ -248,6 +248,18 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	slog.Info("init completed successfully")
+
+	// JSON output
+	out := getOutput()
+	if out.IsJSONMode() {
+		return out.JSON(NewJSONOutput(true, InitOutput{
+			Platform: p.OS,
+			CPU:      initCPU,
+			Memory:   initMemory,
+			Disk:     initDisk,
+		}, nil))
+	}
+
 	printSuccess("vibespace is ready!")
 	fmt.Println()
 	fmt.Println("Next steps:")

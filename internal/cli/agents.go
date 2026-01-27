@@ -12,11 +12,53 @@ import (
 	vspkg "github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
-func runAgents(vibespace string, args []string) error {
+// runAgent routes to agent subcommands
+// Usage: vibespace <name> agent {list,create,delete}
+func runAgent(vibespace string, args []string) error {
+	if len(args) == 0 {
+		// Default to list
+		return runAgentList(vibespace, args)
+	}
+
+	subCmd := args[0]
+	subArgs := args[1:]
+
+	switch subCmd {
+	case "list":
+		return runAgentList(vibespace, subArgs)
+	case "create":
+		return runAgentCreate(vibespace, subArgs)
+	case "delete":
+		return runAgentDelete(vibespace, subArgs)
+	case "--help", "-h":
+		fmt.Printf(`Manage agents in a vibespace
+
+Usage:
+  vibespace %s agent [command]
+
+Available Commands:
+  list        List all agents (default)
+  create      Create a new agent
+  delete      Delete an agent
+
+Examples:
+  vibespace %s agent
+  vibespace %s agent list
+  vibespace %s agent create
+  vibespace %s agent create --agent-type codex
+  vibespace %s agent delete claude-2
+`, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace)
+		return nil
+	default:
+		return fmt.Errorf("unknown agent subcommand: %s", subCmd)
+	}
+}
+
+func runAgentList(vibespace string, args []string) error {
 	ctx := context.Background()
 	out := getOutput()
 
-	slog.Debug("agents command started", "vibespace", vibespace)
+	slog.Debug("agent list command started", "vibespace", vibespace)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -47,60 +89,56 @@ func runAgents(vibespace string, args []string) error {
 				Status:    agent.Status,
 			}
 		}
-		return out.JSON(JSONOutput{
-			Success: true,
-			Data: AgentsOutput{
-				Vibespace: vibespace,
-				Agents:    items,
-				Count:     len(items),
-			},
-		})
+		return out.JSON(NewJSONOutput(true, AgentsOutput{
+			Vibespace: vibespace,
+			Agents:    items,
+			Count:     len(items),
+		}, nil))
 	}
 
 	if len(agents) == 0 {
+		// Plain mode - no output for empty result
+		if out.IsPlainMode() {
+			return nil
+		}
 		fmt.Printf("No agents in vibespace '%s'\n", vibespace)
 		fmt.Println()
-		fmt.Printf("Spawn one with: vibespace %s spawn\n", vibespace)
+		fmt.Printf("Create one with: vibespace %s agent create\n", vibespace)
 		return nil
 	}
 
-	// Plain output mode
-	if out.IsPlainMode() {
-		for _, agent := range agents {
-			fmt.Printf("%s\t%s\t%s\t%s\n", agent.AgentName, agent.AgentType.String(), vibespace, agent.Status)
+	// Build table rows
+	headers := []string{"AGENT", "TYPE", "VIBESPACE", "STATUS"}
+	rows := make([][]string, len(agents))
+	for i, a := range agents {
+		status := a.Status
+		if !out.NoColor() {
+			switch a.Status {
+			case "running":
+				status = out.Green(a.Status)
+			case "stopped":
+				status = out.Yellow(a.Status)
+			case "creating":
+				status = out.Yellow(a.Status)
+			}
 		}
-		return nil
+		rows[i] = []string{a.AgentName, a.AgentType.String(), vibespace, status}
 	}
 
-	// Print as table with fixed-width columns
-	fmt.Printf("%-12s %-12s %-20s %-10s\n", "AGENT", "TYPE", "VIBESPACE", "STATUS")
+	out.Table(headers, rows)
 
-	for _, agent := range agents {
-		// Colorize status after formatting to maintain alignment
-		status := fmt.Sprintf("%-10s", agent.Status)
-		switch agent.Status {
-		case "running":
-			status = green(agent.Status) + "   " // "running" is 7 chars, pad to 10
-		case "stopped":
-			status = yellow(agent.Status) + "   " // "stopped" is 7 chars, pad to 10
-		case "creating":
-			status = yellow(agent.Status) + "  " // "creating" is 8 chars, pad to 10
-		}
-		fmt.Printf("%-12s %-12s %-20s %s\n", agent.AgentName, agent.AgentType.String(), vibespace, status)
-	}
-
-	slog.Debug("agents command completed", "vibespace", vibespace, "count", len(agents))
+	slog.Debug("agent list command completed", "vibespace", vibespace, "count", len(agents))
 	return nil
 }
 
-func runSpawn(vibespace string, args []string) error {
+func runAgentCreate(vibespace string, args []string) error {
 	// Handle help flag
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
-			fmt.Println(`Spawn a new agent in a vibespace
+			fmt.Printf(`Create a new agent in a vibespace
 
 Usage:
-  vibespace <name> spawn [flags]
+  vibespace %s agent create [flags]
 
 Flags:
   -n, --name string            Custom name for the agent (default: <type>-N)
@@ -111,20 +149,22 @@ Flags:
       --disallowed-tools string Comma-separated disallowed tools
       --model string           Model to use (e.g., opus, sonnet)
       --max-turns int          Maximum conversation turns
-  -h, --help                   Help for spawn
+  -h, --help                   Help for create
 
 Examples:
-  vibespace myproject spawn                        # Inherits type from primary agent
-  vibespace myproject spawn --agent-type codex     # Explicit codex type
-  vibespace myproject spawn --name researcher
-  vibespace myproject spawn --share-credentials
-  vibespace myproject spawn --skip-permissions
-  vibespace myproject spawn --allowed-tools "Bash,Read,Write"`)
+  vibespace %s agent create                        # Inherits type from primary agent
+  vibespace %s agent create --agent-type codex     # Explicit codex type
+  vibespace %s agent create --name researcher
+  vibespace %s agent create --share-credentials
+  vibespace %s agent create --skip-permissions
+  vibespace %s agent create --allowed-tools "Bash,Read,Write"
+`, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace)
 			return nil
 		}
 	}
 
 	ctx := context.Background()
+	out := getOutput()
 
 	// Parse flags
 	shareCredentials := false
@@ -189,7 +229,7 @@ Examples:
 		}
 	}
 
-	slog.Info("spawn command started", "vibespace", vibespace, "name", customName, "agent_type", agentType, "share_credentials", shareCredentials)
+	slog.Info("agent create command started", "vibespace", vibespace, "name", customName, "agent_type", agentType, "share_credentials", shareCredentials)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -205,11 +245,11 @@ Examples:
 	}
 
 	if customName != "" {
-		printStep("Spawning agent '%s' in '%s'...", customName, vibespace)
+		printStep("Creating agent '%s' in '%s'...", customName, vibespace)
 	} else if agentType != "" {
-		printStep("Spawning new %s agent in '%s'...", agentType, vibespace)
+		printStep("Creating new %s agent in '%s'...", agentType, vibespace)
 	} else {
-		printStep("Spawning new agent in '%s'...", vibespace)
+		printStep("Creating new agent in '%s'...", vibespace)
 	}
 
 	// Build AgentConfig if any config flags are set
@@ -237,11 +277,24 @@ Examples:
 	}
 	agentName, err := svc.SpawnAgent(ctx, vs.ID, opts)
 	if err != nil {
-		slog.Error("failed to spawn agent", "vibespace", vibespace, "error", err)
-		return fmt.Errorf("failed to spawn agent: %w", err)
+		slog.Error("failed to create agent", "vibespace", vibespace, "error", err)
+		return fmt.Errorf("failed to create agent: %w", err)
 	}
 
-	slog.Info("spawn command completed", "vibespace", vibespace, "agent", agentName)
+	// JSON output
+	if out.IsJSONMode() {
+		agentTypeOutput := agentType.String()
+		if agentTypeOutput == "" {
+			agentTypeOutput = "inherited"
+		}
+		return out.JSON(NewJSONOutput(true, AgentCreateOutput{
+			Vibespace: vibespace,
+			Agent:     agentName,
+			Type:      agentTypeOutput,
+		}, nil))
+	}
+
+	slog.Info("agent create command completed", "vibespace", vibespace, "agent", agentName)
 	printSuccess("Agent '%s' scheduled (starting...)", agentName)
 	if shareCredentials {
 		fmt.Println("  Credential sharing enabled via /vibespace/.vibespace")
@@ -262,15 +315,35 @@ Examples:
 	return nil
 }
 
-func runKill(vibespace string, args []string) error {
+func runAgentDelete(vibespace string, args []string) error {
+	// Handle help flag
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Printf(`Delete an agent from a vibespace
+
+Usage:
+  vibespace %s agent delete <agent>
+
+Arguments:
+  agent    Name of the agent to delete
+
+Examples:
+  vibespace %s agent delete claude-2
+  vibespace %s agent delete codex-1
+`, vibespace, vibespace, vibespace)
+			return nil
+		}
+	}
+
 	if len(args) == 0 {
-		return fmt.Errorf("agent ID required. Usage: vibespace %s kill <agent>", vibespace)
+		return fmt.Errorf("agent name required. Usage: vibespace %s agent delete <agent>", vibespace)
 	}
 
 	agentID := args[0]
 	ctx := context.Background()
+	out := getOutput()
 
-	slog.Info("kill command started", "vibespace", vibespace, "agent", agentID)
+	slog.Info("agent delete command started", "vibespace", vibespace, "agent", agentID)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -285,49 +358,59 @@ func runKill(vibespace string, args []string) error {
 		return err
 	}
 
-	printStep("Killing agent '%s' in '%s'...", agentID, vibespace)
+	printStep("Deleting agent '%s' from '%s'...", agentID, vibespace)
 
 	// Kill the agent
 	if err := svc.KillAgent(ctx, vs.ID, agentID); err != nil {
-		slog.Error("failed to kill agent", "vibespace", vibespace, "agent", agentID, "error", err)
-		return fmt.Errorf("failed to kill agent: %w", err)
+		slog.Error("failed to delete agent", "vibespace", vibespace, "agent", agentID, "error", err)
+		return fmt.Errorf("failed to delete agent: %w", err)
 	}
 
-	slog.Info("kill command completed", "vibespace", vibespace, "agent", agentID)
-	printSuccess("Agent '%s' removed", agentID)
+	// JSON output
+	if out.IsJSONMode() {
+		return out.JSON(NewJSONOutput(true, AgentDeleteOutput{
+			Vibespace: vibespace,
+			Agent:     agentID,
+		}, nil))
+	}
+
+	slog.Info("agent delete command completed", "vibespace", vibespace, "agent", agentID)
+	printSuccess("Agent '%s' deleted", agentID)
 
 	return nil
 }
 
-// runUp scales up agents in a vibespace
+// runStart scales up agents in a vibespace
 // Usage:
-//   vibespace foo up           # scale all agents to 1
-//   vibespace foo up claude-2  # scale specific agent to 1
-func runUp(vibespace string, args []string) error {
+//   vibespace foo start           # scale all agents to 1
+//   vibespace foo start claude-2  # scale specific agent to 1
+func runStart(vibespace string, args []string) error {
 	ctx := context.Background()
+	out := getOutput()
 
 	// Handle help flag
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
-			fmt.Println(`Scale up agents in a vibespace
+			fmt.Printf(`Start agents in a vibespace
 
 Usage:
-  vibespace <name> up [agent] [flags]
+  vibespace %s start [agent] [flags]
 
 Arguments:
-  agent    Optional agent name to scale up (default: all agents)
+  agent    Optional agent name to start (default: all agents)
 
 Flags:
-  -h, --help   Help for up
+  -h, --help   Help for start
 
 Examples:
-  vibespace myproject up           # Scale all agents to 1
-  vibespace myproject up claude-2  # Scale specific agent to 1`)
+  vibespace %s start           # Start all agents
+  vibespace %s start claude-2  # Start specific agent
+`, vibespace, vibespace, vibespace)
 			return nil
 		}
 	}
 
-	slog.Info("up command started", "vibespace", vibespace, "args", args)
+	slog.Info("start command started", "vibespace", vibespace, "args", args)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -342,63 +425,81 @@ Examples:
 		return err
 	}
 
+	var agentName string
 	if len(args) > 0 {
-		// Scale up specific agent
-		agentName := args[0]
-		printStep("Scaling up agent '%s' in '%s'...", agentName, vibespace)
+		// Start specific agent
+		agentName = args[0]
+		printStep("Starting agent '%s' in '%s'...", agentName, vibespace)
 
 		if err := svc.StartAgent(ctx, vs.ID, agentName); err != nil {
-			slog.Error("failed to scale up agent", "vibespace", vibespace, "agent", agentName, "error", err)
-			return fmt.Errorf("failed to scale up agent: %w", err)
+			slog.Error("failed to start agent", "vibespace", vibespace, "agent", agentName, "error", err)
+			return fmt.Errorf("failed to start agent: %w", err)
 		}
 
-		slog.Info("up command completed", "vibespace", vibespace, "agent", agentName)
-		printSuccess("Agent '%s' scaled up", agentName)
+		// JSON output
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, StartOutput{
+				Vibespace: vibespace,
+				Agent:     agentName,
+			}, nil))
+		}
+
+		slog.Info("start command completed", "vibespace", vibespace, "agent", agentName)
+		printSuccess("Agent '%s' started", agentName)
 	} else {
-		// Scale up all agents (start the vibespace)
-		printStep("Scaling up all agents in '%s'...", vibespace)
+		// Start all agents
+		printStep("Starting all agents in '%s'...", vibespace)
 
 		if err := svc.Start(ctx, vs.ID); err != nil {
-			slog.Error("failed to scale up vibespace", "vibespace", vibespace, "error", err)
-			return fmt.Errorf("failed to scale up vibespace: %w", err)
+			slog.Error("failed to start vibespace", "vibespace", vibespace, "error", err)
+			return fmt.Errorf("failed to start vibespace: %w", err)
 		}
 
-		slog.Info("up command completed", "vibespace", vibespace)
-		printSuccess("All agents scaled up in '%s'", vibespace)
+		// JSON output
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, StartOutput{
+				Vibespace: vibespace,
+			}, nil))
+		}
+
+		slog.Info("start command completed", "vibespace", vibespace)
+		printSuccess("All agents started in '%s'", vibespace)
 	}
 
 	return nil
 }
 
-// runDown scales down agents in a vibespace
+// runStop scales down agents in a vibespace
 // Usage:
-//   vibespace foo down           # scale all agents to 0
-//   vibespace foo down claude-2  # scale specific agent to 0
-func runDown(vibespace string, args []string) error {
+//   vibespace foo stop           # scale all agents to 0
+//   vibespace foo stop claude-2  # scale specific agent to 0
+func runStop(vibespace string, args []string) error {
 	ctx := context.Background()
+	out := getOutput()
 
 	// Handle help flag
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
-			fmt.Println(`Scale down agents in a vibespace
+			fmt.Printf(`Stop agents in a vibespace
 
 Usage:
-  vibespace <name> down [agent] [flags]
+  vibespace %s stop [agent] [flags]
 
 Arguments:
-  agent    Optional agent name to scale down (default: all agents)
+  agent    Optional agent name to stop (default: all agents)
 
 Flags:
-  -h, --help   Help for down
+  -h, --help   Help for stop
 
 Examples:
-  vibespace myproject down           # Scale all agents to 0
-  vibespace myproject down claude-2  # Scale specific agent to 0`)
+  vibespace %s stop           # Stop all agents
+  vibespace %s stop claude-2  # Stop specific agent
+`, vibespace, vibespace, vibespace)
 			return nil
 		}
 	}
 
-	slog.Info("down command started", "vibespace", vibespace, "args", args)
+	slog.Info("stop command started", "vibespace", vibespace, "args", args)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -413,29 +514,46 @@ Examples:
 		return err
 	}
 
+	var agentName string
 	if len(args) > 0 {
-		// Scale down specific agent
-		agentName := args[0]
-		printStep("Scaling down agent '%s' in '%s'...", agentName, vibespace)
+		// Stop specific agent
+		agentName = args[0]
+		printStep("Stopping agent '%s' in '%s'...", agentName, vibespace)
 
 		if err := svc.StopAgent(ctx, vs.ID, agentName); err != nil {
-			slog.Error("failed to scale down agent", "vibespace", vibespace, "agent", agentName, "error", err)
-			return fmt.Errorf("failed to scale down agent: %w", err)
+			slog.Error("failed to stop agent", "vibespace", vibespace, "agent", agentName, "error", err)
+			return fmt.Errorf("failed to stop agent: %w", err)
 		}
 
-		slog.Info("down command completed", "vibespace", vibespace, "agent", agentName)
-		printSuccess("Agent '%s' scaled down", agentName)
+		// JSON output
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, StopOutput{
+				Stopped: true,
+				Target:  agentName,
+			}, nil))
+		}
+
+		slog.Info("stop command completed", "vibespace", vibespace, "agent", agentName)
+		printSuccess("Agent '%s' stopped", agentName)
 	} else {
-		// Scale down all agents (stop the vibespace)
-		printStep("Scaling down all agents in '%s'...", vibespace)
+		// Stop all agents
+		printStep("Stopping all agents in '%s'...", vibespace)
 
 		if err := svc.Stop(ctx, vs.ID); err != nil {
-			slog.Error("failed to scale down vibespace", "vibespace", vibespace, "error", err)
-			return fmt.Errorf("failed to scale down vibespace: %w", err)
+			slog.Error("failed to stop vibespace", "vibespace", vibespace, "error", err)
+			return fmt.Errorf("failed to stop vibespace: %w", err)
 		}
 
-		slog.Info("down command completed", "vibespace", vibespace)
-		printSuccess("All agents scaled down in '%s'", vibespace)
+		// JSON output
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, StopOutput{
+				Stopped: true,
+				Target:  vibespace,
+			}, nil))
+		}
+
+		slog.Info("stop command completed", "vibespace", vibespace)
+		printSuccess("All agents stopped in '%s'", vibespace)
 	}
 
 	return nil

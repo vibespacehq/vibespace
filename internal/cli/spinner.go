@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/yagizdagabak/vibespace/pkg/ui"
 )
 
 // Spinner provides a simple text spinner for long operations
@@ -41,7 +43,7 @@ func (s *Spinner) Start() {
 	// If not a TTY or quiet/json mode, just print the message once
 	if !s.out.IsTTY() || s.out.IsQuiet() || s.out.IsJSONMode() {
 		if !s.out.IsQuiet() && !s.out.IsJSONMode() {
-			fmt.Printf("%s %s\n", s.out.cyan("->"), s.message)
+			fmt.Printf("%s %s\n", s.out.Teal(ui.IconStep), s.message)
 		}
 		return
 	}
@@ -54,7 +56,7 @@ func (s *Spinner) Start() {
 		defer ticker.Stop()
 
 		// Initial print
-		fmt.Printf("\r%s %s %s", s.out.cyan(spinnerFrames[frame]), s.message, "   ")
+		fmt.Printf("\r%s %s %s", s.out.Teal(spinnerFrames[frame]), s.message, "   ")
 
 		for {
 			select {
@@ -64,7 +66,7 @@ func (s *Spinner) Start() {
 				return
 			case <-ticker.C:
 				frame = (frame + 1) % len(spinnerFrames)
-				fmt.Printf("\r%s %s %s", s.out.cyan(spinnerFrames[frame]), s.message, "   ")
+				fmt.Printf("\r%s %s %s", s.out.Teal(spinnerFrames[frame]), s.message, "   ")
 			}
 		}
 	}()
@@ -90,7 +92,8 @@ func (s *Spinner) Stop() {
 func (s *Spinner) Success(msg string) {
 	s.Stop()
 	if !s.out.IsQuiet() && !s.out.IsJSONMode() {
-		fmt.Printf("%s %s\n", s.out.green("ok"), msg)
+		prefix := ui.SuccessPrefix(s.out.NoColor())
+		fmt.Printf("%s %s\n", s.out.Green(prefix), msg)
 	}
 }
 
@@ -98,7 +101,7 @@ func (s *Spinner) Success(msg string) {
 func (s *Spinner) Fail(msg string) {
 	s.Stop()
 	if !s.out.IsJSONMode() {
-		fmt.Printf("%s %s\n", s.out.red("error"), msg)
+		prefix := ui.ErrorPrefix(s.out.NoColor())
+		fmt.Printf("%s %s\n", s.out.Red(prefix), msg)
 	}
 }
-

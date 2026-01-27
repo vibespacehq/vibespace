@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/yagizdagabak/vibespace/pkg/agent"
+	vspkg "github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
 // runConfig routes to config subcommands
@@ -95,12 +96,20 @@ Examples:
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// Helper to find agent type by name
-	findAgentType := func(name string) string {
-		for _, a := range agents {
-			if a.AgentName == name {
-				return a.AgentType.String()
+	// Helper to find agent by name
+	findAgent := func(name string) *vspkg.AgentInfo {
+		for i := range agents {
+			if agents[i].AgentName == name {
+				return &agents[i]
 			}
+		}
+		return nil
+	}
+
+	// Helper to find agent type string by name (for JSON output)
+	findAgentType := func(name string) string {
+		if a := findAgent(name); a != nil {
+			return a.AgentType.String()
 		}
 		return "unknown"
 	}
@@ -135,18 +144,19 @@ Examples:
 		}
 
 		if out.IsJSONMode() {
-			return out.JSON(JSONOutput{
-				Success: true,
-				Data: ConfigShowOutput{
-					Vibespace: vibespace,
-					Agent:     agentName,
-					Type:      findAgentType(agentName),
-					Config:    configToOutput(config),
-				},
-			})
+			return out.JSON(NewJSONOutput(true, ConfigShowOutput{
+				Vibespace: vibespace,
+				Agent:     agentName,
+				Type:      findAgentType(agentName),
+				Config:    configToOutput(config),
+			}, nil))
 		}
 
-		printAgentConfig(agentName, config)
+		agentInfo := findAgent(agentName)
+		if agentInfo == nil {
+			return fmt.Errorf("agent '%s' not found", agentName)
+		}
+		printAgentConfig(agentName, agentInfo.AgentType, config)
 	} else {
 		// Show config for all agents
 		if out.IsJSONMode() {
@@ -163,13 +173,10 @@ Examples:
 					Config: configToOutput(config),
 				})
 			}
-			return out.JSON(JSONOutput{
-				Success: true,
-				Data: ConfigShowAllOutput{
-					Vibespace: vibespace,
-					Agents:    configs,
-				},
-			})
+			return out.JSON(NewJSONOutput(true, ConfigShowAllOutput{
+				Vibespace: vibespace,
+				Agents:    configs,
+			}, nil))
 		}
 
 		for _, a := range agents {
@@ -178,7 +185,7 @@ Examples:
 				printWarning("Failed to get config for %s: %v", a.AgentName, err)
 				continue
 			}
-			printAgentConfig(a.AgentName, config)
+			printAgentConfig(a.AgentName, a.AgentType, config)
 			fmt.Println()
 		}
 	}
@@ -186,8 +193,9 @@ Examples:
 	return nil
 }
 
-func printAgentConfig(agentName string, config *agent.Config) {
+func printAgentConfig(agentName string, agentType agent.Type, config *agent.Config) {
 	out := getOutput()
+	isCodex := agentType == agent.TypeCodex
 
 	// Header with agent name
 	fmt.Printf("\n  %s %s\n", out.Bold("⬡"), out.Bold(agentName))
@@ -198,8 +206,10 @@ func printAgentConfig(agentName string, config *agent.Config) {
 		fmt.Printf("    %s %-20s %s\n", out.Dim(icon), out.Dim(label), valueColor(value))
 	}
 
-	// skip_permissions
-	if config.SkipPermissions {
+	// skip_permissions (Claude only - Codex always runs in yolo mode)
+	if isCodex {
+		printRow("◉", "skip_permissions", "always (yolo mode)", out.Green)
+	} else if config.SkipPermissions {
 		printRow("◉", "skip_permissions", "enabled", out.Green)
 	} else {
 		printRow("○", "skip_permissions", "disabled", out.Dim)
@@ -212,8 +222,10 @@ func printAgentConfig(agentName string, config *agent.Config) {
 		printRow("○", "share_credentials", "disabled", out.Dim)
 	}
 
-	// allowed_tools
-	if len(config.AllowedTools) > 0 {
+	// allowed_tools (Claude only - Codex doesn't have tool restrictions)
+	if isCodex {
+		printRow("⚙", "allowed_tools", "all (no restrictions)", out.Green)
+	} else if len(config.AllowedTools) > 0 {
 		printRow("⚙", "allowed_tools", strings.Join(config.AllowedTools, ", "), func(s string) string { return s })
 	} else if config.SkipPermissions {
 		printRow("⚙", "allowed_tools", "all", out.Green)
@@ -221,8 +233,10 @@ func printAgentConfig(agentName string, config *agent.Config) {
 		printRow("⚙", "allowed_tools", strings.Join(agent.DefaultAllowedTools(), ", ")+" "+out.Dim("(default)"), func(s string) string { return s })
 	}
 
-	// disallowed_tools
-	if len(config.DisallowedTools) > 0 {
+	// disallowed_tools (Claude only)
+	if isCodex {
+		printRow("⊘", "disallowed_tools", "n/a", out.Dim)
+	} else if len(config.DisallowedTools) > 0 {
 		printRow("⊘", "disallowed_tools", strings.Join(config.DisallowedTools, ", "), out.Red)
 	} else {
 		printRow("⊘", "disallowed_tools", "none", out.Dim)
@@ -323,18 +337,19 @@ Examples:
 		return err
 	}
 
-	// Check if agent is Codex to restrict certain flags
+	// Check agent type to restrict certain flags
 	agents, err := svc.ListAgents(ctx, vs.ID)
 	if err != nil {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
-	var isCodex bool
+	var agentType agent.Type
 	for _, a := range agents {
-		if a.AgentName == agentName && a.AgentType == agent.TypeCodex {
-			isCodex = true
+		if a.AgentName == agentName {
+			agentType = a.AgentType
 			break
 		}
 	}
+	isCodex := agentType == agent.TypeCodex
 
 	// Get current config
 	config, err := svc.GetAgentConfig(ctx, vs.ID, agentName)
@@ -421,10 +436,38 @@ Examples:
 		return fmt.Errorf("failed to update agent config: %w", err)
 	}
 
+	// JSON output
+	out := getOutput()
+	if out.IsJSONMode() {
+		// Convert config to output format
+		allowedTools := config.AllowedTools
+		if allowedTools == nil {
+			allowedTools = []string{}
+		}
+		disallowedTools := config.DisallowedTools
+		if disallowedTools == nil {
+			disallowedTools = []string{}
+		}
+		return out.JSON(NewJSONOutput(true, ConfigSetOutput{
+			Vibespace: vibespace,
+			Agent:     agentName,
+			Config: AgentConfigOutput{
+				SkipPermissions:  config.SkipPermissions,
+				ShareCredentials: config.ShareCredentials,
+				AllowedTools:     allowedTools,
+				DisallowedTools:  disallowedTools,
+				Model:            config.Model,
+				MaxTurns:         config.MaxTurns,
+				SystemPrompt:     config.SystemPrompt,
+				ReasoningEffort:  config.ReasoningEffort,
+			},
+		}, nil))
+	}
+
 	printSuccess("Config updated for '%s'", agentName)
 	fmt.Println("  Note: Pod will restart to apply changes")
 	fmt.Println()
-	printAgentConfig(agentName, config)
+	printAgentConfig(agentName, agentType, config)
 
 	return nil
 }

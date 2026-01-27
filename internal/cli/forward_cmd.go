@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"strconv"
-	"text/tabwriter"
 
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
 )
@@ -114,36 +112,21 @@ func runForwardList(vibespace string) error {
 				}
 			}
 		}
-		return out.JSON(JSONOutput{
-			Success: true,
-			Data:    jsonOut,
-		})
+		return out.JSON(NewJSONOutput(true, jsonOut, nil))
 	}
 
 	if len(result.Agents) == 0 {
+		// Plain mode - no output for empty result
+		if out.IsPlainMode() {
+			return nil
+		}
 		fmt.Println("No port-forwards active")
 		return nil
 	}
 
-	// Plain output mode
-	if out.IsPlainMode() {
-		for _, agent := range result.Agents {
-			for _, fwd := range agent.Forwards {
-				fmt.Printf("%s\t%d\t%d\t%s\t%s\n",
-					agent.Name,
-					fwd.LocalPort,
-					fwd.RemotePort,
-					fwd.Type,
-					fwd.Status,
-				)
-			}
-		}
-		return nil
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "AGENT\tLOCAL\tREMOTE\tTYPE\tSTATUS")
-
+	// Build table rows
+	headers := []string{"AGENT", "LOCAL", "REMOTE", "TYPE", "STATUS"}
+	var rows [][]string
 	for _, agent := range result.Agents {
 		for _, fwd := range agent.Forwards {
 			status := fwd.Status
@@ -153,24 +136,26 @@ func runForwardList(vibespace string) error {
 			if fwd.Reconnects > 0 {
 				status = fmt.Sprintf("%s [%d reconnects]", status, fwd.Reconnects)
 			}
-
-			fmt.Fprintf(w, "%s\t%d\t%d\t%s\t%s\n",
+			rows = append(rows, []string{
 				agent.Name,
-				fwd.LocalPort,
-				fwd.RemotePort,
+				strconv.Itoa(fwd.LocalPort),
+				strconv.Itoa(fwd.RemotePort),
 				fwd.Type,
 				status,
-			)
+			})
 		}
 	}
 
-	w.Flush()
+	out.Table(headers, rows)
+
 	slog.Debug("forward list command completed", "vibespace", vibespace, "agent_count", len(result.Agents))
 	return nil
 }
 
 // runForwardAdd adds a new port-forward
 func runForwardAdd(vibespace string, args []string) error {
+	out := getOutput()
+
 	// Handle help flag
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
@@ -246,13 +231,25 @@ Examples:
 		return fmt.Errorf("failed to add forward: %w\nCheck daemon status: vibespace %s forward list", err, vibespace)
 	}
 
+	// JSON output
+	if out.IsJSONMode() {
+		return out.JSON(NewJSONOutput(true, ForwardAddOutput{
+			Vibespace:  vibespace,
+			Agent:      agent,
+			LocalPort:  result.LocalPort,
+			RemotePort: result.RemotePort,
+		}, nil))
+	}
+
 	slog.Info("forward add command completed", "vibespace", vibespace, "agent", agent, "local_port", result.LocalPort, "remote_port", result.RemotePort)
-	printSuccess("Forward added: localhost:%d → %d", result.LocalPort, result.RemotePort)
+	printSuccess("Forward added: localhost:%d -> %d", result.LocalPort, result.RemotePort)
 	return nil
 }
 
 // runForwardRemove removes a port-forward
 func runForwardRemove(vibespace string, args []string) error {
+	out := getOutput()
+
 	// Handle help flag
 	for _, arg := range args {
 		if arg == "--help" || arg == "-h" {
@@ -313,8 +310,16 @@ Examples:
 		return fmt.Errorf("failed to remove forward: %w", err)
 	}
 
+	// JSON output
+	if out.IsJSONMode() {
+		return out.JSON(NewJSONOutput(true, ForwardRemoveOutput{
+			Vibespace:  vibespace,
+			Agent:      agent,
+			RemotePort: remotePort,
+		}, nil))
+	}
+
 	slog.Info("forward remove command completed", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
 	printSuccess("Forward removed: port %d", remotePort)
 	return nil
 }
-

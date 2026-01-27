@@ -11,8 +11,10 @@ import (
 
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/tui"
+	"github.com/yagizdagabak/vibespace/pkg/ui"
 
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -514,6 +516,16 @@ func runSessionPicker(ctx context.Context) error {
 	var selected string
 	// Add 2 spaces prefix to align with huh's "> " selector prefix
 	header := fmt.Sprintf("  %-16s │ %-20s │ %-20s │ %s", "SESSION", "VIBESPACE(S)", "AGENTS", "LAST USED")
+
+	// Custom theme with brand colors
+	theme := huh.ThemeBase()
+	theme.Focused.Title = lipgloss.NewStyle().Foreground(ui.Orange).Bold(true)
+	theme.Focused.Description = lipgloss.NewStyle().Foreground(ui.Pink)
+	theme.Focused.SelectSelector = lipgloss.NewStyle().Foreground(ui.Teal).SetString("> ")
+	theme.Focused.SelectedOption = lipgloss.NewStyle().Foreground(ui.Teal)
+	theme.Focused.UnselectedOption = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	theme.Blurred = theme.Focused
+
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
@@ -522,7 +534,7 @@ func runSessionPicker(ctx context.Context) error {
 				Options(options...).
 				Value(&selected),
 		),
-	)
+	).WithTheme(theme)
 
 	if err := form.Run(); err != nil {
 		return err

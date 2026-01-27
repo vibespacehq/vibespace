@@ -7,8 +7,6 @@ import (
 
 	"github.com/yagizdagabak/vibespace/pkg/session"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 )
 
@@ -76,16 +74,17 @@ func runSessionList(cmd *cobra.Command, args []string) error {
 				LastUsed:   sess.LastUsed,
 			}
 		}
-		return out.JSON(JSONOutput{
-			Success: true,
-			Data: SessionListOutput{
-				Sessions: items,
-				Count:    len(items),
-			},
-		})
+		return out.JSON(NewJSONOutput(true, SessionListOutput{
+			Sessions: items,
+			Count:    len(items),
+		}, nil))
 	}
 
 	if len(sessions) == 0 {
+		// Plain mode - no output for empty result
+		if out.IsPlainMode() {
+			return nil
+		}
 		fmt.Println("No sessions found.")
 		fmt.Println()
 		fmt.Println("Create a new session with:")
@@ -97,6 +96,7 @@ func runSessionList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Build table rows
+	headers := []string{"NAME", "VIBESPACES", "AGENTS", "LAST USED"}
 	rows := make([][]string, len(sessions))
 	for i, sess := range sessions {
 		vsNames, agentCount := formatSessionInfo(sess)
@@ -104,32 +104,20 @@ func runSessionList(cmd *cobra.Command, args []string) error {
 		rows[i] = []string{sess.Name, vsNames, agentCount, lastUsed}
 	}
 
-	// Define styles
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	cellStyle := lipgloss.NewStyle().Padding(0, 1)
+	out.Table(headers, rows)
 
-	// Create table
-	t := table.New().
-		Border(lipgloss.RoundedBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
-		Headers("NAME", "VIBESPACES", "AGENTS", "LAST USED").
-		Rows(rows...).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return headerStyle.Padding(0, 1)
-			}
-			return cellStyle
-		})
-
-	fmt.Println(t)
-	fmt.Println()
-	fmt.Printf("Resume a session: %s\n", out.Dim("vibespace multi -r"))
+	// Don't print footer in plain mode
+	if !out.IsPlainMode() {
+		fmt.Println()
+		fmt.Printf("Resume a session: %s\n", out.Dim("vibespace multi -r"))
+	}
 
 	return nil
 }
 
 func runSessionDelete(cmd *cobra.Command, args []string) error {
 	name := args[0]
+	out := getOutput()
 
 	store, err := session.NewStore()
 	if err != nil {
@@ -138,6 +126,13 @@ func runSessionDelete(cmd *cobra.Command, args []string) error {
 
 	if err := store.Delete(name); err != nil {
 		return err
+	}
+
+	// JSON output
+	if out.IsJSONMode() {
+		return out.JSON(NewJSONOutput(true, SessionDeleteOutput{
+			Name: name,
+		}, nil))
 	}
 
 	printSuccess("Deleted session '%s'", name)
@@ -172,10 +167,7 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 				Agents: vs.Agents,
 			})
 		}
-		return out.JSON(JSONOutput{
-			Success: true,
-			Data:    jsonOut,
-		})
+		return out.JSON(NewJSONOutput(true, jsonOut, nil))
 	}
 
 	fmt.Printf("Session: %s\n", out.Bold(sess.Name))
@@ -202,6 +194,17 @@ func runSessionShow(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// truncateStr truncates a string to maxLen with ellipsis
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
 }
 
 // formatRelativeTime formats a time as a relative string
@@ -231,17 +234,6 @@ func formatRelativeTime(t time.Time) string {
 	default:
 		return t.Format("2006-01-02")
 	}
-}
-
-// truncateStr truncates a string to maxLen with ellipsis
-func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
 }
 
 // joinStrings joins strings with a separator
