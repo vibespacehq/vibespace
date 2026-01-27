@@ -327,6 +327,15 @@ func (c *AgentConn) convertStreamMessage(msg *agent.StreamMessage) []*Message {
 		// Tool results are typically not shown in TUI
 		// Could add if needed
 
+	case "session_started":
+		// Agent reported its session ID (Codex auto-generates these)
+		// Update the session manager with the actual session ID
+		if msg.SessionID != "" && c.sessionManager != nil {
+			slog.Debug("session_started: capturing agent session ID",
+				"agent", sender, "sessionID", msg.SessionID)
+			c.sessionManager.UpdateSessionID(c.multiSessionID, sender, msg.SessionID)
+		}
+
 	case "done":
 		// Signal response complete
 		c.signalResponseDone()

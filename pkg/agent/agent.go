@@ -207,7 +207,7 @@ func (c *Config) Merge(other *Config) *Config {
 
 // StreamMessage represents a parsed message from an agent's streaming output.
 type StreamMessage struct {
-	// Type of message: "text", "tool_use", "tool_result", "error", "system", "done"
+	// Type of message: "text", "tool_use", "tool_result", "error", "system", "done", "session_started"
 	Type string
 
 	// Text content (for text and error types)
@@ -221,6 +221,10 @@ type StreamMessage struct {
 	// Result indicates completion (for done type)
 	IsError bool
 	Result  string
+
+	// SessionID is the agent's session/thread ID (for session_started type)
+	// Codex auto-generates session IDs, so we capture them from thread.started events
+	SessionID string
 
 	// Raw holds the original JSON for agent-specific parsing
 	Raw json.RawMessage

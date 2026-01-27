@@ -5,10 +5,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
+
+// validSessionName matches alphanumeric, dash, and underscore (1-64 chars)
+var validSessionName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
+
+// ValidateSessionName checks if a session name is valid
+func ValidateSessionName(name string) error {
+	if name == "" {
+		return fmt.Errorf("session name cannot be empty")
+	}
+	if !validSessionName.MatchString(name) {
+		return fmt.Errorf("session name '%s' is invalid: must be 1-64 characters, alphanumeric with dash/underscore, starting with alphanumeric", name)
+	}
+	return nil
+}
 
 // Store manages session persistence
 type Store struct {
@@ -88,8 +103,8 @@ func (s *Store) Get(name string) (*Session, error) {
 
 // Save stores a session
 func (s *Store) Save(session *Session) error {
-	if session.Name == "" {
-		return fmt.Errorf("session name cannot be empty")
+	if err := ValidateSessionName(session.Name); err != nil {
+		return err
 	}
 
 	// Update last used time
@@ -106,6 +121,19 @@ func (s *Store) Save(session *Session) error {
 	}
 
 	return nil
+}
+
+// SaveNew stores a new session, returning an error if it already exists
+func (s *Store) SaveNew(session *Session) error {
+	if err := ValidateSessionName(session.Name); err != nil {
+		return err
+	}
+
+	if s.Exists(session.Name) {
+		return fmt.Errorf("session '%s' already exists", session.Name)
+	}
+
+	return s.Save(session)
 }
 
 // Delete removes a session

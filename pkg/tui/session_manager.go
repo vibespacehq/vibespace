@@ -194,6 +194,43 @@ func (m *AgentSessionManager) GetCurrentSessionID(multiSessionID, agentAddr stri
 	return agentSessions.Current
 }
 
+// UpdateSessionID updates the session ID for an agent within a multi-session.
+// This is used when an agent (like Codex) auto-generates its own session ID
+// and we need to capture it for future resume operations.
+// The new session ID replaces the current session in both Current and History.
+func (m *AgentSessionManager) UpdateSessionID(multiSessionID, agentAddr, newSessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.sessions[multiSessionID] == nil {
+		m.sessions[multiSessionID] = make(map[string]*AgentSessions)
+	}
+
+	agentSessions := m.sessions[multiSessionID][agentAddr]
+	if agentSessions == nil {
+		// Create new session entry with the provided ID
+		m.sessions[multiSessionID][agentAddr] = &AgentSessions{
+			Current: newSessionID,
+			History: []string{newSessionID},
+		}
+	} else {
+		// Update current session ID
+		oldID := agentSessions.Current
+		agentSessions.Current = newSessionID
+
+		// Replace old ID in history with new ID (if it exists)
+		// This handles the case where we pre-generated a placeholder UUID
+		for i, id := range agentSessions.History {
+			if id == oldID {
+				agentSessions.History[i] = newSessionID
+				break
+			}
+		}
+	}
+
+	m.save()
+}
+
 // matchesShortID checks if a full UUID matches a short ID prefix
 // Allows users to type just first 8 chars of UUID
 func matchesShortID(fullID, shortID string) bool {
@@ -245,10 +282,10 @@ func FormatSessionList(sessions []string, currentID string) string {
 			marker = "→ "
 		}
 
-		// Show short ID (first 8 chars)
+		// Show short ID (first 13 chars to handle UUIDv7 timestamp prefixes)
 		shortID := id
-		if len(shortID) > 8 {
-			shortID = shortID[:8]
+		if len(shortID) > 13 {
+			shortID = shortID[:13]
 		}
 
 		result += fmt.Sprintf("%s%s\n", marker, shortID)
