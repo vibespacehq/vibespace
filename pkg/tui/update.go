@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yagizdagabak/vibespace/pkg/agent"
 	"github.com/yagizdagabak/vibespace/pkg/permission"
 	"github.com/yagizdagabak/vibespace/pkg/session"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
@@ -551,10 +552,13 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			// Create new session for this agent within current multi-session
 			newID := m.sessionManager.NewSession(m.sessionName, key)
 			shortID := newID
-			if len(shortID) > 8 {
-				shortID = shortID[:8]
+			if len(shortID) > 13 {
+				shortID = shortID[:13]
 			}
 			slog.Debug("created new session", "agent", key, "sessionID", newID)
+
+			// Check if this is a Codex agent (which auto-generates session IDs)
+			isCodex := conn.AgentType() == agent.TypeCodex
 
 			// Reconnect agent with new session (force --session-id to create it on pod)
 			// Do this synchronously so the agent is ready for the next message
@@ -566,8 +570,14 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				m.AddMessage(NewSystemMessage(fmt.Sprintf("Failed to start new session for %s: %s", key, err.Error())))
 			} else {
 				slog.Debug("reconnect successful", "agent", key, "sessionID", newID)
-				m.statusMsg = fmt.Sprintf("New session for %s: %s", key, shortID)
-				m.AddMessage(NewSystemMessage(fmt.Sprintf("New Claude session started for %s (ID: %s)", key, shortID)))
+				if isCodex {
+					// Codex auto-generates session IDs - will be captured from thread.started
+					m.statusMsg = fmt.Sprintf("New session for %s (ID assigned on first message)", key)
+					m.AddMessage(NewSystemMessage(fmt.Sprintf("New session started for %s (send a message to get session ID)", key)))
+				} else {
+					m.statusMsg = fmt.Sprintf("New session for %s: %s", key, shortID)
+					m.AddMessage(NewSystemMessage(fmt.Sprintf("New session started for %s (ID: %s)", key, shortID)))
+				}
 			}
 
 		case "list":
@@ -595,8 +605,12 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 					m.statusMsg = fmt.Sprintf("Failed to resume session: %s", err.Error())
 					m.AddMessage(NewSystemMessage(fmt.Sprintf("Failed to resume session for %s: %s", key, err.Error())))
 				} else {
-					m.statusMsg = fmt.Sprintf("Resumed session %s for %s", sessionID, key)
-					m.AddMessage(NewSystemMessage(fmt.Sprintf("Resumed Claude session %s for %s", sessionID, key)))
+					shortID := sessionID
+					if len(shortID) > 13 {
+						shortID = shortID[:13]
+					}
+					m.statusMsg = fmt.Sprintf("Resumed session %s for %s", shortID, key)
+					m.AddMessage(NewSystemMessage(fmt.Sprintf("Resumed session %s for %s", shortID, key)))
 				}
 			}
 
@@ -607,8 +621,8 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 				m.statusMsg = fmt.Sprintf("No active session for %s", key)
 			} else {
 				shortID := currentID
-				if len(shortID) > 8 {
-					shortID = shortID[:8]
+				if len(shortID) > 13 {
+					shortID = shortID[:13]
 				}
 				m.statusMsg = fmt.Sprintf("Session for %s: %s", key, shortID)
 			}

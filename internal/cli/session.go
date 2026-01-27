@@ -233,6 +233,17 @@ func formatRelativeTime(t time.Time) string {
 	}
 }
 
+// truncateStr truncates a string to maxLen with ellipsis
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
+}
+
 // joinStrings joins strings with a separator
 func joinStrings(strs []string, sep string) string {
 	if len(strs) == 0 {

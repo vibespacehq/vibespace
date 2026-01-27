@@ -57,6 +57,10 @@ func (r *HeadlessRunner) SetTimeout(d time.Duration) {
 	r.timeout = d
 }
 
+// SetResumeSession sets whether to resume existing agent sessions
+func (r *HeadlessRunner) SetResumeSession(resume bool) {
+	r.resume = resume
+}
 
 // Connect connects to agents in the specified vibespaces
 func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.VibespaceEntry) error {

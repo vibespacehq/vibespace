@@ -49,21 +49,19 @@ func (a *Agent) ConfigDirectory() string {
 // BuildPrintModeCommand builds the Codex exec command for non-interactive mode.
 // Codex uses "codex exec" for non-interactive execution with JSON output.
 func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *agent.Config) string {
-	var args []string
+	// Start with codex exec
+	args := []string{"codex", "exec"}
 
-	if resume && sessionID != "" {
-		// Resume existing session: codex exec resume <session-id> [flags] -
-		args = []string{"codex", "exec", "resume", sessionID}
-	} else {
-		// New session: codex exec [flags] -
-		args = []string{"codex", "exec"}
-	}
-
-	// Add flags
+	// Add flags BEFORE resume/prompt (required by Codex CLI)
 	args = append(args, "--json", "--skip-git-repo-check")
 
-	// Apply configuration
+	// Apply configuration (adds --yolo, --model, etc.)
 	args = a.applyConfig(args, config)
+
+	if resume && sessionID != "" {
+		// Resume existing session: codex exec [flags] resume <session-id> -
+		args = append(args, "resume", sessionID)
+	}
 
 	// Add - at the end to read prompt from stdin
 	args = append(args, "-")
@@ -141,7 +139,13 @@ func (a *Agent) ParseStreamLine(line string) (*agent.StreamMessage, bool) {
 	// Actual Codex CLI JSONL format based on observed output
 	switch msg.Type {
 	case "thread.started":
-		// Thread started - skip, no content to display
+		// Thread started - capture the thread_id for session resumption
+		// Codex auto-generates session IDs, so we need to capture and store them
+		if msg.ThreadID != "" {
+			result.Type = "session_started"
+			result.SessionID = msg.ThreadID
+			return result, true
+		}
 		return nil, true
 
 	case "turn.started":
