@@ -567,6 +567,8 @@ func (m *DeploymentManager) extractConfigFromDeployment(deploy *appsv1.Deploymen
 			config.SystemPrompt = env.Value
 		case "VIBESPACE_SHARE_CREDENTIALS":
 			config.ShareCredentials = env.Value == "true"
+		case "VIBESPACE_REASONING_EFFORT":
+			config.ReasoningEffort = env.Value
 		}
 	}
 
@@ -624,6 +626,7 @@ func (m *DeploymentManager) updateEnvVars(env []corev1.EnvVar, config *agent.Con
 		"VIBESPACE_MODEL":            "",
 		"VIBESPACE_MAX_TURNS":        "",
 		"VIBESPACE_SYSTEM_PROMPT":    "",
+		"VIBESPACE_REASONING_EFFORT": "",
 	}
 
 	if config != nil {
@@ -644,6 +647,9 @@ func (m *DeploymentManager) updateEnvVars(env []corev1.EnvVar, config *agent.Con
 		}
 		if config.SystemPrompt != "" {
 			configVars["VIBESPACE_SYSTEM_PROMPT"] = config.SystemPrompt
+		}
+		if config.ReasoningEffort != "" {
+			configVars["VIBESPACE_REASONING_EFFORT"] = config.ReasoningEffort
 		}
 	}
 
@@ -755,6 +761,12 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentNam
 			env = append(env, corev1.EnvVar{
 				Name:  "VIBESPACE_SYSTEM_PROMPT",
 				Value: config.SystemPrompt,
+			})
+		}
+		if config.ReasoningEffort != "" {
+			env = append(env, corev1.EnvVar{
+				Name:  "VIBESPACE_REASONING_EFFORT",
+				Value: config.ReasoningEffort,
 			})
 		}
 	}

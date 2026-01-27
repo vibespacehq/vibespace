@@ -181,5 +181,6 @@ type AgentConfigOutput struct {
 	Model            string   `json:"model"`
 	MaxTurns         int      `json:"max_turns"`
 	SystemPrompt     string   `json:"system_prompt"`
+	ReasoningEffort  string   `json:"reasoning_effort,omitempty"`
 }
 

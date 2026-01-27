@@ -97,8 +97,14 @@ func (a *Agent) applyConfig(args []string, config *agent.Config) []string {
 	// Always use --yolo mode - container provides the sandbox
 	args = append(args, "--yolo")
 
-	if config != nil && config.Model != "" {
-		args = append(args, "--model", config.Model)
+	if config != nil {
+		if config.Model != "" {
+			args = append(args, "--model", config.Model)
+		}
+		if config.ReasoningEffort != "" {
+			// Use -c flag to override config for this run
+			args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%s", config.ReasoningEffort))
+		}
 	}
 
 	return args

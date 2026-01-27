@@ -78,6 +78,11 @@ type Config struct {
 	// Codex: config file
 	SystemPrompt string `json:"system_prompt,omitempty"`
 
+	// ReasoningEffort controls how much the model "thinks" before responding
+	// Codex: -c model_reasoning_effort=<low|medium|high|xhigh>
+	// Claude: not supported (uses extended thinking automatically)
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+
 	// ShareCredentials enables credential sharing via /vibespace/.vibespace
 	ShareCredentials bool `json:"share_credentials,omitempty"`
 
@@ -142,6 +147,7 @@ func (c *Config) Clone() *Config {
 		Model:            c.Model,
 		MaxTurns:         c.MaxTurns,
 		SystemPrompt:     c.SystemPrompt,
+		ReasoningEffort:  c.ReasoningEffort,
 		ShareCredentials: c.ShareCredentials,
 	}
 	if len(c.AllowedTools) > 0 {
@@ -190,6 +196,9 @@ func (c *Config) Merge(other *Config) *Config {
 	}
 	if other.SystemPrompt != "" {
 		result.SystemPrompt = other.SystemPrompt
+	}
+	if other.ReasoningEffort != "" {
+		result.ReasoningEffort = other.ReasoningEffort
 	}
 	if other.ShareCredentials {
 		result.ShareCredentials = true
