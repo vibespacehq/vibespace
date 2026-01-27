@@ -123,6 +123,7 @@ Examples:
 			Model:            config.Model,
 			MaxTurns:         config.MaxTurns,
 			SystemPrompt:     config.SystemPrompt,
+			ReasoningEffort:  config.ReasoningEffort,
 		}
 	}
 
@@ -250,6 +251,11 @@ func printAgentConfig(agentName string, config *agent.Config) {
 		printRow("✎", "system_prompt", prompt, func(s string) string { return s })
 	}
 
+	// reasoning_effort (Codex only)
+	if config.ReasoningEffort != "" {
+		printRow("◆", "reasoning_effort", config.ReasoningEffort, func(s string) string { return s })
+	}
+
 	fmt.Println()
 }
 
@@ -265,18 +271,32 @@ Usage:
   vibespace <name> config set <agent> [flags]
 
 Flags:
-      --skip-permissions         Enable --dangerously-skip-permissions
-      --no-skip-permissions      Disable --dangerously-skip-permissions
-      --allowed-tools string     Comma-separated allowed tools
-      --disallowed-tools string  Comma-separated disallowed tools
-      --model string             Claude model to use
+      --skip-permissions         Enable --dangerously-skip-permissions (Claude only)
+      --no-skip-permissions      Disable --dangerously-skip-permissions (Claude only)
+      --allowed-tools string     Comma-separated allowed tools (Claude only)
+      --disallowed-tools string  Comma-separated disallowed tools (Claude only)
+      --model string             Model to use (see below)
       --max-turns int            Maximum conversation turns (0 = unlimited)
+      --reasoning-effort string  Reasoning effort: low, medium, high, xhigh (Codex only)
   -h, --help                     Help for config set
+
+Claude Models:
+  sonnet      Latest Sonnet (4.5) for daily coding tasks
+  opus        Opus 4.5 for complex reasoning
+  haiku       Fast and efficient for simple tasks
+  opusplan    Opus for planning, Sonnet for execution
+
+Codex Models:
+  gpt-5.2-codex       Most advanced agentic coding model (recommended)
+  gpt-5.1-codex-mini  Smaller, cost-effective
+  gpt-5.1-codex-max   Optimized for long-horizon tasks
+  gpt-5.2             General agentic model
 
 Examples:
   vibespace myproject config set claude-1 --skip-permissions
-  vibespace myproject config set claude-1 --allowed-tools "Bash,Read,Write"
-  vibespace myproject config set claude-1 --model opus`)
+  vibespace myproject config set claude-1 --model opus
+  vibespace myproject config set codex-1 --model gpt-5.2-codex
+  vibespace myproject config set codex-1 --reasoning-effort high`)
 			return nil
 		}
 	}
@@ -303,18 +323,16 @@ Examples:
 		return err
 	}
 
-	// Check if agent is Codex - config is not supported for Codex agents
+	// Check if agent is Codex to restrict certain flags
 	agents, err := svc.ListAgents(ctx, vs.ID)
 	if err != nil {
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
+	var isCodex bool
 	for _, a := range agents {
 		if a.AgentName == agentName && a.AgentType == agent.TypeCodex {
-			return fmt.Errorf("config set is not supported for Codex agents.\n\n" +
-				"Codex runs in --yolo mode (full access, no approval prompts) because:\n" +
-				"  - The vibespace container provides isolation/sandboxing\n" +
-				"  - Non-interactive mode cannot respond to approval prompts\n\n" +
-				"To configure Codex, use interactive mode: vibespace %s connect %s", vibespace, agentName)
+			isCodex = true
+			break
 		}
 	}
 
@@ -329,18 +347,36 @@ Examples:
 		arg := args[i]
 		switch {
 		case arg == "--skip-permissions":
+			if isCodex {
+				return fmt.Errorf("--skip-permissions is not supported for Codex agents (always runs in --yolo mode)")
+			}
 			config.SkipPermissions = true
 		case arg == "--no-skip-permissions":
+			if isCodex {
+				return fmt.Errorf("--no-skip-permissions is not supported for Codex agents (always runs in --yolo mode)")
+			}
 			config.SkipPermissions = false
 		case arg == "--allowed-tools" && i+1 < len(args):
+			if isCodex {
+				return fmt.Errorf("--allowed-tools is not supported for Codex agents")
+			}
 			config.AllowedTools = strings.Split(args[i+1], ",")
 			i++
 		case strings.HasPrefix(arg, "--allowed-tools="):
+			if isCodex {
+				return fmt.Errorf("--allowed-tools is not supported for Codex agents")
+			}
 			config.AllowedTools = strings.Split(arg[16:], ",")
 		case arg == "--disallowed-tools" && i+1 < len(args):
+			if isCodex {
+				return fmt.Errorf("--disallowed-tools is not supported for Codex agents")
+			}
 			config.DisallowedTools = strings.Split(args[i+1], ",")
 			i++
 		case strings.HasPrefix(arg, "--disallowed-tools="):
+			if isCodex {
+				return fmt.Errorf("--disallowed-tools is not supported for Codex agents")
+			}
 			config.DisallowedTools = strings.Split(arg[19:], ",")
 		case arg == "--model" && i+1 < len(args):
 			config.Model = args[i+1]
@@ -357,6 +393,25 @@ Examples:
 			i++
 		case strings.HasPrefix(arg, "--system-prompt="):
 			config.SystemPrompt = arg[16:]
+		case arg == "--reasoning-effort" && i+1 < len(args):
+			if !isCodex {
+				return fmt.Errorf("--reasoning-effort is only supported for Codex agents")
+			}
+			effort := strings.ToLower(args[i+1])
+			if effort != "low" && effort != "medium" && effort != "high" && effort != "xhigh" {
+				return fmt.Errorf("invalid reasoning effort: %s (must be low, medium, high, or xhigh)", effort)
+			}
+			config.ReasoningEffort = effort
+			i++
+		case strings.HasPrefix(arg, "--reasoning-effort="):
+			if !isCodex {
+				return fmt.Errorf("--reasoning-effort is only supported for Codex agents")
+			}
+			effort := strings.ToLower(arg[19:])
+			if effort != "low" && effort != "medium" && effort != "high" && effort != "xhigh" {
+				return fmt.Errorf("invalid reasoning effort: %s (must be low, medium, high, or xhigh)", effort)
+			}
+			config.ReasoningEffort = effort
 		}
 	}
 
