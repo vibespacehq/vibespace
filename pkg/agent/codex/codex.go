@@ -91,27 +91,17 @@ func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) 
 }
 
 // applyConfig adds configuration flags to the command arguments.
+// Codex always runs in --yolo mode in vibespace because:
+// 1. The container itself provides isolation/sandboxing
+// 2. Non-interactive mode (TUI) cannot respond to approval prompts
+// 3. Users can configure Codex directly in interactive mode if needed
 func (a *Agent) applyConfig(args []string, config *agent.Config) []string {
-	if config == nil {
-		// Default: use full-auto for TUI (workspace-write + on-request approvals)
-		args = append(args, "--full-auto")
-		return args
-	}
+	// Always use --yolo mode - container provides the sandbox
+	args = append(args, "--yolo")
 
-	if config.SkipPermissions {
-		// --yolo is short for --dangerously-bypass-approvals-and-sandbox
-		args = append(args, "--yolo")
-	} else {
-		// Use full-auto mode for TUI (allows writes, on-request approvals)
-		args = append(args, "--full-auto")
-	}
-
-	if config.Model != "" {
+	if config != nil && config.Model != "" {
 		args = append(args, "--model", config.Model)
 	}
-
-	// Note: Codex handles tools via sandbox policies, not CLI flags
-	// AllowedTools/DisallowedTools would need to be translated to config.toml
 
 	return args
 }

@@ -303,6 +303,21 @@ Examples:
 		return err
 	}
 
+	// Check if agent is Codex - config is not supported for Codex agents
+	agents, err := svc.ListAgents(ctx, vs.ID)
+	if err != nil {
+		return fmt.Errorf("failed to list agents: %w", err)
+	}
+	for _, a := range agents {
+		if a.AgentName == agentName && a.AgentType == agent.TypeCodex {
+			return fmt.Errorf("config set is not supported for Codex agents.\n\n" +
+				"Codex runs in --yolo mode (full access, no approval prompts) because:\n" +
+				"  - The vibespace container provides isolation/sandboxing\n" +
+				"  - Non-interactive mode cannot respond to approval prompts\n\n" +
+				"To configure Codex, use interactive mode: vibespace %s connect %s", vibespace, agentName)
+		}
+	}
+
 	// Get current config
 	config, err := svc.GetAgentConfig(ctx, vs.ID, agentName)
 	if err != nil {
