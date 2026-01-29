@@ -89,9 +89,9 @@ jobs:
         working-directory: qemu-${{ env.QEMU_VERSION }}
         run: make -j$(nproc)
 
-      - name: Package binaries
+      - name: Package binaries with libraries
         run: |
-          mkdir -p package/bin
+          mkdir -p package/bin package/lib
 
           # Copy system emulator
           cp qemu-${{ env.QEMU_VERSION }}/build/qemu-system-${{ matrix.arch }} package/bin/
@@ -99,14 +99,51 @@ jobs:
           # Copy qemu-img tool
           cp qemu-${{ env.QEMU_VERSION }}/build/qemu-img package/bin/
 
+          # Bundle required shared libraries
+          for bin in package/bin/*; do
+            ldd "$bin" | grep "=> /" | awk '{print $3}' | while read lib; do
+              # Skip system libs that are guaranteed to exist
+              case "$lib" in
+                /lib/x86_64-linux-gnu/libc.so*) continue ;;
+                /lib/x86_64-linux-gnu/libm.so*) continue ;;
+                /lib/x86_64-linux-gnu/libpthread.so*) continue ;;
+                /lib/x86_64-linux-gnu/libdl.so*) continue ;;
+                /lib/x86_64-linux-gnu/librt.so*) continue ;;
+                /lib/aarch64-linux-gnu/libc.so*) continue ;;
+                /lib/aarch64-linux-gnu/libm.so*) continue ;;
+                /lib/aarch64-linux-gnu/libpthread.so*) continue ;;
+                /lib/aarch64-linux-gnu/libdl.so*) continue ;;
+                /lib/aarch64-linux-gnu/librt.so*) continue ;;
+                */ld-linux*) continue ;;
+              esac
+              cp -L "$lib" package/lib/ 2>/dev/null || true
+            done
+          done
+
+          # Create wrapper scripts that set LD_LIBRARY_PATH
+          for bin in package/bin/qemu-*; do
+            name=$(basename "$bin")
+            mv "$bin" "$bin.real"
+            cat > "$bin" << 'WRAPPER'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export LD_LIBRARY_PATH="$DIR/../lib:$LD_LIBRARY_PATH"
+          exec "$DIR/BINNAME.real" "$@"
+          WRAPPER
+            sed -i "s/BINNAME/$name/g" "$bin"
+            chmod +x "$bin"
+          done
+
           # Create tarball
           cd package
-          tar czf ../qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}.tar.gz bin
+          tar czf ../qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}.tar.gz bin lib
           cd ..
 
           # Show what we built
+          echo "=== Binaries ==="
           ls -la package/bin/
-          file package/bin/*
+          echo "=== Libraries ==="
+          ls -la package/lib/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
