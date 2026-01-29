@@ -53,7 +53,8 @@ jobs:
             libfdt-dev \
             zlib1g-dev \
             flex \
-            bison
+            bison \
+            seabios
 
       - name: Download QEMU source
         run: |
@@ -91,13 +92,20 @@ jobs:
 
       - name: Package binaries with libraries
         run: |
-          mkdir -p package/bin package/lib
+          mkdir -p package/bin package/lib package/share/qemu
 
           # Copy system emulator
           cp qemu-${{ env.QEMU_VERSION }}/build/qemu-system-${{ matrix.arch }} package/bin/
 
           # Copy qemu-img tool
           cp qemu-${{ env.QEMU_VERSION }}/build/qemu-img package/bin/
+
+          # Copy firmware files (BIOS, VGA, etc.) - required for VM boot
+          cp qemu-${{ env.QEMU_VERSION }}/pc-bios/*.bin package/share/qemu/ 2>/dev/null || true
+          cp qemu-${{ env.QEMU_VERSION }}/pc-bios/*.rom package/share/qemu/ 2>/dev/null || true
+          cp qemu-${{ env.QEMU_VERSION }}/pc-bios/edk2-*.fd package/share/qemu/ 2>/dev/null || true
+          # Also copy keymaps directory
+          cp -r qemu-${{ env.QEMU_VERSION }}/pc-bios/keymaps package/share/qemu/ 2>/dev/null || true
 
           # Bundle required shared libraries
           for bin in package/bin/*; do
@@ -120,7 +128,7 @@ jobs:
             done
           done
 
-          # Create wrapper scripts that set LD_LIBRARY_PATH
+          # Create wrapper scripts that set LD_LIBRARY_PATH and firmware path
           for bin in package/bin/qemu-*; do
             name=$(basename "$bin")
             mv "$bin" "$bin.real"
@@ -128,7 +136,7 @@ jobs:
           #!/bin/bash
           DIR="$(cd "$(dirname "$0")" && pwd)"
           export LD_LIBRARY_PATH="$DIR/../lib:$LD_LIBRARY_PATH"
-          exec "$DIR/BINNAME.real" "$@"
+          exec "$DIR/BINNAME.real" -L "$DIR/../share/qemu" "$@"
           WRAPPER
             sed -i "s/BINNAME/$name/g" "$bin"
             chmod +x "$bin"
@@ -136,7 +144,7 @@ jobs:
 
           # Create tarball
           cd package
-          tar czf ../qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}.tar.gz bin lib
+          tar czf ../qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}.tar.gz bin lib share
           cd ..
 
           # Show what we built
@@ -144,6 +152,8 @@ jobs:
           ls -la package/bin/
           echo "=== Libraries ==="
           ls -la package/lib/
+          echo "=== Firmware ==="
+          ls -la package/share/qemu/ | head -20
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
