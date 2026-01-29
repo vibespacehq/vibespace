@@ -65,7 +65,7 @@ type limaListEntry struct {
 // GetVMState detects the current state of the Lima VM
 func (m *LimaManager) GetVMState(ctx context.Context) VMState {
 	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
 
 	// Use a timeout context for state detection
 	detectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -86,7 +86,12 @@ func (m *LimaManager) GetVMState(ctx context.Context) VMState {
 	}
 
 	// Parse the JSON output - limactl list --json returns an array
+	// Note: Lima 2.0+ returns empty output (not "[]") when no instances exist
 	var entries []limaListEntry
+	if len(output) == 0 {
+		slog.Debug("limactl list returned empty output, no instances exist")
+		return VMStateNotExists
+	}
 	if err := json.Unmarshal(output, &entries); err != nil {
 		slog.Debug("failed to parse limactl list output", "error", err, "output", string(output))
 		return VMStateBroken
@@ -137,11 +142,16 @@ func (m *LimaManager) IsInstalled() (bool, error) {
 	return true, nil
 }
 
-// Install downloads Lima and kubectl
+// Install downloads QEMU, Lima, and kubectl
 func (m *LimaManager) Install(ctx context.Context) error {
 	// Ensure bin directory exists
 	if err := os.MkdirAll(m.binDir, 0755); err != nil {
 		return fmt.Errorf("failed to create bin directory: %w", err)
+	}
+
+	// Download QEMU (required for Lima VM on Linux)
+	if err := m.downloadQEMU(ctx); err != nil {
+		return fmt.Errorf("failed to download QEMU: %w", err)
 	}
 
 	// Download Lima
@@ -236,10 +246,51 @@ func (m *LimaManager) downloadKubectl(ctx context.Context) error {
 	return downloadBinary(ctx, url, m.kubectlBin())
 }
 
+// qemuBinDir returns the path to the QEMU binary directory
+func (m *LimaManager) qemuBinDir() string {
+	return filepath.Join(m.vibespaceHome, "qemu", "bin")
+}
+
+func (m *LimaManager) downloadQEMU(ctx context.Context) error {
+	// QEMU releases hosted on vibespace GitHub releases
+	// Asset naming: qemu-X.Y.Z-linux-x86_64.tar.gz, qemu-X.Y.Z-linux-aarch64.tar.gz
+	const qemuVersion = "10.2.0"
+	const repoOwner = "yagizdagabak"
+	const repoName = "vibespace"
+
+	arch := m.platform.Arch
+	if arch == "amd64" {
+		arch = "x86_64"
+	} else if arch == "arm64" {
+		arch = "aarch64"
+	}
+
+	assetName := fmt.Sprintf("qemu-%s-linux-%s.tar.gz", qemuVersion, arch)
+
+	// Get the release asset URL
+	assetURL, err := getGitHubReleaseAssetURL(ctx, repoOwner, repoName, "qemu-v"+qemuVersion, assetName)
+	if err != nil {
+		return fmt.Errorf("failed to get QEMU release URL: %w", err)
+	}
+
+	// Download and extract to ~/.vibespace/qemu/
+	qemuDir := filepath.Join(m.vibespaceHome, "qemu")
+	if err := os.MkdirAll(qemuDir, 0755); err != nil {
+		return fmt.Errorf("failed to create qemu directory: %w", err)
+	}
+
+	if err := downloadAndExtractTarGz(ctx, assetURL, qemuDir); err != nil {
+		return fmt.Errorf("failed to download and extract QEMU: %w", err)
+	}
+
+	slog.Debug("QEMU downloaded", "version", qemuVersion, "arch", arch)
+	return nil
+}
+
 // IsRunning checks if the Lima VM is running WITH Kubernetes enabled
 func (m *LimaManager) IsRunning() (bool, error) {
 	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
 
 	cmd := exec.Command(m.limactlBin(), "list", "--json")
 	cmd.Env = append(os.Environ(), "PATH="+newPath)
@@ -273,17 +324,17 @@ func (m *LimaManager) IsRunning() (bool, error) {
 // Caller should ensure no existing VM exists (use GetVMState and Recover if needed)
 func (m *LimaManager) Start(ctx context.Context, config ClusterConfig) error {
 	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
 
 	// Create the Lima VM with k3s template
 	// limactl create template://k3s --name=vibespace --cpus=X --memory=XGiB --disk=XGiB
 	createArgs := []string{
 		"create",
-		"template://k3s",
+		"template:k3s",
 		"--name=" + limaInstanceName,
 		fmt.Sprintf("--cpus=%d", config.CPU),
-		fmt.Sprintf("--memory=%dGiB", config.Memory),
-		fmt.Sprintf("--disk=%dGiB", config.Disk),
+		fmt.Sprintf("--memory=%d", config.Memory),
+		fmt.Sprintf("--disk=%d", config.Disk),
 		"--tty=false",
 	}
 
@@ -365,7 +416,7 @@ func (m *LimaManager) waitAndCopyKubeconfig(ctx context.Context) error {
 // Resume starts a stopped Lima VM without recreating it
 func (m *LimaManager) Resume(ctx context.Context) error {
 	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
 
 	slog.Debug("executing limactl start (resume)")
 
@@ -393,7 +444,7 @@ func (m *LimaManager) Resume(ctx context.Context) error {
 // Recover cleans up a broken VM state so a fresh Start can succeed
 func (m *LimaManager) Recover(ctx context.Context) error {
 	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
 
 	slog.Info("recovering from broken VM state")
 
@@ -438,7 +489,7 @@ func (m *LimaManager) Recover(ctx context.Context) error {
 // Stop stops the Lima VM gracefully, with force fallback on timeout
 func (m *LimaManager) Stop(ctx context.Context) error {
 	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
 
 	slog.Debug("executing limactl stop")
 
@@ -504,7 +555,7 @@ func (m *LimaManager) WaitReady(ctx context.Context) error {
 // Uninstall removes the vibespace Lima VM and all related data
 func (m *LimaManager) Uninstall(ctx context.Context) error {
 	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
 
 	slog.Info("uninstalling vibespace cluster")
 

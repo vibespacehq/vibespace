@@ -24,7 +24,7 @@ var initCmd = &cobra.Command{
 and starting the Kubernetes environment.
 
 On macOS: Downloads and starts Colima (Lima VM with k3s)
-On Linux: Downloads and starts k3s directly
+On Linux: Downloads and starts Lima (Lima VM with k3s)
 
 Use --external to skip cluster installation and use an existing kubeconfig.`,
 	Example: `  vibespace init
