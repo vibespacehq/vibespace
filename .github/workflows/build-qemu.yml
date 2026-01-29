@@ -129,18 +129,34 @@ jobs:
           done
 
           # Create wrapper scripts that set LD_LIBRARY_PATH and firmware path
-          for bin in package/bin/qemu-*; do
+          for bin in package/bin/qemu-system-*; do
             name=$(basename "$bin")
             mv "$bin" "$bin.real"
             cat > "$bin" << 'WRAPPER'
           #!/bin/bash
-          DIR="$(cd "$(dirname "$0")" && pwd)"
+          SCRIPT="${BASH_SOURCE[0]}"
+          DIR="${SCRIPT%/*}"
+          [[ "$DIR" == "$SCRIPT" ]] && DIR="."
+          DIR="$(cd "$DIR" && pwd)"
           export LD_LIBRARY_PATH="$DIR/../lib:$LD_LIBRARY_PATH"
           exec "$DIR/BINNAME.real" -L "$DIR/../share/qemu" "$@"
           WRAPPER
             sed -i "s/BINNAME/$name/g" "$bin"
             chmod +x "$bin"
           done
+
+          # qemu-img wrapper (no -L flag needed)
+          mv package/bin/qemu-img package/bin/qemu-img.real
+          cat > package/bin/qemu-img << 'WRAPPER'
+          #!/bin/bash
+          SCRIPT="${BASH_SOURCE[0]}"
+          DIR="${SCRIPT%/*}"
+          [[ "$DIR" == "$SCRIPT" ]] && DIR="."
+          DIR="$(cd "$DIR" && pwd)"
+          export LD_LIBRARY_PATH="$DIR/../lib:$LD_LIBRARY_PATH"
+          exec "$DIR/qemu-img.real" "$@"
+          WRAPPER
+          chmod +x package/bin/qemu-img
 
           # Create tarball
           cd package
