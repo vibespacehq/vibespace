@@ -85,7 +85,7 @@ func (m *LimaManager) GetVMState(ctx context.Context) VMState {
 		return VMStateNotExists
 	}
 
-	// Parse the JSON output - limactl list --json returns an array
+	// Parse the JSON output - can be a single object or an array depending on lima version
 	// Note: Lima 2.0+ returns empty output (not "[]") when no instances exist
 	var entries []limaListEntry
 	if len(output) == 0 {
@@ -93,8 +93,13 @@ func (m *LimaManager) GetVMState(ctx context.Context) VMState {
 		return VMStateNotExists
 	}
 	if err := json.Unmarshal(output, &entries); err != nil {
-		slog.Debug("failed to parse limactl list output", "error", err, "output", string(output))
-		return VMStateBroken
+		// Try parsing as single object (lima returns object when only one VM exists)
+		var single limaListEntry
+		if err2 := json.Unmarshal(output, &single); err2 != nil {
+			slog.Debug("failed to parse limactl list output", "error", err, "output", string(output))
+			return VMStateBroken
+		}
+		entries = []limaListEntry{single}
 	}
 
 	// Find our instance in the list
@@ -301,7 +306,12 @@ func (m *LimaManager) IsRunning() (bool, error) {
 
 	var entries []limaListEntry
 	if err := json.Unmarshal(output, &entries); err != nil {
-		return false, nil
+		// Try parsing as single object (lima returns object when only one VM exists)
+		var single limaListEntry
+		if err2 := json.Unmarshal(output, &single); err2 != nil {
+			return false, nil
+		}
+		entries = []limaListEntry{single}
 	}
 
 	for _, entry := range entries {
