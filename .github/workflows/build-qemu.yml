@@ -1,0 +1,148 @@
+name: Build QEMU Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      qemu_version:
+        description: 'QEMU version to build (e.g., 10.2.0)'
+        required: true
+        default: '10.2.0'
+  push:
+    tags:
+      - 'qemu-v*'
+
+env:
+  QEMU_VERSION: ${{ github.event.inputs.qemu_version || '10.2.0' }}
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+            qemu_target: x86_64-softmmu
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+            qemu_target: aarch64-softmmu
+
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ninja-build \
+            python3 \
+            python3-venv \
+            pkg-config \
+            libglib2.0-dev \
+            libpixman-1-dev \
+            libslirp-dev \
+            libfdt-dev \
+            zlib1g-dev \
+            flex \
+            bison
+
+      - name: Download QEMU source
+        run: |
+          wget https://download.qemu.org/qemu-${{ env.QEMU_VERSION }}.tar.xz
+          tar xvJf qemu-${{ env.QEMU_VERSION }}.tar.xz
+
+      - name: Configure QEMU (system emulator)
+        working-directory: qemu-${{ env.QEMU_VERSION }}
+        run: |
+          ./configure \
+            --target-list=${{ matrix.qemu_target }} \
+            --disable-docs \
+            --disable-gtk \
+            --disable-sdl \
+            --disable-vnc \
+            --disable-spice \
+            --disable-opengl \
+            --disable-virglrenderer \
+            --disable-vte \
+            --disable-brlapi \
+            --disable-curl \
+            --disable-curses \
+            --disable-libssh \
+            --disable-libnfs \
+            --disable-libusb \
+            --disable-usb-redir \
+            --disable-smartcard \
+            --enable-slirp \
+            --enable-kvm \
+            --enable-tools
+
+      - name: Build QEMU
+        working-directory: qemu-${{ env.QEMU_VERSION }}
+        run: make -j$(nproc)
+
+      - name: Package binaries
+        run: |
+          mkdir -p package/bin
+
+          # Copy system emulator
+          cp qemu-${{ env.QEMU_VERSION }}/build/qemu-system-${{ matrix.arch }} package/bin/
+
+          # Copy qemu-img tool
+          cp qemu-${{ env.QEMU_VERSION }}/build/qemu-img package/bin/
+
+          # Create tarball
+          cd package
+          tar czf ../qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}.tar.gz bin
+          cd ..
+
+          # Show what we built
+          ls -la package/bin/
+          file package/bin/*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}
+          path: qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: qemu-v${{ env.QEMU_VERSION }}
+          name: QEMU ${{ env.QEMU_VERSION }} Binaries
+          body: |
+            Pre-built QEMU binaries for vibespace Linux support.
+
+            These are minimal builds with KVM and slirp networking support.
+
+            ## Included binaries
+            - `qemu-system-x86_64` (x86_64 build)
+            - `qemu-system-aarch64` (aarch64 build)
+            - `qemu-img`
+
+            ## Usage
+            These binaries are automatically downloaded by `vibespace init` on Linux.
+          files: |
+            artifacts/**/*.tar.gz
+          draft: false
+          prerelease: false

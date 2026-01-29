@@ -264,7 +264,7 @@ func (m *ColimaManager) downloadColima(ctx context.Context) error {
 	// arm64 stays as arm64 for macOS
 
 	assetName := fmt.Sprintf("colima-Darwin-%s", arch)
-	url, err := getGitHubReleaseAssetURL(ctx, "abiosoft", "colima", assetName)
+	url, err := getGitHubReleaseAssetURL(ctx, "abiosoft", "colima", "", assetName)
 	if err != nil {
 		return fmt.Errorf("failed to get Colima download URL: %w", err)
 	}

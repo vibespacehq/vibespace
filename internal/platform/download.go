@@ -93,9 +93,15 @@ type GitHubAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 }
 
-// getGitHubReleaseAssetURL fetches the latest release from GitHub and returns the download URL for the specified asset
-func getGitHubReleaseAssetURL(ctx context.Context, owner, repo, assetName string) (string, error) {
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+// getGitHubReleaseAssetURL fetches a release from GitHub and returns the download URL for the specified asset
+// If tag is empty, fetches the latest release; otherwise fetches the specific tag
+func getGitHubReleaseAssetURL(ctx context.Context, owner, repo, tag, assetName string) (string, error) {
+	var apiURL string
+	if tag == "" {
+		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", owner, repo)
+	} else {
+		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
