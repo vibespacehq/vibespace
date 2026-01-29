@@ -55,7 +55,7 @@ func NewClusterManager(p Platform, vibespaceHome string) (ClusterManager, error)
 	case "darwin":
 		return NewColimaManager(p, vibespaceHome), nil
 	case "linux":
-		return NewK3sManager(p, vibespaceHome), nil
+		return NewLimaManager(p, vibespaceHome), nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", p.OS)
 	}
