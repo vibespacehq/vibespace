@@ -335,6 +335,7 @@ func (m *LimaManager) Start(ctx context.Context, config ClusterConfig) error {
 		fmt.Sprintf("--cpus=%d", config.CPU),
 		fmt.Sprintf("--memory=%d", config.Memory),
 		fmt.Sprintf("--disk=%d", config.Disk),
+		"--set=.firmware.legacyBIOS=true", // Use legacy BIOS to avoid UEFI firmware dependency
 		"--tty=false",
 	}
 
