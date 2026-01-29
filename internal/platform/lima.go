@@ -252,11 +252,11 @@ func (m *LimaManager) qemuBinDir() string {
 }
 
 func (m *LimaManager) downloadQEMU(ctx context.Context) error {
-	// QEMU releases hosted on vibespace GitHub releases
+	// QEMU releases hosted on public vibespace-binaries repo
 	// Asset naming: qemu-X.Y.Z-linux-x86_64.tar.gz, qemu-X.Y.Z-linux-aarch64.tar.gz
 	const qemuVersion = "10.2.0"
 	const repoOwner = "yagizdagabak"
-	const repoName = "vibespace"
+	const repoName = "vibespace-binaries"
 
 	arch := m.platform.Arch
 	if arch == "amd64" {
