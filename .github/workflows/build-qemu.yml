@@ -8,6 +8,10 @@ on:
         required: true
         default: '10.2.0'
   push:
+    branches:
+      - vibespace-wip-linux
+    paths:
+      - '.github/workflows/build-qemu.yml'
     tags:
       - 'qemu-v*'
 
