@@ -239,6 +239,7 @@ func handleVibespaceCommand(args []string) error {
 		fmt.Println("Available commands:")
 		fmt.Println("  agent      Manage agents (list, create, delete)")
 		fmt.Println("  connect    Connect to an agent")
+		fmt.Println("  exec       Run command in agent container")
 		fmt.Println("  config     View/modify agent configuration")
 		fmt.Println("  multi      Multi-agent terminal mode")
 		fmt.Println("  ports      List detected ports")
@@ -266,6 +267,8 @@ func handleVibespaceCommand(args []string) error {
 		return runStop(vibespace, cmdArgs)
 	case "forward":
 		return runForwardCmd(vibespace, cmdArgs)
+	case "exec":
+		return runExec(vibespace, cmdArgs)
 	default:
 		if suggestion := suggestVibespaceCommand(subCmd); suggestion != "" {
 			return fmt.Errorf("unknown command: %s\n\nDid you mean: vibespace %s %s", subCmd, vibespace, suggestion)

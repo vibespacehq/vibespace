@@ -26,6 +26,7 @@ Last verified: 2026-01-28
 | `<vs> start` | ✅ | - | - | ✅ | Start all or specific agent |
 | `<vs> stop` | ✅ | - | - | ✅ | Stop all or specific agent |
 | `<vs> connect` | N/A | N/A | - | ✅ | Requires TTY, `--browser` flag |
+| `<vs> exec` | ✅ | ✅ | - | ✅ | Direct command execution via SSH |
 | **Config** |
 | `<vs> config show` | ✅ | ✅ | - | ✅ | Tab-separated with `--header` |
 | `<vs> config set` | ✅ | - | - | ✅ | |
@@ -185,7 +186,9 @@ Error responses include:
 | Unit tests for `pkg/ui` | Test table/style rendering | S |
 | Integration tests | End-to-end CLI workflows | L |
 | Contract tests | Validate JSON/plain output schemas | M |
-| CI pipeline | Run tests on PR | M |
+| CI pipeline | GitHub Actions on PR | M |
+| CI badges | Build, coverage, Go Report Card in README | S |
+| Codecov integration | Coverage reporting and PR comments | S |
 
 ### P5: Declarative Config
 
