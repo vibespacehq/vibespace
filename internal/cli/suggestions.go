@@ -41,6 +41,7 @@ func levenshtein(a, b string) int {
 var knownVibespaceSubcommands = []string{
 	"agent",
 	"connect",
+	"exec",
 	"config",
 	"ports",
 	"start",

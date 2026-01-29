@@ -324,3 +324,13 @@ type MultiToolUse struct {
 	Input  string `json:"input,omitempty"`
 }
 
+// ExecOutput is the JSON output for exec command
+type ExecOutput struct {
+	Vibespace string `json:"vibespace"`
+	Agent     string `json:"agent"`
+	Command   string `json:"command"`
+	Stdout    string `json:"stdout"`
+	Stderr    string `json:"stderr"`
+	ExitCode  int    `json:"exit_code"`
+}
+

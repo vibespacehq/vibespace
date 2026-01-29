@@ -7,7 +7,7 @@ Possible enhancements and features for future consideration.
 ## Agent Capabilities
 
 - `<vs> logs <agent>` - Stream agent container logs
-- `<vs> exec <agent> <cmd>` - Run arbitrary command in agent container
+- ~~`<vs> exec <agent> <cmd>` - Run arbitrary command in agent container~~ ✅ Implemented
 - `<vs> ssh <agent>` - Direct SSH without daemon (one-off connection)
 - `<vs> snapshot <agent>` - Save agent state to tarball
 - `<vs> restore <agent> <snapshot>` - Restore agent from snapshot
