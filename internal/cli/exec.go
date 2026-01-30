@@ -16,6 +16,28 @@ func runExec(vsName string, args []string) error {
 	ctx := context.Background()
 	out := getOutput()
 
+	// Check for help flag
+	for _, arg := range args {
+		if arg == "--help" || arg == "-h" {
+			fmt.Printf(`Run a command in an agent's container
+
+Usage:
+  vibespace %s exec [agent] <command>
+
+Arguments:
+  agent     Optional agent name (uses primary agent if not specified)
+  command   Command to execute in the container
+
+Examples:
+  vibespace %s exec whoami
+  vibespace %s exec claude-1 whoami
+  vibespace %s exec ls -la /workspace
+  vibespace %s exec claude-2 -- cat /etc/os-release
+`, vsName, vsName, vsName, vsName, vsName)
+			return nil
+		}
+	}
+
 	// Parse args: exec [agent] <command...>
 	if len(args) < 1 {
 		return fmt.Errorf("usage: vibespace %s exec [agent] <command>", vsName)
@@ -62,6 +84,11 @@ func runExec(vsName string, args []string) error {
 			agentName = agents[0].AgentName
 		}
 		cmdArgs = args
+	}
+
+	// Strip leading "--" if present (CLI argument separator)
+	if len(cmdArgs) > 0 && cmdArgs[0] == "--" {
+		cmdArgs = cmdArgs[1:]
 	}
 
 	if len(cmdArgs) == 0 {
@@ -125,6 +152,7 @@ func execViaSSH(localPort int, remoteCmd string) (string, string, int, error) {
 		"-o", "LogLevel=ERROR",
 		"-o", "BatchMode=yes",
 		"user@localhost",
+		"--", // POSIX: end of options, prevents remoteCmd from being parsed as SSH flags
 		remoteCmd,
 	}
 

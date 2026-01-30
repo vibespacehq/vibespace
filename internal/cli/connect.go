@@ -27,6 +27,26 @@ func runConnect(vsName string, args []string) error {
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
+		case "--help", "-h":
+			fmt.Printf(`Connect to an agent in a vibespace
+
+Usage:
+  vibespace %s connect [agent] [flags]
+
+Arguments:
+  agent    Optional agent name (uses primary agent if not specified)
+
+Flags:
+  -b, --browser   Open in web browser instead of terminal
+  -a, --agent     Specify agent name
+  -h, --help      Help for connect
+
+Examples:
+  vibespace %s connect              # Connect to primary agent
+  vibespace %s connect claude-2     # Connect to specific agent
+  vibespace %s connect --browser    # Open in web browser
+`, vsName, vsName, vsName, vsName)
+			return nil
 		case "--browser", "-b":
 			browser = true
 		case "--agent", "-a":
