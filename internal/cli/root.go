@@ -253,6 +253,20 @@ func handleVibespaceCommand(args []string) error {
 	cmdArgs := subArgs[1:]
 
 	switch subCmd {
+	case "--help", "-h", "help":
+		// Show help for this vibespace
+		fmt.Printf("Vibespace: %s\n\n", vibespace)
+		fmt.Println("Available commands:")
+		fmt.Println("  agent      Manage agents (list, create, delete)")
+		fmt.Println("  connect    Connect to an agent")
+		fmt.Println("  exec       Run command in agent container")
+		fmt.Println("  config     View/modify agent configuration")
+		fmt.Println("  multi      Multi-agent terminal mode")
+		fmt.Println("  ports      List detected ports")
+		fmt.Println("  start      Start agents")
+		fmt.Println("  stop       Stop agents")
+		fmt.Println("  forward    Manage port-forwards (list, add, remove)")
+		return nil
 	case "agent":
 		return runAgent(vibespace, cmdArgs)
 	case "connect":
