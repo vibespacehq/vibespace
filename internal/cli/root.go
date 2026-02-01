@@ -237,6 +237,7 @@ func handleVibespaceCommand(args []string) error {
 		// Show help for this vibespace
 		fmt.Printf("Vibespace: %s\n\n", vibespace)
 		fmt.Println("Available commands:")
+		fmt.Println("  info       Show vibespace details")
 		fmt.Println("  agent      Manage agents (list, create, delete)")
 		fmt.Println("  connect    Connect to an agent")
 		fmt.Println("  exec       Run command in agent container")
@@ -257,6 +258,7 @@ func handleVibespaceCommand(args []string) error {
 		// Show help for this vibespace
 		fmt.Printf("Vibespace: %s\n\n", vibespace)
 		fmt.Println("Available commands:")
+		fmt.Println("  info       Show vibespace details")
 		fmt.Println("  agent      Manage agents (list, create, delete)")
 		fmt.Println("  connect    Connect to an agent")
 		fmt.Println("  exec       Run command in agent container")
@@ -267,6 +269,8 @@ func handleVibespaceCommand(args []string) error {
 		fmt.Println("  stop       Stop agents")
 		fmt.Println("  forward    Manage port-forwards (list, add, remove)")
 		return nil
+	case "info":
+		return runInfo(vibespace, cmdArgs)
 	case "agent":
 		return runAgent(vibespace, cmdArgs)
 	case "connect":

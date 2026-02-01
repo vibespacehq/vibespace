@@ -2,6 +2,7 @@ package vibespace
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -242,6 +243,7 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		PVCName:          pvcName,
 		ShareCredentials: req.ShareCredentials,
 		Config:           config,
+		Mounts:           req.Mounts,
 	})
 	if err != nil {
 		slog.Error("failed to create Deployment", "vibespace_id", id, "error", err)
@@ -535,12 +537,21 @@ func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
 	// Extract resources from the Deployment spec
 	resources := extractResourcesFromDeployment(deploy)
 
+	// Extract mounts from annotation
+	var mounts []model.Mount
+	if annotations != nil {
+		if mountsJSON := annotations["vibespace.dev/mounts"]; mountsJSON != "" {
+			_ = json.Unmarshal([]byte(mountsJSON), &mounts)
+		}
+	}
+
 	return &model.Vibespace{
 		ID:         id,
 		Name:       name,
 		Status:     status,
 		Resources:  resources,
 		Persistent: true,
+		Mounts:     mounts,
 		CreatedAt:  createdAt,
 	}
 }
@@ -843,6 +854,7 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 		PVCName:          pvcName,
 		ShareCredentials: opts.ShareCredentials,
 		Config:           config,
+		Mounts:           vs.Mounts, // Inherit mounts from vibespace
 	})
 	if err != nil {
 		slog.Error("failed to spawn agent", "vibespace_id", vs.ID, "agent_name", agentName, "error", err)

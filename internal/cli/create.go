@@ -23,7 +23,9 @@ var createCmd = &cobra.Command{
 	Example: `  vibespace create myproject -t claude-code
   vibespace create myproject -t codex --repo https://github.com/user/repo
   vibespace create myproject -t claude-code --cpu 500m --memory 512Mi
-  vibespace create myproject -t claude-code --share-credentials`,
+  vibespace create myproject -t claude-code --share-credentials
+  vibespace create myproject -t claude-code --mount ~/code:/workspace
+  vibespace create myproject -t claude-code --mount ~/code:/workspace:ro`,
 	Args: cobra.ExactArgs(1),
 	RunE: runCreate,
 }
@@ -34,8 +36,9 @@ var (
 	createMemory           string
 	createStorage          string
 	createShareCredentials bool
-	createAgentType        string // Agent type (claude-code, codex)
-	createAgentName        string // Custom name for primary agent
+	createAgentType        string   // Agent type (claude-code, codex)
+	createAgentName        string   // Custom name for primary agent
+	createMounts           []string // Host directory mounts (host:container[:ro])
 	// Agent config flags
 	createSkipPermissions bool
 	createAllowedTools    string
@@ -73,6 +76,7 @@ func init() {
 	createCmd.Flags().StringVarP(&createAgentType, "agent-type", "t", "", "Agent type: claude-code, codex (required)")
 	createCmd.MarkFlagRequired("agent-type")
 	createCmd.Flags().StringVarP(&createAgentName, "name", "n", "", "Custom name for the primary agent (default: <type>-1)")
+	createCmd.Flags().StringArrayVarP(&createMounts, "mount", "m", nil, "Mount host directory (host:container[:ro], can be repeated)")
 
 	// Agent configuration flags
 	createCmd.Flags().BoolVar(&createSkipPermissions, "skip-permissions", false, "Enable --dangerously-skip-permissions for Claude")
@@ -117,6 +121,16 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Parse and validate mounts
+	var mounts []model.Mount
+	for _, mountStr := range createMounts {
+		mount, err := parseMount(mountStr)
+		if err != nil {
+			return fmt.Errorf("invalid mount '%s': %w", mountStr, err)
+		}
+		mounts = append(mounts, mount)
+	}
+
 	// Build create request
 	req := &model.CreateVibespaceRequest{
 		Name:             name,
@@ -125,6 +139,7 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		AgentType:        agentType,
 		AgentName:        createAgentName,
 		AgentConfig:      agentConfig,
+		Mounts:           mounts,
 		Resources: &model.Resources{
 			CPU:     createCPU,
 			Memory:  createMemory,
@@ -163,6 +178,71 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  vibespace %s connect   Connect to an agent\n", vs.Name)
 
 	return nil
+}
+
+// parseMount parses a mount string in the format host:container[:ro]
+func parseMount(mountStr string) (model.Mount, error) {
+	parts := strings.Split(mountStr, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return model.Mount{}, fmt.Errorf("format must be host:container[:ro]")
+	}
+
+	hostPath := parts[0]
+	containerPath := parts[1]
+	readOnly := false
+
+	// Check for :ro suffix
+	if len(parts) == 3 {
+		if parts[2] != "ro" {
+			return model.Mount{}, fmt.Errorf("third part must be 'ro' for read-only mount")
+		}
+		readOnly = true
+	}
+
+	// Expand ~ to home directory
+	if strings.HasPrefix(hostPath, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return model.Mount{}, fmt.Errorf("failed to expand ~: %w", err)
+		}
+		hostPath = filepath.Join(home, hostPath[2:])
+	} else if hostPath == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return model.Mount{}, fmt.Errorf("failed to expand ~: %w", err)
+		}
+		hostPath = home
+	}
+
+	// Convert to absolute path
+	absPath, err := filepath.Abs(hostPath)
+	if err != nil {
+		return model.Mount{}, fmt.Errorf("invalid host path: %w", err)
+	}
+	hostPath = absPath
+
+	// Validate host path exists
+	info, err := os.Stat(hostPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return model.Mount{}, fmt.Errorf("host path does not exist: %s", hostPath)
+		}
+		return model.Mount{}, fmt.Errorf("cannot access host path: %w", err)
+	}
+	if !info.IsDir() {
+		return model.Mount{}, fmt.Errorf("host path must be a directory: %s", hostPath)
+	}
+
+	// Validate container path is absolute
+	if !filepath.IsAbs(containerPath) {
+		return model.Mount{}, fmt.Errorf("container path must be absolute: %s", containerPath)
+	}
+
+	return model.Mount{
+		HostPath:      hostPath,
+		ContainerPath: containerPath,
+		ReadOnly:      readOnly,
+	}, nil
 }
 
 // getVibespaceService creates the vibespace service with all dependencies

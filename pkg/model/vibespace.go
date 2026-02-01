@@ -15,6 +15,7 @@ type Vibespace struct {
 	Resources  Resources        `json:"resources"`
 	Services   []ExposedService `json:"services,omitempty"` // Dynamically detected services
 	Persistent bool             `json:"persistent"`
+	Mounts     []Mount          `json:"mounts,omitempty"` // Host directory mounts
 	CreatedAt  string           `json:"created_at"`
 	UpdatedAt  string           `json:"updated_at,omitempty"`
 	DeletedAt  string           `json:"deleted_at,omitempty"`
@@ -33,6 +34,13 @@ type Resources struct {
 	CPU     string `json:"cpu"`
 	Memory  string `json:"memory"`
 	Storage string `json:"storage"`
+}
+
+// Mount represents a host directory mount into the container
+type Mount struct {
+	HostPath      string `json:"host_path"`
+	ContainerPath string `json:"container_path"`
+	ReadOnly      bool   `json:"read_only,omitempty"`
 }
 
 // CreateVibespaceRequest represents the request to create a new vibespace.
@@ -63,6 +71,9 @@ type CreateVibespaceRequest struct {
 
 	// AgentConfig configures the AI agent (nil = defaults)
 	AgentConfig *agent.Config `json:"agent_config,omitempty"`
+
+	// Mounts specifies host directories to mount into the container
+	Mounts []Mount `json:"mounts,omitempty"`
 }
 
 // UpdateVibespaceRequest represents the request to update a vibespace

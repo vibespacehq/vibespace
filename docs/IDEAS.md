@@ -52,6 +52,8 @@ Possible enhancements and features for future consideration.
 
 ## Developer Experience
 
+- ~~`--mount host:container[:ro]` flag on create - Mount host directories into agents~~ ✅ Implemented
+- ~~`<vs> info` - Show vibespace details, mounts, agents with config~~ ✅ Implemented
 - `vibespace dev` - Auto-create vibespace from current git repo
 - Git integration (auto-mount repo, track branch)
 - `.vibespace.yaml` in repo root for project defaults
