@@ -105,6 +105,7 @@ Possible enhancements and features for future consideration.
 
 ## Networking
 
+- `--sync local:container` flag - Bidirectional file sync for remote mode (mount local dir into remote cluster)
 - Custom domain per vibespace (with remote mode)
 - mTLS between agents
 - Service mesh integration (Istio/Linkerd)
