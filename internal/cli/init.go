@@ -351,9 +351,3 @@ metadata:
 
 	return nil
 }
-
-// Color helper functions for formatted output in tables, etc.
-// These are aliases to the global Output instance methods
-func green(s string) string  { return getOutput().Green(s) }
-func yellow(s string) string { return getOutput().Yellow(s) }
-func red(s string) string    { return getOutput().Red(s) }

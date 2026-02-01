@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -416,11 +415,6 @@ func (r *HeadlessRunner) GetAgents() []string {
 	result := make([]string, len(r.agentOrder))
 	copy(result, r.agentOrder)
 	return result
-}
-
-// ToJSON converts the response to JSON
-func (r *MultiResponse) ToJSON() ([]byte, error) {
-	return json.MarshalIndent(r, "", "  ")
 }
 
 // joinNonEmpty joins non-empty strings with the separator

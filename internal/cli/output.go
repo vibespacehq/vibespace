@@ -290,14 +290,6 @@ func (o *Output) Teal(s string) string {
 	return lipgloss.NewStyle().Foreground(ui.Teal).Render(s)
 }
 
-// Pink returns the string in brand pink color (if colors enabled)
-func (o *Output) Pink(s string) string {
-	if o.noColor {
-		return s
-	}
-	return lipgloss.NewStyle().Foreground(ui.Pink).Render(s)
-}
-
 // Orange returns the string in brand orange color (if colors enabled)
 func (o *Output) Orange(s string) string {
 	if o.noColor {
