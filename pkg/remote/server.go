@@ -2,13 +2,10 @@ package remote
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,26 +15,12 @@ import (
 	"time"
 )
 
-// RegistrationRequest is the request body for client registration.
-type RegistrationRequest struct {
-	PublicKey string `json:"public_key"`
-	Token     string `json:"token"`
-	Name      string `json:"name,omitempty"` // Optional client name
-}
-
-// RegistrationResponse is the response for successful registration.
-type RegistrationResponse struct {
-	AssignedIP      string `json:"assigned_ip"`
-	ServerPublicKey string `json:"server_public_key"`
-	ServerEndpoint  string `json:"server_endpoint"`
-	ServerIP        string `json:"server_ip"`
-}
 
 // Server represents the remote mode server.
 type Server struct {
-	state       *ServerState
-	httpServer  *http.Server
-	listenAddr  string
+	state            *ServerState
+	mgmtServer       *http.Server // Private management API (WireGuard IP only)
+	registrationServer *http.Server // Public registration API (0.0.0.0)
 }
 
 // NewServer creates a new remote server instance.
@@ -48,32 +31,64 @@ func NewServer() (*Server, error) {
 	}
 
 	return &Server{
-		state:      state,
-		listenAddr: fmt.Sprintf("%s:%d", DefaultServerIP, DefaultManagementPort),
+		state: state,
 	}, nil
 }
 
-// GenerateToken generates a new registration token with the given TTL.
-func (s *Server) GenerateToken(ttl time.Duration) (string, error) {
-	// Generate random token
-	tokenBytes := make([]byte, 16)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("failed to generate token: %w", err)
+// GenerateInviteToken generates an invite token containing server connection info.
+// Each token has a pre-allocated IP for the client.
+func (s *Server) GenerateInviteToken(publicEndpoint string) (string, error) {
+	// Ensure WireGuard is initialized so we have a public key
+	if s.state.PublicKey == "" {
+		if err := s.InitializeWireGuard(); err != nil {
+			return "", fmt.Errorf("failed to initialize WireGuard: %w", err)
+		}
 	}
-	token := "vs-" + hex.EncodeToString(tokenBytes)
 
-	// Add to state
-	s.state.RegistrationTokens = append(s.state.RegistrationTokens, RegistrationToken{
-		Token:     token,
-		ExpiresAt: time.Now().Add(ttl),
-		Used:      false,
-	})
-
+	// Pre-allocate an IP for this client
+	assignedIP := s.state.AllocateClientIP()
 	if err := s.state.Save(); err != nil {
 		return "", fmt.Errorf("failed to save state: %w", err)
 	}
 
-	return token, nil
+	token := &InviteToken{
+		ServerPublicKey: s.state.PublicKey,
+		Endpoint:        publicEndpoint,
+		AssignedIP:      assignedIP,
+		ServerIP:        strings.TrimSuffix(s.state.ServerIP, "/24"),
+	}
+
+	return EncodeInviteToken(token)
+}
+
+// AddClient adds a new client to the WireGuard configuration.
+func (s *Server) AddClient(name, publicKey string) (string, error) {
+	// Check if client already exists
+	existing := s.state.FindClientByPublicKey(publicKey)
+	if existing != nil {
+		return existing.AssignedIP, nil
+	}
+
+	// Allocate IP
+	assignedIP := s.state.AllocateClientIP()
+
+	// Add to state
+	s.state.AddClient(name, publicKey, assignedIP)
+	if err := s.state.Save(); err != nil {
+		return "", fmt.Errorf("failed to save state: %w", err)
+	}
+
+	// Update WireGuard config
+	if err := s.WriteWireGuardConfig(); err != nil {
+		return "", fmt.Errorf("failed to update WireGuard config: %w", err)
+	}
+
+	// Reload WireGuard
+	if err := s.reloadWireGuard(); err != nil {
+		slog.Warn("failed to reload WireGuard", "error", err)
+	}
+
+	return assignedIP, nil
 }
 
 // InitializeWireGuard initializes WireGuard server configuration.
@@ -169,27 +184,27 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
-	// Start management API
+	// Start private management API (WireGuard IP only)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/kubeconfig", s.handleKubeconfig)
-	mux.HandleFunc("/register", s.handleRegister)
 
-	s.httpServer = &http.Server{
-		Addr:    s.listenAddr,
+	mgmtAddr := fmt.Sprintf("%s:%d", DefaultServerIP, DefaultManagementPort)
+	s.mgmtServer = &http.Server{
+		Addr:    mgmtAddr,
 		Handler: mux,
 	}
 
-	slog.Info("starting management API", "addr", s.listenAddr)
+	slog.Info("starting management API", "addr", mgmtAddr)
 
 	if foreground {
 		// Run in foreground
-		return s.httpServer.ListenAndServe()
+		return s.mgmtServer.ListenAndServe()
 	}
 
 	// Run in background
 	go func() {
-		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.mgmtServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("management API error", "error", err)
 		}
 	}()
@@ -200,8 +215,8 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 // Stop stops the server and WireGuard interface.
 func (s *Server) Stop(ctx context.Context) error {
 	// Stop HTTP server
-	if s.httpServer != nil {
-		if err := s.httpServer.Shutdown(ctx); err != nil {
+	if s.mgmtServer != nil {
+		if err := s.mgmtServer.Shutdown(ctx); err != nil {
 			slog.Warn("failed to shutdown HTTP server", "error", err)
 		}
 	}
@@ -257,99 +272,6 @@ func (s *Server) handleKubeconfig(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(content))
 }
 
-// handleRegister handles POST /register requests.
-func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req RegistrationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	// Validate token
-	tokenIdx := s.state.ValidateToken(req.Token)
-	if tokenIdx < 0 {
-		http.Error(w, "invalid or expired token", http.StatusUnauthorized)
-		return
-	}
-
-	// Check if client already registered
-	existing := s.state.FindClientByPublicKey(req.PublicKey)
-	if existing != nil {
-		// Return existing registration
-		resp := RegistrationResponse{
-			AssignedIP:      existing.AssignedIP,
-			ServerPublicKey: s.state.PublicKey,
-			ServerEndpoint:  s.getPublicEndpoint(r),
-			ServerIP:        strings.TrimSuffix(s.state.ServerIP, "/24"),
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
-		return
-	}
-
-	// Mark token as used
-	s.state.MarkTokenUsed(tokenIdx)
-
-	// Allocate IP for new client
-	assignedIP := s.state.AllocateClientIP()
-
-	// Determine client name
-	clientName := req.Name
-	if clientName == "" {
-		clientName = fmt.Sprintf("client-%d", len(s.state.Clients)+1)
-	}
-
-	// Add client
-	s.state.AddClient(clientName, req.PublicKey, assignedIP)
-
-	// Save state and update WireGuard config
-	if err := s.state.Save(); err != nil {
-		http.Error(w, "failed to save state", http.StatusInternalServerError)
-		return
-	}
-
-	if err := s.WriteWireGuardConfig(); err != nil {
-		http.Error(w, "failed to update WireGuard config", http.StatusInternalServerError)
-		return
-	}
-
-	// Reload WireGuard to pick up new peer
-	if err := s.reloadWireGuard(); err != nil {
-		slog.Warn("failed to reload WireGuard", "error", err)
-	}
-
-	resp := RegistrationResponse{
-		AssignedIP:      assignedIP,
-		ServerPublicKey: s.state.PublicKey,
-		ServerEndpoint:  s.getPublicEndpoint(r),
-		ServerIP:        strings.TrimSuffix(s.state.ServerIP, "/24"),
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
-}
-
-// getPublicEndpoint returns the public endpoint for clients to connect to.
-func (s *Server) getPublicEndpoint(r *http.Request) string {
-	// Try to get from X-Forwarded-Host or Host header
-	host := r.Host
-	if fwdHost := r.Header.Get("X-Forwarded-Host"); fwdHost != "" {
-		host = fwdHost
-	}
-
-	// Remove port if present
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-
-	return fmt.Sprintf("%s:%d", host, s.state.ListenPort)
-}
-
 // reloadWireGuard reloads the WireGuard configuration.
 func (s *Server) reloadWireGuard() error {
 	// The simplest way is to use wg syncconf, but that requires the interface to be up
@@ -358,67 +280,6 @@ func (s *Server) reloadWireGuard() error {
 		return err
 	}
 	return QuickUp()
-}
-
-// RegisterClient is the internal command handler for _remote-register.
-// Called via SSH from the client.
-func RegisterClient(pubKey, token, name string) (*RegistrationResponse, error) {
-	server, err := NewServer()
-	if err != nil {
-		return nil, err
-	}
-
-	// Validate token
-	tokenIdx := server.state.ValidateToken(token)
-	if tokenIdx < 0 {
-		return nil, fmt.Errorf("invalid or expired token")
-	}
-
-	// Check if client already registered
-	existing := server.state.FindClientByPublicKey(pubKey)
-	if existing != nil {
-		return &RegistrationResponse{
-			AssignedIP:      existing.AssignedIP,
-			ServerPublicKey: server.state.PublicKey,
-			ServerIP:        strings.TrimSuffix(server.state.ServerIP, "/24"),
-		}, nil
-	}
-
-	// Mark token as used
-	server.state.MarkTokenUsed(tokenIdx)
-
-	// Allocate IP for new client
-	assignedIP := server.state.AllocateClientIP()
-
-	// Determine client name
-	clientName := name
-	if clientName == "" {
-		clientName = fmt.Sprintf("client-%d", len(server.state.Clients)+1)
-	}
-
-	// Add client
-	server.state.AddClient(clientName, pubKey, assignedIP)
-
-	// Save state
-	if err := server.state.Save(); err != nil {
-		return nil, fmt.Errorf("failed to save state: %w", err)
-	}
-
-	// Update WireGuard config
-	if err := server.WriteWireGuardConfig(); err != nil {
-		return nil, fmt.Errorf("failed to update WireGuard config: %w", err)
-	}
-
-	// Reload WireGuard
-	if err := server.reloadWireGuard(); err != nil {
-		slog.Warn("failed to reload WireGuard", "error", err)
-	}
-
-	return &RegistrationResponse{
-		AssignedIP:      assignedIP,
-		ServerPublicKey: server.state.PublicKey,
-		ServerIP:        strings.TrimSuffix(server.state.ServerIP, "/24"),
-	}, nil
 }
 
 // SpawnServe spawns the serve process in the background (daemonizes).

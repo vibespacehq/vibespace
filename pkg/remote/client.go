@@ -1,13 +1,10 @@
 package remote
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -16,28 +13,33 @@ import (
 
 // ConnectOptions contains options for connecting to a remote server.
 type ConnectOptions struct {
-	Host  string // SSH host (user@hostname or hostname)
-	Token string // Registration token
-	Name  string // Optional client name
+	Token string // Invite token (contains server pubkey, endpoint, assigned IP)
 }
 
-// Connect connects to a remote vibespace server.
-func Connect(opts ConnectOptions) error {
+// Connect connects to a remote vibespace server using an invite token.
+// Returns the client's public key that needs to be added to the server.
+func Connect(opts ConnectOptions) (clientPubKey string, err error) {
 	// Check if already connected
 	state, err := LoadRemoteState()
 	if err != nil {
-		return fmt.Errorf("failed to load remote state: %w", err)
+		return "", fmt.Errorf("failed to load remote state: %w", err)
 	}
 	if state.Connected {
-		return fmt.Errorf("already connected to %s: %w", state.ServerHost, vserrors.ErrRemoteAlreadyConnected)
+		return "", fmt.Errorf("already connected to %s: %w", state.ServerHost, vserrors.ErrRemoteAlreadyConnected)
+	}
+
+	// Decode invite token
+	invite, err := DecodeInviteToken(opts.Token)
+	if err != nil {
+		return "", fmt.Errorf("invalid invite token: %w", err)
 	}
 
 	// Install WireGuard if needed
 	if !IsWireGuardInstalled() {
-		slog.Info("WireGuard not installed, downloading...")
+		slog.Info("WireGuard not installed, installing...")
 		ctx := context.Background()
 		if err := InstallWireGuard(ctx); err != nil {
-			return fmt.Errorf("failed to install WireGuard: %w", err)
+			return "", fmt.Errorf("failed to install WireGuard: %w", err)
 		}
 		slog.Info("WireGuard installed successfully")
 	}
@@ -46,42 +48,60 @@ func Connect(opts ConnectOptions) error {
 	slog.Info("generating WireGuard key pair")
 	keyPair, err := GenerateKeyPair()
 	if err != nil {
-		return fmt.Errorf("failed to generate key pair: %w", err)
+		return "", fmt.Errorf("failed to generate key pair: %w", err)
 	}
 
-	// Register with server via SSH
-	slog.Info("registering with server via SSH", "host", opts.Host)
-	regResp, err := RegisterViaSSH(opts.Host, keyPair.PublicKey, opts.Token, opts.Name)
-	if err != nil {
-		return fmt.Errorf("failed to register with server: %w", err)
-	}
-
-	// Extract hostname from SSH host for endpoint
-	hostname := opts.Host
-	if idx := strings.Index(hostname, "@"); idx >= 0 {
-		hostname = hostname[idx+1:]
-	}
-	endpoint := fmt.Sprintf("%s:%d", hostname, DefaultWireGuardPort)
-
-	// Write WireGuard client config
+	// Write WireGuard client config using info from token
 	slog.Info("writing WireGuard configuration")
 	config := &ClientConfig{
 		PrivateKey:      keyPair.PrivateKey,
-		Address:         regResp.AssignedIP,
-		ServerPublicKey: regResp.ServerPublicKey,
-		ServerEndpoint:  endpoint,
-		ServerIP:        regResp.ServerIP,
+		Address:         invite.AssignedIP,
+		ServerPublicKey: invite.ServerPublicKey,
+		ServerEndpoint:  invite.Endpoint,
+		ServerIP:        invite.ServerIP,
 	}
 
 	tempPath, err := WriteClientConfig(config)
 	if err != nil {
-		return fmt.Errorf("failed to write WireGuard config: %w", err)
+		return "", fmt.Errorf("failed to write WireGuard config: %w", err)
 	}
 
 	// Install config (requires sudo)
 	slog.Info("installing WireGuard configuration (requires sudo)")
 	if err := InstallConfig(tempPath); err != nil {
-		return fmt.Errorf("failed to install WireGuard config: %w", err)
+		return "", fmt.Errorf("failed to install WireGuard config: %w", err)
+	}
+
+	// Save state (but not connected yet - server needs to add our key first)
+	state.ServerHost = invite.Endpoint
+	state.ServerEndpoint = invite.Endpoint
+	state.LocalIP = strings.TrimSuffix(invite.AssignedIP, "/32")
+	state.ServerIP = invite.ServerIP
+	state.PublicKey = keyPair.PublicKey
+	state.ServerPublicKey = invite.ServerPublicKey
+
+	if err := state.Save(); err != nil {
+		return "", fmt.Errorf("failed to save remote state: %w", err)
+	}
+
+	// Return the client public key - user needs to add this to the server
+	return keyPair.PublicKey, nil
+}
+
+// Activate brings up the WireGuard tunnel and fetches kubeconfig.
+// Call this after the server has added the client's public key.
+func Activate() error {
+	state, err := LoadRemoteState()
+	if err != nil {
+		return fmt.Errorf("failed to load remote state: %w", err)
+	}
+
+	if state.PublicKey == "" {
+		return fmt.Errorf("no pending connection: run 'vibespace remote connect <token>' first")
+	}
+
+	if state.Connected {
+		return fmt.Errorf("already connected")
 	}
 
 	// Bring up WireGuard
@@ -96,11 +116,10 @@ func Connect(opts ConnectOptions) error {
 
 	// Fetch kubeconfig from management API
 	slog.Info("fetching kubeconfig from server")
-	kubeconfig, err := FetchKubeconfigFromServer(regResp.ServerIP)
+	kubeconfig, err := FetchKubeconfigFromServer(state.ServerIP)
 	if err != nil {
-		// Try to clean up
 		QuickDown()
-		return fmt.Errorf("failed to fetch kubeconfig: %w", err)
+		return fmt.Errorf("failed to fetch kubeconfig (is the client added on server?): %w", err)
 	}
 
 	// Save kubeconfig
@@ -114,22 +133,16 @@ func Connect(opts ConnectOptions) error {
 		return fmt.Errorf("failed to write kubeconfig: %w", err)
 	}
 
-	// Update remote state
+	// Mark as connected
 	state.Connected = true
-	state.ServerHost = opts.Host
-	state.ServerEndpoint = endpoint
-	state.LocalIP = strings.TrimSuffix(regResp.AssignedIP, "/32")
-	state.ServerIP = regResp.ServerIP
 	state.ConnectedAt = time.Now()
-	state.PublicKey = keyPair.PublicKey
-	state.ServerPublicKey = regResp.ServerPublicKey
 
 	if err := state.Save(); err != nil {
 		QuickDown()
 		return fmt.Errorf("failed to save remote state: %w", err)
 	}
 
-	slog.Info("connected to remote server", "host", opts.Host, "localIP", state.LocalIP)
+	slog.Info("connected to remote server", "localIP", state.LocalIP)
 	return nil
 }
 
@@ -140,7 +153,7 @@ func Disconnect() error {
 		return fmt.Errorf("failed to load remote state: %w", err)
 	}
 
-	if !state.Connected {
+	if !state.Connected && state.PublicKey == "" {
 		return fmt.Errorf("not connected to any remote server: %w", vserrors.ErrRemoteNotConnected)
 	}
 
@@ -162,6 +175,8 @@ func Disconnect() error {
 	state.ServerEndpoint = ""
 	state.LocalIP = ""
 	state.ServerIP = ""
+	state.PublicKey = ""
+	state.ServerPublicKey = ""
 	state.ConnectedAt = time.Time{}
 
 	if err := state.Save(); err != nil {
@@ -170,42 +185,6 @@ func Disconnect() error {
 
 	slog.Info("disconnected from remote server")
 	return nil
-}
-
-// RegisterViaSSH registers with the server by calling _remote-register via SSH.
-func RegisterViaSSH(host, publicKey, token, name string) (*RegistrationResponse, error) {
-	// Build the command to run on the server
-	args := []string{
-		host,
-		"vibespace", "_remote-register",
-		"--pubkey", publicKey,
-		"--token", token,
-	}
-	if name != "" {
-		args = append(args, "--name", name)
-	}
-
-	cmd := exec.Command("ssh", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	slog.Debug("executing SSH command", "host", host)
-	if err := cmd.Run(); err != nil {
-		errMsg := stderr.String()
-		if errMsg == "" {
-			errMsg = err.Error()
-		}
-		return nil, fmt.Errorf("SSH registration failed: %s", strings.TrimSpace(errMsg))
-	}
-
-	// Parse JSON response
-	var resp RegistrationResponse
-	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse registration response: %w (output: %s)", err, stdout.String())
-	}
-
-	return &resp, nil
 }
 
 // GetStatus returns the current remote connection status.

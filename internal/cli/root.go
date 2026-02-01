@@ -195,9 +195,8 @@ func init() {
 	rootCmd.AddCommand(daemonCmd)         // Hidden daemon command
 	rootCmd.AddCommand(sessionCmd)        // Multi-agent session management
 	rootCmd.AddCommand(multiCmd)          // Quick ad-hoc multi-agent sessions
-	rootCmd.AddCommand(serveCmd)          // Remote mode server
-	rootCmd.AddCommand(remoteCmd)         // Remote mode client
-	rootCmd.AddCommand(remoteRegisterCmd) // Hidden internal command
+	rootCmd.AddCommand(serveCmd)  // Remote mode server
+	rootCmd.AddCommand(remoteCmd) // Remote mode client
 
 	// Global flags - registered here so subcommands can parse them
 	rootCmd.PersistentFlags().BoolVar(&globalJSON, "json", false, "Output in JSON format")

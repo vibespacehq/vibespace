@@ -2,10 +2,12 @@
 package remote
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -26,14 +28,13 @@ type RemoteState struct {
 // ServerState represents the server's state for managing clients.
 // Stored at ~/.vibespace/serve.json
 type ServerState struct {
-	Running            bool                `json:"running"`
-	ListenPort         int                 `json:"listen_port"`
-	ServerIP           string              `json:"server_ip"`              // e.g., "10.100.0.1/24"
-	PublicKey          string              `json:"public_key"`
-	PrivateKeyPath     string              `json:"private_key_path"`       // Path to private key file
-	Clients            []ClientRegistration `json:"clients"`
-	RegistrationTokens []RegistrationToken `json:"registration_tokens"`
-	NextClientIP       int                 `json:"next_client_ip"`         // Next octet for client IP (starts at 2)
+	Running        bool                 `json:"running"`
+	ListenPort     int                  `json:"listen_port"`
+	ServerIP       string               `json:"server_ip"`        // e.g., "10.100.0.1/24"
+	PublicKey      string               `json:"public_key"`
+	PrivateKeyPath string               `json:"private_key_path"` // Path to private key file
+	Clients        []ClientRegistration `json:"clients"`
+	NextClientIP   int                  `json:"next_client_ip"` // Next octet for client IP (starts at 2)
 }
 
 // ClientRegistration represents a registered client.
@@ -44,11 +45,13 @@ type ClientRegistration struct {
 	RegisteredAt time.Time `json:"registered_at"`
 }
 
-// RegistrationToken is a one-time token for client registration.
-type RegistrationToken struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Used      bool      `json:"used"`
+// InviteToken contains server connection info for clients.
+// Encoded as base64 JSON and shared via copy-paste.
+type InviteToken struct {
+	ServerPublicKey string `json:"k"` // Server's WireGuard public key
+	Endpoint        string `json:"e"` // Server's public endpoint (host:port)
+	AssignedIP      string `json:"i"` // Pre-allocated client IP (e.g., "10.100.0.2/32")
+	ServerIP        string `json:"s"` // Server's WireGuard IP (e.g., "10.100.0.1")
 }
 
 // Default paths and values
@@ -57,11 +60,10 @@ const (
 	ServerStateFile  = "serve.json"
 	RemoteKubeconfig = "remote_kubeconfig"
 
-	DefaultWireGuardPort = 51820
-	DefaultManagementPort = 7780
-	DefaultServerIP      = "10.100.0.1"
-	DefaultClientIPStart = 2
-	DefaultTokenTTL      = 30 * time.Minute
+	DefaultWireGuardPort  = 51820
+	DefaultManagementPort = 7780 // Private, binds to WireGuard IP only
+	DefaultServerIP       = "10.100.0.1"
+	DefaultClientIPStart  = 2
 )
 
 var (
@@ -217,23 +219,31 @@ func (s *ServerState) AllocateClientIP() string {
 	return ip
 }
 
-// ValidateToken checks if a token is valid and not expired.
-// Returns the token index if valid, -1 otherwise.
-func (s *ServerState) ValidateToken(token string) int {
-	now := time.Now()
-	for i, t := range s.RegistrationTokens {
-		if t.Token == token && !t.Used && t.ExpiresAt.After(now) {
-			return i
-		}
+// EncodeInviteToken encodes an invite token to a base64 string.
+func EncodeInviteToken(token *InviteToken) (string, error) {
+	data, err := json.Marshal(token)
+	if err != nil {
+		return "", err
 	}
-	return -1
+	return "vs-" + base64.RawURLEncoding.EncodeToString(data), nil
 }
 
-// MarkTokenUsed marks a token as used.
-func (s *ServerState) MarkTokenUsed(index int) {
-	if index >= 0 && index < len(s.RegistrationTokens) {
-		s.RegistrationTokens[index].Used = true
+// DecodeInviteToken decodes a base64 invite token.
+func DecodeInviteToken(encoded string) (*InviteToken, error) {
+	// Strip "vs-" prefix if present
+	encoded = strings.TrimPrefix(encoded, "vs-")
+
+	data, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("invalid token format: %w", err)
 	}
+
+	var token InviteToken
+	if err := json.Unmarshal(data, &token); err != nil {
+		return nil, fmt.Errorf("invalid token data: %w", err)
+	}
+
+	return &token, nil
 }
 
 // FindClientByPublicKey finds a client by their public key.
