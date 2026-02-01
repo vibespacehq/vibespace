@@ -42,6 +42,7 @@ var (
 	serveGenerateToken bool
 	serveEndpoint      string
 	serveAddClient     string
+	serveClientIP      string
 	serveForeground    bool
 )
 
@@ -49,6 +50,7 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveGenerateToken, "generate-token", false, "Generate an invite token for a client")
 	serveCmd.Flags().StringVar(&serveEndpoint, "endpoint", "", "Public endpoint for clients (host or host:port)")
 	serveCmd.Flags().StringVar(&serveAddClient, "add-client", "", "Add a client by their WireGuard public key")
+	serveCmd.Flags().StringVar(&serveClientIP, "ip", "", "Client's assigned IP (from their 'remote connect' output)")
 	serveCmd.Flags().BoolVar(&serveForeground, "foreground", false, "Run in foreground (don't daemonize)")
 }
 
@@ -73,20 +75,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Handle --add-client flag
 	if serveAddClient != "" {
-		assignedIP, err := server.AddClient("client", serveAddClient)
-		if err != nil {
+		if serveClientIP == "" {
+			return fmt.Errorf("--ip is required (use the IP shown in client's 'remote connect' output)")
+		}
+
+		if err := server.AddClient("client", serveAddClient, serveClientIP); err != nil {
 			return fmt.Errorf("failed to add client: %w", err)
 		}
 
 		if out.IsJSONMode() {
 			return out.JSON(NewJSONOutput(true, map[string]string{
-				"assigned_ip": assignedIP,
+				"assigned_ip": serveClientIP,
 				"public_key":  serveAddClient,
 			}, nil))
 		}
 
 		printSuccess("Client added")
-		fmt.Printf("Assigned IP: %s\n", out.Teal(assignedIP))
+		fmt.Printf("Assigned IP: %s\n", out.Teal(serveClientIP))
 		fmt.Println()
 		fmt.Println("The client can now activate their connection:")
 		fmt.Println("  vibespace remote activate")

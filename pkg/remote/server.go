@@ -62,25 +62,23 @@ func (s *Server) GenerateInviteToken(publicEndpoint string) (string, error) {
 }
 
 // AddClient adds a new client to the WireGuard configuration.
-func (s *Server) AddClient(name, publicKey string) (string, error) {
+// The IP was pre-allocated when the invite token was generated.
+func (s *Server) AddClient(name, publicKey, assignedIP string) error {
 	// Check if client already exists
 	existing := s.state.FindClientByPublicKey(publicKey)
 	if existing != nil {
-		return existing.AssignedIP, nil
+		return nil
 	}
-
-	// Allocate IP
-	assignedIP := s.state.AllocateClientIP()
 
 	// Add to state
 	s.state.AddClient(name, publicKey, assignedIP)
 	if err := s.state.Save(); err != nil {
-		return "", fmt.Errorf("failed to save state: %w", err)
+		return fmt.Errorf("failed to save state: %w", err)
 	}
 
 	// Update WireGuard config
 	if err := s.WriteWireGuardConfig(); err != nil {
-		return "", fmt.Errorf("failed to update WireGuard config: %w", err)
+		return fmt.Errorf("failed to update WireGuard config: %w", err)
 	}
 
 	// Reload WireGuard
@@ -88,7 +86,7 @@ func (s *Server) AddClient(name, publicKey string) (string, error) {
 		slog.Warn("failed to reload WireGuard", "error", err)
 	}
 
-	return assignedIP, nil
+	return nil
 }
 
 // InitializeWireGuard initializes WireGuard server configuration.

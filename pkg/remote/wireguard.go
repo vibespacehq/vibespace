@@ -240,12 +240,14 @@ func QuickUp() error {
 		// Linux uses native kernel WireGuard, no special env needed
 		cmd = exec.Command("sudo", wgQuick, "up", WGInterfaceName)
 	} else {
-		// macOS needs wireguard-go and custom PATH
+		// macOS needs wireguard-go, custom PATH, and bash 4+
 		binDir, _ := getBinDir()
+		bashBin := filepath.Join(binDir, "bash")
 		currentPath := os.Getenv("PATH")
 		newPath := fmt.Sprintf("%s:%s", binDir, currentPath)
 
-		cmd = exec.Command("sudo", "-E", wgQuick, "up", WGInterfaceName)
+		// Run: sudo -E bash wg-quick up wg0
+		cmd = exec.Command("sudo", "-E", bashBin, wgQuick, "up", WGInterfaceName)
 		cmd.Env = append(os.Environ(), "PATH="+newPath, "WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go")
 	}
 	cmd.Stdin = os.Stdin
@@ -270,12 +272,13 @@ func QuickDown() error {
 		// Linux uses native kernel WireGuard
 		cmd = exec.Command("sudo", wgQuick, "down", WGInterfaceName)
 	} else {
-		// macOS needs wireguard-go and custom PATH
+		// macOS needs wireguard-go, custom PATH, and bash 4+
 		binDir, _ := getBinDir()
+		bashBin := filepath.Join(binDir, "bash")
 		currentPath := os.Getenv("PATH")
 		newPath := fmt.Sprintf("%s:%s", binDir, currentPath)
 
-		cmd = exec.Command("sudo", "-E", wgQuick, "down", WGInterfaceName)
+		cmd = exec.Command("sudo", "-E", bashBin, wgQuick, "down", WGInterfaceName)
 		cmd.Env = append(os.Environ(), "PATH="+newPath, "WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go")
 	}
 	cmd.Stdin = os.Stdin
@@ -380,6 +383,11 @@ type HomebrewFormula struct {
 // installWireGuardMacOS installs WireGuard tools on macOS from Homebrew bottles.
 func installWireGuardMacOS(ctx context.Context, binDir string) error {
 	arch := runtime.GOARCH
+
+	// Install bash 4+ (macOS ships with bash 3.2, wg-quick requires 4+)
+	if err := downloadHomebrewBottle(ctx, "bash", arch, binDir, []string{"bash"}); err != nil {
+		return fmt.Errorf("failed to install bash: %w", err)
+	}
 
 	// Install wireguard-tools
 	if err := downloadHomebrewBottle(ctx, "wireguard-tools", arch, binDir, []string{"wg", "wg-quick"}); err != nil {
