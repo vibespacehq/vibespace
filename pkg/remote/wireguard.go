@@ -108,8 +108,12 @@ func getBinDir() (string, error) {
 	return filepath.Join(vsHome, "bin"), nil
 }
 
-// wgBin returns the path to the bundled wg binary.
+// wgBin returns the path to the wg binary.
+// On Linux, uses system path. On macOS, uses bundled binary.
 func wgBin() (string, error) {
+	if runtime.GOOS == "linux" {
+		return "/usr/bin/wg", nil
+	}
 	binDir, err := getBinDir()
 	if err != nil {
 		return "", err
@@ -117,8 +121,12 @@ func wgBin() (string, error) {
 	return filepath.Join(binDir, "wg"), nil
 }
 
-// wgQuickBin returns the path to the bundled wg-quick script.
+// wgQuickBin returns the path to the wg-quick script.
+// On Linux, uses system path. On macOS, uses bundled script.
 func wgQuickBin() (string, error) {
+	if runtime.GOOS == "linux" {
+		return "/usr/bin/wg-quick", nil
+	}
 	binDir, err := getBinDir()
 	if err != nil {
 		return "", err
@@ -572,15 +580,19 @@ func extractHomebrewBottle(r io.Reader, formula, destDir string, binaries []stri
 	return nil
 }
 
-// installWireGuardLinux installs WireGuard tools on Linux.
-// Downloads from Homebrew Linux bottles.
+// installWireGuardLinux installs WireGuard tools on Linux via apt.
 func installWireGuardLinux(ctx context.Context, binDir string) error {
-	arch := runtime.GOARCH
-
-	// Download wireguard-tools from Homebrew Linux bottles
-	if err := downloadHomebrewBottleLinux(ctx, "wireguard-tools", arch, binDir, []string{"wg", "wg-quick"}); err != nil {
-		return fmt.Errorf("failed to install wireguard-tools: %w", err)
+	// Install via apt (works on Debian/Ubuntu)
+	cmd := exec.CommandContext(ctx, "sudo", "apt", "install", "-y", "wireguard-tools")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install wireguard-tools via apt: %w", err)
 	}
+
+	// Also ensure kernel module is loaded
+	modprobe := exec.CommandContext(ctx, "sudo", "modprobe", "wireguard")
+	modprobe.Run() // Ignore error - module might already be loaded or built-in
 
 	return nil
 }
