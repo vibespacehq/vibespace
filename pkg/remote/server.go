@@ -36,7 +36,6 @@ func NewServer() (*Server, error) {
 }
 
 // GenerateInviteToken generates an invite token containing server connection info.
-// Each token has a pre-allocated IP for the client.
 func (s *Server) GenerateInviteToken(publicEndpoint string) (string, error) {
 	// Ensure WireGuard is initialized so we have a public key
 	if s.state.PublicKey == "" {
@@ -45,16 +44,9 @@ func (s *Server) GenerateInviteToken(publicEndpoint string) (string, error) {
 		}
 	}
 
-	// Pre-allocate an IP for this client
-	assignedIP := s.state.AllocateClientIP()
-	if err := s.state.Save(); err != nil {
-		return "", fmt.Errorf("failed to save state: %w", err)
-	}
-
 	token := &InviteToken{
 		ServerPublicKey: s.state.PublicKey,
 		Endpoint:        publicEndpoint,
-		AssignedIP:      assignedIP,
 		ServerIP:        strings.TrimSuffix(s.state.ServerIP, "/24"),
 	}
 
@@ -62,23 +54,26 @@ func (s *Server) GenerateInviteToken(publicEndpoint string) (string, error) {
 }
 
 // AddClient adds a new client to the WireGuard configuration.
-// The IP was pre-allocated when the invite token was generated.
-func (s *Server) AddClient(name, publicKey, assignedIP string) error {
+// Returns the assigned IP for the client.
+func (s *Server) AddClient(name, publicKey string) (string, error) {
 	// Check if client already exists
 	existing := s.state.FindClientByPublicKey(publicKey)
 	if existing != nil {
-		return nil
+		return existing.AssignedIP, nil
 	}
+
+	// Allocate IP
+	assignedIP := s.state.AllocateClientIP()
 
 	// Add to state
 	s.state.AddClient(name, publicKey, assignedIP)
 	if err := s.state.Save(); err != nil {
-		return fmt.Errorf("failed to save state: %w", err)
+		return "", fmt.Errorf("failed to save state: %w", err)
 	}
 
 	// Update WireGuard config
 	if err := s.WriteWireGuardConfig(); err != nil {
-		return fmt.Errorf("failed to update WireGuard config: %w", err)
+		return "", fmt.Errorf("failed to update WireGuard config: %w", err)
 	}
 
 	// Reload WireGuard
@@ -86,7 +81,7 @@ func (s *Server) AddClient(name, publicKey, assignedIP string) error {
 		slog.Warn("failed to reload WireGuard", "error", err)
 	}
 
-	return nil
+	return assignedIP, nil
 }
 
 // InitializeWireGuard initializes WireGuard server configuration.

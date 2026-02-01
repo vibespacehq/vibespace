@@ -52,7 +52,6 @@ type ClientRegistration struct {
 type InviteToken struct {
 	ServerPublicKey string `json:"k"` // Server's WireGuard public key
 	Endpoint        string `json:"e"` // Server's public endpoint (host:port)
-	AssignedIP      string `json:"i"` // Pre-allocated client IP (e.g., "10.100.0.2/32")
 	ServerIP        string `json:"s"` // Server's WireGuard IP (e.g., "10.100.0.1")
 }
 

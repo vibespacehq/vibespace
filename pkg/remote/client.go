@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,8 +17,9 @@ type ConnectOptions struct {
 	Token string // Invite token (contains server pubkey, endpoint, assigned IP)
 }
 
-// Connect connects to a remote vibespace server using an invite token.
+// Connect sets up a connection to a remote vibespace server using an invite token.
 // Returns the client's public key that needs to be added to the server.
+// The server will assign an IP when the client is added.
 func Connect(opts ConnectOptions) (clientPubKey string, err error) {
 	// Check if already connected
 	state, err := LoadRemoteState()
@@ -51,34 +53,22 @@ func Connect(opts ConnectOptions) (clientPubKey string, err error) {
 		return "", fmt.Errorf("failed to generate key pair: %w", err)
 	}
 
-	// Write WireGuard client config using info from token
-	slog.Info("writing WireGuard configuration")
-	config := &ClientConfig{
-		PrivateKey:      keyPair.PrivateKey,
-		Address:         invite.AssignedIP,
-		ServerPublicKey: invite.ServerPublicKey,
-		ServerEndpoint:  invite.Endpoint,
-		ServerIP:        invite.ServerIP,
-	}
-
-	tempPath, err := WriteClientConfig(config)
-	if err != nil {
-		return "", fmt.Errorf("failed to write WireGuard config: %w", err)
-	}
-
-	// Install config (requires sudo)
-	slog.Info("installing WireGuard configuration (requires sudo)")
-	if err := InstallConfig(tempPath); err != nil {
-		return "", fmt.Errorf("failed to install WireGuard config: %w", err)
-	}
-
-	// Save state (but not connected yet - server needs to add our key first)
+	// Save keypair and server info (IP will be set during activate)
 	state.ServerHost = invite.Endpoint
 	state.ServerEndpoint = invite.Endpoint
-	state.LocalIP = strings.TrimSuffix(invite.AssignedIP, "/32")
 	state.ServerIP = invite.ServerIP
 	state.PublicKey = keyPair.PublicKey
 	state.ServerPublicKey = invite.ServerPublicKey
+
+	// Store private key for later use during activate
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return "", err
+	}
+	privateKeyPath := filepath.Join(vsHome, "wg-client.key")
+	if err := os.WriteFile(privateKeyPath, []byte(keyPair.PrivateKey), 0600); err != nil {
+		return "", fmt.Errorf("failed to save private key: %w", err)
+	}
 
 	if err := state.Save(); err != nil {
 		return "", fmt.Errorf("failed to save remote state: %w", err)
@@ -90,7 +80,8 @@ func Connect(opts ConnectOptions) (clientPubKey string, err error) {
 
 // Activate brings up the WireGuard tunnel and fetches kubeconfig.
 // Call this after the server has added the client's public key.
-func Activate() error {
+// The assignedIP is the IP address assigned by the server (e.g., "10.100.0.2/32").
+func Activate(assignedIP string) error {
 	state, err := LoadRemoteState()
 	if err != nil {
 		return fmt.Errorf("failed to load remote state: %w", err)
@@ -102,6 +93,32 @@ func Activate() error {
 
 	if state.Connected {
 		return fmt.Errorf("already connected")
+	}
+
+	// Set the assigned IP (strip /32 suffix if present for display, but keep full for config)
+	state.LocalIP = assignedIP
+
+	// Write WireGuard client config with the assigned IP
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return err
+	}
+	privateKeyPath := filepath.Join(vsHome, "wg-client.key")
+	privateKey, err := os.ReadFile(privateKeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to read private key: %w", err)
+	}
+
+	config := &ClientConfig{
+		PrivateKey:      strings.TrimSpace(string(privateKey)),
+		Address:         assignedIP,
+		ServerPublicKey: state.ServerPublicKey,
+		ServerEndpoint:  state.ServerEndpoint,
+		ServerIP:        state.ServerIP,
+	}
+
+	if _, err := WriteClientConfig(config); err != nil {
+		return fmt.Errorf("failed to write WireGuard config: %w", err)
 	}
 
 	// Bring up WireGuard
