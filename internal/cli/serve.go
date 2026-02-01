@@ -107,24 +107,24 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Start server
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	slog.Info("starting remote mode server")
-	if err := server.Start(ctx, serveForeground); err != nil {
-		return fmt.Errorf("failed to start server: %w", err)
-	}
-
-	if out.IsJSONMode() {
-		return out.JSON(NewJSONOutput(true, ServeOutput{
-			Running:    true,
-			ListenPort: remote.DefaultWireGuardPort,
-			ServerIP:   remote.DefaultServerIP,
-		}, nil))
-	}
-
 	if serveForeground {
+		// Run in foreground - start server directly
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		slog.Info("starting remote mode server in foreground")
+		if err := server.Start(ctx, true); err != nil {
+			return fmt.Errorf("failed to start server: %w", err)
+		}
+
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, ServeOutput{
+				Running:    true,
+				ListenPort: remote.DefaultWireGuardPort,
+				ServerIP:   remote.DefaultServerIP,
+			}, nil))
+		}
+
 		printSuccess("Remote server started")
 		fmt.Printf("WireGuard: %s\n", out.Teal(fmt.Sprintf("0.0.0.0:%d/udp", remote.DefaultWireGuardPort)))
 		fmt.Printf("Management API: %s\n", out.Teal(fmt.Sprintf("%s:%d", remote.DefaultServerIP, remote.DefaultManagementPort)))
@@ -143,6 +143,20 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 		printSuccess("Server stopped")
 	} else {
+		// Daemonize - spawn a detached process
+		slog.Info("spawning remote mode server as daemon")
+		if err := remote.SpawnServe(); err != nil {
+			return fmt.Errorf("failed to start server: %w", err)
+		}
+
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, ServeOutput{
+				Running:    true,
+				ListenPort: remote.DefaultWireGuardPort,
+				ServerIP:   remote.DefaultServerIP,
+			}, nil))
+		}
+
 		printSuccess("Remote server started in background")
 		fmt.Println()
 		fmt.Println("Generate a token for clients:")

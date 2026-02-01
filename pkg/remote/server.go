@@ -11,8 +11,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -417,6 +419,115 @@ func RegisterClient(pubKey, token, name string) (*RegistrationResponse, error) {
 		ServerPublicKey: server.state.PublicKey,
 		ServerIP:        strings.TrimSuffix(server.state.ServerIP, "/24"),
 	}, nil
+}
+
+// SpawnServe spawns the serve process in the background (daemonizes).
+func SpawnServe() error {
+	// Get paths
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return err
+	}
+
+	// Check if already running
+	if IsServeRunning() {
+		return fmt.Errorf("serve is already running")
+	}
+
+	// Clean up stale files
+	pidFile := filepath.Join(vsHome, "serve.pid")
+	os.Remove(pidFile)
+
+	// Get the path to the current executable
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Build command: vibespace serve --foreground
+	cmd := exec.Command(executable, "serve", "--foreground")
+
+	// Detach from parent (creates new session)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid: true,
+	}
+
+	// Redirect stdout/stderr to log file
+	logFile := filepath.Join(vsHome, "serve.log")
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file: %w", err)
+	}
+
+	cmd.Stdout = f
+	cmd.Stderr = f
+	cmd.Stdin = nil
+
+	// Start the serve process
+	if err := cmd.Start(); err != nil {
+		f.Close()
+		return fmt.Errorf("failed to start serve: %w", err)
+	}
+
+	// Write PID file
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
+		slog.Warn("failed to write serve pid file", "error", err)
+	}
+
+	// Wait for serve to be ready (WireGuard interface up)
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		if IsInterfaceUp() {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	return fmt.Errorf("timeout waiting for serve to start")
+}
+
+// IsServeRunning checks if the serve process is running.
+func IsServeRunning() bool {
+	// Check if WireGuard interface is up
+	return IsInterfaceUp()
+}
+
+// StopServe stops the serve process.
+func StopServe() error {
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return err
+	}
+
+	// Bring down WireGuard
+	if err := QuickDown(); err != nil {
+		slog.Warn("failed to stop WireGuard", "error", err)
+	}
+
+	// Kill the serve process
+	pidFile := filepath.Join(vsHome, "serve.pid")
+	data, err := os.ReadFile(pidFile)
+	if err == nil {
+		var pid int
+		if _, err := fmt.Sscanf(string(data), "%d", &pid); err == nil {
+			if process, err := os.FindProcess(pid); err == nil {
+				process.Signal(syscall.SIGTERM)
+				time.Sleep(500 * time.Millisecond)
+				process.Signal(syscall.SIGKILL)
+			}
+		}
+	}
+
+	os.Remove(pidFile)
+
+	// Update state
+	state, err := LoadServerState()
+	if err == nil {
+		state.Running = false
+		state.Save()
+	}
+
+	return nil
 }
 
 // GetServerPublicKey returns the server's WireGuard public key.
