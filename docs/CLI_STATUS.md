@@ -1,6 +1,6 @@
 # CLI Implementation Status
 
-Last verified: 2026-01-28
+Last verified: 2026-02-01 (updated: info command, --mount flag)
 
 ---
 
@@ -16,9 +16,10 @@ Last verified: 2026-01-28
 | `stop` | ✅ | - | - | ✅ | Stops cluster |
 | `uninstall` | ✅ | - | - | ✅ | Removes cluster and data |
 | **Vibespace** |
-| `create` | ✅ | - | - | ✅ | `-t claude-code\|codex` |
+| `create` | ✅ | - | - | ✅ | `-t claude-code\|codex`, `--mount` flag |
 | `list` | ✅ | ✅ | - | ✅ | Tab-separated with `--header` |
 | `delete` | ✅ | - | - | ✅ | `--keep-data` flag |
+| `<vs> info` | ✅ | ✅ | - | ✅ | Shows details, mounts, agents with config |
 | **Agent** |
 | `<vs> agent list` | ✅ | ✅ | - | ✅ | Tab-separated with `--header` |
 | `<vs> agent create` | ✅ | - | - | ✅ | `-t claude-code\|codex` |
@@ -110,6 +111,7 @@ Error responses include:
 | Command | Columns |
 |---------|---------|
 | `list` | NAME, STATUS, AGENTS, CPU, MEMORY, STORAGE, CREATED |
+| `<vs> info` | KEY, VALUE (key-value pairs for all fields) |
 | `agent list` | AGENT, TYPE, VIBESPACE, STATUS |
 | `forward list` | AGENT, LOCAL, REMOTE, TYPE, STATUS |
 | `config show` | AGENT, TYPE, SKIP_PERMISSIONS, MODEL, MAX_TURNS, REASONING_EFFORT |
@@ -136,24 +138,7 @@ Error responses include:
 
 ## Remaining Work
 
-### P1: Linux Support
-
-**Goal:** Run vibespace on Linux using Lima VM (same approach as macOS with Colima).
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| Create `lima.go` | Lima VM manager for Linux | M |
-| Update `manager.go` | Return LimaManager for Linux | S |
-| Test on Ubuntu/Debian | Verify full workflow | M |
-| Test on Fedora/RHEL | Verify full workflow | S |
-| Optional: `--native` flag | Direct k3s without VM | L |
-
-**Implementation notes:**
-- Lima releases include Linux binaries
-- Use `limactl create template://k3s --name vibespace`
-- Paths: `~/.lima/vibespace` instead of `~/.colima/_lima/colima-vibespace`
-
-### P2: Remote Mode
+### P1: Remote Mode
 
 **Goal:** Connect to a vibespace cluster running on another machine via WireGuard.
 
@@ -165,7 +150,7 @@ Error responses include:
 | Kubeconfig switching | Manage local vs remote contexts | M |
 | Connection status | Show in `vibespace status` | S |
 
-### P3: Help & Diagnostics
+### P2: Help & Diagnostics
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -175,7 +160,7 @@ Error responses include:
 | `vibespace help --json` | Machine-readable command schema | M |
 | Improve `--help` text | Consistent examples, better descriptions | S |
 
-### P4: Testing
+### P3: Testing
 
 **Goal:** 100% test coverage for CLI commands.
 
@@ -190,7 +175,7 @@ Error responses include:
 | CI badges | Build, coverage, Go Report Card in README | S |
 | Codecov integration | Coverage reporting and PR comments | S |
 
-### P5: Declarative Config
+### P4: Declarative Config
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -199,7 +184,7 @@ Error responses include:
 | `vibespace export <vs>` | Export vibespace to YAML | M |
 | Spec schema | Define YAML schema, validate | M |
 
-### P6: Automation Enhancements
+### P5: Automation Enhancements
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -211,7 +196,7 @@ Error responses include:
 | `--non-interactive` global flag | Disable all prompts | S |
 | `multi --stream --json` | JSONL streaming output | M |
 
-### P7: Versioning & Releases
+### P6: Versioning & Releases
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -221,7 +206,7 @@ Error responses include:
 | Changelog generation | From conventional commits | S |
 | Update checker | Notify when new version available | M |
 
-### P8: Distribution
+### P7: Distribution
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -233,7 +218,7 @@ Error responses include:
 | RPM repository | For RHEL/Fedora | M |
 | AUR package | For Arch Linux | S |
 
-### P9: Feature Flags
+### P8: Feature Flags
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -243,7 +228,7 @@ Error responses include:
 | `vibespace features enable <flag>` | Enable specific flag | S |
 | Feature graduation process | Promote stable features | S |
 
-### P10: JSON Enhancements
+### P9: JSON Enhancements
 
 | Task | Description | Effort |
 |------|-------------|--------|

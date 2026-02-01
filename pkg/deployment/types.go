@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"github.com/yagizdagabak/vibespace/pkg/agent"
+	"github.com/yagizdagabak/vibespace/pkg/model"
 )
 
 // AgentInfo contains information about an agent
@@ -53,6 +54,7 @@ type CreateDeploymentRequest struct {
 	PVCName          string
 	ShareCredentials bool          // Share credentials with other agents
 	Config           *agent.Config // Agent configuration
+	Mounts           []model.Mount // Host directory mounts
 }
 
 // CreateAgentRequest contains parameters for creating an agent deployment
@@ -76,6 +78,7 @@ type CreateAgentRequest struct {
 	PVCName          string        // Shared PVC name for all agents
 	ShareCredentials bool          // Share credentials with other agents
 	Config           *agent.Config // Agent configuration
+	Mounts           []model.Mount // Host directory mounts
 }
 
 // Resources defines compute resources for a deployment

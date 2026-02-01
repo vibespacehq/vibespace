@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/yagizdagabak/vibespace/pkg/agent"
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
+	"github.com/yagizdagabak/vibespace/pkg/model"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -72,22 +74,33 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, agentType, req.Env, req.ShareCredentials, req.Config)
 
 	// Build volumes and volume mounts
-	volumes, volumeMounts := m.buildVolumesAndMounts(req.Persistent, req.PVCName)
+	volumes, volumeMounts := m.buildVolumesAndMounts(req.Persistent, req.PVCName, req.Mounts)
 
 	// Build init containers for persistent storage
 	initContainers := m.buildInitContainers(req.Persistent)
+
+	// Build annotations
+	annotations := map[string]string{
+		"vibespace.dev/created-at": metav1.Now().Format("2006-01-02T15:04:05Z"),
+		"vibespace.dev/storage":    req.Resources.Storage,
+	}
+
+	// Store mounts as JSON annotation for retrieval
+	if len(req.Mounts) > 0 {
+		mountsJSON, err := json.Marshal(req.Mounts)
+		if err == nil {
+			annotations["vibespace.dev/mounts"] = string(mountsJSON)
+		}
+	}
 
 	// Create the Deployment
 	replicas := int32(1)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      deploymentName,
-			Namespace: k8s.VibespaceNamespace,
-			Labels:    labels,
-			Annotations: map[string]string{
-				"vibespace.dev/created-at": metav1.Now().Format("2006-01-02T15:04:05Z"),
-				"vibespace.dev/storage":    req.Resources.Storage,
-			},
+			Name:        deploymentName,
+			Namespace:   k8s.VibespaceNamespace,
+			Labels:      labels,
+			Annotations: annotations,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
@@ -236,25 +249,21 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 	// Build environment variables
 	env := m.buildEnvironment(req.VibespaceID, req.Name, agentName, agentType, req.Env, req.ShareCredentials, req.Config)
 
-	// Build volumes and volume mounts (share the same PVC)
-	var volumes []corev1.Volume
-	var volumeMounts []corev1.VolumeMount
-	if req.PVCName != "" {
-		volumes = []corev1.Volume{
-			{
-				Name: "vibespace-data",
-				VolumeSource: corev1.VolumeSource{
-					PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-						ClaimName: req.PVCName,
-					},
-				},
-			},
-		}
-		volumeMounts = []corev1.VolumeMount{
-			{
-				Name:      "vibespace-data",
-				MountPath: "/vibespace",
-			},
+	// Build volumes and volume mounts (share the same PVC and mounts)
+	persistent := req.PVCName != ""
+	volumes, volumeMounts := m.buildVolumesAndMounts(persistent, req.PVCName, req.Mounts)
+
+	// Build annotations
+	agentAnnotations := map[string]string{
+		"vibespace.dev/created-at": metav1.Now().Format("2006-01-02T15:04:05Z"),
+		"vibespace.dev/storage":    req.Resources.Storage,
+	}
+
+	// Store mounts as JSON annotation for retrieval
+	if len(req.Mounts) > 0 {
+		mountsJSON, err := json.Marshal(req.Mounts)
+		if err == nil {
+			agentAnnotations["vibespace.dev/mounts"] = string(mountsJSON)
 		}
 	}
 
@@ -262,13 +271,10 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 	replicas := int32(1)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      deploymentName,
-			Namespace: k8s.VibespaceNamespace,
-			Labels:    labels,
-			Annotations: map[string]string{
-				"vibespace.dev/created-at": metav1.Now().Format("2006-01-02T15:04:05Z"),
-				"vibespace.dev/storage":    req.Resources.Storage,
-			},
+			Name:        deploymentName,
+			Namespace:   k8s.VibespaceNamespace,
+			Labels:      labels,
+			Annotations: agentAnnotations,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
@@ -776,27 +782,42 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentNam
 }
 
 // buildVolumesAndMounts creates volumes and volume mounts for the vibespace
-func (m *DeploymentManager) buildVolumesAndMounts(persistent bool, pvcName string) ([]corev1.Volume, []corev1.VolumeMount) {
-	if !persistent {
-		return nil, nil
-	}
+func (m *DeploymentManager) buildVolumesAndMounts(persistent bool, pvcName string, mounts []model.Mount) ([]corev1.Volume, []corev1.VolumeMount) {
+	var volumes []corev1.Volume
+	var volumeMounts []corev1.VolumeMount
 
-	volumes := []corev1.Volume{
-		{
+	// Add PVC volume for persistent storage
+	if persistent && pvcName != "" {
+		volumes = append(volumes, corev1.Volume{
 			Name: "vibespace-data",
 			VolumeSource: corev1.VolumeSource{
 				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
 					ClaimName: pvcName,
 				},
 			},
-		},
-	}
-
-	volumeMounts := []corev1.VolumeMount{
-		{
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      "vibespace-data",
 			MountPath: "/vibespace",
-		},
+		})
+	}
+
+	// Add host path volumes for mounts
+	for i, mount := range mounts {
+		volumeName := fmt.Sprintf("host-mount-%d", i)
+		volumes = append(volumes, corev1.Volume{
+			Name: volumeName,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: mount.HostPath,
+				},
+			},
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      volumeName,
+			MountPath: mount.ContainerPath,
+			ReadOnly:  mount.ReadOnly,
+		})
 	}
 
 	return volumes, volumeMounts
