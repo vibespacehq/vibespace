@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -264,4 +266,40 @@ func (s *ServerState) AddClient(name, pubKey, assignedIP string) {
 		AssignedIP:   assignedIP,
 		RegisteredAt: time.Now(),
 	})
+}
+
+// DetectPublicIP attempts to detect the machine's public IP address.
+func DetectPublicIP() (string, error) {
+	// Try multiple services in case one is down
+	services := []string{
+		"https://ifconfig.me",
+		"https://api.ipify.org",
+		"https://icanhazip.com",
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	for _, url := range services {
+		resp, err := client.Get(url)
+		if err != nil {
+			continue
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			continue
+		}
+
+		ip := strings.TrimSpace(string(body))
+		if ip != "" {
+			return ip, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not detect public IP")
 }

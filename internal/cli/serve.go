@@ -100,12 +100,17 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Handle --generate-token flag
 	if serveGenerateToken {
-		if serveEndpoint == "" {
-			return fmt.Errorf("--endpoint is required (your server's public hostname or IP)")
+		endpoint := serveEndpoint
+		if endpoint == "" {
+			// Auto-detect public IP
+			detectedIP, err := remote.DetectPublicIP()
+			if err != nil {
+				return fmt.Errorf("failed to detect public IP (use --endpoint to specify manually): %w", err)
+			}
+			endpoint = detectedIP
 		}
 
 		// Add default port if not specified
-		endpoint := serveEndpoint
 		if !containsPort(endpoint) {
 			endpoint = fmt.Sprintf("%s:%d", endpoint, remote.DefaultWireGuardPort)
 		}
