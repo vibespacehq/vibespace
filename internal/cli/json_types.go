@@ -64,9 +64,10 @@ type VibespaceListItem struct {
 
 // StatusOutput is the JSON output for the status command
 type StatusOutput struct {
-	Cluster    ClusterStatus     `json:"cluster"`
-	Components []ComponentStatus `json:"components,omitempty"`
-	Daemon     *DaemonStatus     `json:"daemon,omitempty"`
+	Cluster    ClusterStatus       `json:"cluster"`
+	Components []ComponentStatus   `json:"components,omitempty"`
+	Daemon     *DaemonStatus       `json:"daemon,omitempty"`
+	Remote     *RemoteStatusOutput `json:"remote,omitempty"`
 }
 
 // ClusterStatus represents the cluster status
@@ -332,5 +333,40 @@ type ExecOutput struct {
 	Stdout    string `json:"stdout"`
 	Stderr    string `json:"stderr"`
 	ExitCode  int    `json:"exit_code"`
+}
+
+// ServeOutput is the JSON output for serve command
+type ServeOutput struct {
+	Running    bool   `json:"running"`
+	ListenPort int    `json:"listen_port"`
+	ServerIP   string `json:"server_ip"`
+}
+
+// ServeTokenOutput is the JSON output for serve --generate-token
+type ServeTokenOutput struct {
+	Token     string `json:"token"`
+	ExpiresIn string `json:"expires_in"`
+}
+
+// RemoteConnectOutput is the JSON output for remote connect command
+type RemoteConnectOutput struct {
+	Connected  bool   `json:"connected"`
+	ServerHost string `json:"server_host"`
+	LocalIP    string `json:"local_ip"`
+	ServerIP   string `json:"server_ip"`
+}
+
+// RemoteDisconnectOutput is the JSON output for remote disconnect command
+type RemoteDisconnectOutput struct {
+	Disconnected bool `json:"disconnected"`
+}
+
+// RemoteStatusOutput is the JSON output for remote status command
+type RemoteStatusOutput struct {
+	Connected   bool   `json:"connected"`
+	ServerHost  string `json:"server_host,omitempty"`
+	LocalIP     string `json:"local_ip,omitempty"`
+	ServerIP    string `json:"server_ip,omitempty"`
+	ConnectedAt string `json:"connected_at,omitempty"`
 }
 

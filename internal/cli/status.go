@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss/list"
 	"github.com/yagizdagabak/vibespace/internal/platform"
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
+	"github.com/yagizdagabak/vibespace/pkg/remote"
 	"github.com/yagizdagabak/vibespace/pkg/ui"
 
 	"github.com/spf13/cobra"
@@ -48,6 +49,9 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to check installation: %w", err)
 	}
 
+	// Check remote connection status
+	remoteState, _ := remote.LoadRemoteState()
+
 	// JSON output mode - gather all data first
 	if out.IsJSONMode() {
 		statusOut := StatusOutput{
@@ -81,6 +85,17 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			}
 		} else {
 			statusOut.Daemon = &DaemonStatus{Running: false}
+		}
+
+		// Add remote status
+		if remoteState != nil && remoteState.Connected {
+			statusOut.Remote = &RemoteStatusOutput{
+				Connected:   true,
+				ServerHost:  remoteState.ServerHost,
+				LocalIP:     remoteState.LocalIP,
+				ServerIP:    remoteState.ServerIP,
+				ConnectedAt: remoteState.ConnectedAt.Format("2006-01-02 15:04:05"),
+			}
 		}
 
 		return out.JSON(NewJSONOutput(true, statusOut, nil))
@@ -147,6 +162,15 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Daemon"), out.Dim("not running")))
+	}
+
+	// Remote connection section
+	if remoteState != nil && remoteState.Connected {
+		l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Remote"), tealStyle.Render("connected")))
+		l.Item(list.New(
+			fmt.Sprintf("server %s", pinkStyle.Render(remoteState.ServerHost)),
+			fmt.Sprintf("local IP %s", pinkStyle.Render(remoteState.LocalIP)),
+		))
 	}
 
 	fmt.Println(l)

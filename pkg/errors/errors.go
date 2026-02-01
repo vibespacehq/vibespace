@@ -40,6 +40,14 @@ func ErrorCode(err error) (exitCode int, code string) {
 		return ExitNotFound, "NO_AGENTS"
 	case errors.Is(err, ErrNotConnected):
 		return ExitUnavailable, "NOT_CONNECTED"
+	case errors.Is(err, ErrRemoteNotConnected):
+		return ExitUnavailable, "REMOTE_NOT_CONNECTED"
+	case errors.Is(err, ErrWireGuardNotAvailable):
+		return ExitUnavailable, "WIREGUARD_NOT_AVAILABLE"
+	case errors.Is(err, ErrRemoteAlreadyConnected):
+		return ExitConflict, "REMOTE_ALREADY_CONNECTED"
+	case errors.Is(err, ErrInvalidToken):
+		return ExitPermission, "INVALID_TOKEN"
 	default:
 		return ExitInternal, "INTERNAL"
 	}
@@ -99,3 +107,15 @@ var ErrSSHKeyNotFound = errors.New("SSH key not found")
 
 // ErrNoAgents indicates no agents are available for the operation.
 var ErrNoAgents = errors.New("no agents available")
+
+// ErrRemoteNotConnected indicates no remote connection is established.
+var ErrRemoteNotConnected = errors.New("not connected to remote server")
+
+// ErrWireGuardNotAvailable indicates WireGuard (wg-quick) is not installed.
+var ErrWireGuardNotAvailable = errors.New("WireGuard not available")
+
+// ErrRemoteAlreadyConnected indicates a remote connection already exists.
+var ErrRemoteAlreadyConnected = errors.New("already connected to remote server")
+
+// ErrInvalidToken indicates the registration token is invalid or expired.
+var ErrInvalidToken = errors.New("invalid or expired token")

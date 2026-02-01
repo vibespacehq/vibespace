@@ -13,6 +13,7 @@ import (
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
 	"github.com/yagizdagabak/vibespace/pkg/model"
+	"github.com/yagizdagabak/vibespace/pkg/remote"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
@@ -31,6 +32,25 @@ func checkClusterInitialized() error {
 	}
 
 	return nil
+}
+
+// checkRemoteOrLocalCluster checks for either remote connection or local cluster.
+// In remote mode, verifies the remote kubeconfig exists.
+// In local mode, falls back to checkClusterInitialized.
+func checkRemoteOrLocalCluster() error {
+	if remote.IsConnected() {
+		// Remote mode - verify remote kubeconfig exists
+		kubeconfigPath, err := remote.GetRemoteKubeconfigPath()
+		if err != nil {
+			return fmt.Errorf("failed to get remote kubeconfig path: %w", err)
+		}
+		if _, err := os.Stat(kubeconfigPath); os.IsNotExist(err) {
+			return fmt.Errorf("remote kubeconfig missing. Reconnect with: vibespace remote connect: %w", vserrors.ErrRemoteNotConnected)
+		}
+		return nil
+	}
+	// Local mode
+	return checkClusterInitialized()
 }
 
 // checkClusterRunning checks if the cluster is actually running and reachable

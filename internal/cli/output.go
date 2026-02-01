@@ -340,7 +340,7 @@ func getErrorHint(err error) string {
 	case errors.Is(err, vserrors.ErrAgentNotFound):
 		return "Use 'vibespace <name> agent list' to see available agents"
 	case errors.Is(err, vserrors.ErrClusterNotInitialized):
-		return "Run 'vibespace init' to initialize the cluster"
+		return "Run 'vibespace init' to initialize the cluster, or 'vibespace remote connect' to use a remote cluster"
 	case errors.Is(err, vserrors.ErrClusterNotRunning):
 		return "Run 'vibespace init' to start the cluster"
 	case errors.Is(err, vserrors.ErrDaemonNotRunning):
@@ -349,6 +349,14 @@ func getErrorHint(err error) string {
 		return "Use 'vibespace <name> forward list' to see active forwards"
 	case errors.Is(err, vserrors.ErrNoAgents):
 		return "Use 'vibespace <name> agent create' to add an agent"
+	case errors.Is(err, vserrors.ErrRemoteNotConnected):
+		return "Use 'vibespace remote connect <host> --token <token>' to connect to a remote server"
+	case errors.Is(err, vserrors.ErrWireGuardNotAvailable):
+		return "WireGuard installation failed. On Linux, install wireguard-tools first: apt install wireguard-tools"
+	case errors.Is(err, vserrors.ErrRemoteAlreadyConnected):
+		return "Use 'vibespace remote disconnect' first, then connect to a new server"
+	case errors.Is(err, vserrors.ErrInvalidToken):
+		return "Request a new token from the server admin with: vibespace serve --generate-token"
 	default:
 		return ""
 	}

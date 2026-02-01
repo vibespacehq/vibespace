@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/yagizdagabak/vibespace/pkg/remote"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -42,16 +44,9 @@ func NewClient() (*Client, error) {
 	}, nil
 }
 
-// getK8sConfig returns the Kubernetes config for bundled Kubernetes (LOCAL MODE only).
-//
-// DEPLOYMENT MODE: This function is for LOCAL MODE, where bundled Kubernetes
-// (Colima on macOS, k3s on Linux) runs on the same machine as the API server.
-//
-// With ADR 0006, we use bundled Kubernetes with known kubeconfig locations
-// instead of detecting external installations.
-//
-// For REMOTE MODE (planned Post-MVP), the API server would run on a VPS and
-// access k8s using in-cluster config or a provided kubeconfig path.
+// getK8sConfig returns the Kubernetes config based on connection mode.
+// In remote mode, connects to a VPS cluster via WireGuard tunnel.
+// In local mode, connects to bundled Kubernetes (Colima on macOS, k3s on Linux).
 func getK8sConfig() (*rest.Config, error) {
 	// Get bundled kubeconfig path
 	kubeconfig, err := getBundledKubeconfigPath()
@@ -68,15 +63,27 @@ func getK8sConfig() (*rest.Config, error) {
 	return config, nil
 }
 
-// getBundledKubeconfigPath returns the kubeconfig path for bundled Kubernetes (LOCAL MODE).
-// Uses isolated kubeconfig at ~/.vibespace/kubeconfig to avoid touching user's ~/.kube/config.
-//
-// For REMOTE MODE (planned Post-MVP), this would likely use in-cluster config or
-// a configurable kubeconfig path from environment variables.
+// getBundledKubeconfigPath returns the kubeconfig path based on connection mode.
+// In remote mode, uses ~/.vibespace/remote_kubeconfig.
+// In local mode, uses ~/.vibespace/kubeconfig.
 func getBundledKubeconfigPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get user home directory: %w", err)
+	}
+
+	// Check remote mode first
+	if remote.IsConnected() {
+		remotePath, err := remote.GetRemoteKubeconfigPath()
+		if err != nil {
+			return "", fmt.Errorf("failed to get remote kubeconfig path: %w", err)
+		}
+		if _, err := os.Stat(remotePath); err == nil {
+			slog.Debug("using remote kubeconfig", "path", remotePath)
+			return remotePath, nil
+		}
+		// Fall through to local if remote kubeconfig doesn't exist
+		slog.Warn("remote mode active but kubeconfig missing, falling back to local")
 	}
 
 	// Use isolated kubeconfig to avoid conflicts with user's other clusters
