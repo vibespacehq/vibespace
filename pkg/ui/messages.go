@@ -46,10 +46,3 @@ func StepPrefix(noColor bool) string {
 	}
 	return IconStep
 }
-
-func InfoPrefix(noColor bool) string {
-	if noColor {
-		return PlainInfo
-	}
-	return IconInfo
-}
