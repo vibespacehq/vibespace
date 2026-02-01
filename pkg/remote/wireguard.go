@@ -235,13 +235,19 @@ func QuickUp() error {
 		return err
 	}
 
-	// Build PATH to include our bin directory and wireguard-go
-	binDir, _ := getBinDir()
-	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s", binDir, currentPath)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "linux" {
+		// Linux uses native kernel WireGuard, no special env needed
+		cmd = exec.Command("sudo", wgQuick, "up", WGInterfaceName)
+	} else {
+		// macOS needs wireguard-go and custom PATH
+		binDir, _ := getBinDir()
+		currentPath := os.Getenv("PATH")
+		newPath := fmt.Sprintf("%s:%s", binDir, currentPath)
 
-	cmd := exec.Command("sudo", "-E", wgQuick, "up", WGInterfaceName)
-	cmd.Env = append(os.Environ(), "PATH="+newPath, "WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go")
+		cmd = exec.Command("sudo", "-E", wgQuick, "up", WGInterfaceName)
+		cmd.Env = append(os.Environ(), "PATH="+newPath, "WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go")
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -259,13 +265,19 @@ func QuickDown() error {
 		return err
 	}
 
-	// Build PATH to include our bin directory
-	binDir, _ := getBinDir()
-	currentPath := os.Getenv("PATH")
-	newPath := fmt.Sprintf("%s:%s", binDir, currentPath)
+	var cmd *exec.Cmd
+	if runtime.GOOS == "linux" {
+		// Linux uses native kernel WireGuard
+		cmd = exec.Command("sudo", wgQuick, "down", WGInterfaceName)
+	} else {
+		// macOS needs wireguard-go and custom PATH
+		binDir, _ := getBinDir()
+		currentPath := os.Getenv("PATH")
+		newPath := fmt.Sprintf("%s:%s", binDir, currentPath)
 
-	cmd := exec.Command("sudo", "-E", wgQuick, "down", WGInterfaceName)
-	cmd.Env = append(os.Environ(), "PATH="+newPath, "WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go")
+		cmd = exec.Command("sudo", "-E", wgQuick, "down", WGInterfaceName)
+		cmd.Env = append(os.Environ(), "PATH="+newPath, "WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go")
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -580,10 +592,10 @@ func extractHomebrewBottle(r io.Reader, formula, destDir string, binaries []stri
 	return nil
 }
 
-// installWireGuardLinux installs WireGuard tools on Linux via apt.
+// installWireGuardLinux installs WireGuard tools on Linux via apt-get.
 func installWireGuardLinux(ctx context.Context, binDir string) error {
-	// Install via apt (works on Debian/Ubuntu)
-	cmd := exec.CommandContext(ctx, "sudo", "apt", "install", "-y", "wireguard-tools")
+	// Install via apt-get (works on Debian/Ubuntu, stable for scripts)
+	cmd := exec.CommandContext(ctx, "sudo", "apt-get", "install", "-y", "wireguard-tools")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
