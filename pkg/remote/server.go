@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -23,6 +25,7 @@ type Server struct {
 	state              *ServerState
 	mgmtServer         *http.Server // Private management API (WireGuard IP only)
 	registrationServer *http.Server // Public registration API (0.0.0.0)
+	kubeProxy          net.Listener
 }
 
 // NewServer creates a new remote server instance.
@@ -223,6 +226,8 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 		}
 	}()
 
+	s.startKubeAPIProxy()
+
 	return nil
 }
 
@@ -234,6 +239,8 @@ func (s *Server) Stop(ctx context.Context) error {
 			slog.Warn("failed to shutdown HTTP server", "error", err)
 		}
 	}
+
+	s.stopKubeAPIProxy()
 
 	// Bring down WireGuard
 	if err := QuickDown(); err != nil {
@@ -432,4 +439,49 @@ func FetchKubeconfigFromServer(serverIP string) ([]byte, error) {
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+func (s *Server) startKubeAPIProxy() {
+	addr := fmt.Sprintf("%s:6443", serverWGIP(s.state.ServerIP))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		slog.Warn("failed to start kube API proxy", "addr", addr, "error", err)
+		return
+	}
+	s.kubeProxy = ln
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return
+				}
+				slog.Warn("kube API proxy accept error", "error", err)
+				continue
+			}
+			go proxyToKubeAPI(conn)
+		}
+	}()
+	slog.Info("kube API proxy listening", "addr", addr)
+}
+
+func (s *Server) stopKubeAPIProxy() {
+	if s.kubeProxy != nil {
+		s.kubeProxy.Close()
+		s.kubeProxy = nil
+	}
+}
+
+func proxyToKubeAPI(client net.Conn) {
+	defer client.Close()
+
+	upstream, err := net.Dial("tcp", "127.0.0.1:6443")
+	if err != nil {
+		return
+	}
+	defer upstream.Close()
+
+	go io.Copy(upstream, client)
+	io.Copy(client, upstream)
 }
