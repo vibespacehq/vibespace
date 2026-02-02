@@ -150,6 +150,9 @@ Error responses include:
 | Kubeconfig switching | Manage local vs remote contexts | M |
 | Connection status | Show in `vibespace status` | S |
 
+**Progress note (2026-02-02):**
+Remote tunnel and management API are working end-to-end, but Kubernetes API access from clients fails when the kubeconfig is rewritten to the WireGuard IP (e.g. `10.100.0.1:6443`). The API server certificate inside the bundled Lima VM does not include the WireGuard IP in its SANs, so TLS verification fails. Plan: during cluster setup/start (not in `serve`), run a declarative step inside the Lima VM to add `tls-san: 10.100.0.1` to `/etc/rancher/k3s/config.yaml` and restart k3s, so the API cert includes the WireGuard IP before remote mode is used.
+
 ### P2: Help & Diagnostics
 
 | Task | Description | Effort |
