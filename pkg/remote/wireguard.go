@@ -263,33 +263,23 @@ func quickUpMacOS() error {
 		return err
 	}
 
+	// Get address from RemoteState (set during Activate)
+	state, err := LoadRemoteState()
+	if err != nil {
+		return fmt.Errorf("failed to load remote state: %w", err)
+	}
+	if state.LocalIP == "" {
+		return fmt.Errorf("no local IP configured - run 'vibespace remote activate <ip>' first")
+	}
+	address := state.LocalIP
+
 	wgGo := filepath.Join(binDir, "wireguard-go")
 	wg := filepath.Join(binDir, "wg")
 	configPath := filepath.Join("/etc/wireguard", WGInterfaceName+".conf")
 
-	// Parse config to get our address
-	configData, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read WireGuard config: %w", err)
-	}
-
-	address := ""
-	for _, line := range strings.Split(string(configData), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Address") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) == 2 {
-				address = strings.TrimSpace(parts[1])
-			}
-		}
-	}
-	if address == "" {
-		return fmt.Errorf("could not find Address in WireGuard config")
-	}
-
 	// Remove any existing socket
 	sockPath := filepath.Join("/var/run/wireguard", WGInterfaceName+".sock")
-	os.Remove(sockPath)
+	exec.Command("sudo", "rm", "-f", sockPath).Run()
 
 	// 1. Start wireguard-go with utun interface
 	// wireguard-go creates a utun interface and writes the name to WG_TUN_NAME_FILE
