@@ -19,6 +19,7 @@ or another machine. The connection uses WireGuard for secure tunneling.
 Connection flow:
   1. Server admin runs: vibespace serve --generate-token
   2. You run: vibespace remote connect <token>
+     (Tokens expire; if it's rejected, request a new one.)
   3. Give the output public key to the server admin
   4. Server admin runs: vibespace serve --add-client <your-public-key>
   5. Server admin gives you the assigned IP (e.g., 10.100.0.2/32)

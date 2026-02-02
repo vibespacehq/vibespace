@@ -46,7 +46,7 @@ func ErrorCode(err error) (exitCode int, code string) {
 		return ExitUnavailable, "WIREGUARD_NOT_AVAILABLE"
 	case errors.Is(err, ErrRemoteAlreadyConnected):
 		return ExitConflict, "REMOTE_ALREADY_CONNECTED"
-	case errors.Is(err, ErrInvalidToken):
+	case errors.Is(err, ErrInvalidToken), errors.Is(err, ErrInviteTokenInvalid), errors.Is(err, ErrInviteTokenExpired), errors.Is(err, ErrInviteTokenSignatureInvalid):
 		return ExitPermission, "INVALID_TOKEN"
 	default:
 		return ExitInternal, "INTERNAL"
@@ -119,3 +119,12 @@ var ErrRemoteAlreadyConnected = errors.New("already connected to remote server")
 
 // ErrInvalidToken indicates the registration token is invalid or expired.
 var ErrInvalidToken = errors.New("invalid or expired token")
+
+// ErrInviteTokenInvalid indicates the invite token is invalid.
+var ErrInviteTokenInvalid = errors.New("invite token invalid")
+
+// ErrInviteTokenExpired indicates the invite token is expired.
+var ErrInviteTokenExpired = errors.New("invite token expired")
+
+// ErrInviteTokenSignatureInvalid indicates the invite token signature is invalid.
+var ErrInviteTokenSignatureInvalid = errors.New("invite token signature invalid")

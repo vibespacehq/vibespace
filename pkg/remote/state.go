@@ -2,6 +2,8 @@
 package remote
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,16 +14,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 )
 
 // RemoteState represents the client's remote connection state.
 // Stored at ~/.vibespace/remote.json
 type RemoteState struct {
 	Connected       bool      `json:"connected"`
-	ServerHost      string    `json:"server_host,omitempty"`      // Original SSH host (user@hostname)
-	ServerEndpoint  string    `json:"server_endpoint,omitempty"`  // WireGuard endpoint (hostname:51820)
-	LocalIP         string    `json:"local_ip,omitempty"`         // Client's WireGuard IP (10.100.0.2)
-	ServerIP        string    `json:"server_ip,omitempty"`        // Server's WireGuard IP (10.100.0.1)
+	ServerHost      string    `json:"server_host,omitempty"`     // Original SSH host (user@hostname)
+	ServerEndpoint  string    `json:"server_endpoint,omitempty"` // WireGuard endpoint (hostname:51820)
+	LocalIP         string    `json:"local_ip,omitempty"`        // Client's WireGuard IP (10.100.0.2)
+	ServerIP        string    `json:"server_ip,omitempty"`       // Server's WireGuard IP (10.100.0.1)
 	ConnectedAt     time.Time `json:"connected_at,omitempty"`
 	PublicKey       string    `json:"public_key,omitempty"`        // Client's WireGuard public key
 	ServerPublicKey string    `json:"server_public_key,omitempty"` // Server's WireGuard public key
@@ -30,13 +34,15 @@ type RemoteState struct {
 // ServerState represents the server's state for managing clients.
 // Stored at ~/.vibespace/serve.json
 type ServerState struct {
-	Running        bool                 `json:"running"`
-	ListenPort     int                  `json:"listen_port"`
-	ServerIP       string               `json:"server_ip"`        // e.g., "10.100.0.1/24"
-	PublicKey      string               `json:"public_key"`
-	PrivateKeyPath string               `json:"private_key_path"` // Path to private key file
-	Clients        []ClientRegistration `json:"clients"`
-	NextClientIP   int                  `json:"next_client_ip"` // Next octet for client IP (starts at 2)
+	Running               bool                 `json:"running"`
+	ListenPort            int                  `json:"listen_port"`
+	ServerIP              string               `json:"server_ip"` // e.g., "10.100.0.1/24"
+	PublicKey             string               `json:"public_key"`
+	PrivateKeyPath        string               `json:"private_key_path"` // Path to private key file
+	SigningPublicKey      string               `json:"signing_public_key"`
+	SigningPrivateKeyPath string               `json:"signing_private_key_path"`
+	Clients               []ClientRegistration `json:"clients"`
+	NextClientIP          int                  `json:"next_client_ip"` // Next octet for client IP (starts at 2)
 }
 
 // ClientRegistration represents a registered client.
@@ -50,9 +56,13 @@ type ClientRegistration struct {
 // InviteToken contains server connection info for clients.
 // Encoded as base64 JSON and shared via copy-paste.
 type InviteToken struct {
-	ServerPublicKey string `json:"k"` // Server's WireGuard public key
-	Endpoint        string `json:"e"` // Server's public endpoint (host:port)
-	ServerIP        string `json:"s"` // Server's WireGuard IP (e.g., "10.100.0.1")
+	ServerPublicKey  string `json:"k"`   // Server's WireGuard public key
+	Endpoint         string `json:"e"`   // Server's public endpoint (host:port)
+	ServerIP         string `json:"s"`   // Server's WireGuard IP (e.g., "10.100.0.1")
+	ExpiresAt        int64  `json:"exp"` // Unix timestamp (seconds)
+	Nonce            string `json:"n"`   // Random nonce (base64url)
+	SigningPublicKey string `json:"spk"` // Server signing public key (base64url)
+	Signature        string `json:"sig"` // Signature over payload (base64url)
 }
 
 // Default paths and values
@@ -65,6 +75,7 @@ const (
 	DefaultManagementPort = 7780 // Private, binds to WireGuard IP only
 	DefaultServerIP       = "10.100.0.1"
 	DefaultClientIPStart  = 2
+	DefaultInviteTokenTTL = 30 * time.Minute
 )
 
 var (
@@ -220,8 +231,31 @@ func (s *ServerState) AllocateClientIP() string {
 	return ip
 }
 
+type inviteTokenPayload struct {
+	ServerPublicKey  string `json:"k"`
+	Endpoint         string `json:"e"`
+	ServerIP         string `json:"s"`
+	ExpiresAt        int64  `json:"exp"`
+	Nonce            string `json:"n"`
+	SigningPublicKey string `json:"spk"`
+}
+
+func (t *InviteToken) payload() inviteTokenPayload {
+	return inviteTokenPayload{
+		ServerPublicKey:  t.ServerPublicKey,
+		Endpoint:         t.Endpoint,
+		ServerIP:         t.ServerIP,
+		ExpiresAt:        t.ExpiresAt,
+		Nonce:            t.Nonce,
+		SigningPublicKey: t.SigningPublicKey,
+	}
+}
+
 // EncodeInviteToken encodes an invite token to a base64 string.
 func EncodeInviteToken(token *InviteToken) (string, error) {
+	if token.Signature == "" {
+		return "", fmt.Errorf("invite token is not signed")
+	}
 	data, err := json.Marshal(token)
 	if err != nil {
 		return "", err
@@ -244,7 +278,71 @@ func DecodeInviteToken(encoded string) (*InviteToken, error) {
 		return nil, fmt.Errorf("invalid token data: %w", err)
 	}
 
+	if err := VerifyInviteToken(&token, time.Now()); err != nil {
+		return nil, err
+	}
+
 	return &token, nil
+}
+
+// SignInviteToken signs the token payload with the given private key.
+func SignInviteToken(token *InviteToken, privateKey ed25519.PrivateKey) error {
+	payload, err := json.Marshal(token.payload())
+	if err != nil {
+		return fmt.Errorf("failed to marshal token payload: %w", err)
+	}
+	signature := ed25519.Sign(privateKey, payload)
+	token.Signature = base64.RawURLEncoding.EncodeToString(signature)
+	return nil
+}
+
+// VerifyInviteToken verifies signature, required fields, and expiration.
+func VerifyInviteToken(token *InviteToken, now time.Time) error {
+	if token.ServerPublicKey == "" || token.Endpoint == "" || token.ServerIP == "" {
+		return fmt.Errorf("%w: missing required fields", vserrors.ErrInviteTokenInvalid)
+	}
+	if token.SigningPublicKey == "" || token.Signature == "" {
+		return fmt.Errorf("%w: missing signature", vserrors.ErrInviteTokenInvalid)
+	}
+	if token.ExpiresAt == 0 || token.Nonce == "" {
+		return fmt.Errorf("%w: missing expiry/nonce", vserrors.ErrInviteTokenInvalid)
+	}
+
+	pubKeyBytes, err := base64.RawURLEncoding.DecodeString(token.SigningPublicKey)
+	if err != nil {
+		return fmt.Errorf("%w: bad signing key", vserrors.ErrInviteTokenInvalid)
+	}
+	if len(pubKeyBytes) != ed25519.PublicKeySize {
+		return fmt.Errorf("%w: signing key size", vserrors.ErrInviteTokenInvalid)
+	}
+	sigBytes, err := base64.RawURLEncoding.DecodeString(token.Signature)
+	if err != nil {
+		return fmt.Errorf("%w: bad signature encoding", vserrors.ErrInviteTokenInvalid)
+	}
+
+	payload, err := json.Marshal(token.payload())
+	if err != nil {
+		return fmt.Errorf("%w: failed to marshal payload", vserrors.ErrInviteTokenInvalid)
+	}
+	if !ed25519.Verify(ed25519.PublicKey(pubKeyBytes), payload, sigBytes) {
+		return fmt.Errorf("%w: signature mismatch", vserrors.ErrInviteTokenSignatureInvalid)
+	}
+
+	exp := time.Unix(token.ExpiresAt, 0)
+	if now.After(exp) {
+		return fmt.Errorf("%w: expired at %s", vserrors.ErrInviteTokenExpired, exp.Format(time.RFC3339))
+	}
+
+	return nil
+}
+
+// GenerateSigningKey creates a new ed25519 key pair.
+func GenerateSigningKey() (publicKey string, privateKey []byte, err error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to generate signing key: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(pub), priv, nil
 }
 
 // FindClientByPublicKey finds a client by their public key.

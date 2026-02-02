@@ -2,6 +2,9 @@ package remote
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,11 +18,10 @@ import (
 	"time"
 )
 
-
 // Server represents the remote mode server.
 type Server struct {
-	state            *ServerState
-	mgmtServer       *http.Server // Private management API (WireGuard IP only)
+	state              *ServerState
+	mgmtServer         *http.Server // Private management API (WireGuard IP only)
 	registrationServer *http.Server // Public registration API (0.0.0.0)
 }
 
@@ -35,8 +37,8 @@ func NewServer() (*Server, error) {
 	}, nil
 }
 
-// GenerateInviteToken generates an invite token containing server connection info.
-func (s *Server) GenerateInviteToken(publicEndpoint string) (string, error) {
+// GenerateInviteToken generates a signed invite token containing server connection info.
+func (s *Server) GenerateInviteToken(publicEndpoint string, ttl time.Duration) (string, error) {
 	// Ensure WireGuard is initialized so we have a public key
 	if s.state.PublicKey == "" {
 		if err := s.InitializeWireGuard(); err != nil {
@@ -44,10 +46,26 @@ func (s *Server) GenerateInviteToken(publicEndpoint string) (string, error) {
 		}
 	}
 
+	signingPub, signingPriv, err := s.ensureSigningKey()
+	if err != nil {
+		return "", err
+	}
+
+	if ttl <= 0 {
+		ttl = DefaultInviteTokenTTL
+	}
+
 	token := &InviteToken{
-		ServerPublicKey: s.state.PublicKey,
-		Endpoint:        publicEndpoint,
-		ServerIP:        strings.TrimSuffix(s.state.ServerIP, "/24"),
+		ServerPublicKey:  s.state.PublicKey,
+		Endpoint:         publicEndpoint,
+		ServerIP:         serverWGIP(s.state.ServerIP),
+		ExpiresAt:        time.Now().Add(ttl).Unix(),
+		Nonce:            newTokenNonce(),
+		SigningPublicKey: signingPub,
+	}
+
+	if err := SignInviteToken(token, signingPriv); err != nil {
+		return "", err
 	}
 
 	return EncodeInviteToken(token)
@@ -143,7 +161,10 @@ func (s *Server) WriteWireGuardConfig() error {
 		Clients:    clients,
 	}
 
-	tempPath, _ := WriteServerConfig(config)
+	tempPath, err := WriteServerConfig(config)
+	if err != nil {
+		return err
+	}
 
 	// Install the config
 	if err := InstallConfig(tempPath); err != nil {
@@ -182,7 +203,7 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/kubeconfig", s.handleKubeconfig)
 
-	mgmtAddr := fmt.Sprintf("%s:%d", DefaultServerIP, DefaultManagementPort)
+	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort)
 	s.mgmtServer = &http.Server{
 		Addr:    mgmtAddr,
 		Handler: mux,
@@ -258,8 +279,9 @@ func (s *Server) handleKubeconfig(w http.ResponseWriter, r *http.Request) {
 	// The kubeconfig typically has server: https://127.0.0.1:6443
 	// We need to replace it with server: https://10.100.0.1:6443
 	content := string(data)
-	content = strings.ReplaceAll(content, "127.0.0.1", DefaultServerIP)
-	content = strings.ReplaceAll(content, "localhost", DefaultServerIP)
+	wgIP := serverWGIP(s.state.ServerIP)
+	content = strings.ReplaceAll(content, "127.0.0.1", wgIP)
+	content = strings.ReplaceAll(content, "localhost", wgIP)
 
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Write([]byte(content))
@@ -267,12 +289,61 @@ func (s *Server) handleKubeconfig(w http.ResponseWriter, r *http.Request) {
 
 // reloadWireGuard reloads the WireGuard configuration.
 func (s *Server) reloadWireGuard() error {
-	// The simplest way is to use wg syncconf, but that requires the interface to be up
-	// For simplicity, we'll do down+up
+	if err := SyncWireGuardConfig(); err == nil {
+		return nil
+	}
+	// Fallback to down+up if sync fails
 	if err := QuickDown(); err != nil {
 		return err
 	}
 	return QuickUp()
+}
+
+func (s *Server) ensureSigningKey() (string, []byte, error) {
+	if s.state.SigningPublicKey != "" && s.state.SigningPrivateKeyPath != "" {
+		key, err := os.ReadFile(s.state.SigningPrivateKeyPath)
+		if err == nil && len(key) == ed25519.PrivateKeySize {
+			return s.state.SigningPublicKey, key, nil
+		}
+	}
+
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return "", nil, err
+	}
+
+	pub, priv, err := GenerateSigningKey()
+	if err != nil {
+		return "", nil, err
+	}
+
+	privateKeyPath := filepath.Join(vsHome, "remote-signing.key")
+	if err := os.WriteFile(privateKeyPath, priv, 0600); err != nil {
+		return "", nil, fmt.Errorf("failed to write signing key: %w", err)
+	}
+
+	s.state.SigningPublicKey = pub
+	s.state.SigningPrivateKeyPath = privateKeyPath
+	if err := s.state.Save(); err != nil {
+		return "", nil, fmt.Errorf("failed to save signing key: %w", err)
+	}
+
+	return pub, priv, nil
+}
+
+func newTokenNonce() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return base64.RawURLEncoding.EncodeToString(b[:])
+}
+
+func serverWGIP(serverIP string) string {
+	if serverIP == "" {
+		return DefaultServerIP
+	}
+	return strings.Split(serverIP, "/")[0]
 }
 
 // SpawnServe spawns the serve process in the background (daemonizes).
@@ -344,53 +415,6 @@ func SpawnServe() error {
 func IsServeRunning() bool {
 	// Check if WireGuard interface is up
 	return IsInterfaceUp()
-}
-
-// StopServe stops the serve process.
-func StopServe() error {
-	vsHome, err := getVibespaceHome()
-	if err != nil {
-		return err
-	}
-
-	// Bring down WireGuard
-	if err := QuickDown(); err != nil {
-		slog.Warn("failed to stop WireGuard", "error", err)
-	}
-
-	// Kill the serve process
-	pidFile := filepath.Join(vsHome, "serve.pid")
-	data, err := os.ReadFile(pidFile)
-	if err == nil {
-		var pid int
-		if _, err := fmt.Sscanf(string(data), "%d", &pid); err == nil {
-			if process, err := os.FindProcess(pid); err == nil {
-				process.Signal(syscall.SIGTERM)
-				time.Sleep(500 * time.Millisecond)
-				process.Signal(syscall.SIGKILL)
-			}
-		}
-	}
-
-	os.Remove(pidFile)
-
-	// Update state
-	state, err := LoadServerState()
-	if err == nil {
-		state.Running = false
-		state.Save()
-	}
-
-	return nil
-}
-
-// GetServerPublicKey returns the server's WireGuard public key.
-func GetServerPublicKey() (string, error) {
-	state, err := LoadServerState()
-	if err != nil {
-		return "", err
-	}
-	return state.PublicKey, nil
 }
 
 // FetchKubeconfigFromServer fetches the kubeconfig from the server's management API.

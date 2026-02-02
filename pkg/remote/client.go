@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -117,8 +118,19 @@ func Activate(assignedIP string) error {
 		ServerIP:        state.ServerIP,
 	}
 
-	if _, err := WriteClientConfig(config); err != nil {
+	tempPath, err := WriteClientConfig(config)
+	if err != nil {
 		return fmt.Errorf("failed to write WireGuard config: %w", err)
+	}
+
+	// Install config to /etc/wireguard (requires sudo)
+	if err := InstallConfig(tempPath); err != nil {
+		return fmt.Errorf("failed to install WireGuard config: %w", err)
+	}
+
+	// Save state with LocalIP before bringing up WireGuard (QuickUp reads it from disk)
+	if err := state.Save(); err != nil {
+		return fmt.Errorf("failed to save remote state: %w", err)
 	}
 
 	// Bring up WireGuard
@@ -127,9 +139,12 @@ func Activate(assignedIP string) error {
 		return fmt.Errorf("failed to start WireGuard: %w", err)
 	}
 
-	// Wait for tunnel to establish
-	slog.Info("waiting for tunnel to establish")
-	time.Sleep(2 * time.Second)
+	// Wait for tunnel connectivity
+	slog.Info("waiting for tunnel connectivity")
+	if err := waitForConnectivity(state.ServerIP, 30*time.Second); err != nil {
+		QuickDown()
+		return fmt.Errorf("tunnel did not establish: %w", err)
+	}
 
 	// Fetch kubeconfig from management API
 	slog.Info("fetching kubeconfig from server")
@@ -186,6 +201,12 @@ func Disconnect() error {
 		os.Remove(kubeconfigPath)
 	}
 
+	// Remove client private key
+	vsHome, _ := getVibespaceHome()
+	if vsHome != "" {
+		os.Remove(filepath.Join(vsHome, "wg-client.key"))
+	}
+
 	// Clear remote state
 	state.Connected = false
 	state.ServerHost = ""
@@ -207,4 +228,24 @@ func Disconnect() error {
 // GetStatus returns the current remote connection status.
 func GetStatus() (*RemoteState, error) {
 	return LoadRemoteState()
+}
+
+// waitForConnectivity pings the server until it responds or timeout.
+func waitForConnectivity(serverIP string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	attempt := 0
+	for time.Now().Before(deadline) {
+		attempt++
+		// Try to reach the management API
+		client := &http.Client{Timeout: 2 * time.Second}
+		resp, err := client.Get(fmt.Sprintf("http://%s:%d/health", serverIP, DefaultManagementPort))
+		if err == nil {
+			resp.Body.Close()
+			slog.Info("tunnel connectivity established", "attempts", attempt)
+			return nil
+		}
+		slog.Debug("waiting for connectivity", "attempt", attempt, "error", err)
+		time.Sleep(1 * time.Second)
+	}
+	return fmt.Errorf("timeout waiting for connectivity to %s", serverIP)
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/yagizdagabak/vibespace/pkg/remote"
@@ -43,6 +44,7 @@ var (
 	serveEndpoint      string
 	serveAddClient     string
 	serveForeground    bool
+	serveTokenTTL      time.Duration
 )
 
 func init() {
@@ -50,6 +52,7 @@ func init() {
 	serveCmd.Flags().StringVar(&serveEndpoint, "endpoint", "", "Public endpoint for clients (override auto-detection)")
 	serveCmd.Flags().StringVar(&serveAddClient, "add-client", "", "Add a client by their WireGuard public key")
 	serveCmd.Flags().BoolVar(&serveForeground, "foreground", false, "Run in foreground (don't daemonize)")
+	serveCmd.Flags().DurationVar(&serveTokenTTL, "token-ttl", remote.DefaultInviteTokenTTL, "Invite token time-to-live (e.g. 15m, 1h)")
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -110,18 +113,21 @@ func runServe(cmd *cobra.Command, args []string) error {
 			endpoint = fmt.Sprintf("%s:%d", endpoint, remote.DefaultWireGuardPort)
 		}
 
-		token, err := server.GenerateInviteToken(endpoint)
+		token, err := server.GenerateInviteToken(endpoint, serveTokenTTL)
 		if err != nil {
 			return fmt.Errorf("failed to generate token: %w", err)
 		}
 
 		if out.IsJSONMode() {
 			return out.JSON(NewJSONOutput(true, ServeTokenOutput{
-				Token: token,
+				Token:     token,
+				ExpiresIn: serveTokenTTL.String(),
 			}, nil))
 		}
 
+		expiresAt := time.Now().Add(serveTokenTTL).Format("2006-01-02 15:04:05")
 		fmt.Printf("Invite token: %s\n", out.Teal(token))
+		fmt.Printf("Expires at: %s\n", out.Dim(expiresAt))
 		fmt.Println()
 		fmt.Println("Give this token to the client:")
 		fmt.Printf("  vibespace remote connect %s\n", token)

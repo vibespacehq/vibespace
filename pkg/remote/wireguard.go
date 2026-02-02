@@ -84,7 +84,7 @@ Address = {{.Address}}
 [Peer]
 PublicKey = {{.ServerPublicKey}}
 Endpoint = {{.ServerEndpoint}}
-AllowedIPs = {{.ServerIP}}/32
+AllowedIPs = 10.100.0.0/24
 PersistentKeepalive = 25
 `
 
@@ -283,26 +283,54 @@ func quickUpMacOS() error {
 	os.Remove(tunNameFile)
 
 	// 1. Start wireguard-go with utun interface
-	cmd := exec.Command("sudo", wgGo, "utun")
-	cmd.Env = append(os.Environ(), "WG_TUN_NAME_FILE="+tunNameFile)
+	// Use "sudo env VAR=val cmd" to pass env through sudo
+	cmd := exec.Command("sudo", "env", "WG_TUN_NAME_FILE="+tunNameFile, wgGo, "utun")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to start wireguard-go: %w", err)
 	}
 
-	// Read the actual interface name assigned by the kernel
-	tunNameData, err := os.ReadFile(tunNameFile)
+	// Read the actual interface name assigned by the kernel (file is owned by root)
+	out, err := exec.Command("sudo", "cat", tunNameFile).Output()
 	if err != nil {
 		return fmt.Errorf("failed to read tunnel name: %w", err)
 	}
-	tunName := strings.TrimSpace(string(tunNameData))
+	tunName := strings.TrimSpace(string(out))
 	if tunName == "" {
 		return fmt.Errorf("empty tunnel name")
 	}
 
 	// 2. Configure with wg setconf
-	cmd = exec.Command("sudo", wg, "setconf", tunName, configPath)
+	// wg doesn't understand Address (wg-quick extension), so strip it
+	configData, err := exec.Command("sudo", "cat", configPath).Output()
+	if err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+
+	// Filter out Address and other wg-quick extensions
+	var wgConfig []string
+	for _, line := range strings.Split(string(configData), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Address") ||
+			strings.HasPrefix(trimmed, "DNS") ||
+			strings.HasPrefix(trimmed, "MTU") ||
+			strings.HasPrefix(trimmed, "PostUp") ||
+			strings.HasPrefix(trimmed, "PostDown") ||
+			strings.HasPrefix(trimmed, "SaveConfig") {
+			continue
+		}
+		wgConfig = append(wgConfig, line)
+	}
+
+	// Write filtered config to temp file
+	tmpConfig := filepath.Join(os.TempDir(), "wg-config-filtered.conf")
+	if err := os.WriteFile(tmpConfig, []byte(strings.Join(wgConfig, "\n")), 0600); err != nil {
+		return fmt.Errorf("failed to write filtered config: %w", err)
+	}
+	defer os.Remove(tmpConfig)
+
+	cmd = exec.Command("sudo", wg, "setconf", tunName, tmpConfig)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -393,16 +421,7 @@ func IsInterfaceUp() bool {
 		return false
 	}
 
-	// On macOS, use the saved utun name
-	ifName := WGInterfaceName
-	if runtime.GOOS == "darwin" {
-		vsHome, _ := getVibespaceHome()
-		if tunNameData, err := os.ReadFile(filepath.Join(vsHome, "utun-name")); err == nil {
-			if name := strings.TrimSpace(string(tunNameData)); name != "" {
-				ifName = name
-			}
-		}
-	}
+	ifName := wireguardInterfaceName()
 
 	cmd := exec.Command("sudo", wg, "show", ifName)
 	err = cmd.Run()
@@ -415,15 +434,8 @@ func IsWireGuardInstalled() bool {
 	if err != nil {
 		return false
 	}
-	wgQuick, err := wgQuickBin()
-	if err != nil {
-		return false
-	}
 
 	if _, err := os.Stat(wg); os.IsNotExist(err) {
-		return false
-	}
-	if _, err := os.Stat(wgQuick); os.IsNotExist(err) {
 		return false
 	}
 
@@ -436,14 +448,80 @@ func IsWireGuardInstalled() bool {
 		if _, err := os.Stat(wgGo); os.IsNotExist(err) {
 			return false
 		}
+		return true
+	}
+
+	wgQuick, err := wgQuickBin()
+	if err != nil {
+		return false
+	}
+	if _, err := os.Stat(wgQuick); os.IsNotExist(err) {
+		return false
 	}
 
 	return true
 }
 
-// IsWireGuardAvailable checks if WireGuard tools are available (installed and ready to use).
-func IsWireGuardAvailable() bool {
-	return IsWireGuardInstalled()
+// SyncWireGuardConfig applies the current /etc/wireguard config without downing the interface.
+func SyncWireGuardConfig() error {
+	if !IsInterfaceUp() {
+		return fmt.Errorf("wireguard interface is not up")
+	}
+
+	wg, err := wgBin()
+	if err != nil {
+		return err
+	}
+
+	configPath := fmt.Sprintf("/etc/wireguard/%s.conf", WGInterfaceName)
+	rawConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read wireguard config: %w", err)
+	}
+
+	filteredConfig := stripWGQuickConfig(rawConfig)
+	tmpConfig := filepath.Join(os.TempDir(), "wg-syncconf.conf")
+	if err := os.WriteFile(tmpConfig, filteredConfig, 0600); err != nil {
+		return fmt.Errorf("failed to write filtered config: %w", err)
+	}
+	defer os.Remove(tmpConfig)
+
+	ifName := wireguardInterfaceName()
+	cmd := exec.Command("sudo", wg, "syncconf", ifName, tmpConfig)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to sync WireGuard config: %w", err)
+	}
+	return nil
+}
+
+func wireguardInterfaceName() string {
+	ifName := WGInterfaceName
+	if runtime.GOOS == "darwin" {
+		vsHome, _ := getVibespaceHome()
+		if tunNameData, err := os.ReadFile(filepath.Join(vsHome, "utun-name")); err == nil {
+			if name := strings.TrimSpace(string(tunNameData)); name != "" {
+				ifName = name
+			}
+		}
+	}
+	return ifName
+}
+
+func stripWGQuickConfig(configData []byte) []byte {
+	var wgConfig []string
+	for _, line := range strings.Split(string(configData), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Address") ||
+			strings.HasPrefix(trimmed, "DNS") ||
+			strings.HasPrefix(trimmed, "MTU") ||
+			strings.HasPrefix(trimmed, "PostUp") ||
+			strings.HasPrefix(trimmed, "PostDown") ||
+			strings.HasPrefix(trimmed, "SaveConfig") {
+			continue
+		}
+		wgConfig = append(wgConfig, line)
+	}
+	return []byte(strings.Join(wgConfig, "\n"))
 }
 
 // InstallWireGuard downloads and installs WireGuard tools to the bundled location.
@@ -714,74 +792,4 @@ func installWireGuardLinux(ctx context.Context, binDir string) error {
 	modprobe.Run() // Ignore error - module might already be loaded or built-in
 
 	return nil
-}
-
-// downloadHomebrewBottleLinux downloads a Homebrew Linux bottle.
-func downloadHomebrewBottleLinux(ctx context.Context, formula, goArch, destDir string, binaries []string) error {
-	// Get formula info from Homebrew API
-	apiURL := fmt.Sprintf("https://formulae.brew.sh/api/formula/%s.json", formula)
-	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to fetch formula info: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to fetch formula info: status %d", resp.StatusCode)
-	}
-
-	var formulaInfo HomebrewFormula
-	if err := json.NewDecoder(resp.Body).Decode(&formulaInfo); err != nil {
-		return fmt.Errorf("failed to parse formula info: %w", err)
-	}
-
-	// Determine bottle name for Linux
-	bottleName := "x86_64_linux"
-	if goArch == "arm64" {
-		bottleName = "arm64_linux"
-	}
-
-	bottle, ok := formulaInfo.Bottle.Stable.Files[bottleName]
-	if !ok {
-		return fmt.Errorf("no Linux bottle found for architecture %s", goArch)
-	}
-
-	// Download the bottle
-	req, err = http.NewRequestWithContext(ctx, "GET", bottle.URL, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create download request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer QQ==")
-
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to download bottle: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download bottle: status %d", resp.StatusCode)
-	}
-
-	return extractHomebrewBottle(resp.Body, formula, destDir, binaries)
-}
-
-// GetWireGuardStatus returns the current WireGuard interface status.
-func GetWireGuardStatus() (string, error) {
-	wg, err := wgBin()
-	if err != nil {
-		return "", err
-	}
-
-	cmd := exec.Command("sudo", wg, "show", WGInterfaceName)
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get WireGuard status: %w", err)
-	}
-	return string(output), nil
 }
