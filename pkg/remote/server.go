@@ -214,6 +214,8 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 
 	slog.Info("starting management API", "addr", mgmtAddr)
 
+	s.startKubeAPIProxy()
+
 	if foreground {
 		// Run in foreground
 		return s.mgmtServer.ListenAndServe()
@@ -225,8 +227,6 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 			slog.Error("management API error", "error", err)
 		}
 	}()
-
-	s.startKubeAPIProxy()
 
 	return nil
 }
