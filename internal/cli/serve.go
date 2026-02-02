@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -109,8 +112,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 
 		// Add default port if not specified
-		if !containsPort(endpoint) {
-			endpoint = fmt.Sprintf("%s:%d", endpoint, remote.DefaultWireGuardPort)
+		endpoint = ensureEndpointPort(endpoint, remote.DefaultWireGuardPort)
+		if endpoint == "" {
+			return fmt.Errorf("invalid endpoint")
 		}
 
 		token, err := server.GenerateInviteToken(endpoint, serveTokenTTL)
@@ -213,4 +217,20 @@ func containsPort(s string) bool {
 		}
 	}
 	return false
+}
+
+func ensureEndpointPort(endpoint string, port int) string {
+	if endpoint == "" {
+		return ""
+	}
+	if _, _, err := net.SplitHostPort(endpoint); err == nil {
+		return endpoint
+	}
+	if net.ParseIP(endpoint) != nil || strings.Contains(endpoint, ":") {
+		return net.JoinHostPort(endpoint, strconv.Itoa(port))
+	}
+	if containsPort(endpoint) {
+		return endpoint
+	}
+	return fmt.Sprintf("%s:%d", endpoint, port)
 }
