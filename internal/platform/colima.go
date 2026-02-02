@@ -62,6 +62,10 @@ func (m *ColimaManager) kubectlBin() string {
 	return filepath.Join(m.binDir, "kubectl")
 }
 
+func (m *ColimaManager) dockerBin() string {
+	return filepath.Join(m.binDir, "docker")
+}
+
 // limactlBin returns the path to the limactl binary
 func (m *ColimaManager) limactlBin() string {
 	return filepath.Join(m.limaBinDir(), "limactl")
@@ -168,7 +172,7 @@ func (m *ColimaManager) IsInstalled() (bool, error) {
 	return true, nil
 }
 
-// Install downloads Colima, Lima, and kubectl
+// Install downloads Colima, Lima, kubectl, and Docker CLI
 func (m *ColimaManager) Install(ctx context.Context) error {
 	// Ensure bin directory exists
 	if err := os.MkdirAll(m.binDir, 0755); err != nil {
@@ -188,6 +192,11 @@ func (m *ColimaManager) Install(ctx context.Context) error {
 	// Download kubectl
 	if err := m.downloadKubectl(ctx); err != nil {
 		return fmt.Errorf("failed to download kubectl: %w", err)
+	}
+
+	// Download Docker CLI (Colima provides the daemon, but needs the CLI)
+	if err := m.downloadDocker(ctx); err != nil {
+		return fmt.Errorf("failed to download Docker CLI: %w", err)
 	}
 
 	return nil
@@ -291,6 +300,52 @@ func (m *ColimaManager) downloadKubectl(ctx context.Context) error {
 	)
 
 	return downloadBinary(ctx, url, m.kubectlBin())
+}
+
+func (m *ColimaManager) downloadDocker(ctx context.Context) error {
+	// Docker CLI binaries: https://download.docker.com/mac/static/stable/
+	// Colima requires the Docker CLI (client) - it provides the daemon inside the VM
+	arch := m.platform.Arch
+	if arch == "arm64" {
+		arch = "aarch64"
+	}
+	// amd64 stays as x86_64 for Docker downloads
+	if arch == "amd64" {
+		arch = "x86_64"
+	}
+
+	// Use a known stable version
+	version := "27.5.1"
+	url := fmt.Sprintf(
+		"https://download.docker.com/mac/static/stable/%s/docker-%s.tgz",
+		arch, version,
+	)
+
+	// Download and extract to a temp location, then move the docker binary
+	tempDir, err := os.MkdirTemp("", "docker-download-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	if err := downloadAndExtractTarGz(ctx, url, tempDir); err != nil {
+		return fmt.Errorf("failed to download and extract Docker: %w", err)
+	}
+
+	// The archive extracts to docker/docker, move it to binDir
+	extractedBin := filepath.Join(tempDir, "docker", "docker")
+	if err := os.Rename(extractedBin, m.dockerBin()); err != nil {
+		// Rename may fail across filesystems, try copy instead
+		input, readErr := os.ReadFile(extractedBin)
+		if readErr != nil {
+			return fmt.Errorf("failed to read extracted docker binary: %w", readErr)
+		}
+		if writeErr := os.WriteFile(m.dockerBin(), input, 0755); writeErr != nil {
+			return fmt.Errorf("failed to write docker binary: %w", writeErr)
+		}
+	}
+
+	return nil
 }
 
 // IsRunning checks if the Colima VM is running WITH Kubernetes enabled
