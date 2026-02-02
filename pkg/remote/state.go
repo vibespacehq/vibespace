@@ -270,8 +270,9 @@ func (s *ServerState) AddClient(name, pubKey, assignedIP string) {
 // DetectPublicIP attempts to detect the machine's public IP address.
 func DetectPublicIP() (string, error) {
 	// Try multiple services in case one is down
+	// Use /ip endpoint for ifconfig.me to get plain text
 	services := []string{
-		"https://ifconfig.me",
+		"https://ifconfig.me/ip",
 		"https://api.ipify.org",
 		"https://icanhazip.com",
 	}
@@ -279,23 +280,31 @@ func DetectPublicIP() (string, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for _, url := range services {
-		resp, err := client.Get(url)
+		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			continue
 		}
-		defer resp.Body.Close()
+		// Request plain text response
+		req.Header.Set("Accept", "text/plain")
+		req.Header.Set("User-Agent", "curl/7.0")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
 
 		if resp.StatusCode != http.StatusOK {
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			continue
-		}
-
 		ip := strings.TrimSpace(string(body))
-		if ip != "" {
+		if ip != "" && len(ip) < 50 { // Sanity check - IP shouldn't be too long
 			return ip, nil
 		}
 	}
