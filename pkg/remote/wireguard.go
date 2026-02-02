@@ -277,16 +277,13 @@ func quickUpMacOS() error {
 	wg := filepath.Join(binDir, "wg")
 	configPath := filepath.Join("/etc/wireguard", WGInterfaceName+".conf")
 
-	// Remove any existing socket
-	sockPath := filepath.Join("/var/run/wireguard", WGInterfaceName+".sock")
-	exec.Command("sudo", "rm", "-f", sockPath).Run()
-
-	// 1. Start wireguard-go with utun interface
-	// wireguard-go creates a utun interface and writes the name to WG_TUN_NAME_FILE
+	// On macOS, interface name must be utun[0-9]+
+	// Use "utun" to let the kernel pick an available number
 	tunNameFile := filepath.Join(os.TempDir(), "wg-tun-name")
 	os.Remove(tunNameFile)
 
-	cmd := exec.Command("sudo", wgGo, WGInterfaceName)
+	// 1. Start wireguard-go with utun interface
+	cmd := exec.Command("sudo", wgGo, "utun")
 	cmd.Env = append(os.Environ(), "WG_TUN_NAME_FILE="+tunNameFile)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -294,8 +291,18 @@ func quickUpMacOS() error {
 		return fmt.Errorf("failed to start wireguard-go: %w", err)
 	}
 
+	// Read the actual interface name assigned by the kernel
+	tunNameData, err := os.ReadFile(tunNameFile)
+	if err != nil {
+		return fmt.Errorf("failed to read tunnel name: %w", err)
+	}
+	tunName := strings.TrimSpace(string(tunNameData))
+	if tunName == "" {
+		return fmt.Errorf("empty tunnel name")
+	}
+
 	// 2. Configure with wg setconf
-	cmd = exec.Command("sudo", wg, "setconf", WGInterfaceName, configPath)
+	cmd = exec.Command("sudo", wg, "setconf", tunName, configPath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -305,7 +312,7 @@ func quickUpMacOS() error {
 	// 3. Assign IP address with ifconfig
 	// Address format is like "10.100.0.5/32" - need to extract IP
 	ip := strings.Split(address, "/")[0]
-	cmd = exec.Command("sudo", "ifconfig", WGInterfaceName, "inet", ip, ip, "up")
+	cmd = exec.Command("sudo", "ifconfig", tunName, "inet", ip, ip, "up")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -313,11 +320,15 @@ func quickUpMacOS() error {
 	}
 
 	// 4. Add route to server's WireGuard subnet (10.100.0.0/24)
-	cmd = exec.Command("sudo", "route", "-n", "add", "-net", "10.100.0.0/24", "-interface", WGInterfaceName)
+	cmd = exec.Command("sudo", "route", "-n", "add", "-net", "10.100.0.0/24", "-interface", tunName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	// Ignore route errors (might already exist)
 	cmd.Run()
+
+	// Save the tunnel name for QuickDown
+	vsHome, _ := getVibespaceHome()
+	os.WriteFile(filepath.Join(vsHome, "utun-name"), []byte(tunName), 0644)
 
 	return nil
 }
@@ -355,14 +366,22 @@ func quickDownLinux() error {
 
 // quickDownMacOS shuts down wireguard-go by removing its socket.
 func quickDownMacOS() error {
+	vsHome, _ := getVibespaceHome()
+
+	// Read the saved tunnel name
+	tunNameData, err := os.ReadFile(filepath.Join(vsHome, "utun-name"))
+	tunName := strings.TrimSpace(string(tunNameData))
+	if err != nil || tunName == "" {
+		tunName = "utun" // fallback
+	}
+
 	// Remove the control socket - this causes wireguard-go to shut down
-	sockPath := filepath.Join("/var/run/wireguard", WGInterfaceName+".sock")
+	sockPath := filepath.Join("/var/run/wireguard", tunName+".sock")
 	cmd := exec.Command("sudo", "rm", "-f", sockPath)
 	cmd.Run() // Ignore errors
 
-	// Also try to delete the interface directly (might not work on all macOS versions)
-	cmd = exec.Command("sudo", "ifconfig", WGInterfaceName, "destroy")
-	cmd.Run() // Ignore errors
+	// Clean up saved tunnel name
+	os.Remove(filepath.Join(vsHome, "utun-name"))
 
 	return nil
 }
@@ -374,7 +393,18 @@ func IsInterfaceUp() bool {
 		return false
 	}
 
-	cmd := exec.Command("sudo", wg, "show", WGInterfaceName)
+	// On macOS, use the saved utun name
+	ifName := WGInterfaceName
+	if runtime.GOOS == "darwin" {
+		vsHome, _ := getVibespaceHome()
+		if tunNameData, err := os.ReadFile(filepath.Join(vsHome, "utun-name")); err == nil {
+			if name := strings.TrimSpace(string(tunNameData)); name != "" {
+				ifName = name
+			}
+		}
+	}
+
+	cmd := exec.Command("sudo", wg, "show", ifName)
 	err = cmd.Run()
 	return err == nil
 }
