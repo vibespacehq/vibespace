@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -370,12 +371,16 @@ func DetectPublicIP() (string, error) {
 	// Try multiple services in case one is down
 	// Use /ip endpoint for ifconfig.me to get plain text
 	services := []string{
+		"https://api.ipify.org?format=text",
+		"https://ipv4.icanhazip.com",
+		"https://ipv4.ifconfig.me/ip",
 		"https://ifconfig.me/ip",
 		"https://api.ipify.org",
 		"https://icanhazip.com",
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
+	var ipv6Fallback string
 
 	for _, url := range services {
 		req, err := http.NewRequest("GET", url, nil)
@@ -403,9 +408,21 @@ func DetectPublicIP() (string, error) {
 
 		ip := strings.TrimSpace(string(body))
 		if ip != "" && len(ip) < 50 { // Sanity check - IP shouldn't be too long
-			return ip, nil
+			parsed := net.ParseIP(ip)
+			if parsed == nil {
+				continue
+			}
+			if parsed.To4() != nil {
+				return ip, nil
+			}
+			if ipv6Fallback == "" {
+				ipv6Fallback = ip
+			}
 		}
 	}
 
+	if ipv6Fallback != "" {
+		return ipv6Fallback, nil
+	}
 	return "", fmt.Errorf("could not detect public IP")
 }
