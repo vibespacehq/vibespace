@@ -228,28 +228,23 @@ func InstallConfig(tempPath string) error {
 	return nil
 }
 
-// QuickUp brings up the WireGuard interface using wg-quick.
+// QuickUp brings up the WireGuard interface.
+// On Linux, uses wg-quick. On macOS, uses wireguard-go + wg + ifconfig directly.
 func QuickUp() error {
+	if runtime.GOOS == "linux" {
+		return quickUpLinux()
+	}
+	return quickUpMacOS()
+}
+
+// quickUpLinux uses wg-quick on Linux.
+func quickUpLinux() error {
 	wgQuick, err := wgQuickBin()
 	if err != nil {
 		return err
 	}
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "linux" {
-		// Linux uses native kernel WireGuard, no special env needed
-		cmd = exec.Command("sudo", wgQuick, "up", WGInterfaceName)
-	} else {
-		// macOS needs wireguard-go, custom PATH, and bash 4+
-		binDir, _ := getBinDir()
-		bashBin := filepath.Join(binDir, "bash")
-		currentPath := os.Getenv("PATH")
-		newPath := fmt.Sprintf("%s:%s", binDir, currentPath)
-
-		// Run: sudo -E bash wg-quick up wg0
-		cmd = exec.Command("sudo", "-E", bashBin, wgQuick, "up", WGInterfaceName)
-		cmd.Env = append(os.Environ(), "PATH="+newPath, "WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go")
-	}
+	cmd := exec.Command("sudo", wgQuick, "up", WGInterfaceName)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -260,27 +255,100 @@ func QuickUp() error {
 	return nil
 }
 
-// QuickDown brings down the WireGuard interface using wg-quick.
+// quickUpMacOS sets up WireGuard manually using wireguard-go, wg, and ifconfig.
+// This avoids needing bash 4+ which wg-quick requires.
+func quickUpMacOS() error {
+	binDir, err := getBinDir()
+	if err != nil {
+		return err
+	}
+
+	wgGo := filepath.Join(binDir, "wireguard-go")
+	wg := filepath.Join(binDir, "wg")
+	configPath := filepath.Join("/etc/wireguard", WGInterfaceName+".conf")
+
+	// Parse config to get our address
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read WireGuard config: %w", err)
+	}
+
+	address := ""
+	for _, line := range strings.Split(string(configData), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Address") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				address = strings.TrimSpace(parts[1])
+			}
+		}
+	}
+	if address == "" {
+		return fmt.Errorf("could not find Address in WireGuard config")
+	}
+
+	// Remove any existing socket
+	sockPath := filepath.Join("/var/run/wireguard", WGInterfaceName+".sock")
+	os.Remove(sockPath)
+
+	// 1. Start wireguard-go with utun interface
+	// wireguard-go creates a utun interface and writes the name to WG_TUN_NAME_FILE
+	tunNameFile := filepath.Join(os.TempDir(), "wg-tun-name")
+	os.Remove(tunNameFile)
+
+	cmd := exec.Command("sudo", wgGo, WGInterfaceName)
+	cmd.Env = append(os.Environ(), "WG_TUN_NAME_FILE="+tunNameFile)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start wireguard-go: %w", err)
+	}
+
+	// 2. Configure with wg setconf
+	cmd = exec.Command("sudo", wg, "setconf", WGInterfaceName, configPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to configure WireGuard: %w", err)
+	}
+
+	// 3. Assign IP address with ifconfig
+	// Address format is like "10.100.0.5/32" - need to extract IP
+	ip := strings.Split(address, "/")[0]
+	cmd = exec.Command("sudo", "ifconfig", WGInterfaceName, "inet", ip, ip, "up")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to assign IP address: %w", err)
+	}
+
+	// 4. Add route to server's WireGuard subnet (10.100.0.0/24)
+	cmd = exec.Command("sudo", "route", "-n", "add", "-net", "10.100.0.0/24", "-interface", WGInterfaceName)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Ignore route errors (might already exist)
+	cmd.Run()
+
+	return nil
+}
+
+// QuickDown brings down the WireGuard interface.
+// On Linux, uses wg-quick. On macOS, removes the socket to shut down wireguard-go.
 func QuickDown() error {
+	if runtime.GOOS == "linux" {
+		return quickDownLinux()
+	}
+	return quickDownMacOS()
+}
+
+// quickDownLinux uses wg-quick on Linux.
+func quickDownLinux() error {
 	wgQuick, err := wgQuickBin()
 	if err != nil {
 		return err
 	}
 
-	var cmd *exec.Cmd
-	if runtime.GOOS == "linux" {
-		// Linux uses native kernel WireGuard
-		cmd = exec.Command("sudo", wgQuick, "down", WGInterfaceName)
-	} else {
-		// macOS needs wireguard-go, custom PATH, and bash 4+
-		binDir, _ := getBinDir()
-		bashBin := filepath.Join(binDir, "bash")
-		currentPath := os.Getenv("PATH")
-		newPath := fmt.Sprintf("%s:%s", binDir, currentPath)
-
-		cmd = exec.Command("sudo", "-E", bashBin, wgQuick, "down", WGInterfaceName)
-		cmd.Env = append(os.Environ(), "PATH="+newPath, "WG_QUICK_USERSPACE_IMPLEMENTATION=wireguard-go")
-	}
+	cmd := exec.Command("sudo", wgQuick, "down", WGInterfaceName)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -292,6 +360,20 @@ func QuickDown() error {
 		}
 		return fmt.Errorf("failed to bring down WireGuard interface: %w", err)
 	}
+	return nil
+}
+
+// quickDownMacOS shuts down wireguard-go by removing its socket.
+func quickDownMacOS() error {
+	// Remove the control socket - this causes wireguard-go to shut down
+	sockPath := filepath.Join("/var/run/wireguard", WGInterfaceName+".sock")
+	cmd := exec.Command("sudo", "rm", "-f", sockPath)
+	cmd.Run() // Ignore errors
+
+	// Also try to delete the interface directly (might not work on all macOS versions)
+	cmd = exec.Command("sudo", "ifconfig", WGInterfaceName, "destroy")
+	cmd.Run() // Ignore errors
+
 	return nil
 }
 
@@ -381,16 +463,13 @@ type HomebrewFormula struct {
 }
 
 // installWireGuardMacOS installs WireGuard tools on macOS from Homebrew bottles.
+// We install wireguard-go and wg (from wireguard-tools) - we don't use wg-quick
+// because it requires bash 4+ which macOS doesn't have by default.
 func installWireGuardMacOS(ctx context.Context, binDir string) error {
 	arch := runtime.GOARCH
 
-	// Install bash 4+ (macOS ships with bash 3.2, wg-quick requires 4+)
-	if err := downloadHomebrewBottle(ctx, "bash", arch, binDir, []string{"bash"}); err != nil {
-		return fmt.Errorf("failed to install bash: %w", err)
-	}
-
-	// Install wireguard-tools
-	if err := downloadHomebrewBottle(ctx, "wireguard-tools", arch, binDir, []string{"wg", "wg-quick"}); err != nil {
+	// Install wireguard-tools (provides wg command)
+	if err := downloadHomebrewBottle(ctx, "wireguard-tools", arch, binDir, []string{"wg"}); err != nil {
 		return fmt.Errorf("failed to install wireguard-tools: %w", err)
 	}
 
