@@ -41,8 +41,9 @@ func NewJSONOutput(success bool, data interface{}, err *JSONError) JSONOutput {
 
 // VersionOutput is the JSON output for the version command
 type VersionOutput struct {
-	Version string `json:"version"`
-	Commit  string `json:"commit"`
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	BuildDate string `json:"build_date"`
 }
 
 // ListOutput is the JSON output for the list command

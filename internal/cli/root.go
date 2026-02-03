@@ -11,9 +11,10 @@ import (
 )
 
 var (
-	// Version is set at build time
-	Version = "dev"
-	Commit  = "unknown"
+	// Version info - set at build time via ldflags
+	Version   = "dev"
+	Commit    = "unknown"
+	BuildDate = "unknown"
 )
 
 // Global flags
@@ -216,12 +217,15 @@ var versionCmd = &cobra.Command{
 		out := getOutput()
 		if out.IsJSONMode() {
 			out.JSON(NewJSONOutput(true, VersionOutput{
-				Version: Version,
-				Commit:  Commit,
+				Version:   Version,
+				Commit:    Commit,
+				BuildDate: BuildDate,
 			}, nil))
 			return
 		}
-		fmt.Printf("vibespace %s (%s)\n", Version, Commit)
+		fmt.Printf("vibespace %s\n", Version)
+		fmt.Printf("  commit:  %s\n", Commit)
+		fmt.Printf("  built:   %s\n", BuildDate)
 	},
 }
 
