@@ -207,7 +207,7 @@ Remote tunnel and management API are working end-to-end, but Kubernetes API acce
 | `version` enhancements | Show commit, build date | S | ✅ Done |
 | Git tag workflow | Archive branches, semver tags | S | ✅ Done |
 | GitHub Actions release | Auto-release on tag | M | |
-| Changelog generation | From conventional commits | S | |
+| Changelog generation | From conventional commits (git-cliff) | S | ✅ Done |
 | Update checker | Notify when new version available | M | |
 
 ### P7: Distribution
