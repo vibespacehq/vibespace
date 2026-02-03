@@ -14,7 +14,7 @@ Last verified: 2026-02-01 (updated: info command, --mount flag)
 | `init` | ✅ | - | - | ✅ | Platform auto-detect |
 | `status` | ✅ | - | - | ✅ | Shows cluster + daemon + components |
 | `stop` | ✅ | - | - | ✅ | Stops cluster |
-| `uninstall` | ✅ | - | - | ✅ | Removes cluster and data |
+| `uninstall` | ✅ | - | - | ✅ | Removes cluster and data (see Known Issues) |
 | **Vibespace** |
 | `create` | ✅ | - | - | ✅ | `-t claude-code\|codex`, `--mount` flag |
 | `list` | ✅ | ✅ | - | ✅ | Tab-separated with `--header` |
@@ -201,13 +201,14 @@ Remote tunnel and management API are working end-to-end, but Kubernetes API acce
 
 ### P6: Versioning & Releases
 
-| Task | Description | Effort |
-|------|-------------|--------|
-| Build-time version injection | `-ldflags "-X main.version=..."` | S |
-| `version` enhancements | Show commit, build date, Go version | S |
-| GitHub Actions release | Auto-release on tag | M |
-| Changelog generation | From conventional commits | S |
-| Update checker | Notify when new version available | M |
+| Task | Description | Effort | Status |
+|------|-------------|--------|--------|
+| Build-time version injection | `-ldflags "-X cli.Version=..."` | S | ✅ Done |
+| `version` enhancements | Show commit, build date | S | ✅ Done |
+| Git tag workflow | Archive branches, semver tags | S | ✅ Done |
+| GitHub Actions release | Auto-release on tag | M | |
+| Changelog generation | From conventional commits | S | |
+| Update checker | Notify when new version available | M | |
 
 ### P7: Distribution
 
