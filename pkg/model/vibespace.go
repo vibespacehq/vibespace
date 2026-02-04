@@ -31,9 +31,11 @@ type ExposedService struct {
 
 // Resources represents resource allocations for a vibespace
 type Resources struct {
-	CPU     string `json:"cpu"`
-	Memory  string `json:"memory"`
-	Storage string `json:"storage"`
+	CPU         string `json:"cpu"`          // CPU request (for k8s scheduling)
+	CPULimit    string `json:"cpu_limit"`    // CPU limit (max burst), defaults to CPU if empty
+	Memory      string `json:"memory"`       // Memory request (for k8s scheduling)
+	MemoryLimit string `json:"memory_limit"` // Memory limit (max burst), defaults to Memory if empty
+	Storage     string `json:"storage"`
 }
 
 // Mount represents a host directory mount into the container

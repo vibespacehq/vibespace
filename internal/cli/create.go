@@ -33,7 +33,9 @@ var createCmd = &cobra.Command{
 var (
 	createRepo             string
 	createCPU              string
+	createCPULimit         string
 	createMemory           string
+	createMemoryLimit      string
 	createStorage          string
 	createShareCredentials bool
 	createAgentType        string   // Agent type (claude-code, codex)
@@ -48,10 +50,14 @@ var (
 )
 
 // Default resource values - can be overridden via environment variables
+// Requests are low to allow more agents to be scheduled via overcommit
+// Limits are high to allow agents to burst when actively processing
 const (
-	DefaultCPU     = "1000m"
-	DefaultMemory  = "1Gi"
-	DefaultStorage = "10Gi"
+	DefaultCPU         = "250m"  // CPU request for k8s scheduling
+	DefaultCPULimit    = "1000m" // CPU limit for burst capacity
+	DefaultMemory      = "512Mi" // Memory request for k8s scheduling
+	DefaultMemoryLimit = "1Gi"   // Memory limit for burst capacity
+	DefaultStorage     = "10Gi"
 )
 
 // getEnvOrDefault returns the environment variable value or a default
@@ -65,12 +71,16 @@ func getEnvOrDefault(key, defaultValue string) string {
 func init() {
 	// Read defaults from environment variables, falling back to constants
 	cpuDefault := getEnvOrDefault("VIBESPACE_DEFAULT_CPU", DefaultCPU)
+	cpuLimitDefault := getEnvOrDefault("VIBESPACE_DEFAULT_CPU_LIMIT", DefaultCPULimit)
 	memoryDefault := getEnvOrDefault("VIBESPACE_DEFAULT_MEMORY", DefaultMemory)
+	memoryLimitDefault := getEnvOrDefault("VIBESPACE_DEFAULT_MEMORY_LIMIT", DefaultMemoryLimit)
 	storageDefault := getEnvOrDefault("VIBESPACE_DEFAULT_STORAGE", DefaultStorage)
 
 	createCmd.Flags().StringVar(&createRepo, "repo", "", "GitHub repository to clone")
-	createCmd.Flags().StringVar(&createCPU, "cpu", cpuDefault, "CPU request/limit (e.g., 400m, 500m, 1)")
-	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request/limit (e.g., 256Mi, 512Mi, 1Gi)")
+	createCmd.Flags().StringVar(&createCPU, "cpu", cpuDefault, "CPU request for scheduling (e.g., 250m, 500m)")
+	createCmd.Flags().StringVar(&createCPULimit, "cpu-limit", cpuLimitDefault, "CPU limit for burst (e.g., 1000m, 2000m)")
+	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request for scheduling (e.g., 256Mi, 512Mi)")
+	createCmd.Flags().StringVar(&createMemoryLimit, "memory-limit", memoryLimitDefault, "Memory limit for burst (e.g., 1Gi, 2Gi)")
 	createCmd.Flags().StringVar(&createStorage, "storage", storageDefault, "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
 	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share credentials across all agents")
 	createCmd.Flags().StringVarP(&createAgentType, "agent-type", "t", "", "Agent type: claude-code, codex (required)")
@@ -141,9 +151,11 @@ func runCreate(cmd *cobra.Command, args []string) error {
 		AgentConfig:      agentConfig,
 		Mounts:           mounts,
 		Resources: &model.Resources{
-			CPU:     createCPU,
-			Memory:  createMemory,
-			Storage: createStorage,
+			CPU:         createCPU,
+			CPULimit:    createCPULimit,
+			Memory:      createMemory,
+			MemoryLimit: createMemoryLimit,
+			Storage:     createStorage,
 		},
 	}
 	if createRepo != "" {

@@ -136,6 +136,26 @@ Error responses include:
 
 ---
 
+## Known Issues
+
+### Permission Hook Not Needed for Interactive Mode
+
+**Issue:** When using `vibespace <vs> connect` or `--browser` mode, Claude Code's permission hooks fail with "Permission server unavailable" error.
+
+**Root cause:**
+- The vibespace permission hook is designed for TUI multi-agent mode (centralized approval)
+- In interactive mode, the user is directly present - Claude Code's built-in prompts suffice
+- The hook tries to reach a permission server that doesn't exist in interactive mode
+
+**Fix required:** Disable the custom permission hook when running in interactive mode. The hook should only be active for TUI/headless sessions. Effort: S
+
+**Workaround:** Use `--skip-permissions` flag:
+```bash
+vibespace create myproject -t claude-code --skip-permissions
+```
+
+---
+
 ## Remaining Work
 
 ### P1: Remote Mode
