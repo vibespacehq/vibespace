@@ -32,6 +32,22 @@ func NewDeploymentManager(k8sClient *k8s.Client) *DeploymentManager {
 	}
 }
 
+// cpuLimitOrDefault returns the CPU limit if set, otherwise falls back to the CPU request value
+func cpuLimitOrDefault(cpuLimit, cpuRequest string) string {
+	if cpuLimit != "" {
+		return cpuLimit
+	}
+	return cpuRequest
+}
+
+// memoryLimitOrDefault returns the memory limit if set, otherwise falls back to the memory request value
+func memoryLimitOrDefault(memoryLimit, memoryRequest string) string {
+	if memoryLimit != "" {
+		return memoryLimit
+	}
+	return memoryRequest
+}
+
 // CreateDeployment creates a Deployment and Service for a vibespace
 func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDeploymentRequest) error {
 	deploymentName := fmt.Sprintf("vibespace-%s", req.VibespaceID)
@@ -142,8 +158,8 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 									corev1.ResourceMemory: resource.MustParse(req.Resources.Memory),
 								},
 								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse(req.Resources.CPU),
-									corev1.ResourceMemory: resource.MustParse(req.Resources.Memory),
+									corev1.ResourceCPU:    resource.MustParse(cpuLimitOrDefault(req.Resources.CPULimit, req.Resources.CPU)),
+									corev1.ResourceMemory: resource.MustParse(memoryLimitOrDefault(req.Resources.MemoryLimit, req.Resources.Memory)),
 								},
 							},
 							VolumeMounts: volumeMounts,
@@ -315,8 +331,8 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 									corev1.ResourceMemory: resource.MustParse(req.Resources.Memory),
 								},
 								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse(req.Resources.CPU),
-									corev1.ResourceMemory: resource.MustParse(req.Resources.Memory),
+									corev1.ResourceCPU:    resource.MustParse(cpuLimitOrDefault(req.Resources.CPULimit, req.Resources.CPU)),
+									corev1.ResourceMemory: resource.MustParse(memoryLimitOrDefault(req.Resources.MemoryLimit, req.Resources.Memory)),
 								},
 							},
 							VolumeMounts: volumeMounts,

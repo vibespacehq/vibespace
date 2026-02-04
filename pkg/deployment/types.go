@@ -83,7 +83,9 @@ type CreateAgentRequest struct {
 
 // Resources defines compute resources for a deployment
 type Resources struct {
-	CPU     string
-	Memory  string
-	Storage string
+	CPU         string // CPU request (for k8s scheduling)
+	CPULimit    string // CPU limit (max burst), defaults to CPU if empty
+	Memory      string // Memory request (for k8s scheduling)
+	MemoryLimit string // Memory limit (max burst), defaults to Memory if empty
+	Storage     string
 }
