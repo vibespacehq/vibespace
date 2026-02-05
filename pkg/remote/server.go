@@ -191,6 +191,13 @@ func (s *Server) WriteWireGuardConfig() error {
 
 // Start starts the WireGuard interface and management API.
 func (s *Server) Start(ctx context.Context, foreground bool) error {
+	// Check firewall before starting
+	for _, result := range CheckFirewall() {
+		if !result.Status {
+			slog.Warn("firewall check failed", "check", result.Check, "message", result.Message)
+		}
+	}
+
 	// Initialize WireGuard if needed
 	if err := s.InitializeWireGuard(); err != nil {
 		return fmt.Errorf("failed to initialize WireGuard: %w", err)
