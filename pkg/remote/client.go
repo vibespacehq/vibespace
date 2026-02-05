@@ -299,3 +299,121 @@ func mustEncodeInviteToken(token *InviteToken) string {
 	encoded, _ := EncodeInviteToken(token)
 	return encoded
 }
+
+// ConnectionWatcher monitors the WireGuard tunnel and automatically reconnects if it drops.
+type ConnectionWatcher struct {
+	serverIP      string
+	checkInterval time.Duration
+	maxRetries    int
+	onDisconnect  func()
+	onReconnect   func()
+	stopCh        chan struct{}
+	stopped       chan struct{}
+}
+
+// NewConnectionWatcher creates a new connection watcher.
+func NewConnectionWatcher(serverIP string) *ConnectionWatcher {
+	return &ConnectionWatcher{
+		serverIP:      serverIP,
+		checkInterval: 15 * time.Second,
+		maxRetries:    3,
+		stopCh:        make(chan struct{}),
+		stopped:       make(chan struct{}),
+	}
+}
+
+// OnDisconnect sets a callback invoked when the tunnel goes down.
+func (w *ConnectionWatcher) OnDisconnect(fn func()) {
+	w.onDisconnect = fn
+}
+
+// OnReconnect sets a callback invoked when the tunnel is restored.
+func (w *ConnectionWatcher) OnReconnect(fn func()) {
+	w.onReconnect = fn
+}
+
+// Start begins monitoring the connection in a goroutine.
+func (w *ConnectionWatcher) Start() {
+	go w.run()
+}
+
+// Stop stops the connection watcher.
+func (w *ConnectionWatcher) Stop() {
+	close(w.stopCh)
+	<-w.stopped
+}
+
+func (w *ConnectionWatcher) run() {
+	defer close(w.stopped)
+
+	ticker := time.NewTicker(w.checkInterval)
+	defer ticker.Stop()
+
+	consecutiveFailures := 0
+
+	for {
+		select {
+		case <-w.stopCh:
+			return
+		case <-ticker.C:
+			if w.ping() {
+				if consecutiveFailures > 0 {
+					slog.Info("connection restored")
+					consecutiveFailures = 0
+					if w.onReconnect != nil {
+						w.onReconnect()
+					}
+				}
+				continue
+			}
+
+			consecutiveFailures++
+			slog.Warn("health check failed", "failures", consecutiveFailures, "max", w.maxRetries)
+
+			if consecutiveFailures >= w.maxRetries {
+				slog.Info("attempting reconnect")
+				if w.onDisconnect != nil {
+					w.onDisconnect()
+				}
+
+				if err := w.reconnect(); err != nil {
+					slog.Error("reconnect failed", "error", err)
+				} else {
+					slog.Info("reconnect successful")
+					consecutiveFailures = 0
+					if w.onReconnect != nil {
+						w.onReconnect()
+					}
+				}
+			}
+		}
+	}
+}
+
+func (w *ConnectionWatcher) ping() bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://%s:%d/health", w.serverIP, DefaultManagementPort))
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func (w *ConnectionWatcher) reconnect() error {
+	// Bring down the interface
+	if err := QuickDown(); err != nil {
+		slog.Warn("QuickDown failed during reconnect", "error", err)
+	}
+
+	// Wait briefly before bringing back up
+	time.Sleep(2 * time.Second)
+
+	// Bring it back up
+	if err := QuickUp(); err != nil {
+		return fmt.Errorf("QuickUp failed: %w", err)
+	}
+
+	// Wait for connectivity
+	return waitForConnectivity(w.serverIP, 30*time.Second)
+}
