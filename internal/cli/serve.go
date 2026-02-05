@@ -37,8 +37,11 @@ The server exposes:
   # Generate an invite token for a client
   vibespace serve --generate-token --endpoint your-server.com
 
-  # Add a client after they give you their public key
-  vibespace serve --add-client <client-public-key>`,
+  # List registered clients
+  vibespace serve --list-clients
+
+  # Remove a client
+  vibespace serve --remove-client <name-or-key>`,
 	RunE: runServe,
 }
 
@@ -48,6 +51,8 @@ var (
 	serveAddClient     string
 	serveForeground    bool
 	serveTokenTTL      time.Duration
+	serveListClients   bool
+	serveRemoveClient  string
 )
 
 func init() {
@@ -56,6 +61,8 @@ func init() {
 	serveCmd.Flags().StringVar(&serveAddClient, "add-client", "", "Add a client by their WireGuard public key")
 	serveCmd.Flags().BoolVar(&serveForeground, "foreground", false, "Run in foreground (don't daemonize)")
 	serveCmd.Flags().DurationVar(&serveTokenTTL, "token-ttl", remote.DefaultInviteTokenTTL, "Invite token time-to-live (e.g. 15m, 1h)")
+	serveCmd.Flags().BoolVar(&serveListClients, "list-clients", false, "List all registered clients")
+	serveCmd.Flags().StringVar(&serveRemoveClient, "remove-client", "", "Remove a client by name, hostname, or public key")
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -75,6 +82,62 @@ func runServe(cmd *cobra.Command, args []string) error {
 	server, err := remote.NewServer()
 	if err != nil {
 		return fmt.Errorf("failed to create server: %w", err)
+	}
+
+	// Handle --list-clients flag
+	if serveListClients {
+		clients := server.ListClients()
+		if out.IsJSONMode() {
+			var clientOutputs []ClientOutput
+			for _, c := range clients {
+				clientOutputs = append(clientOutputs, ClientOutput{
+					Name:         c.Name,
+					PublicKey:    c.PublicKey,
+					AssignedIP:   c.AssignedIP,
+					Hostname:     c.Hostname,
+					RegisteredAt: c.RegisteredAt.Format("2006-01-02 15:04:05"),
+				})
+			}
+			return out.JSON(NewJSONOutput(true, ClientListOutput{
+				Clients: clientOutputs,
+				Count:   len(clientOutputs),
+			}, nil))
+		}
+
+		if len(clients) == 0 {
+			fmt.Println("No registered clients")
+			return nil
+		}
+
+		fmt.Printf("Registered clients (%d):\n\n", len(clients))
+		for _, c := range clients {
+			name := c.Name
+			if c.Hostname != "" && c.Hostname != c.Name {
+				name = fmt.Sprintf("%s (%s)", c.Name, c.Hostname)
+			}
+			fmt.Printf("  %s\n", out.Teal(name))
+			fmt.Printf("    IP: %s\n", c.AssignedIP)
+			fmt.Printf("    Key: %s...%s\n", c.PublicKey[:8], c.PublicKey[len(c.PublicKey)-4:])
+			fmt.Printf("    Registered: %s\n", c.RegisteredAt.Format("2006-01-02 15:04:05"))
+			fmt.Println()
+		}
+		return nil
+	}
+
+	// Handle --remove-client flag
+	if serveRemoveClient != "" {
+		if err := server.RemoveClient(serveRemoveClient); err != nil {
+			return fmt.Errorf("failed to remove client: %w", err)
+		}
+
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(true, map[string]string{
+				"removed": serveRemoveClient,
+			}, nil))
+		}
+
+		printSuccess("Client removed")
+		return nil
 	}
 
 	// Handle --add-client flag

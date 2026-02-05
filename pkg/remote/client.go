@@ -228,6 +228,11 @@ func Disconnect() error {
 		return fmt.Errorf("not connected to any remote server: %w", vserrors.ErrRemoteNotConnected)
 	}
 
+	// Fire-and-forget: notify server we're disconnecting
+	if state.Connected && state.ServerIP != "" && state.PublicKey != "" {
+		go notifyServerDisconnect(state.ServerIP, state.PublicKey)
+	}
+
 	// Bring down WireGuard
 	slog.Info("stopping WireGuard tunnel")
 	if err := QuickDown(); err != nil {
@@ -287,6 +292,18 @@ func waitForConnectivity(serverIP string, timeout time.Duration) error {
 		time.Sleep(1 * time.Second)
 	}
 	return fmt.Errorf("timeout waiting for connectivity to %s", serverIP)
+}
+
+// notifyServerDisconnect sends a best-effort disconnect notification to the server.
+func notifyServerDisconnect(serverIP, publicKey string) {
+	client := &http.Client{Timeout: 2 * time.Second}
+	body, _ := json.Marshal(map[string]string{"public_key": publicKey})
+	url := fmt.Sprintf("http://%s:%d/disconnect", serverIP, DefaultManagementPort)
+	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return // fire-and-forget
+	}
+	resp.Body.Close()
 }
 
 // splitHostPort is a safe wrapper around net.SplitHostPort.
