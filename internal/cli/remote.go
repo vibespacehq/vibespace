@@ -19,16 +19,10 @@ or another machine. The connection uses WireGuard for secure tunneling.
 Connection flow:
   1. Server admin runs: vibespace serve --generate-token
   2. You run: vibespace remote connect <token>
-     (Tokens expire; if it's rejected, request a new one.)
-  3. Give the output public key to the server admin
-  4. Server admin runs: vibespace serve --add-client <your-public-key>
-  5. Server admin gives you the assigned IP (e.g., 10.100.0.2/32)
-  6. You run: vibespace remote activate <assigned-ip>`,
-	Example: `  # Connect using an invite token
+     That's it! The token contains everything needed to register,
+     set up the tunnel, and fetch the kubeconfig automatically.`,
+	Example: `  # Connect using an invite token (one step!)
   vibespace remote connect vs-eyJrIjoiYWJj...
-
-  # After server adds your key and gives you the IP, activate the tunnel
-  vibespace remote activate 10.100.0.2/32
 
   # Check connection status
   vibespace remote status
@@ -39,29 +33,24 @@ Connection flow:
 
 var remoteConnectCmd = &cobra.Command{
 	Use:   "connect <token>",
-	Short: "Set up connection to a remote server",
-	Long: `Set up a connection to a remote vibespace server using an invite token.
+	Short: "Connect to a remote server",
+	Long: `Connect to a remote vibespace server using an invite token.
 
-The invite token contains the server's public key and endpoint.
-After running this command, you'll receive your client public key.
-Give this key to the server admin to add you as a client.`,
+The invite token contains the server's public key, endpoint, and
+certificate fingerprint. This command handles everything automatically:
+registration, WireGuard tunnel setup, and kubeconfig fetching.`,
 	Example: `  vibespace remote connect vs-eyJrIjoiYWJjMTIzIiwiZSI6InZwcy5leGFtcGxlLmNvbTo1MTgyMCJ9`,
 	Args:    cobra.ExactArgs(1),
 	RunE:    runRemoteConnect,
 }
 
 var remoteActivateCmd = &cobra.Command{
-	Use:   "activate <assigned-ip>",
-	Short: "Activate the WireGuard tunnel",
-	Long: `Activate the WireGuard tunnel after the server has added your public key.
-
-Run this after the server admin has added your client public key with:
-  vibespace serve --add-client <your-public-key>
-
-The server admin will give you the assigned IP address (e.g., 10.100.0.2/32).`,
-	Example: `  vibespace remote activate 10.100.0.2/32`,
-	Args:    cobra.ExactArgs(1),
-	RunE:    runRemoteActivate,
+	Use:        "activate <assigned-ip>",
+	Short:      "Deprecated: use 'remote connect' instead",
+	Long:       `This command is deprecated. Use 'vibespace remote connect <token>' which handles registration and activation in one step.`,
+	Args:       cobra.ExactArgs(1),
+	RunE:       runRemoteActivate,
+	Deprecated: "use 'vibespace remote connect <token>' instead",
 }
 
 var remoteDisconnectCmd = &cobra.Command{
@@ -101,53 +90,14 @@ func runRemoteConnect(cmd *cobra.Command, args []string) error {
 		printSuccess("WireGuard installed")
 	}
 
-	printStep("Setting up connection...")
+	printStep("Connecting to remote server...")
 
 	opts := remote.ConnectOptions{
 		Token: token,
 	}
 
-	clientPubKey, err := remote.Connect(opts)
-	if err != nil {
-		return fmt.Errorf("failed to set up connection: %w", err)
-	}
-
-	// Get status to show details
-	state, err := remote.GetStatus()
-	if err != nil {
-		return err
-	}
-
-	if out.IsJSONMode() {
-		return out.JSON(NewJSONOutput(true, map[string]string{
-			"client_public_key": clientPubKey,
-			"server_endpoint":   state.ServerEndpoint,
-		}, nil))
-	}
-
-	printSuccess("Connection configured")
-	fmt.Println()
-	fmt.Printf("Your public key: %s\n", out.Teal(clientPubKey))
-	fmt.Println()
-	fmt.Println("Give your public key to the server admin.")
-	fmt.Println("They need to run:")
-	fmt.Printf("  vibespace serve --add-client %s\n", clientPubKey)
-	fmt.Println()
-	fmt.Println("They will give you an assigned IP (e.g., 10.100.0.2/32).")
-	fmt.Println("Then activate the tunnel:")
-	fmt.Printf("  vibespace remote activate %s\n", out.Dim("<assigned-ip>"))
-
-	return nil
-}
-
-func runRemoteActivate(cmd *cobra.Command, args []string) error {
-	out := getOutput()
-	assignedIP := args[0]
-
-	printStep("Activating tunnel...")
-
-	if err := remote.Activate(assignedIP); err != nil {
-		return fmt.Errorf("failed to activate: %w", err)
+	if err := remote.Connect(opts); err != nil {
+		return fmt.Errorf("failed to connect: %w", err)
 	}
 
 	// Get status to show details
@@ -175,6 +125,10 @@ func runRemoteActivate(cmd *cobra.Command, args []string) error {
 	fmt.Println("To disconnect: vibespace remote disconnect")
 
 	return nil
+}
+
+func runRemoteActivate(cmd *cobra.Command, args []string) error {
+	return fmt.Errorf("activate is deprecated: use 'vibespace remote connect <token>' which handles registration and activation automatically")
 }
 
 func runRemoteDisconnect(cmd *cobra.Command, args []string) error {
@@ -230,14 +184,13 @@ func runRemoteStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if !state.Connected && state.PublicKey != "" {
-		// Pending state - connect was run but not activate
+		// Pending state - this shouldn't happen with the new flow, but handle gracefully
 		fmt.Printf("Remote: %s\n", out.Yellow("pending"))
-		fmt.Printf("Your public key: %s\n", state.PublicKey)
 		fmt.Printf("Server: %s\n", state.ServerEndpoint)
 		fmt.Println()
-		fmt.Println("Waiting for server to add your public key.")
-		fmt.Println("After they add you and give you an assigned IP, run:")
-		fmt.Printf("  vibespace remote activate %s\n", out.Dim("<assigned-ip>"))
+		fmt.Println("Connection setup incomplete. Try disconnecting and reconnecting:")
+		fmt.Println("  vibespace remote disconnect")
+		fmt.Println("  vibespace remote connect <token>")
 		return nil
 	}
 
