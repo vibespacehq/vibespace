@@ -377,6 +377,16 @@ func (m *LimaManager) Start(ctx context.Context, config ClusterConfig) error {
 		return fmt.Errorf("failed to start Lima VM: %w", err)
 	}
 
+	// Configure k3s TLS SAN to include WireGuard IP before copying kubeconfig
+	if err := m.ConfigureK3sTLSSAN(ctx); err != nil {
+		slog.Warn("failed to configure k3s TLS SAN", "error", err)
+	} else {
+		// Restart k3s so it regenerates certs with the new SAN
+		if err := m.RestartK3s(ctx); err != nil {
+			slog.Warn("failed to restart k3s after TLS SAN config", "error", err)
+		}
+	}
+
 	// Wait for and copy kubeconfig
 	if err := m.waitAndCopyKubeconfig(ctx); err != nil {
 		return fmt.Errorf("failed to copy kubeconfig: %w", err)
@@ -619,6 +629,56 @@ func (m *LimaManager) Uninstall(ctx context.Context) error {
 // KubeconfigPath returns the path to the isolated kubeconfig file
 func (m *LimaManager) KubeconfigPath() string {
 	return filepath.Join(m.vibespaceHome, "kubeconfig")
+}
+
+// ConfigureK3sTLSSAN writes a k3s config file inside the Lima VM that adds
+// the WireGuard server IP (10.100.0.1) as a TLS SAN. This ensures the k3s
+// API server certificate is valid when accessed via the WireGuard tunnel.
+func (m *LimaManager) ConfigureK3sTLSSAN(ctx context.Context) error {
+	currentPath := os.Getenv("PATH")
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
+
+	// Write k3s config with tls-san inside the VM
+	k3sConfig := `tls-san:
+  - "10.100.0.1"
+`
+	cmd := exec.CommandContext(ctx, m.limactlBin(), "shell", limaInstanceName, "--",
+		"sudo", "mkdir", "-p", "/etc/rancher/k3s")
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create k3s config dir: %w", err)
+	}
+
+	cmd = exec.CommandContext(ctx, m.limactlBin(), "shell", limaInstanceName, "--",
+		"sudo", "tee", "/etc/rancher/k3s/config.yaml")
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
+	cmd.Stdin = strings.NewReader(k3sConfig)
+	cmd.Stdout = io.Discard
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to write k3s config: %w", err)
+	}
+
+	slog.Debug("k3s TLS SAN configured for 10.100.0.1")
+	return nil
+}
+
+// RestartK3s restarts the k3s service inside the Lima VM so it picks up
+// configuration changes (e.g., new TLS SANs).
+func (m *LimaManager) RestartK3s(ctx context.Context) error {
+	currentPath := os.Getenv("PATH")
+	newPath := fmt.Sprintf("%s:%s:%s:%s", m.qemuBinDir(), m.limaBinDir(), m.binDir, currentPath)
+
+	cmd := exec.CommandContext(ctx, m.limactlBin(), "shell", limaInstanceName, "--",
+		"sudo", "systemctl", "restart", "k3s")
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to restart k3s: %w", err)
+	}
+
+	// Wait briefly for k3s to come back up
+	time.Sleep(3 * time.Second)
+	slog.Debug("k3s restarted")
+	return nil
 }
 
 // limaSubprocessWriters returns writers for subprocess stdout/stderr
