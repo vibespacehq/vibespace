@@ -4,7 +4,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,6 +29,7 @@ type Server struct {
 	mgmtServer         *http.Server // Private management API (WireGuard IP only)
 	registrationServer *http.Server // Public registration API (0.0.0.0)
 	kubeProxy          net.Listener
+	certFingerprint    string // SHA256 fingerprint of registration TLS cert
 }
 
 // NewServer creates a new remote server instance.
@@ -58,6 +62,12 @@ func (s *Server) GenerateInviteToken(publicEndpoint string, ttl time.Duration) (
 		ttl = DefaultInviteTokenTTL
 	}
 
+	// Extract host (without port) for registration URL
+	host := publicEndpoint
+	if h, _, err := net.SplitHostPort(publicEndpoint); err == nil {
+		host = h
+	}
+
 	token := &InviteToken{
 		ServerPublicKey:  s.state.PublicKey,
 		Endpoint:         publicEndpoint,
@@ -65,6 +75,8 @@ func (s *Server) GenerateInviteToken(publicEndpoint string, ttl time.Duration) (
 		ExpiresAt:        time.Now().Add(ttl).Unix(),
 		Nonce:            newTokenNonce(),
 		SigningPublicKey: signingPub,
+		CertFingerprint:  s.certFingerprint,
+		Host:             host,
 	}
 
 	if err := SignInviteToken(token, signingPriv); err != nil {
@@ -214,6 +226,11 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 
 	slog.Info("starting management API", "addr", mgmtAddr)
 
+	// Start public registration API
+	if err := s.startRegistrationAPI(); err != nil {
+		slog.Warn("failed to start registration API", "error", err)
+	}
+
 	s.startKubeAPIProxy()
 
 	if foreground {
@@ -233,10 +250,15 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 
 // Stop stops the server and WireGuard interface.
 func (s *Server) Stop(ctx context.Context) error {
-	// Stop HTTP server
+	// Stop HTTP servers
 	if s.mgmtServer != nil {
 		if err := s.mgmtServer.Shutdown(ctx); err != nil {
-			slog.Warn("failed to shutdown HTTP server", "error", err)
+			slog.Warn("failed to shutdown management server", "error", err)
+		}
+	}
+	if s.registrationServer != nil {
+		if err := s.registrationServer.Shutdown(ctx); err != nil {
+			slog.Warn("failed to shutdown registration server", "error", err)
 		}
 	}
 
@@ -304,6 +326,176 @@ func (s *Server) reloadWireGuard() error {
 		return err
 	}
 	return QuickUp(s.state.ServerIP)
+}
+
+// RegisterRequest is the JSON body for POST /register.
+type RegisterRequest struct {
+	Token     string `json:"token"`
+	PublicKey string `json:"public_key"`
+	Hostname  string `json:"hostname"`
+}
+
+// RegisterResponse is returned on successful registration.
+type RegisterResponse struct {
+	AssignedIP      string `json:"assigned_ip"`
+	ServerPublicKey string `json:"server_public_key"`
+	ServerEndpoint  string `json:"server_endpoint"`
+	ServerIP        string `json:"server_ip"`
+}
+
+// ensureRegistrationCert generates and caches the self-signed TLS cert for the registration API.
+func (s *Server) ensureRegistrationCert() (tls.Certificate, error) {
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	certPath := filepath.Join(vsHome, "reg-cert.pem")
+	keyPath := filepath.Join(vsHome, "reg-key.pem")
+
+	// Try to load existing cert
+	if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
+		// Recompute fingerprint from the loaded cert
+		if len(cert.Certificate) > 0 {
+			s.certFingerprint = certSHA256(cert.Certificate[0])
+		}
+		return cert, nil
+	}
+
+	// Detect public IP for the cert SAN
+	host, err := DetectPublicIP()
+	if err != nil {
+		host = "0.0.0.0"
+	}
+
+	certPEM, keyPEM, fingerprint, err := GenerateSelfSignedCert(host)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to generate registration cert: %w", err)
+	}
+
+	if err := os.WriteFile(certPath, certPEM, 0600); err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to write cert: %w", err)
+	}
+	if err := os.WriteFile(keyPath, keyPEM, 0600); err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to write key: %w", err)
+	}
+
+	s.certFingerprint = fingerprint
+
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to parse cert: %w", err)
+	}
+	return cert, nil
+}
+
+// startRegistrationAPI starts the public HTTPS registration endpoint on 0.0.0.0:7781.
+func (s *Server) startRegistrationAPI() error {
+	cert, err := s.ensureRegistrationCert()
+	if err != nil {
+		return fmt.Errorf("failed to ensure registration cert: %w", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/register", s.handleRegister)
+
+	addr := fmt.Sprintf("0.0.0.0:%d", DefaultRegistrationPort)
+	s.registrationServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		},
+	}
+
+	slog.Info("starting registration API", "addr", addr, "fingerprint", s.certFingerprint)
+
+	go func() {
+		if err := s.registrationServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			slog.Error("registration API error", "error", err)
+		}
+	}()
+
+	return nil
+}
+
+// handleRegister handles POST /register - one-shot client registration.
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate token
+	invite, err := DecodeInviteToken(req.Token)
+	if err != nil {
+		slog.Warn("registration rejected: invalid token", "error", err)
+		http.Error(w, "invalid or expired token", http.StatusUnauthorized)
+		return
+	}
+	_ = invite // Token is valid
+
+	// Validate public key format (base64, should decode to 32 bytes)
+	keyBytes, err := base64.StdEncoding.DecodeString(req.PublicKey)
+	if err != nil || len(keyBytes) != 32 {
+		http.Error(w, "invalid public key format", http.StatusBadRequest)
+		return
+	}
+
+	// Determine client name
+	name := req.Hostname
+	if name == "" {
+		name = "client"
+	}
+
+	// Check if already registered (idempotent)
+	existing := s.state.FindClientByPublicKey(req.PublicKey)
+	if existing != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(RegisterResponse{
+			AssignedIP:      existing.AssignedIP,
+			ServerPublicKey: s.state.PublicKey,
+			ServerEndpoint:  invite.Endpoint,
+			ServerIP:        serverWGIP(s.state.ServerIP),
+		})
+		return
+	}
+
+	// Add client
+	assignedIP, err := s.AddClient(name, req.PublicKey)
+	if err != nil {
+		slog.Error("registration failed", "error", err)
+		http.Error(w, "registration failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Update hostname if provided
+	if req.Hostname != "" {
+		for i := range s.state.Clients {
+			if s.state.Clients[i].PublicKey == req.PublicKey {
+				s.state.Clients[i].Hostname = req.Hostname
+				s.state.Save()
+				break
+			}
+		}
+	}
+
+	slog.Info("client registered", "name", name, "ip", assignedIP)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(RegisterResponse{
+		AssignedIP:      assignedIP,
+		ServerPublicKey: s.state.PublicKey,
+		ServerEndpoint:  invite.Endpoint,
+		ServerIP:        serverWGIP(s.state.ServerIP),
+	})
 }
 
 func (s *Server) ensureSigningKey() (string, []byte, error) {
@@ -471,6 +663,11 @@ func (s *Server) stopKubeAPIProxy() {
 		s.kubeProxy.Close()
 		s.kubeProxy = nil
 	}
+}
+
+func certSHA256(der []byte) string {
+	hash := sha256.Sum256(der)
+	return "sha256:" + hex.EncodeToString(hash[:])
 }
 
 func proxyToKubeAPI(client net.Conn) {
