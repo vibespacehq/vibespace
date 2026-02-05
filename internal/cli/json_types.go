@@ -364,10 +364,34 @@ type RemoteDisconnectOutput struct {
 
 // RemoteStatusOutput is the JSON output for remote status command
 type RemoteStatusOutput struct {
-	Connected   bool   `json:"connected"`
-	ServerHost  string `json:"server_host,omitempty"`
-	LocalIP     string `json:"local_ip,omitempty"`
-	ServerIP    string `json:"server_ip,omitempty"`
-	ConnectedAt string `json:"connected_at,omitempty"`
+	Connected   bool               `json:"connected"`
+	ServerHost  string             `json:"server_host,omitempty"`
+	LocalIP     string             `json:"local_ip,omitempty"`
+	ServerIP    string             `json:"server_ip,omitempty"`
+	ConnectedAt string             `json:"connected_at,omitempty"`
+	TunnelUp    bool               `json:"tunnel_up"`
+	Diagnostics []DiagnosticOutput `json:"diagnostics,omitempty"`
+}
+
+// DiagnosticOutput is the JSON output for a single diagnostic check
+type DiagnosticOutput struct {
+	Check   string `json:"check"`
+	Status  bool   `json:"status"`
+	Message string `json:"message"`
+}
+
+// ClientListOutput is the JSON output for serve --list-clients
+type ClientListOutput struct {
+	Clients []ClientOutput `json:"clients"`
+	Count   int            `json:"count"`
+}
+
+// ClientOutput represents a registered client in JSON output
+type ClientOutput struct {
+	Name         string `json:"name"`
+	PublicKey    string `json:"public_key"`
+	AssignedIP   string `json:"assigned_ip"`
+	Hostname     string `json:"hostname,omitempty"`
+	RegisteredAt string `json:"registered_at"`
 }
 

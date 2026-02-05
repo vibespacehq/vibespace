@@ -162,10 +162,26 @@ func runRemoteStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to get status: %w", err)
 	}
 
+	tunnelUp := remote.IsInterfaceUp()
+
+	// Run diagnostics if connected
+	var diagnostics []remote.DiagnosticResult
+	if state.Connected {
+		diagnostics = remote.RunDiagnostics(state)
+	}
+
 	if out.IsJSONMode() {
 		connectedAt := ""
 		if !state.ConnectedAt.IsZero() {
 			connectedAt = state.ConnectedAt.Format("2006-01-02 15:04:05")
+		}
+		var diagOutput []DiagnosticOutput
+		for _, d := range diagnostics {
+			diagOutput = append(diagOutput, DiagnosticOutput{
+				Check:   d.Check,
+				Status:  d.Status,
+				Message: d.Message,
+			})
 		}
 		return out.JSON(NewJSONOutput(true, RemoteStatusOutput{
 			Connected:   state.Connected,
@@ -173,6 +189,8 @@ func runRemoteStatus(cmd *cobra.Command, args []string) error {
 			LocalIP:     state.LocalIP,
 			ServerIP:    state.ServerIP,
 			ConnectedAt: connectedAt,
+			TunnelUp:    tunnelUp,
+			Diagnostics: diagOutput,
 		}, nil))
 	}
 
@@ -184,7 +202,6 @@ func runRemoteStatus(cmd *cobra.Command, args []string) error {
 	}
 
 	if !state.Connected && state.PublicKey != "" {
-		// Pending state - this shouldn't happen with the new flow, but handle gracefully
 		fmt.Printf("Remote: %s\n", out.Yellow("pending"))
 		fmt.Printf("Server: %s\n", state.ServerEndpoint)
 		fmt.Println()
@@ -194,17 +211,38 @@ func runRemoteStatus(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Connection info
 	fmt.Printf("Remote: %s\n", out.Teal("connected"))
 	fmt.Printf("Server: %s\n", state.ServerHost)
 	fmt.Printf("Local IP: %s\n", state.LocalIP)
 	fmt.Printf("Server IP: %s\n", state.ServerIP)
 	fmt.Printf("Connected at: %s\n", state.ConnectedAt.Format("2006-01-02 15:04:05"))
 
-	// Check if WireGuard interface is actually up
-	if remote.IsInterfaceUp() {
+	if tunnelUp {
 		fmt.Printf("Tunnel: %s\n", out.Green("active"))
 	} else {
 		fmt.Printf("Tunnel: %s\n", out.Yellow("interface down"))
+	}
+
+	// Diagnostics
+	if len(diagnostics) > 0 {
+		fmt.Println()
+		fmt.Println("Diagnostics:")
+		allPassed := true
+		for _, d := range diagnostics {
+			if d.Status {
+				fmt.Printf("  %s %s: %s\n", out.Green("[ok]"), d.Check, d.Message)
+			} else {
+				fmt.Printf("  %s %s: %s\n", out.Yellow("[!!]"), d.Check, d.Message)
+				allPassed = false
+			}
+		}
+		fmt.Println()
+		if allPassed {
+			fmt.Printf("Health: %s\n", out.Green("all checks passed"))
+		} else {
+			fmt.Printf("Health: %s\n", out.Yellow("some checks failed"))
+		}
 	}
 
 	return nil
