@@ -191,7 +191,7 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 
 	// Bring up WireGuard interface
 	if !IsInterfaceUp() {
-		if err := QuickUp(); err != nil {
+		if err := QuickUp(s.state.ServerIP); err != nil {
 			return fmt.Errorf("failed to start WireGuard: %w", err)
 		}
 	}
@@ -303,7 +303,7 @@ func (s *Server) reloadWireGuard() error {
 	if err := QuickDown(); err != nil {
 		return err
 	}
-	return QuickUp()
+	return QuickUp(s.state.ServerIP)
 }
 
 func (s *Server) ensureSigningKey() (string, []byte, error) {

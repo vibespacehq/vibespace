@@ -230,11 +230,18 @@ func InstallConfig(tempPath string) error {
 
 // QuickUp brings up the WireGuard interface.
 // On Linux, uses wg-quick. On macOS, uses wireguard-go + wg + ifconfig directly.
-func QuickUp() error {
+// An optional address parameter can be provided (e.g., "10.100.0.1/24") to specify the
+// interface IP directly, bypassing the need to load it from RemoteState. This is required
+// when running as server, since server state is stored separately from client state.
+func QuickUp(address ...string) error {
 	if runtime.GOOS == "linux" {
 		return quickUpLinux()
 	}
-	return quickUpMacOS()
+	addr := ""
+	if len(address) > 0 {
+		addr = address[0]
+	}
+	return quickUpMacOS(addr)
 }
 
 // quickUpLinux uses wg-quick on Linux.
@@ -257,21 +264,25 @@ func quickUpLinux() error {
 
 // quickUpMacOS sets up WireGuard manually using wireguard-go, wg, and ifconfig.
 // This avoids needing bash 4+ which wg-quick requires.
-func quickUpMacOS() error {
+// If addr is provided, it's used directly. Otherwise, falls back to loading from RemoteState.
+func quickUpMacOS(addr string) error {
 	binDir, err := getBinDir()
 	if err != nil {
 		return err
 	}
 
-	// Get address from RemoteState (set during Activate)
-	state, err := LoadRemoteState()
-	if err != nil {
-		return fmt.Errorf("failed to load remote state: %w", err)
+	address := addr
+	if address == "" {
+		// Fall back to loading from RemoteState (client mode)
+		state, err := LoadRemoteState()
+		if err != nil {
+			return fmt.Errorf("failed to load remote state: %w", err)
+		}
+		if state.LocalIP == "" {
+			return fmt.Errorf("no local IP configured - run 'vibespace remote connect <token>' first")
+		}
+		address = state.LocalIP
 	}
-	if state.LocalIP == "" {
-		return fmt.Errorf("no local IP configured - run 'vibespace remote activate <ip>' first")
-	}
-	address := state.LocalIP
 
 	wgGo := filepath.Join(binDir, "wireguard-go")
 	wg := filepath.Join(binDir, "wg")
