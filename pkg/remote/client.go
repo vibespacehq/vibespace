@@ -1,13 +1,15 @@
 package remote
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
@@ -15,26 +17,27 @@ import (
 
 // ConnectOptions contains options for connecting to a remote server.
 type ConnectOptions struct {
-	Token string // Invite token (contains server pubkey, endpoint, assigned IP)
+	Token    string // Invite token (contains server pubkey, endpoint, cert fingerprint)
+	Hostname string // Client hostname (sent to server for identification)
 }
 
-// Connect sets up a connection to a remote vibespace server using an invite token.
-// Returns the client's public key that needs to be added to the server.
-// The server will assign an IP when the client is added.
-func Connect(opts ConnectOptions) (clientPubKey string, err error) {
+// Connect performs one-shot registration and tunnel activation.
+// It registers with the server via HTTPS, receives an IP assignment,
+// configures WireGuard, brings up the tunnel, and fetches kubeconfig.
+func Connect(opts ConnectOptions) error {
 	// Check if already connected
 	state, err := LoadRemoteState()
 	if err != nil {
-		return "", fmt.Errorf("failed to load remote state: %w", err)
+		return fmt.Errorf("failed to load remote state: %w", err)
 	}
 	if state.Connected {
-		return "", fmt.Errorf("already connected to %s: %w", state.ServerHost, vserrors.ErrRemoteAlreadyConnected)
+		return fmt.Errorf("already connected to %s: %w", state.ServerHost, vserrors.ErrRemoteAlreadyConnected)
 	}
 
 	// Decode invite token
 	invite, err := DecodeInviteToken(opts.Token)
 	if err != nil {
-		return "", fmt.Errorf("invalid invite token: %w", err)
+		return fmt.Errorf("invalid invite token: %w", err)
 	}
 
 	// Install WireGuard if needed
@@ -42,7 +45,7 @@ func Connect(opts ConnectOptions) (clientPubKey string, err error) {
 		slog.Info("WireGuard not installed, installing...")
 		ctx := context.Background()
 		if err := InstallWireGuard(ctx); err != nil {
-			return "", fmt.Errorf("failed to install WireGuard: %w", err)
+			return fmt.Errorf("failed to install WireGuard: %w", err)
 		}
 		slog.Info("WireGuard installed successfully")
 	}
@@ -51,71 +54,47 @@ func Connect(opts ConnectOptions) (clientPubKey string, err error) {
 	slog.Info("generating WireGuard key pair")
 	keyPair, err := GenerateKeyPair()
 	if err != nil {
-		return "", fmt.Errorf("failed to generate key pair: %w", err)
+		return fmt.Errorf("failed to generate key pair: %w", err)
 	}
 
-	// Save keypair and server info (IP will be set during activate)
-	state.ServerHost = invite.Endpoint
-	state.ServerEndpoint = invite.Endpoint
-	state.ServerIP = invite.ServerIP
-	state.PublicKey = keyPair.PublicKey
-	state.ServerPublicKey = invite.ServerPublicKey
-
-	// Store private key for later use during activate
-	vsHome, err := getVibespaceHome()
-	if err != nil {
-		return "", err
-	}
-	privateKeyPath := filepath.Join(vsHome, "wg-client.key")
-	if err := os.WriteFile(privateKeyPath, []byte(keyPair.PrivateKey), 0600); err != nil {
-		return "", fmt.Errorf("failed to save private key: %w", err)
-	}
-
-	if err := state.Save(); err != nil {
-		return "", fmt.Errorf("failed to save remote state: %w", err)
-	}
-
-	// Return the client public key - user needs to add this to the server
-	return keyPair.PublicKey, nil
-}
-
-// Activate brings up the WireGuard tunnel and fetches kubeconfig.
-// Call this after the server has added the client's public key.
-// The assignedIP is the IP address assigned by the server (e.g., "10.100.0.2/32").
-func Activate(assignedIP string) error {
-	state, err := LoadRemoteState()
-	if err != nil {
-		return fmt.Errorf("failed to load remote state: %w", err)
-	}
-
-	if state.PublicKey == "" {
-		return fmt.Errorf("no pending connection: run 'vibespace remote connect <token>' first")
-	}
-
-	if state.Connected {
-		return fmt.Errorf("already connected")
-	}
-
-	// Set the assigned IP (strip /32 suffix if present for display, but keep full for config)
-	state.LocalIP = assignedIP
-
-	// Write WireGuard client config with the assigned IP
+	// Store private key
 	vsHome, err := getVibespaceHome()
 	if err != nil {
 		return err
 	}
 	privateKeyPath := filepath.Join(vsHome, "wg-client.key")
-	privateKey, err := os.ReadFile(privateKeyPath)
-	if err != nil {
-		return fmt.Errorf("failed to read private key: %w", err)
+	if err := os.WriteFile(privateKeyPath, []byte(keyPair.PrivateKey), 0600); err != nil {
+		return fmt.Errorf("failed to save private key: %w", err)
 	}
 
+	// Determine hostname
+	hostname := opts.Hostname
+	if hostname == "" {
+		hostname, _ = os.Hostname()
+	}
+
+	// Register with server via HTTPS
+	slog.Info("registering with server")
+	regResp, err := registerWithServer(invite, keyPair.PublicKey, hostname)
+	if err != nil {
+		return fmt.Errorf("failed to register with server: %w", err)
+	}
+
+	// Save state
+	state.ServerHost = invite.Endpoint
+	state.ServerEndpoint = regResp.ServerEndpoint
+	state.ServerIP = regResp.ServerIP
+	state.PublicKey = keyPair.PublicKey
+	state.ServerPublicKey = regResp.ServerPublicKey
+	state.LocalIP = regResp.AssignedIP
+
+	// Write WireGuard client config
 	config := &ClientConfig{
-		PrivateKey:      strings.TrimSpace(string(privateKey)),
-		Address:         assignedIP,
-		ServerPublicKey: state.ServerPublicKey,
-		ServerEndpoint:  state.ServerEndpoint,
-		ServerIP:        state.ServerIP,
+		PrivateKey:      keyPair.PrivateKey,
+		Address:         regResp.AssignedIP,
+		ServerPublicKey: regResp.ServerPublicKey,
+		ServerEndpoint:  regResp.ServerEndpoint,
+		ServerIP:        regResp.ServerIP,
 	}
 
 	tempPath, err := WriteClientConfig(config)
@@ -128,7 +107,7 @@ func Activate(assignedIP string) error {
 		return fmt.Errorf("failed to install WireGuard config: %w", err)
 	}
 
-	// Save state with LocalIP before bringing up WireGuard (QuickUp reads it from disk)
+	// Save state before QuickUp (macOS reads LocalIP from state on disk)
 	if err := state.Save(); err != nil {
 		return fmt.Errorf("failed to save remote state: %w", err)
 	}
@@ -141,17 +120,17 @@ func Activate(assignedIP string) error {
 
 	// Wait for tunnel connectivity
 	slog.Info("waiting for tunnel connectivity")
-	if err := waitForConnectivity(state.ServerIP, 30*time.Second); err != nil {
+	if err := waitForConnectivity(regResp.ServerIP, 30*time.Second); err != nil {
 		QuickDown()
 		return fmt.Errorf("tunnel did not establish: %w", err)
 	}
 
 	// Fetch kubeconfig from management API
 	slog.Info("fetching kubeconfig from server")
-	kubeconfig, err := FetchKubeconfigFromServer(state.ServerIP)
+	kubeconfig, err := FetchKubeconfigFromServer(regResp.ServerIP)
 	if err != nil {
 		QuickDown()
-		return fmt.Errorf("failed to fetch kubeconfig (is the client added on server?): %w", err)
+		return fmt.Errorf("failed to fetch kubeconfig: %w", err)
 	}
 
 	// Save kubeconfig
@@ -176,6 +155,66 @@ func Activate(assignedIP string) error {
 
 	slog.Info("connected to remote server", "localIP", state.LocalIP)
 	return nil
+}
+
+// registerWithServer calls the server's HTTPS registration endpoint.
+func registerWithServer(invite *InviteToken, publicKey, hostname string) (*RegisterResponse, error) {
+	// Determine registration URL
+	host := invite.Host
+	if host == "" {
+		// Fall back to extracting from endpoint
+		if h, _, err := splitHostPort(invite.Endpoint); err == nil {
+			host = h
+		} else {
+			host = invite.Endpoint
+		}
+	}
+
+	regURL := fmt.Sprintf("https://%s:%d/register", host, DefaultRegistrationPort)
+
+	// Build request
+	reqBody := RegisterRequest{
+		Token:     mustEncodeInviteToken(invite),
+		PublicKey: publicKey,
+		Hostname:  hostname,
+	}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Create HTTPS client with certificate pinning
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	if invite.CertFingerprint != "" {
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: PinningTLSConfig(invite.CertFingerprint),
+		}
+	}
+
+	resp, err := httpClient.Post(regURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("registration request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("token rejected by server (expired or invalid)")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("registration failed with status %d", resp.StatusCode)
+	}
+
+	var regResp RegisterResponse
+	if err := json.NewDecoder(resp.Body).Decode(&regResp); err != nil {
+		return nil, fmt.Errorf("failed to decode registration response: %w", err)
+	}
+
+	return &regResp, nil
+}
+
+// Activate is deprecated. Use Connect() which handles registration and activation in one step.
+func Activate(assignedIP string) error {
+	return fmt.Errorf("activate is deprecated: use 'vibespace remote connect <token>' which handles registration and activation automatically")
 }
 
 // Disconnect disconnects from the remote server.
@@ -248,4 +287,15 @@ func waitForConnectivity(serverIP string, timeout time.Duration) error {
 		time.Sleep(1 * time.Second)
 	}
 	return fmt.Errorf("timeout waiting for connectivity to %s", serverIP)
+}
+
+// splitHostPort is a safe wrapper around net.SplitHostPort.
+func splitHostPort(hostport string) (host, port string, err error) {
+	return net.SplitHostPort(hostport)
+}
+
+// mustEncodeInviteToken re-encodes an invite token. If encoding fails, returns empty string.
+func mustEncodeInviteToken(token *InviteToken) string {
+	encoded, _ := EncodeInviteToken(token)
+	return encoded
 }
