@@ -117,6 +117,45 @@ func (s *Server) AddClient(name, publicKey string) (string, error) {
 	return assignedIP, nil
 }
 
+// ListClients returns all registered clients.
+func (s *Server) ListClients() []ClientRegistration {
+	return s.state.Clients
+}
+
+// RemoveClient removes a client by name or public key.
+func (s *Server) RemoveClient(nameOrKey string) error {
+	idx := -1
+	for i, c := range s.state.Clients {
+		if c.Name == nameOrKey || c.PublicKey == nameOrKey || c.Hostname == nameOrKey {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return fmt.Errorf("client %q not found", nameOrKey)
+	}
+
+	removed := s.state.Clients[idx]
+	s.state.Clients = append(s.state.Clients[:idx], s.state.Clients[idx+1:]...)
+
+	if err := s.state.Save(); err != nil {
+		return fmt.Errorf("failed to save state: %w", err)
+	}
+
+	// Rewrite WireGuard config
+	if err := s.WriteWireGuardConfig(); err != nil {
+		return fmt.Errorf("failed to update WireGuard config: %w", err)
+	}
+
+	// Reload WireGuard
+	if err := s.reloadWireGuard(); err != nil {
+		slog.Warn("failed to reload WireGuard after client removal", "error", err)
+	}
+
+	slog.Info("client removed", "name", removed.Name, "ip", removed.AssignedIP)
+	return nil
+}
+
 // InitializeWireGuard initializes WireGuard server configuration.
 func (s *Server) InitializeWireGuard() error {
 	// Check if already initialized
@@ -224,6 +263,7 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/kubeconfig", s.handleKubeconfig)
+	mux.HandleFunc("/disconnect", s.handleDisconnect)
 
 	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort)
 	s.mgmtServer = &http.Server{
@@ -321,6 +361,26 @@ func (s *Server) handleKubeconfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Write([]byte(content))
+}
+
+// handleDisconnect handles POST /disconnect - optional notification from client.
+func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		PublicKey string `json:"public_key"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	if req.PublicKey != "" {
+		slog.Info("client disconnected", "public_key", req.PublicKey[:8]+"...")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // reloadWireGuard reloads the WireGuard configuration.
