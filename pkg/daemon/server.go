@@ -11,8 +11,11 @@ import (
 	"sync"
 	"time"
 
+	vsdns "github.com/yagizdagabak/vibespace/pkg/dns"
 	"github.com/yagizdagabak/vibespace/pkg/portforward"
 )
+
+const defaultDNSPort = 5553
 
 // Server is the daemon server that manages all vibespaces
 type Server struct {
@@ -23,6 +26,7 @@ type Server struct {
 	state      *DaemonState
 	desiredMgr *DesiredStateManager
 	manager    *portforward.Manager
+	dnsServer  *vsdns.Server
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -78,6 +82,12 @@ func (s *Server) Start() error {
 
 	slog.Info("daemon server started", "socket", s.sockPath)
 
+	// Start embedded DNS server for *.vibespace.internal
+	s.dnsServer = vsdns.NewServer(defaultDNSPort)
+	if err := s.dnsServer.Start(); err != nil {
+		slog.Warn("failed to start DNS server", "error", err)
+	}
+
 	s.wg.Add(2)
 	go s.acceptLoop()
 	go s.watchLoop()
@@ -90,6 +100,10 @@ func (s *Server) Stop() {
 	slog.Info("stopping daemon server")
 
 	s.cancel()
+
+	if s.dnsServer != nil {
+		s.dnsServer.Stop()
+	}
 
 	if s.listener != nil {
 		s.listener.Close()
