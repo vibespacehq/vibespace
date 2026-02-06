@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 	"github.com/yagizdagabak/vibespace/pkg/remote"
@@ -61,6 +64,17 @@ var remoteDisconnectCmd = &cobra.Command{
 	RunE:    runRemoteDisconnect,
 }
 
+var remoteWatchCmd = &cobra.Command{
+	Use:   "watch",
+	Short: "Watch and auto-reconnect the remote tunnel",
+	Long: `Watch the remote WireGuard tunnel and automatically reconnect if it drops.
+
+This command monitors the tunnel health and attempts to restore the connection
+if connectivity is lost. Press Ctrl-C to stop watching.`,
+	Example: `  vibespace remote watch`,
+	RunE:    runRemoteWatch,
+}
+
 var remoteStatusCmd = &cobra.Command{
 	Use:     "status",
 	Short:   "Show remote connection status",
@@ -74,6 +88,7 @@ func init() {
 	remoteCmd.AddCommand(remoteActivateCmd)
 	remoteCmd.AddCommand(remoteDisconnectCmd)
 	remoteCmd.AddCommand(remoteStatusCmd)
+	remoteCmd.AddCommand(remoteWatchCmd)
 }
 
 func runRemoteConnect(cmd *cobra.Command, args []string) error {
@@ -129,6 +144,42 @@ func runRemoteConnect(cmd *cobra.Command, args []string) error {
 
 func runRemoteActivate(cmd *cobra.Command, args []string) error {
 	return fmt.Errorf("activate is deprecated: use 'vibespace remote connect <token>' which handles registration and activation automatically")
+}
+
+func runRemoteWatch(cmd *cobra.Command, args []string) error {
+	out := getOutput()
+
+	state, err := remote.GetStatus()
+	if err != nil {
+		return fmt.Errorf("failed to get status: %w", err)
+	}
+	if !state.Connected {
+		return fmt.Errorf("not connected to any remote server: use 'vibespace remote connect <token>' first")
+	}
+
+	fmt.Printf("Watching tunnel to %s ...\n", out.Teal(state.ServerHost))
+	fmt.Println("Press Ctrl-C to stop.")
+	fmt.Println()
+
+	watcher := remote.NewConnectionWatcher(state.ServerIP)
+
+	watcher.OnDisconnect(func() {
+		fmt.Printf("%s Tunnel lost, attempting reconnect...\n", out.Yellow("[!!]"))
+	})
+	watcher.OnReconnect(func() {
+		fmt.Printf("%s Tunnel restored\n", out.Green("[ok]"))
+	})
+
+	watcher.Start()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	<-sigCh
+
+	fmt.Println()
+	fmt.Println("Stopping watcher...")
+	watcher.Stop()
+	return nil
 }
 
 func runRemoteDisconnect(cmd *cobra.Command, args []string) error {
