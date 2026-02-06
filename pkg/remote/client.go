@@ -212,11 +212,6 @@ func registerWithServer(invite *InviteToken, publicKey, hostname string) (*Regis
 	return &regResp, nil
 }
 
-// Activate is deprecated. Use Connect() which handles registration and activation in one step.
-func Activate(assignedIP string) error {
-	return fmt.Errorf("activate is deprecated: use 'vibespace remote connect <token>' which handles registration and activation automatically")
-}
-
 // Disconnect disconnects from the remote server.
 func Disconnect() error {
 	state, err := LoadRemoteState()
