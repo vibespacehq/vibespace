@@ -23,13 +23,14 @@ import (
 // Stored at ~/.vibespace/remote.json
 type RemoteState struct {
 	Connected       bool      `json:"connected"`
-	ServerHost      string    `json:"server_host,omitempty"`     // Original SSH host (user@hostname)
-	ServerEndpoint  string    `json:"server_endpoint,omitempty"` // WireGuard endpoint (hostname:51820)
-	LocalIP         string    `json:"local_ip,omitempty"`        // Client's WireGuard IP (10.100.0.2)
-	ServerIP        string    `json:"server_ip,omitempty"`       // Server's WireGuard IP (10.100.0.1)
+	ServerHost      string    `json:"server_host,omitempty"`      // Original SSH host (user@hostname)
+	ServerEndpoint  string    `json:"server_endpoint,omitempty"`  // WireGuard endpoint (hostname:51820)
+	LocalIP         string    `json:"local_ip,omitempty"`         // Client's WireGuard IP (10.100.0.2)
+	ServerIP        string    `json:"server_ip,omitempty"`        // Server's WireGuard IP (10.100.0.1)
 	ConnectedAt     time.Time `json:"connected_at,omitempty"`
 	PublicKey       string    `json:"public_key,omitempty"`        // Client's WireGuard public key
 	ServerPublicKey string    `json:"server_public_key,omitempty"` // Server's WireGuard public key
+	CertFingerprint string    `json:"cert_fingerprint,omitempty"`  // Server TLS cert fingerprint (sha256:hex)
 }
 
 // ServerState represents the server's state for managing clients.
