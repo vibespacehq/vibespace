@@ -19,8 +19,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // Server represents the remote mode server.
@@ -30,6 +33,7 @@ type Server struct {
 	registrationServer *http.Server // Public registration API (0.0.0.0)
 	kubeProxy          net.Listener
 	certFingerprint    string // SHA256 fingerprint of registration TLS cert
+	rateLimiters       sync.Map // per-IP *rate.Limiter for registration endpoint
 }
 
 // NewServer creates a new remote server instance.
@@ -487,12 +491,35 @@ func (s *Server) startRegistrationAPI() error {
 	return nil
 }
 
+// getRateLimiter returns a per-IP rate limiter (5 req/min, burst 3).
+func (s *Server) getRateLimiter(ip string) *rate.Limiter {
+	if v, ok := s.rateLimiters.Load(ip); ok {
+		return v.(*rate.Limiter)
+	}
+	limiter := rate.NewLimiter(rate.Every(12*time.Second), 3) // 5/min, burst 3
+	s.rateLimiters.Store(ip, limiter)
+	return limiter
+}
+
 // handleRegister handles POST /register - one-shot client registration.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	// Rate limit by IP
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	if !s.getRateLimiter(ip).Allow() {
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+
+	// Bound request body to 1 MB
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
