@@ -116,7 +116,7 @@ func (s *Store) Save(session *Session) error {
 	}
 
 	path := s.sessionPath(session.Name)
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write session file: %w", err)
 	}
 

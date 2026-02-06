@@ -61,7 +61,7 @@ func (s *HistoryStore) Append(sessionName string, msg *Message) error {
 	path := s.historyPath(sessionName)
 
 	// Open file in append mode, create if not exists
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open history file: %w", err)
 	}

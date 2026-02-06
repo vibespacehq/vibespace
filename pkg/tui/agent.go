@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -182,8 +183,8 @@ func (c *AgentConn) Connect() error {
 	sshArgs := []string{
 		"-i", keyPath,
 		"-p", strconv.Itoa(c.localPort),
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "UserKnownHostsFile=~/.vibespace/known_hosts",
 		"-o", "LogLevel=ERROR",
 		// Reverse tunnel: pod's localhost:18080 -> host's localhost:18080 (permission server)
 		"-R", "18080:localhost:18080",
@@ -252,7 +253,9 @@ func (c *AgentConn) readLoop() {
 	scanner.Buffer(buf, 1024*1024)
 
 	// Debug: log raw JSON to file
-	debugFile, _ := os.OpenFile("/tmp/agents_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	homeDir, _ := os.UserHomeDir()
+	debugPath := filepath.Join(homeDir, ".vibespace", "agents_debug.log")
+	debugFile, _ := os.OpenFile(debugPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	defer func() {
 		if debugFile != nil {
 			debugFile.Close()
