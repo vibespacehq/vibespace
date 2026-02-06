@@ -3,6 +3,7 @@ package remote
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,23 @@ import (
 
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 )
+
+// mgmtHTTPClient returns an HTTP client for the management API with cert pinning.
+// Loads the saved cert fingerprint from RemoteState and uses PinningTLSConfig.
+// Falls back to InsecureSkipVerify if no fingerprint is available (e.g. during
+// initial connectivity check before state is fully saved).
+func mgmtHTTPClient(timeout time.Duration) *http.Client {
+	var tlsCfg *tls.Config
+	if state, err := LoadRemoteState(); err == nil && state.CertFingerprint != "" {
+		tlsCfg = PinningTLSConfig(state.CertFingerprint)
+	} else {
+		tlsCfg = &tls.Config{InsecureSkipVerify: true}
+	}
+	return &http.Client{
+		Timeout:   timeout,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
+}
 
 // ConnectOptions contains options for connecting to a remote server.
 type ConnectOptions struct {
@@ -80,13 +98,14 @@ func Connect(opts ConnectOptions) error {
 		return fmt.Errorf("failed to register with server: %w", err)
 	}
 
-	// Save state
+	// Save state (including cert fingerprint for mgmt API pinning)
 	state.ServerHost = invite.Endpoint
 	state.ServerEndpoint = regResp.ServerEndpoint
 	state.ServerIP = regResp.ServerIP
 	state.PublicKey = keyPair.PublicKey
 	state.ServerPublicKey = regResp.ServerPublicKey
 	state.LocalIP = regResp.AssignedIP
+	state.CertFingerprint = invite.CertFingerprint
 
 	// Write WireGuard client config
 	config := &ClientConfig{
@@ -254,6 +273,7 @@ func Disconnect() error {
 	state.ServerIP = ""
 	state.PublicKey = ""
 	state.ServerPublicKey = ""
+	state.CertFingerprint = ""
 	state.ConnectedAt = time.Time{}
 
 	if err := state.Save(); err != nil {
@@ -275,9 +295,9 @@ func waitForConnectivity(serverIP string, timeout time.Duration) error {
 	attempt := 0
 	for time.Now().Before(deadline) {
 		attempt++
-		// Try to reach the management API
-		client := &http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(fmt.Sprintf("http://%s:%d/health", serverIP, DefaultManagementPort))
+		// Try to reach the management API (TLS)
+		client := mgmtHTTPClient(2 * time.Second)
+		resp, err := client.Get(fmt.Sprintf("https://%s:%d/health", serverIP, DefaultManagementPort))
 		if err == nil {
 			resp.Body.Close()
 			slog.Info("tunnel connectivity established", "attempts", attempt)
@@ -291,9 +311,9 @@ func waitForConnectivity(serverIP string, timeout time.Duration) error {
 
 // notifyServerDisconnect sends a best-effort disconnect notification to the server.
 func notifyServerDisconnect(serverIP, publicKey string) {
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := mgmtHTTPClient(2 * time.Second)
 	body, _ := json.Marshal(map[string]string{"public_key": publicKey})
-	url := fmt.Sprintf("http://%s:%d/disconnect", serverIP, DefaultManagementPort)
+	url := fmt.Sprintf("https://%s:%d/disconnect", serverIP, DefaultManagementPort)
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return // fire-and-forget
@@ -403,8 +423,8 @@ func (w *ConnectionWatcher) run() {
 }
 
 func (w *ConnectionWatcher) ping() bool {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://%s:%d/health", w.serverIP, DefaultManagementPort))
+	client := mgmtHTTPClient(2 * time.Second)
+	resp, err := client.Get(fmt.Sprintf("https://%s:%d/health", w.serverIP, DefaultManagementPort))
 	if err != nil {
 		return false
 	}

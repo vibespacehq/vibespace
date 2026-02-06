@@ -263,7 +263,13 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
-	// Start private management API (WireGuard IP only)
+	// Ensure TLS cert exists (shared between registration and management APIs)
+	mgmtCert, err := s.ensureRegistrationCert()
+	if err != nil {
+		return fmt.Errorf("failed to ensure TLS cert: %w", err)
+	}
+
+	// Start private management API (WireGuard IP only) with TLS
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/kubeconfig", s.handleKubeconfig)
@@ -273,11 +279,15 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	s.mgmtServer = &http.Server{
 		Addr:    mgmtAddr,
 		Handler: mux,
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{mgmtCert},
+			MinVersion:   tls.VersionTLS12,
+		},
 	}
 
-	slog.Info("starting management API", "addr", mgmtAddr)
+	slog.Info("starting management API", "addr", mgmtAddr, "tls", true)
 
-	// Start public registration API
+	// Start public registration API (reuses the already-loaded cert)
 	if err := s.startRegistrationAPI(); err != nil {
 		slog.Warn("failed to start registration API", "error", err)
 	}
@@ -285,13 +295,13 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	s.startKubeAPIProxy()
 
 	if foreground {
-		// Run in foreground
-		return s.mgmtServer.ListenAndServe()
+		// Run in foreground with TLS
+		return s.mgmtServer.ListenAndServeTLS("", "")
 	}
 
-	// Run in background
+	// Run in background with TLS
 	go func() {
-		if err := s.mgmtServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.mgmtServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
 			slog.Error("management API error", "error", err)
 		}
 	}()
@@ -712,9 +722,20 @@ func IsServeRunning() bool {
 
 // FetchKubeconfigFromServer fetches the kubeconfig from the server's management API.
 func FetchKubeconfigFromServer(serverIP string) ([]byte, error) {
-	url := fmt.Sprintf("http://%s:%d/kubeconfig", serverIP, DefaultManagementPort)
+	url := fmt.Sprintf("https://%s:%d/kubeconfig", serverIP, DefaultManagementPort)
 
-	resp, err := http.Get(url)
+	// Use cert pinning if fingerprint is available, skip-verify otherwise
+	var tlsCfg *tls.Config
+	if state, err := LoadRemoteState(); err == nil && state.CertFingerprint != "" {
+		tlsCfg = PinningTLSConfig(state.CertFingerprint)
+	} else {
+		tlsCfg = &tls.Config{InsecureSkipVerify: true}
+	}
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch kubeconfig: %w", err)
 	}
