@@ -47,15 +47,6 @@ registration, WireGuard tunnel setup, and kubeconfig fetching.`,
 	RunE:    runRemoteConnect,
 }
 
-var remoteActivateCmd = &cobra.Command{
-	Use:        "activate <assigned-ip>",
-	Short:      "Deprecated: use 'remote connect' instead",
-	Long:       `This command is deprecated. Use 'vibespace remote connect <token>' which handles registration and activation in one step.`,
-	Args:       cobra.ExactArgs(1),
-	RunE:       runRemoteActivate,
-	Deprecated: "use 'vibespace remote connect <token>' instead",
-}
-
 var remoteDisconnectCmd = &cobra.Command{
 	Use:     "disconnect",
 	Short:   "Disconnect from the remote server",
@@ -85,7 +76,6 @@ var remoteStatusCmd = &cobra.Command{
 
 func init() {
 	remoteCmd.AddCommand(remoteConnectCmd)
-	remoteCmd.AddCommand(remoteActivateCmd)
 	remoteCmd.AddCommand(remoteDisconnectCmd)
 	remoteCmd.AddCommand(remoteStatusCmd)
 	remoteCmd.AddCommand(remoteWatchCmd)
@@ -140,10 +130,6 @@ func runRemoteConnect(cmd *cobra.Command, args []string) error {
 	fmt.Println("To disconnect: vibespace remote disconnect")
 
 	return nil
-}
-
-func runRemoteActivate(cmd *cobra.Command, args []string) error {
-	return fmt.Errorf("activate is deprecated: use 'vibespace remote connect <token>' which handles registration and activation automatically")
 }
 
 func runRemoteWatch(cmd *cobra.Command, args []string) error {
