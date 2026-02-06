@@ -278,10 +278,10 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort)
 	s.mgmtServer = &http.Server{
 		Addr:    mgmtAddr,
-		Handler: mux,
+		Handler: securityHeaders(mux),
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{mgmtCert},
-			MinVersion:   tls.VersionTLS12,
+			MinVersion:   tls.VersionTLS13,
 		},
 	}
 
@@ -470,6 +470,17 @@ func (s *Server) ensureRegistrationCert() (tls.Certificate, error) {
 	return cert, nil
 }
 
+// securityHeaders wraps an http.Handler with standard security headers.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'")
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
+}
+
 // startRegistrationAPI starts the public HTTPS registration endpoint on 0.0.0.0:7781.
 func (s *Server) startRegistrationAPI() error {
 	cert, err := s.ensureRegistrationCert()
@@ -483,10 +494,10 @@ func (s *Server) startRegistrationAPI() error {
 	addr := fmt.Sprintf("0.0.0.0:%d", DefaultRegistrationPort)
 	s.registrationServer = &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: securityHeaders(mux),
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
+			MinVersion:   tls.VersionTLS13,
 		},
 	}
 
@@ -682,7 +693,7 @@ func SpawnServe() error {
 
 	// Redirect stdout/stderr to log file
 	logFile := filepath.Join(vsHome, "serve.log")
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
@@ -698,7 +709,7 @@ func SpawnServe() error {
 	}
 
 	// Write PID file
-	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0644); err != nil {
+	if err := os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", cmd.Process.Pid)), 0600); err != nil {
 		slog.Warn("failed to write serve pid file", "error", err)
 	}
 
