@@ -116,12 +116,12 @@ func setupLogging(cfg LogConfig) func() {
 func newRotatingWriter(filename string) *lumberjack.Logger {
 	home, _ := os.UserHomeDir()
 	logDir := filepath.Join(home, ".vibespace")
-	os.MkdirAll(logDir, 0755)
+	os.MkdirAll(logDir, 0700)
 
 	// For daemon logs, use daemons subdirectory
 	if strings.HasSuffix(filename, ".log") && filename != "debug.log" && filename != "tui-debug.log" {
 		logDir = filepath.Join(logDir, "daemons")
-		os.MkdirAll(logDir, 0755)
+		os.MkdirAll(logDir, 0700)
 	}
 
 	return &lumberjack.Logger{

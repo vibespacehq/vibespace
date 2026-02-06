@@ -185,7 +185,7 @@ VPS_SERVE_PID=$!
 sleep 5
 
 # CHECK: Server should output:
-#   - "starting management API" on 10.100.0.1:7780
+#   - "starting management API" on 10.100.0.1:7780 with tls=true
 #   - "starting registration API" on 0.0.0.0:7781 with fingerprint
 ```
 
@@ -214,12 +214,29 @@ cat /etc/wireguard/wg-vibespace.conf
 VERIFY_SERVER
 ```
 
+### 3.4 Verify management API is HTTPS
+
+```bash
+# Should fail without -k (self-signed cert)
+ssh vibespace-remote 'curl https://10.100.0.1:7780/health 2>&1 | head -3'
+# CHECK: TLS error (self-signed cert rejected)
+
+# Should succeed with -k
+ssh vibespace-remote 'curl -k https://10.100.0.1:7780/health 2>&1'
+# CHECK: {"status":"ok"}
+
+# Verify security headers
+ssh vibespace-remote 'curl -k -I https://10.100.0.1:7780/health 2>&1 | grep -i "x-content-type\|x-frame\|cache-control\|content-security"'
+# CHECK: X-Content-Type-Options: nosniff, X-Frame-Options: DENY, etc.
+```
+
 **Expected:**
 - WireGuard interface is up with server IP 10.100.0.1/24
 - serve.json has `running: true`, public key, signing key
 - Ports 51820/UDP, 7780/TCP, 7781/TCP are listening
 - reg-cert.pem and reg-key.pem exist
 - WireGuard config has the server private key and address
+- Management API responds over HTTPS with security headers
 
 ---
 
@@ -302,7 +319,7 @@ ping -c 3 10.100.0.1
 ```
 
 **Expected:**
-- remote.json shows `connected: true`, local_ip, server_ip, public keys
+- remote.json shows `connected: true`, local_ip, server_ip, public keys, `cert_fingerprint`
 - WireGuard interface is up on Mac (utun device)
 - remote_kubeconfig exists with server address pointing to 10.100.0.1
 - Ping to 10.100.0.1 succeeds
@@ -432,34 +449,56 @@ ssh vibespace-remote 'vibespace serve --list-clients --json' | python3 -m json.t
 
 ---
 
-## Phase 9: Auto-Reconnect (Commit 6)
+## Phase 9: Auto-Reconnect via `remote watch` (Commit 6)
 
-### 9.1 Simulate tunnel drop and verify manual reconnect works
+### 9.1 Start the watcher
 
 ```bash
-# Bring down the WireGuard interface manually
-sudo wg show  # Note the interface name (utun*)
+# In a separate terminal:
+vibespace remote watch
 
-# Read the utun name
+# CHECK: Output should show:
+#   "Watching tunnel to <server>..."
+#   "Press Ctrl-C to stop."
+```
+
+### 9.2 Simulate tunnel drop and verify auto-reconnect
+
+```bash
+# In another terminal, kill the tunnel:
 UTUN=$(cat ~/.vibespace/utun-name)
 echo "Interface: $UTUN"
-
-# Kill it by removing the socket
 sudo rm -f /var/run/wireguard/${UTUN}.sock
 sleep 2
 
 # Verify it's down
-sudo wg show 2>&1  # Should fail or show nothing
 ping -c 1 -W 2 10.100.0.1  # Should fail
 
-# Now test that we can bring it back manually
-# (The ConnectionWatcher would do this automatically in daemon mode)
-# For manual test, just reconnect:
+# CHECK: The watch terminal should show:
+#   [!!] Tunnel lost, attempting reconnect...
+#   ... (after ~45 seconds of health check failures)
+#   [ok] Tunnel restored
+
+# After reconnect, verify:
+ping -c 3 10.100.0.1
+# CHECK: Ping succeeds again
+```
+
+### 9.3 Stop the watcher
+
+```bash
+# In the watch terminal, press Ctrl-C
+# CHECK: "Stopping watcher..." and clean exit
+```
+
+### 9.4 Manual reconnect fallback (if watcher not used)
+
+```bash
+# Alternative: manual disconnect/reconnect
 vibespace remote disconnect
 vibespace remote connect "$TOKEN"
-
-# CHECK: Should reconnect successfully
 vibespace remote status
+# CHECK: Should reconnect successfully
 ```
 
 ---
@@ -553,39 +592,50 @@ vibespace remote disconnect
 
 ## Phase 12: DNS Resolution (Commit 10)
 
+Note: DNS is integrated with the **daemon** (port-forward manager), not the serve command.
+The daemon now auto-configures the system resolver on startup and removes it on shutdown.
+DNS A records are automatically added/removed when port-forwards are added/removed.
+
 ### 12.1 Verify DNS server starts with daemon
 
-Note: The DNS server is integrated with the daemon, not the remote serve command.
-This test verifies the DNS package works correctly.
-
 ```bash
-# Test DNS resolution locally if the daemon is running
-# (DNS server listens on 127.0.0.1:5553)
+# Start the daemon (requires a vibespace to be initialized locally)
+vibespace daemon start
+
+# CHECK: Daemon starts, DNS server listens on 127.0.0.1:5553
+# The system resolver should be auto-configured:
+ls -la /etc/resolver/vibespace.internal
+# CHECK: File exists with nameserver 127.0.0.1 and port 5553
 
 # Quick test with dig:
-dig @127.0.0.1 -p 5553 test.vibespace.internal A +short 2>/dev/null
-
+dig @127.0.0.1 -p 5553 test.vibespace.internal A +short
 # CHECK: Should return 127.0.0.1 (default for any *.vibespace.internal)
-
-# If dig doesn't work (daemon not running), we can test the DNS package
-# by running a quick Go test:
-cd ~/Desktop/repos/vibespace
-go test -run TestNothing ./pkg/dns/... 2>&1 || echo "(no tests yet - package compiles OK)"
 ```
 
-### 12.2 Verify resolver configuration files work
+### 12.2 Verify DNS records track port-forwards
 
 ```bash
-# macOS resolver file (would be created by ConfigureSystemResolver)
-echo "nameserver 127.0.0.1
-port 5553" | sudo tee /etc/resolver/vibespace.internal
+# Add a port-forward (if a vibespace is running)
+# DNS record should be auto-added for the agent name
+vibespace daemon add-forward <agent-name>
 
-# Test resolution through system resolver
-dscacheutil -flushcache
-ping -c 1 test.vibespace.internal 2>&1
+dig @127.0.0.1 -p 5553 <agent-name>.vibespace.internal A +short
+# CHECK: Returns 127.0.0.1
 
-# Cleanup
-sudo rm -f /etc/resolver/vibespace.internal
+# Remove the port-forward
+vibespace daemon remove-forward <agent-name>
+
+dig @127.0.0.1 -p 5553 <agent-name>.vibespace.internal A +short
+# CHECK: Still returns 127.0.0.1 (default catch-all)
+```
+
+### 12.3 Verify resolver cleanup on daemon stop
+
+```bash
+vibespace daemon stop
+
+ls /etc/resolver/vibespace.internal 2>&1
+# CHECK: File should be gone (RemoveSystemResolver called on shutdown)
 ```
 
 ---
@@ -611,9 +661,27 @@ vibespace remote connect "$SHORT_TOKEN" 2>&1
 
 ---
 
-## Phase 14: Full Cleanup (Post-Test)
+## Phase 14: Rate Limiting on Registration (Commit 4 security)
 
-### 14.1 Stop server on VPS
+### 14.1 Verify rate limiting kicks in
+
+```bash
+# Fire rapid requests at the registration endpoint
+# Rate limit is 5 req/min with burst of 3
+for i in $(seq 1 8); do
+  STATUS=$(ssh vibespace-remote "curl -k -s -o /dev/null -w '%{http_code}' -X POST https://localhost:7781/register -d '{}' 2>/dev/null")
+  echo "Request $i: HTTP $STATUS"
+done
+
+# CHECK: First few requests return 400 (bad token) or 200
+# After burst is exceeded, should return 429 (Too Many Requests)
+```
+
+---
+
+## Phase 15: Full Cleanup (Post-Test)
+
+### 15.1 Stop server on VPS
 
 ```bash
 # If running in foreground, Ctrl+C the terminal
@@ -632,7 +700,7 @@ STOP
 kill $VPS_SERVE_PID 2>/dev/null
 ```
 
-### 14.2 Clean up both machines (same as Phase 1)
+### 15.2 Clean up both machines (same as Phase 1)
 
 ```bash
 # Run Phase 1.1 (local cleanup)
@@ -646,22 +714,26 @@ kill $VPS_SERVE_PID 2>/dev/null
 | # | Test | Expected | Pass? |
 |---|------|----------|-------|
 | 3.2 | Server starts with WireGuard + mgmt API + registration API | All 3 listening | |
+| 3.4 | Management API uses HTTPS with security headers | TLS + headers present | |
 | 4.2 | Token contains `cf` (cert fingerprint) and `h` (host) | Both fields present | |
 | 5.1 | One-shot connect (token → connected in 1 command) | Connected, tunnel up | |
-| 5.2 | Client state, WireGuard, kubeconfig, ping all work | All green | |
+| 5.2 | Client state includes `cert_fingerprint`, ping works | All green | |
 | 5.3 | Server shows registered client with hostname | Client in list | |
 | 5.4 | Re-connect fails with already-connected | Error returned | |
 | 6.1 | Status shows diagnostics with all checks passing | 5/5 checks pass | |
 | 6.2 | JSON status includes diagnostics array | Array present | |
 | 7.1 | Kubeconfig points to 10.100.0.1:6443 | Correct address | |
 | 8.1 | List clients shows Mac client | Client displayed | |
-| 9.1 | Tunnel drop → reconnect works | Re-established | |
+| 9.1 | `remote watch` starts and monitors tunnel | Watching output | |
+| 9.2 | Tunnel drop → auto-reconnect via watcher | Re-established | |
 | 10.1 | Graceful disconnect succeeds | Clean output | |
 | 10.2 | All local state cleaned up | Files removed | |
 | 11.2 | Remove client from server | Client gone from list | |
 | 11.3 | Removed client can't reach server | Ping fails | |
-| 12.1 | DNS resolves *.vibespace.internal | Returns 127.0.0.1 | |
+| 12.1 | DNS auto-configures on daemon start | Resolver file created | |
+| 12.3 | DNS resolver cleaned up on daemon stop | Resolver file removed | |
 | 13.1 | Expired token rejected | Token expired error | |
+| 14.1 | Rate limiting returns 429 after burst exceeded | 429 status code | |
 
 ---
 

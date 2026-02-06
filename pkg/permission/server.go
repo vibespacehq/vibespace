@@ -137,6 +137,7 @@ func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // 1 MB limit
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		slog.Error("failed to read request body", "error", err)
@@ -145,7 +146,7 @@ func (s *Server) handlePermission(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	slog.Debug("received permission request", "body", string(body))
+	slog.Debug("received permission request", "body_len", len(body))
 
 	// Parse the incoming request
 	// PreToolUse sends tool_name and tool_input in snake_case
