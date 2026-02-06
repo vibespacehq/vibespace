@@ -394,6 +394,11 @@ func (s *Server) handleAddForward(req Request) Response {
 		Status:     portforward.StatusActive,
 	})
 
+	// Register DNS record for the agent
+	if s.dnsServer != nil {
+		s.dnsServer.AddRecord(req.Agent, "127.0.0.1")
+	}
+
 	return NewSuccessResponse(AddForwardResponse{
 		LocalPort:  localPort,
 		RemotePort: req.Port,
@@ -424,6 +429,11 @@ func (s *Server) handleRemoveForward(req Request) Response {
 	if desired != nil {
 		desired.RemoveForward(req.Agent, req.Port)
 		s.desiredMgr.Save(req.Vibespace)
+	}
+
+	// Remove DNS record for the agent
+	if s.dnsServer != nil {
+		s.dnsServer.RemoveRecord(req.Agent)
 	}
 
 	return NewSuccessResponse(nil)
