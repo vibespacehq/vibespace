@@ -80,7 +80,7 @@ func PinningTLSConfig(expectedFingerprint string) *tls.Config {
 			hash := sha256.Sum256(rawCerts[0])
 			actual := "sha256:" + hex.EncodeToString(hash[:])
 			if actual != expectedFingerprint {
-				return fmt.Errorf("certificate fingerprint mismatch: got %s, expected %s", actual, expectedFingerprint)
+				return fmt.Errorf("certificate fingerprint mismatch (got %s)", actual)
 			}
 			return nil
 		},
