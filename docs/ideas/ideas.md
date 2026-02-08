@@ -120,6 +120,11 @@ Possible enhancements and features for future consideration.
 - Data retention policies
 - GDPR-compliant data deletion
 
+## Documentation
+
+- Auto-generate per-command CLI docs using cobra's `doc.GenMarkdownTree` — zero maintenance, always in sync with code
+- Add to build script or Makefile target (`make docs`)
+
 ## Misc
 
 - `vibespace upgrade` - Self-update CLI
