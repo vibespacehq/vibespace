@@ -202,10 +202,15 @@ func (s *Server) RemoveClient(nameOrKey string) error {
 
 // InitializeWireGuard initializes WireGuard server configuration.
 func (s *Server) InitializeWireGuard() error {
-	// Check if already initialized
-	if s.state.PublicKey != "" {
-		slog.Debug("WireGuard already initialized")
-		return nil
+	// Check if already initialized AND key file still exists
+	if s.state.PublicKey != "" && s.state.PrivateKeyPath != "" {
+		if _, err := os.Stat(s.state.PrivateKeyPath); err == nil {
+			slog.Debug("WireGuard already initialized")
+			return nil
+		}
+		slog.Warn("WireGuard key file missing, reinitializing", "path", s.state.PrivateKeyPath)
+		s.state.PublicKey = ""
+		s.state.PrivateKeyPath = ""
 	}
 
 	// Generate key pair
