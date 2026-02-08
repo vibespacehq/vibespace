@@ -18,22 +18,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"golang.org/x/sync/semaphore"
 	"golang.org/x/time/rate"
 )
 
 // Server represents the remote mode server.
 type Server struct {
+	mu                 sync.Mutex   // Protects client registration (AddClient/RemoveClient)
 	state              *ServerState
 	mgmtServer         *http.Server // Private management API (WireGuard IP only)
 	registrationServer *http.Server // Public registration API (0.0.0.0)
 	kubeProxy          net.Listener
-	certFingerprint    string // SHA256 fingerprint of registration TLS cert
-	rateLimiters       sync.Map // per-IP *rate.Limiter for registration endpoint
+	kubeProxySem       *semaphore.Weighted // Limits concurrent kube API proxy connections
+	certFingerprint    string              // SHA256 fingerprint of registration TLS cert
+	rateLimiters       sync.Map            // per-IP *rate.Limiter for registration endpoint
 }
 
 // NewServer creates a new remote server instance.
@@ -44,7 +48,8 @@ func NewServer() (*Server, error) {
 	}
 
 	return &Server{
-		state: state,
+		state:        state,
+		kubeProxySem: semaphore.NewWeighted(50),
 	}, nil
 }
 
@@ -97,9 +102,17 @@ func (s *Server) GenerateInviteToken(publicEndpoint string, ttl time.Duration) (
 	return EncodeInviteToken(token)
 }
 
+// CertFingerprint returns the SHA256 fingerprint of the registration TLS cert.
+func (s *Server) CertFingerprint() string {
+	return s.certFingerprint
+}
+
 // AddClient adds a new client to the WireGuard configuration.
-// Returns the assigned IP for the client.
-func (s *Server) AddClient(name, publicKey string) (string, error) {
+// Returns the assigned IP for the client. Thread-safe via mutex.
+func (s *Server) AddClient(name, publicKey, hostname string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// Check if client already exists
 	existing := s.state.FindClientByPublicKey(publicKey)
 	if existing != nil {
@@ -109,8 +122,8 @@ func (s *Server) AddClient(name, publicKey string) (string, error) {
 	// Allocate IP
 	assignedIP := s.state.AllocateClientIP()
 
-	// Add to state
-	s.state.AddClient(name, publicKey, assignedIP)
+	// Add to state (with hostname)
+	s.state.AddClient(name, publicKey, assignedIP, hostname)
 	if err := s.state.Save(); err != nil {
 		return "", fmt.Errorf("failed to save state: %w", err)
 	}
@@ -133,19 +146,39 @@ func (s *Server) ListClients() []ClientRegistration {
 	return s.state.Clients
 }
 
-// RemoveClient removes a client by name or public key.
+// RemoveClient removes a client by name, hostname, or public key (full or prefix >= 8 chars).
+// Returns an error listing all candidates if the identifier is ambiguous.
 func (s *Server) RemoveClient(nameOrKey string) error {
-	idx := -1
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var matches []int
 	for i, c := range s.state.Clients {
 		if c.Name == nameOrKey || c.PublicKey == nameOrKey || c.Hostname == nameOrKey {
-			idx = i
-			break
+			matches = append(matches, i)
+			continue
+		}
+		// Match by public key prefix (>= 8 chars)
+		if len(nameOrKey) >= 8 && strings.HasPrefix(c.PublicKey, nameOrKey) {
+			matches = append(matches, i)
 		}
 	}
-	if idx < 0 {
+
+	if len(matches) == 0 {
 		return fmt.Errorf("client %q not found", nameOrKey)
 	}
+	if len(matches) > 1 {
+		var candidates []string
+		for _, i := range matches {
+			c := s.state.Clients[i]
+			candidates = append(candidates, fmt.Sprintf("  - name=%q hostname=%q ip=%s key=%s...",
+				c.Name, c.Hostname, c.AssignedIP, c.PublicKey[:8]))
+		}
+		return fmt.Errorf("ambiguous identifier %q matches %d clients:\n%s\nUse the full public key to disambiguate",
+			nameOrKey, len(matches), strings.Join(candidates, "\n"))
+	}
 
+	idx := matches[0]
 	removed := s.state.Clients[idx]
 	s.state.Clients = append(s.state.Clients[:idx], s.state.Clients[idx+1:]...)
 
@@ -301,9 +334,20 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 
 	s.startKubeAPIProxy()
 
+	// Write PID file for liveness detection
+	if vsHome, err := getVibespaceHome(); err == nil {
+		pidFile := filepath.Join(vsHome, "serve.pid")
+		os.WriteFile(pidFile, []byte(fmt.Sprintf("%d", os.Getpid())), 0600)
+	}
+
 	if foreground {
-		// Run in foreground with TLS
-		return s.mgmtServer.ListenAndServeTLS("", "")
+		// Run mgmt API in background goroutine so we return to caller for banner/signal handling
+		go func() {
+			if err := s.mgmtServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+				slog.Error("management API error", "error", err)
+			}
+		}()
+		return nil
 	}
 
 	// Run in background with TLS
@@ -335,6 +379,11 @@ func (s *Server) Stop(ctx context.Context) error {
 	// Bring down WireGuard
 	if err := QuickDown(); err != nil {
 		slog.Warn("failed to stop WireGuard", "error", err)
+	}
+
+	// Clean up PID file
+	if vsHome, err := getVibespaceHome(); err == nil {
+		os.Remove(filepath.Join(vsHome, "serve.pid"))
 	}
 
 	s.state.Running = false
@@ -577,36 +626,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		name = "client"
 	}
 
-	// Check if already registered (idempotent)
-	existing := s.state.FindClientByPublicKey(req.PublicKey)
-	if existing != nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(RegisterResponse{
-			AssignedIP:      existing.AssignedIP,
-			ServerPublicKey: s.state.PublicKey,
-			ServerEndpoint:  invite.Endpoint,
-			ServerIP:        serverWGIP(s.state.ServerIP),
-		})
-		return
-	}
-
-	// Add client
-	assignedIP, err := s.AddClient(name, req.PublicKey)
+	// AddClient is idempotent and mutex-protected (handles duplicate check atomically)
+	assignedIP, err := s.AddClient(name, req.PublicKey, req.Hostname)
 	if err != nil {
 		slog.Error("registration failed", "error", err)
 		http.Error(w, "registration failed", http.StatusInternalServerError)
 		return
-	}
-
-	// Update hostname if provided
-	if req.Hostname != "" {
-		for i := range s.state.Clients {
-			if s.state.Clients[i].PublicKey == req.PublicKey {
-				s.state.Clients[i].Hostname = req.Hostname
-				s.state.Save()
-				break
-			}
-		}
 	}
 
 	slog.Info("client registered", "name", name, "ip", assignedIP)
@@ -680,7 +705,9 @@ func SpawnServe() error {
 		return fmt.Errorf("serve is already running")
 	}
 
-	// Clean up stale files
+	// Clean up stale interface/PID if process died
+	CleanupStaleServe()
+
 	pidFile := filepath.Join(vsHome, "serve.pid")
 	os.Remove(pidFile)
 
@@ -732,10 +759,73 @@ func SpawnServe() error {
 	return fmt.Errorf("timeout waiting for serve to start")
 }
 
-// IsServeRunning checks if the serve process is running.
+// IsServeRunning checks if the serve process is running by verifying PID file + process liveness.
+// Falls back to WireGuard interface check if no PID file exists.
 func IsServeRunning() bool {
-	// Check if WireGuard interface is up
-	return IsInterfaceUp()
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return false
+	}
+
+	pidFile := filepath.Join(vsHome, "serve.pid")
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		// No PID file — check interface as fallback for manually started servers
+		return IsInterfaceUp()
+	}
+
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return false
+	}
+
+	// Check if process is alive (kill -0)
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		// Process is dead — interface may be orphaned
+		return false
+	}
+
+	return true
+}
+
+// CleanupStaleServe tears down an orphaned WireGuard interface when the serve
+// process has died but the interface is still up.
+func CleanupStaleServe() {
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return
+	}
+
+	pidFile := filepath.Join(vsHome, "serve.pid")
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		return // no PID file
+	}
+
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		os.Remove(pidFile)
+		return
+	}
+
+	// Check if process is alive
+	proc, err := os.FindProcess(pid)
+	if err == nil {
+		if err := proc.Signal(syscall.Signal(0)); err == nil {
+			return // process is alive, nothing to clean up
+		}
+	}
+
+	// Process is dead but interface might be up — clean up
+	if IsInterfaceUp() {
+		slog.Info("cleaning up orphaned WireGuard interface from stale serve process")
+		QuickDown()
+	}
+	os.Remove(pidFile)
 }
 
 // FetchKubeconfigFromServer fetches the kubeconfig from the server's management API.
@@ -785,7 +875,15 @@ func (s *Server) startKubeAPIProxy() {
 				slog.Warn("kube API proxy accept error", "error", err)
 				continue
 			}
-			go proxyToKubeAPI(conn)
+			if !s.kubeProxySem.TryAcquire(1) {
+				slog.Warn("kube API proxy connection limit reached, rejecting")
+				conn.Close()
+				continue
+			}
+			go func() {
+				defer s.kubeProxySem.Release(1)
+				proxyToKubeAPI(conn)
+			}()
 		}
 	}()
 	slog.Info("kube API proxy listening", "addr", addr)
