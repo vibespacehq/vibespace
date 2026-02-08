@@ -62,6 +62,13 @@ func (s *Server) GenerateInviteToken(publicEndpoint string, ttl time.Duration) (
 		return "", err
 	}
 
+	// Ensure registration cert exists so we can include its fingerprint in the token
+	if s.certFingerprint == "" {
+		if _, err := s.ensureRegistrationCert(); err != nil {
+			return "", fmt.Errorf("failed to ensure registration cert: %w", err)
+		}
+	}
+
 	if ttl <= 0 {
 		ttl = DefaultInviteTokenTTL
 	}
