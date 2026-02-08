@@ -306,17 +306,13 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Stop serve process if running
+	// Kill serve daemon process if running
 	if remote.IsServeRunning() {
 		printStep("Stopping serve process...")
-		server, err := remote.NewServer()
-		if err == nil {
-			ctx := context.Background()
-			if err := server.Stop(ctx); err != nil {
-				slog.Warn("failed to stop serve", "error", err)
-			} else {
-				printSuccess("Serve process stopped")
-			}
+		if err := remote.KillServeProcess(); err != nil {
+			slog.Warn("failed to stop serve process", "error", err)
+		} else {
+			printSuccess("Serve process stopped")
 		}
 	}
 
