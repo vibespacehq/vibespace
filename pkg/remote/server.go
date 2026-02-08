@@ -654,7 +654,13 @@ func (s *Server) ensureSigningKey() (string, []byte, error) {
 	if s.state.SigningPublicKey != "" && s.state.SigningPrivateKeyPath != "" {
 		key, err := os.ReadFile(s.state.SigningPrivateKeyPath)
 		if err == nil && len(key) == ed25519.PrivateKeySize {
-			return s.state.SigningPublicKey, key, nil
+			// Verify stored public key matches the private key on disk
+			derivedPub := ed25519.PrivateKey(key).Public().(ed25519.PublicKey)
+			derivedPubStr := base64.RawURLEncoding.EncodeToString(derivedPub)
+			if derivedPubStr == s.state.SigningPublicKey {
+				return s.state.SigningPublicKey, key, nil
+			}
+			slog.Warn("signing key mismatch, regenerating", "stored", s.state.SigningPublicKey[:8]+"...", "derived", derivedPubStr[:8]+"...")
 		}
 	}
 
