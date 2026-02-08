@@ -75,6 +75,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	slog.Info("init command started")
 	ctx := context.Background()
 
+	// Warn if connected to a remote server
+	if isRemoteConnected() {
+		fmt.Println("Warning: you are connected to a remote server.")
+		fmt.Println("This will initialize a LOCAL cluster. Use 'vibespace remote disconnect' first if unintended.")
+		fmt.Println()
+	}
+
 	// Clean up any stale daemon from previous runs
 	if daemon.IsDaemonRunning() {
 		daemon.StopDaemon()

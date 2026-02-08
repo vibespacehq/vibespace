@@ -66,9 +66,9 @@ Examples:
 		return fmt.Errorf("vibespace '%s' is not running", vibespace)
 	}
 
-	// Get paths - use isolated kubeconfig
+	// Get paths - use active kubeconfig (remote or local)
 	home, _ := os.UserHomeDir()
-	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
+	kubeconfig, _ := resolveKubeconfig()
 	kubectlBin := filepath.Join(home, ".vibespace", "bin", "kubectl")
 
 	// Find the pod using internal ID

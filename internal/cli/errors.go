@@ -13,33 +13,58 @@ import (
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 	"github.com/yagizdagabak/vibespace/pkg/k8s"
 	"github.com/yagizdagabak/vibespace/pkg/model"
+	"github.com/yagizdagabak/vibespace/pkg/remote"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
 )
 
-// checkClusterInitialized checks if the cluster has been initialized (kubeconfig exists)
-func checkClusterInitialized() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	// Use isolated kubeconfig at ~/.vibespace/kubeconfig
-	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
-	if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {
-		return fmt.Errorf("run 'vibespace init' first: %w", vserrors.ErrClusterNotInitialized)
-	}
-
-	return nil
+// isRemoteConnected returns true if a remote connection is active.
+func isRemoteConnected() bool {
+	state, _ := remote.LoadRemoteState()
+	return state != nil && state.Connected
 }
 
-// checkClusterRunning checks if the cluster is actually running and reachable
+// resolveKubeconfig returns the path to the active kubeconfig.
+// Uses remote kubeconfig when connected to a remote server, otherwise local.
+func resolveKubeconfig() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	// Remote connection takes priority
+	if isRemoteConnected() {
+		remotePath, err := remote.GetRemoteKubeconfigPath()
+		if err == nil {
+			if _, err := os.Stat(remotePath); err == nil {
+				return remotePath, nil
+			}
+		}
+	}
+
+	// Fall back to local kubeconfig
+	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
+	if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {
+		return "", fmt.Errorf("run 'vibespace init' or 'vibespace remote connect' first: %w", vserrors.ErrClusterNotInitialized)
+	}
+	return kubeconfig, nil
+}
+
+// checkClusterRunning checks if the cluster is actually running and reachable.
+// Skips local cluster checks when connected to a remote server.
 func checkClusterRunning() error {
-	// First check if initialized
-	if err := checkClusterInitialized(); err != nil {
+	if isRemoteConnected() {
+		// Remote mode — kubeconfig existence is sufficient
+		if _, err := resolveKubeconfig(); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// Local mode — check cluster manager
+	if _, err := resolveKubeconfig(); err != nil {
 		return err
 	}
 
-	// Check if cluster manager reports running
 	home, _ := os.UserHomeDir()
 	vibespaceHome := filepath.Join(home, ".vibespace")
 
@@ -59,17 +84,15 @@ func checkClusterRunning() error {
 
 // getVibespaceServiceWithCheck creates the vibespace service with prerequisite checks
 func getVibespaceServiceWithCheck() (*vibespace.Service, error) {
-	// Check cluster is running
+	// Check cluster is running (handles both local and remote)
 	if err := checkClusterRunning(); err != nil {
 		return nil, err
 	}
 
-	// Get isolated kubeconfig path
-	home, err := os.UserHomeDir()
+	kubeconfig, err := resolveKubeconfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, err
 	}
-	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
 
 	// Set KUBECONFIG environment variable for the k8s client
 	os.Setenv("KUBECONFIG", kubeconfig)

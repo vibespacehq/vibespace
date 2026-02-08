@@ -16,8 +16,27 @@ import (
 	"strings"
 	"time"
 
+	"strconv"
+
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
 )
+
+// chownToRealUser changes file ownership to the real user when running under sudo.
+func chownToRealUser(paths ...string) {
+	uidStr := os.Getenv("SUDO_UID")
+	gidStr := os.Getenv("SUDO_GID")
+	if uidStr == "" || gidStr == "" {
+		return
+	}
+	uid, err1 := strconv.Atoi(uidStr)
+	gid, err2 := strconv.Atoi(gidStr)
+	if err1 != nil || err2 != nil {
+		return
+	}
+	for _, p := range paths {
+		os.Chown(p, uid, gid)
+	}
+}
 
 // mgmtHTTPClient returns an HTTP client for the management API with cert pinning.
 // Loads the saved cert fingerprint from RemoteState and uses PinningTLSConfig.
@@ -207,6 +226,15 @@ func Connect(opts ConnectOptions) error {
 	if err := state.Save(); err != nil {
 		QuickDown()
 		return fmt.Errorf("failed to save remote state: %w", err)
+	}
+
+	// Fix file ownership when running under sudo so non-root commands can read them
+	statePath, _ := getVibespaceHome()
+	if statePath != "" {
+		chownToRealUser(
+			kubeconfigPath,
+			filepath.Join(statePath, RemoteStateFile),
+		)
 	}
 
 	slog.Info("connected to remote server", "localIP", state.LocalIP)
