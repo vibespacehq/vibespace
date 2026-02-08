@@ -198,10 +198,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Println("Give this token to the client:")
 		fmt.Printf("  vibespace remote connect %s\n", token)
-		fmt.Println()
-		fmt.Println("After the client runs that command, they will give you a public key.")
-		fmt.Println("Add it with:")
-		fmt.Printf("  vibespace serve --add-client %s\n", out.Dim("<client-public-key>"))
 		return nil
 	}
 
