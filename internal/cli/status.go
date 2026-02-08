@@ -305,6 +305,20 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Stop serve process if running
+	if remote.IsServeRunning() {
+		printStep("Stopping serve process...")
+		server, err := remote.NewServer()
+		if err == nil {
+			ctx := context.Background()
+			if err := server.Stop(ctx); err != nil {
+				slog.Warn("failed to stop serve", "error", err)
+			} else {
+				printSuccess("Serve process stopped")
+			}
+		}
+	}
+
 	// Tear down WireGuard tunnel and remote connections
 	if remote.IsInterfaceUp() {
 		printStep("Stopping WireGuard tunnel...")
