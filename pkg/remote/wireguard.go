@@ -849,9 +849,7 @@ func extractHomebrewBottle(r io.Reader, formula, destDir string, binaries []stri
 // Called during uninstall to fully clean up WireGuard state.
 func CleanupWireGuardConfig() {
 	configPath := fmt.Sprintf("/etc/wireguard/%s.conf", WGInterfaceName)
-	if _, err := os.Stat(configPath); err != nil {
-		return // nothing to clean
-	}
+	// Always try rm -f (don't pre-check with stat — /etc/wireguard/ is root-only)
 	cmd := exec.Command("sudo", "rm", "-f", configPath)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
