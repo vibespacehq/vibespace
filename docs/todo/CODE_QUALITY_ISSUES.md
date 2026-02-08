@@ -102,7 +102,31 @@ Not urgent, but splitting along responsibility boundaries would improve readabil
 
 ---
 
-## 9. No README at Repo Root
+## 9. Firewall Detection Doesn't Catch ufw/iptables Rules
+
+**Severity:** Medium
+
+- `pkg/remote/diagnostics.go`: `CheckFirewall()` tests if ports 51820/UDP and 7781/TCP are *bindable* locally
+- This doesn't detect ufw/iptables rules blocking inbound traffic — local bind always succeeds even when external traffic is dropped
+- During E2E testing, 7781/TCP was blocked by ufw but the server started with no warning
+
+**Fix:** In addition to the bind check, run `ufw status`, `iptables -L`, or `firewall-cmd --list-all` and parse the output to detect whether the required ports are actually open for inbound traffic.
+
+---
+
+## 10. No User-Facing Output from `vibespace serve --foreground`
+
+**Severity:** Low
+
+- Server startup logs (firewall checks, API addresses, cert fingerprints) use `slog` which defaults to structured logging
+- In `--foreground` mode, the only visible output is wg-quick's `[#] ip link add...` lines
+- No user-friendly confirmation like "Server started, listening on ..." is printed
+
+**Fix:** Add explicit `fmt.Println` output in foreground mode showing: WireGuard status, management API address, registration API address, and cert fingerprint.
+
+---
+
+## 11. No README at Repo Root
 
 **Severity:** Medium (first impression)
 
