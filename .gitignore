@@ -41,3 +41,4 @@ kubeconfig
 
 # Claude Code
 .claude/
+CLAUDE.md
