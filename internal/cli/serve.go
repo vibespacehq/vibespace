@@ -245,8 +245,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		printSuccess("Remote server started in background")
 		fmt.Println()
 
-		// Auto-generate a token on first start if no clients
-		maybeGenerateFirstToken(server, out)
+		// Reload server state from disk — the daemon has already initialized keys
+		server, err = remote.NewServer()
+		if err != nil {
+			slog.Warn("failed to reload server state", "error", err)
+		} else {
+			// Auto-generate a token on first start if no clients
+			maybeGenerateFirstToken(server, out)
+		}
 	}
 
 	return nil
