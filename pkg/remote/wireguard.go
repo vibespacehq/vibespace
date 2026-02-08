@@ -290,7 +290,12 @@ func quickUpMacOS(addr string) error {
 
 	// On macOS, interface name must be utun[0-9]+
 	// Use "utun" to let the kernel pick an available number
-	tunNameFile := filepath.Join(os.TempDir(), "wg-tun-name")
+	tunNameTmp, err := os.CreateTemp("", "wg-tun-name-*")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for tun name: %w", err)
+	}
+	tunNameFile := tunNameTmp.Name()
+	tunNameTmp.Close()
 	os.Remove(tunNameFile)
 
 	// 1. Start wireguard-go with utun interface
@@ -335,7 +340,12 @@ func quickUpMacOS(addr string) error {
 	}
 
 	// Write filtered config to temp file
-	tmpConfig := filepath.Join(os.TempDir(), "wg-config-filtered.conf")
+	tmpConfigFile, err := os.CreateTemp("", "wg-config-filtered-*.conf")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for filtered config: %w", err)
+	}
+	tmpConfig := tmpConfigFile.Name()
+	tmpConfigFile.Close()
 	if err := os.WriteFile(tmpConfig, []byte(strings.Join(wgConfig, "\n")), 0600); err != nil {
 		return fmt.Errorf("failed to write filtered config: %w", err)
 	}
@@ -425,18 +435,60 @@ func quickDownMacOS() error {
 	return nil
 }
 
-// IsInterfaceUp checks if the WireGuard interface is up.
-func IsInterfaceUp() bool {
+// InterfaceStatus returns the WireGuard interface status as a tri-state:
+// "up", "down", or "unknown" (when we can't determine status without sudo).
+func InterfaceStatus() string {
 	wg, err := wgBin()
 	if err != nil {
-		return false
+		return "down"
 	}
 
 	ifName := wireguardInterfaceName()
 
-	cmd := exec.Command("sudo", wg, "show", ifName)
-	err = cmd.Run()
-	return err == nil
+	// Strategy 1: try without sudo (works on Linux if user has CAP_NET_ADMIN)
+	cmd := exec.Command(wg, "show", ifName)
+	if cmd.Run() == nil {
+		return "up"
+	}
+
+	// Strategy 2: on macOS, check for wireguard-go socket file
+	if runtime.GOOS == "darwin" {
+		sockPath := filepath.Join("/var/run/wireguard", ifName+".sock")
+		if _, err := os.Stat(sockPath); err == nil {
+			return "up"
+		}
+		// Also check if we have a saved utun name
+		vsHome, _ := getVibespaceHome()
+		if vsHome != "" {
+			if tunData, err := os.ReadFile(filepath.Join(vsHome, "utun-name")); err == nil {
+				tunName := strings.TrimSpace(string(tunData))
+				if tunName != "" {
+					tunSock := filepath.Join("/var/run/wireguard", tunName+".sock")
+					if _, err := os.Stat(tunSock); err == nil {
+						return "up"
+					}
+				}
+			}
+		}
+	}
+
+	// Strategy 3: try sudo -n (non-interactive, won't prompt)
+	cmd = exec.Command("sudo", "-n", wg, "show", ifName)
+	if err := cmd.Run(); err == nil {
+		return "up"
+	} else {
+		// If sudo -n failed because of auth (exit code 1 from sudo), we can't tell
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return "unknown"
+		}
+	}
+
+	return "down"
+}
+
+// IsInterfaceUp checks if the WireGuard interface is up.
+func IsInterfaceUp() bool {
+	return InterfaceStatus() == "up"
 }
 
 // IsWireGuardInstalled checks if WireGuard tools are installed in the bundled location.
@@ -491,7 +543,12 @@ func SyncWireGuardConfig() error {
 	}
 
 	filteredConfig := stripWGQuickConfig(rawConfig)
-	tmpConfig := filepath.Join(os.TempDir(), "wg-syncconf.conf")
+	tmpFile, err := os.CreateTemp("", "wg-syncconf-*.conf")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file for syncconf: %w", err)
+	}
+	tmpConfig := tmpFile.Name()
+	tmpFile.Close()
 	if err := os.WriteFile(tmpConfig, filteredConfig, 0600); err != nil {
 		return fmt.Errorf("failed to write filtered config: %w", err)
 	}
@@ -788,19 +845,55 @@ func extractHomebrewBottle(r io.Reader, formula, destDir string, binaries []stri
 	return nil
 }
 
-// installWireGuardLinux installs WireGuard tools on Linux via apt-get.
-func installWireGuardLinux(ctx context.Context, binDir string) error {
-	// Install via apt-get (works on Debian/Ubuntu, stable for scripts)
-	cmd := exec.CommandContext(ctx, "sudo", "apt-get", "install", "-y", "wireguard-tools")
+// CleanupWireGuardConfig removes the WireGuard config file from /etc/wireguard/ (requires sudo).
+// Called during uninstall to fully clean up WireGuard state.
+func CleanupWireGuardConfig() {
+	configPath := fmt.Sprintf("/etc/wireguard/%s.conf", WGInterfaceName)
+	if _, err := os.Stat(configPath); err != nil {
+		return // nothing to clean
+	}
+	cmd := exec.Command("sudo", "rm", "-f", configPath)
+	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to install wireguard-tools via apt: %w", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to remove %s (try manually: sudo rm %s)\n", configPath, configPath)
+	}
+}
+
+// installWireGuardLinux installs WireGuard tools on Linux using the detected package manager.
+func installWireGuardLinux(ctx context.Context, binDir string) error {
+	type pkgMgr struct {
+		bin  string
+		args []string
+	}
+	managers := []pkgMgr{
+		{"apt-get", []string{"install", "-y", "wireguard-tools"}},
+		{"dnf", []string{"install", "-y", "wireguard-tools"}},
+		{"yum", []string{"install", "-y", "wireguard-tools"}},
+		{"pacman", []string{"-S", "--noconfirm", "wireguard-tools"}},
+		{"apk", []string{"add", "wireguard-tools"}},
+		{"zypper", []string{"install", "-y", "wireguard-tools"}},
 	}
 
-	// Also ensure kernel module is loaded
-	modprobe := exec.CommandContext(ctx, "sudo", "modprobe", "wireguard")
-	modprobe.Run() // Ignore error - module might already be loaded or built-in
+	for _, mgr := range managers {
+		if _, err := exec.LookPath(mgr.bin); err != nil {
+			continue
+		}
+		args := append([]string{mgr.bin}, mgr.args...)
+		cmd := exec.CommandContext(ctx, "sudo", args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("failed to install wireguard-tools via %s: %w", mgr.bin, err)
+		}
 
-	return nil
+		// Also ensure kernel module is loaded
+		modprobe := exec.CommandContext(ctx, "sudo", "modprobe", "wireguard")
+		modprobe.Run() // Ignore error - module might already be loaded or built-in
+
+		return nil
+	}
+
+	return fmt.Errorf("no supported package manager found (tried apt-get, dnf, yum, pacman, apk, zypper)")
 }

@@ -282,6 +282,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	fmt.Println("  - The Colima VM (macOS) or k3s cluster (Linux)")
 	fmt.Println("  - All vibespaces and their data")
 	fmt.Println("  - All downloaded binaries")
+	fmt.Println("  - WireGuard interfaces and configuration")
 	fmt.Println()
 	fmt.Println("Your ~/.kube/config will NOT be affected.")
 	fmt.Println()
@@ -303,6 +304,19 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 			printSuccess("Daemon stopped")
 		}
 	}
+
+	// Tear down WireGuard tunnel and remote connections
+	if remote.IsInterfaceUp() {
+		printStep("Stopping WireGuard tunnel...")
+		if err := remote.QuickDown(); err != nil {
+			slog.Warn("failed to stop WireGuard", "error", err)
+		} else {
+			printSuccess("WireGuard tunnel stopped")
+		}
+	}
+
+	// Remove WireGuard config from /etc/wireguard (requires sudo)
+	remote.CleanupWireGuardConfig()
 
 	home, err := os.UserHomeDir()
 	if err != nil {

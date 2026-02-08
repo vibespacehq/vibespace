@@ -366,11 +366,12 @@ func (s *ServerState) FindClientByPublicKey(pubKey string) *ClientRegistration {
 }
 
 // AddClient adds a new client registration.
-func (s *ServerState) AddClient(name, pubKey, assignedIP string) {
+func (s *ServerState) AddClient(name, pubKey, assignedIP, hostname string) {
 	s.Clients = append(s.Clients, ClientRegistration{
 		Name:         name,
 		PublicKey:    pubKey,
 		AssignedIP:   assignedIP,
+		Hostname:     hostname,
 		RegisteredAt: time.Now(),
 	})
 }

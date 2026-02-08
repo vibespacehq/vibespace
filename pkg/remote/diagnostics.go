@@ -3,9 +3,9 @@ package remote
 import (
 	"fmt"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -34,7 +34,7 @@ func RunDiagnostics(state *RemoteState) []DiagnosticResult {
 
 	// 4. Management API
 	if state.ServerIP != "" {
-		results = append(results, checkManagementAPI(state.ServerIP))
+		results = append(results, checkManagementAPI(state))
 	}
 
 	// 5. Kubeconfig
@@ -44,17 +44,25 @@ func RunDiagnostics(state *RemoteState) []DiagnosticResult {
 }
 
 func checkWireGuardInterface() DiagnosticResult {
-	if IsInterfaceUp() {
+	switch InterfaceStatus() {
+	case "up":
 		return DiagnosticResult{
 			Check:   "WireGuard Interface",
 			Status:  true,
 			Message: "Interface is up",
 		}
-	}
-	return DiagnosticResult{
-		Check:   "WireGuard Interface",
-		Status:  false,
-		Message: "Interface is down. Try: vibespace remote disconnect && vibespace remote connect <token>",
+	case "unknown":
+		return DiagnosticResult{
+			Check:   "WireGuard Interface",
+			Status:  true,
+			Message: "Interface status unknown (needs sudo to verify). Assuming up",
+		}
+	default:
+		return DiagnosticResult{
+			Check:   "WireGuard Interface",
+			Status:  false,
+			Message: "Interface is down. Try: vibespace remote disconnect && vibespace remote connect <token>",
+		}
 	}
 }
 
@@ -127,23 +135,23 @@ func checkWireGuardHandshake() DiagnosticResult {
 	}
 }
 
-func checkManagementAPI(serverIP string) DiagnosticResult {
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://%s:%d/health", serverIP, DefaultManagementPort))
+func checkManagementAPI(state *RemoteState) DiagnosticResult {
+	client := mgmtHTTPClient(3 * time.Second)
+	resp, err := client.Get(fmt.Sprintf("https://%s:%d/health", state.ServerIP, DefaultManagementPort))
 	if err != nil {
 		return DiagnosticResult{
 			Check:   "Management API",
 			Status:  false,
-			Message: fmt.Sprintf("Cannot reach management API at %s:%d: %v", serverIP, DefaultManagementPort, err),
+			Message: fmt.Sprintf("Cannot reach management API at %s:%d: %v", state.ServerIP, DefaultManagementPort, err),
 		}
 	}
 	resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == 200 {
 		return DiagnosticResult{
 			Check:   "Management API",
 			Status:  true,
-			Message: "Server API is reachable",
+			Message: "Server API is reachable (HTTPS)",
 		}
 	}
 	return DiagnosticResult{
@@ -197,6 +205,74 @@ func CheckFirewall() []DiagnosticResult {
 
 	// Check TCP 7781 (Registration API)
 	results = append(results, checkPortBindable("tcp", DefaultRegistrationPort, "Registration API"))
+
+	// On Linux, check firewall rules for required ports
+	if runtime.GOOS == "linux" {
+		results = append(results, checkFirewallRules()...)
+	}
+
+	return results
+}
+
+// checkFirewallRules checks ufw/iptables/firewalld for required port rules (Linux only).
+func checkFirewallRules() []DiagnosticResult {
+	var results []DiagnosticResult
+
+	// Check ufw
+	if _, err := exec.LookPath("ufw"); err == nil {
+		out, err := exec.Command("sudo", "-n", "ufw", "status").Output()
+		if err == nil {
+			status := string(out)
+			if strings.Contains(status, "Status: active") {
+				wgOpen := strings.Contains(status, "51820") || strings.Contains(status, "WireGuard")
+				regOpen := strings.Contains(status, fmt.Sprintf("%d", DefaultRegistrationPort))
+				if !wgOpen {
+					results = append(results, DiagnosticResult{
+						Check:   "UFW: WireGuard",
+						Status:  false,
+						Message: "ufw is active but port 51820/udp not found. Run: sudo ufw allow 51820/udp",
+					})
+				}
+				if !regOpen {
+					results = append(results, DiagnosticResult{
+						Check:   "UFW: Registration",
+						Status:  false,
+						Message: fmt.Sprintf("ufw is active but port %d/tcp not found. Run: sudo ufw allow %d/tcp", DefaultRegistrationPort, DefaultRegistrationPort),
+					})
+				}
+			}
+		}
+	}
+
+	// Check iptables
+	if _, err := exec.LookPath("iptables"); err == nil {
+		out, err := exec.Command("sudo", "-n", "iptables", "-L", "-n").Output()
+		if err == nil {
+			rules := string(out)
+			if !strings.Contains(rules, "51820") && !strings.Contains(rules, "ACCEPT     all") {
+				results = append(results, DiagnosticResult{
+					Check:   "iptables: WireGuard",
+					Status:  false,
+					Message: "No iptables rule found for port 51820. Run: sudo iptables -A INPUT -p udp --dport 51820 -j ACCEPT",
+				})
+			}
+		}
+	}
+
+	// Check firewalld
+	if _, err := exec.LookPath("firewall-cmd"); err == nil {
+		out, err := exec.Command("sudo", "-n", "firewall-cmd", "--list-ports").Output()
+		if err == nil {
+			ports := string(out)
+			if !strings.Contains(ports, "51820/udp") {
+				results = append(results, DiagnosticResult{
+					Check:   "firewalld: WireGuard",
+					Status:  false,
+					Message: "firewalld does not allow 51820/udp. Run: sudo firewall-cmd --add-port=51820/udp --permanent && sudo firewall-cmd --reload",
+				})
+			}
+		}
+	}
 
 	return results
 }

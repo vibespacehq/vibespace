@@ -10,7 +10,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
@@ -31,6 +34,43 @@ func mgmtHTTPClient(timeout time.Duration) *http.Client {
 		Timeout:   timeout,
 		Transport: &http.Transport{TLSClientConfig: tlsCfg},
 	}
+}
+
+// cleanHostname returns a clean hostname suitable for client identification.
+// On macOS, os.Hostname() often returns garbled names (e.g., "Yagizdagabaks-MacBook-Pro.local").
+// This tries scutil first (macOS-specific), then falls back to os.Hostname() with domain stripping.
+func cleanHostname() string {
+	if runtime.GOOS == "darwin" {
+		// Try scutil --get ComputerName (user-friendly name)
+		if out, err := exec.Command("scutil", "--get", "ComputerName").Output(); err == nil {
+			name := strings.TrimSpace(string(out))
+			if name != "" {
+				return name
+			}
+		}
+		// Try scutil --get LocalHostName (Bonjour name without .local)
+		if out, err := exec.Command("scutil", "--get", "LocalHostName").Output(); err == nil {
+			name := strings.TrimSpace(string(out))
+			if name != "" {
+				return name
+			}
+		}
+	}
+
+	// Fallback: os.Hostname() with domain stripping
+	if h, err := os.Hostname(); err == nil && h != "" {
+		// Strip domain suffix (e.g., "foo.local" -> "foo")
+		if idx := strings.IndexByte(h, '.'); idx > 0 {
+			return h[:idx]
+		}
+		return h
+	}
+
+	// Last resort: use USER env var
+	if user := os.Getenv("USER"); user != "" {
+		return user + "-client"
+	}
+	return "client"
 }
 
 // ConnectOptions contains options for connecting to a remote server.
@@ -88,7 +128,7 @@ func Connect(opts ConnectOptions) error {
 	// Determine hostname
 	hostname := opts.Hostname
 	if hostname == "" {
-		hostname, _ = os.Hostname()
+		hostname = cleanHostname()
 	}
 
 	// Register with server via HTTPS
@@ -98,7 +138,7 @@ func Connect(opts ConnectOptions) error {
 		return fmt.Errorf("failed to register with server: %w", err)
 	}
 
-	// Save state (including cert fingerprint for mgmt API pinning)
+	// Populate state (but don't save yet - wait until tunnel is confirmed up)
 	state.ServerHost = invite.Endpoint
 	state.ServerEndpoint = regResp.ServerEndpoint
 	state.ServerIP = regResp.ServerIP
@@ -126,18 +166,15 @@ func Connect(opts ConnectOptions) error {
 		return fmt.Errorf("failed to install WireGuard config: %w", err)
 	}
 
-	// Save state before QuickUp (macOS reads LocalIP from state on disk)
-	if err := state.Save(); err != nil {
-		return fmt.Errorf("failed to save remote state: %w", err)
-	}
-
-	// Bring up WireGuard
+	// Bring up WireGuard - pass AssignedIP explicitly to avoid needing state on disk
 	slog.Info("starting WireGuard tunnel")
-	if err := QuickUp(); err != nil {
+	if err := QuickUp(regResp.AssignedIP); err != nil {
 		return fmt.Errorf("failed to start WireGuard: %w", err)
 	}
 
 	// Wait for tunnel connectivity
+	// Save cert fingerprint early so mgmtHTTPClient can use it for pinning
+	state.Save() // best-effort, connectivity check can fall back to InsecureSkipVerify
 	slog.Info("waiting for tunnel connectivity")
 	if err := waitForConnectivity(regResp.ServerIP, 30*time.Second); err != nil {
 		QuickDown()
@@ -163,7 +200,7 @@ func Connect(opts ConnectOptions) error {
 		return fmt.Errorf("failed to write kubeconfig: %w", err)
 	}
 
-	// Mark as connected
+	// Mark as connected and save final state
 	state.Connected = true
 	state.ConnectedAt = time.Now()
 
