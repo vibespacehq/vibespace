@@ -178,7 +178,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check cluster is initialized
-	if err := checkClusterInitialized(); err != nil {
+	if _, err := resolveKubeconfig(); err != nil {
 		return err
 	}
 

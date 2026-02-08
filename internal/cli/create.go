@@ -259,16 +259,9 @@ func parseMount(mountStr string) (model.Mount, error) {
 
 // getVibespaceService creates the vibespace service with all dependencies
 func getVibespaceService() (*vibespace.Service, error) {
-	// Get isolated kubeconfig path
-	home, err := os.UserHomeDir()
+	kubeconfig, err := resolveKubeconfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
-	}
-	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
-
-	// Check if kubeconfig exists
-	if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {
-		return nil, fmt.Errorf("cluster not initialized. Run 'vibespace init' first")
+		return nil, err
 	}
 
 	// Set KUBECONFIG environment variable for the k8s client

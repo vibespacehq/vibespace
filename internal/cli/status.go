@@ -34,40 +34,31 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	}
 	vibespaceHome := filepath.Join(home, ".vibespace")
 
-	// Detect platform
-	p := platform.Detect()
-
-	// Get cluster manager
-	manager, err := platform.NewClusterManager(p, vibespaceHome)
-	if err != nil {
-		return fmt.Errorf("failed to create cluster manager: %w", err)
-	}
-
-	// Check installation status
-	installed, err := manager.IsInstalled()
-	if err != nil {
-		return fmt.Errorf("failed to check installation: %w", err)
-	}
-
 	// Check remote connection status
 	remoteState, _ := remote.LoadRemoteState()
+	remoteConnected := remoteState != nil && remoteState.Connected
 
-	// JSON output mode - gather all data first
+	// Check local cluster status
+	p := platform.Detect()
+	var localInstalled, localRunning bool
+	manager, err := platform.NewClusterManager(p, vibespaceHome)
+	if err == nil {
+		localInstalled, _ = manager.IsInstalled()
+		if localInstalled {
+			localRunning, _ = manager.IsRunning()
+		}
+	}
+
+	// JSON output mode
 	if out.IsJSONMode() {
 		statusOut := StatusOutput{
 			Cluster: ClusterStatus{
-				Installed: installed,
-				Running:   false,
+				Installed: localInstalled || remoteConnected,
+				Running:   localRunning || remoteConnected,
 				Platform:  p.OS,
 			},
 		}
 
-		if installed {
-			running, _ := manager.IsRunning()
-			statusOut.Cluster.Running = running
-		}
-
-		// Add daemon status
 		if daemon.IsDaemonRunning() {
 			daemonStatus, err := daemon.GetDaemonStatus()
 			if err == nil {
@@ -87,8 +78,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 			statusOut.Daemon = &DaemonStatus{Running: false}
 		}
 
-		// Add remote status
-		if remoteState != nil && remoteState.Connected {
+		if remoteConnected {
 			statusOut.Remote = &RemoteStatusOutput{
 				Connected:   true,
 				ServerHost:  remoteState.ServerHost,
@@ -101,20 +91,16 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return out.JSON(NewJSONOutput(true, statusOut, nil))
 	}
 
-	if !installed {
+	// No cluster and no remote
+	if !localInstalled && !remoteConnected {
 		fmt.Printf("Cluster: %s\n", out.Orange("not installed"))
 		fmt.Println()
 		fmt.Printf("Run %s to set up the cluster\n", out.Teal("vibespace init"))
 		return nil
 	}
 
-	// Check running status
-	running, err := manager.IsRunning()
-	if err != nil {
-		return fmt.Errorf("failed to check cluster status: %w", err)
-	}
-
-	if !running {
+	// Local cluster exists but not running, and no remote
+	if localInstalled && !localRunning && !remoteConnected {
 		fmt.Printf("Cluster: %s\n", out.Yellow("stopped"))
 		fmt.Println()
 		fmt.Printf("Run %s to start the cluster\n", out.Teal("vibespace init"))
@@ -127,10 +113,26 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	orangeStyle := lipgloss.NewStyle().Foreground(ui.Orange)
 	boldStyle := lipgloss.NewStyle().Bold(true)
 
-	// Main list
-	l := list.New(
-		fmt.Sprintf("%s %s", boldStyle.Render("Cluster"), tealStyle.Render("running")),
-	)
+	// Determine cluster status label
+	var clusterLabel string
+	if remoteConnected && !localRunning {
+		clusterLabel = fmt.Sprintf("%s %s", boldStyle.Render("Cluster"), tealStyle.Render("remote"))
+	} else if localRunning && remoteConnected {
+		clusterLabel = fmt.Sprintf("%s %s", boldStyle.Render("Cluster"), tealStyle.Render("running + remote"))
+	} else {
+		clusterLabel = fmt.Sprintf("%s %s", boldStyle.Render("Cluster"), tealStyle.Render("running"))
+	}
+
+	l := list.New(clusterLabel)
+
+	// Remote connection section (show first when it's the primary cluster)
+	if remoteConnected {
+		l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Remote"), tealStyle.Render("connected")))
+		l.Item(list.New(
+			fmt.Sprintf("server %s", pinkStyle.Render(remoteState.ServerHost)),
+			fmt.Sprintf("local IP %s", pinkStyle.Render(remoteState.LocalIP)),
+		))
+	}
 
 	// Daemon section
 	if daemon.IsDaemonRunning() {
@@ -145,7 +147,6 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				fmt.Sprintf("pid %s", pinkStyle.Render(fmt.Sprintf("%d", daemonStatus.Pid))),
 			))
 
-			// Vibespaces as separate top-level item
 			if len(daemonStatus.Vibespaces) > 0 {
 				var vsItems []any
 				for name, vs := range daemonStatus.Vibespaces {
@@ -160,17 +161,8 @@ func runStatus(cmd *cobra.Command, args []string) error {
 				l.Item(list.New(vsItems...))
 			}
 		}
-	} else {
+	} else if !remoteConnected {
 		l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Daemon"), out.Dim("not running")))
-	}
-
-	// Remote connection section
-	if remoteState != nil && remoteState.Connected {
-		l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Remote"), tealStyle.Render("connected")))
-		l.Item(list.New(
-			fmt.Sprintf("server %s", pinkStyle.Render(remoteState.ServerHost)),
-			fmt.Sprintf("local IP %s", pinkStyle.Render(remoteState.LocalIP)),
-		))
 	}
 
 	fmt.Println(l)
@@ -202,6 +194,15 @@ This action cannot be undone. Your ~/.kube/config is NOT affected.`,
 func runClusterStop(cmd *cobra.Command, args []string) error {
 	slog.Info("stop command started")
 	out := getOutput()
+
+	// Check if in remote mode with no local cluster
+	if isRemoteConnected() {
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(false, nil, &JSONError{Message: "connected to remote server — use 'vibespace remote disconnect' instead"}))
+		}
+		fmt.Printf("Connected to remote server. Use %s to disconnect.\n", out.Teal("vibespace remote disconnect"))
+		return nil
+	}
 
 	// Stop daemon first
 	if daemon.IsDaemonRunning() {
