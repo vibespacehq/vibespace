@@ -486,6 +486,28 @@ func InterfaceStatus() string {
 	return "down"
 }
 
+// InterfacePublicKey returns the public key of the running WireGuard interface, or "" if unavailable.
+func InterfacePublicKey() string {
+	wg, err := wgBin()
+	if err != nil {
+		return ""
+	}
+	ifName := wireguardInterfaceName()
+
+	// Try without sudo first, then with sudo -n
+	for _, args := range [][]string{
+		{wg, "show", ifName, "public-key"},
+		{"sudo", "-n", wg, "show", ifName, "public-key"},
+	} {
+		cmd := exec.Command(args[0], args[1:]...)
+		out, err := cmd.Output()
+		if err == nil {
+			return strings.TrimSpace(string(out))
+		}
+	}
+	return ""
+}
+
 // IsInterfaceUp checks if the WireGuard interface is up.
 func IsInterfaceUp() bool {
 	return InterfaceStatus() == "up"

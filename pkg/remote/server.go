@@ -297,6 +297,17 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	}
 
 	// Bring up WireGuard interface
+	if IsInterfaceUp() {
+		// Verify running interface matches our keys — tear down if stale
+		runningKey := InterfacePublicKey()
+		if runningKey != "" && runningKey != s.state.PublicKey {
+			slog.Warn("stale WireGuard interface detected, tearing down",
+				"running_key", runningKey, "expected_key", s.state.PublicKey)
+			if err := QuickDown(); err != nil {
+				slog.Warn("failed to tear down stale interface", "error", err)
+			}
+		}
+	}
 	if !IsInterfaceUp() {
 		if err := QuickUp(s.state.ServerIP); err != nil {
 			return fmt.Errorf("failed to start WireGuard: %w", err)
