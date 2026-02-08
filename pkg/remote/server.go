@@ -814,6 +814,50 @@ func IsServeRunning() bool {
 	return true
 }
 
+// KillServeProcess sends SIGTERM to the running serve daemon and waits for it to exit.
+func KillServeProcess() error {
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return err
+	}
+
+	pidFile := filepath.Join(vsHome, "serve.pid")
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		return fmt.Errorf("no serve.pid file: %w", err)
+	}
+
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return fmt.Errorf("invalid pid: %w", err)
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return fmt.Errorf("process not found: %w", err)
+	}
+
+	if err := proc.Signal(syscall.SIGTERM); err != nil {
+		return fmt.Errorf("failed to kill process %d: %w", pid, err)
+	}
+
+	// Wait briefly for process to exit
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := proc.Signal(syscall.Signal(0)); err != nil {
+			// Process exited
+			os.Remove(pidFile)
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Force kill if still alive
+	proc.Signal(syscall.SIGKILL)
+	os.Remove(pidFile)
+	return nil
+}
+
 // CleanupStaleServe tears down an orphaned WireGuard interface when the serve
 // process has died but the interface is still up.
 func CleanupStaleServe() {
