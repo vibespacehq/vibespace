@@ -177,13 +177,15 @@ func (c *Client) ListForwardsForVibespace(vibespace string) (*ListForwardsRespon
 }
 
 // AddForwardForVibespace adds a forward for a specific vibespace
-func (c *Client) AddForwardForVibespace(vibespace, agent string, remotePort, localPort int) (*AddForwardResponse, error) {
+func (c *Client) AddForwardForVibespace(vibespace, agent string, remotePort, localPort int, dns bool, dnsName string) (*AddForwardResponse, error) {
 	resp, err := c.sendRequest(Request{
 		Type:      RequestAddForward,
 		Vibespace: vibespace,
 		Agent:     agent,
 		Port:      remotePort,
 		Local:     localPort,
+		DNS:       dns,
+		DNSName:   dnsName,
 	})
 	if err != nil {
 		return nil, err

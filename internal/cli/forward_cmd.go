@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 
 	"github.com/yagizdagabak/vibespace/pkg/daemon"
+	vsdns "github.com/yagizdagabak/vibespace/pkg/dns"
 )
 
 // runForwardCmd handles the forward subcommands
@@ -125,7 +127,7 @@ func runForwardList(vibespace string) error {
 	}
 
 	// Build table rows
-	headers := []string{"AGENT", "LOCAL", "REMOTE", "TYPE", "STATUS", "DNS"}
+	headers := []string{"AGENT", "LOCAL", "REMOTE", "TYPE", "STATUS"}
 	var rows [][]string
 	for _, agent := range result.Agents {
 		for _, fwd := range agent.Forwards {
@@ -136,14 +138,12 @@ func runForwardList(vibespace string) error {
 			if fwd.Reconnects > 0 {
 				status = fmt.Sprintf("%s [%d reconnects]", status, fwd.Reconnects)
 			}
-			dns := fmt.Sprintf("%s.vibespace.internal:%d", agent.Name, fwd.LocalPort)
 			rows = append(rows, []string{
 				agent.Name,
 				strconv.Itoa(fwd.LocalPort),
 				strconv.Itoa(fwd.RemotePort),
 				fwd.Type,
 				status,
-				dns,
 			})
 		}
 	}
@@ -170,15 +170,19 @@ Arguments:
   PORT    Remote port in the container to forward
 
 Flags:
-  -a, --agent string   Agent to forward from (default: claude-1)
-  -l, --local int      Local port to use (default: auto-allocate)
-  -h, --help           Help for add
+  -a, --agent string      Agent to forward from (default: claude-1)
+  -l, --local int         Local port to use (default: auto-allocate)
+      --dns               Enable DNS resolution (requires sudo for resolver setup)
+      --dns-name string   Custom DNS name (default: agent.vibespace)
+  -h, --help              Help for add
 
 Examples:
   vibespace %s forward add 3000
   vibespace %s forward add 8080 --agent claude-2
   vibespace %s forward add 5432 --local 15432 --agent trusted
-`, vibespace, vibespace, vibespace, vibespace)
+  vibespace %s forward add 3000 --dns
+  vibespace %s forward add 3000 --dns --dns-name myapp
+`, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace)
 			return nil
 		}
 	}
@@ -196,6 +200,8 @@ Examples:
 	// Parse optional flags
 	agent := "claude-1" // Default agent
 	localPort := 0      // Auto-allocate
+	enableDNS := false
+	dnsName := ""
 
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
@@ -209,10 +215,18 @@ Examples:
 				localPort, _ = strconv.Atoi(args[i+1])
 				i++
 			}
+		case "--dns":
+			enableDNS = true
+		case "--dns-name":
+			if i+1 < len(args) {
+				dnsName = args[i+1]
+				enableDNS = true
+				i++
+			}
 		}
 	}
 
-	slog.Info("forward add command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "local_port", localPort)
+	slog.Info("forward add command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "local_port", localPort, "dns", enableDNS)
 
 	// Ensure daemon is running (auto-start if needed)
 	ctx := context.Background()
@@ -221,13 +235,23 @@ Examples:
 		return err
 	}
 
+	// If DNS requested, ensure resolver file exists (requires sudo)
+	if enableDNS {
+		if err := ensureResolverFile(); err != nil {
+			slog.Warn("failed to set up DNS resolver", "error", err)
+			fmt.Fprintf(os.Stderr, "Warning: DNS resolver setup failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "DNS names will not resolve. Use localhost:%d instead.\n", localPort)
+			enableDNS = false
+		}
+	}
+
 	client, err := daemon.NewClient()
 	if err != nil {
 		slog.Error("failed to connect to daemon", "error", err)
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 
-	result, err := client.AddForwardForVibespace(vibespace, agent, remotePort, localPort)
+	result, err := client.AddForwardForVibespace(vibespace, agent, remotePort, localPort, enableDNS, dnsName)
 	if err != nil {
 		slog.Error("failed to add forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
 		return fmt.Errorf("failed to add forward: %w\nCheck daemon status: vibespace %s forward list", err, vibespace)
@@ -240,12 +264,15 @@ Examples:
 			Agent:      agent,
 			LocalPort:  result.LocalPort,
 			RemotePort: result.RemotePort,
+			DNSName:    result.DNSName,
 		}, nil))
 	}
 
-	slog.Info("forward add command completed", "vibespace", vibespace, "agent", agent, "local_port", result.LocalPort, "remote_port", result.RemotePort)
+	slog.Info("forward add command completed", "vibespace", vibespace, "agent", agent, "local_port", result.LocalPort, "remote_port", result.RemotePort, "dns_name", result.DNSName)
 	printSuccess("Forward added: localhost:%d -> %d", result.LocalPort, result.RemotePort)
-	fmt.Printf("  DNS: %s:%s.vibespace.internal:%d (use Safari — Chromium browsers bypass local DNS)\n", vibespace, agent, result.LocalPort)
+	if result.DNSName != "" {
+		fmt.Printf("  DNS: %s.vibespace.internal:%d (use Safari — Chromium browsers bypass local DNS)\n", result.DNSName, result.LocalPort)
+	}
 	return nil
 }
 
@@ -325,4 +352,14 @@ Examples:
 	slog.Info("forward remove command completed", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
 	printSuccess("Forward removed: port %d", remotePort)
 	return nil
+}
+
+// ensureResolverFile ensures /etc/resolver/vibespace.internal exists on macOS.
+// This requires sudo and will prompt the user for their password.
+func ensureResolverFile() error {
+	if vsdns.ResolverFileExists() {
+		return nil
+	}
+	printStep("Setting up DNS resolver (requires sudo)...")
+	return vsdns.ConfigureSystemResolver(5553)
 }
