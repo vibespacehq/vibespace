@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,8 +15,65 @@ import (
 	"strings"
 )
 
-// downloadBinary downloads a file from URL and saves it as an executable
-func downloadBinary(ctx context.Context, url, destPath string) error {
+// verifySHA256 verifies that a file matches the expected SHA256 hex hash.
+func verifySHA256(filePath, expectedHex string) error {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file for verification: %w", err)
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return fmt.Errorf("failed to hash file: %w", err)
+	}
+
+	actual := hex.EncodeToString(h.Sum(nil))
+	if actual != expectedHex {
+		return fmt.Errorf("SHA256 mismatch: expected %s, got %s", expectedHex, actual)
+	}
+	return nil
+}
+
+// fetchURL fetches a small text resource and returns its trimmed content.
+func fetchURL(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("fetch %s failed with status: %s", url, resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+	return strings.TrimSpace(string(body)), nil
+}
+
+// parseSHA256SUMS parses a SHA256SUMS file and returns the hash for the named asset.
+// Format: "<hex>  <filename>" (two spaces between hash and filename).
+func parseSHA256SUMS(content, assetName string) (string, error) {
+	for _, line := range strings.Split(content, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[1] == assetName {
+			return fields[0], nil
+		}
+	}
+	return "", fmt.Errorf("hash not found for %s in SHA256SUMS", assetName)
+}
+
+// downloadBinary downloads a file from URL and saves it as an executable.
+// If expectedSHA256 is non-empty, the download is verified before installation.
+func downloadBinary(ctx context.Context, url, destPath, expectedSHA256 string) error {
 	// Create HTTP request with context
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
@@ -46,6 +105,13 @@ func downloadBinary(ctx context.Context, url, destPath string) error {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 	tmpFile.Close()
+
+	// Verify SHA256 if expected hash provided
+	if expectedSHA256 != "" {
+		if err := verifySHA256(tmpPath, expectedSHA256); err != nil {
+			return fmt.Errorf("integrity verification failed for %s: %w", filepath.Base(destPath), err)
+		}
+	}
 
 	// Make executable
 	if err := os.Chmod(tmpPath, 0755); err != nil {
@@ -167,8 +233,9 @@ func getLatestKubectlVersion(ctx context.Context) (string, error) {
 	return string(body), nil
 }
 
-// downloadAndExtractTarGz downloads a tar.gz file and extracts it to destDir
-func downloadAndExtractTarGz(ctx context.Context, url, destDir string) error {
+// downloadAndExtractTarGz downloads a tar.gz file and extracts it to destDir.
+// If expectedSHA256 is non-empty, the download is verified before extraction.
+func downloadAndExtractTarGz(ctx context.Context, url, destDir, expectedSHA256 string) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
@@ -182,6 +249,33 @@ func downloadAndExtractTarGz(ctx context.Context, url, destDir string) error {
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed with status: %s", resp.Status)
+	}
+
+	// If SHA256 verification requested, buffer to temp file first
+	if expectedSHA256 != "" {
+		tmpFile, err := os.CreateTemp("", "vibespace-download-*.tar.gz")
+		if err != nil {
+			return fmt.Errorf("failed to create temp file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+		defer os.Remove(tmpPath)
+
+		if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+			tmpFile.Close()
+			return fmt.Errorf("failed to buffer download: %w", err)
+		}
+		tmpFile.Close()
+
+		if err := verifySHA256(tmpPath, expectedSHA256); err != nil {
+			return fmt.Errorf("integrity verification failed: %w", err)
+		}
+
+		f, err := os.Open(tmpPath)
+		if err != nil {
+			return fmt.Errorf("failed to reopen verified download: %w", err)
+		}
+		defer f.Close()
+		return extractTarGz(f, destDir)
 	}
 
 	return extractTarGz(resp.Body, destDir)
