@@ -25,10 +25,13 @@ and starting the Kubernetes environment.
 
 On macOS: Downloads and starts Colima (Lima VM with k3s)
 On Linux: Downloads and starts Lima (Lima VM with k3s)
+On Linux with --bare-metal: Installs k3s directly on the host (no VM)
 
-Use --external to skip cluster installation and use an existing kubeconfig.`,
+Use --external to skip cluster installation and use an existing kubeconfig.
+Use --bare-metal on Linux to skip the VM layer and install k3s directly.`,
 	Example: `  vibespace init
   vibespace init --cpu 4 --memory 8 --disk 60
+  vibespace init --bare-metal
   vibespace init --external --kubeconfig ~/.kube/config`,
 	RunE: runInit,
 }
@@ -39,6 +42,7 @@ var (
 	initCPU        int
 	initMemory     int
 	initDisk       int
+	initBareMetal  bool
 )
 
 // Default cluster resource values - can be overridden via environment variables
@@ -69,6 +73,7 @@ func init() {
 	initCmd.Flags().IntVar(&initCPU, "cpu", cpuDefault, "Number of CPU cores for the cluster VM")
 	initCmd.Flags().IntVar(&initMemory, "memory", memoryDefault, "Memory in GB for the cluster VM")
 	initCmd.Flags().IntVar(&initDisk, "disk", diskDefault, "Disk size in GB for the cluster VM")
+	initCmd.Flags().BoolVar(&initBareMetal, "bare-metal", false, "Install k3s directly on the host (Linux only, no VM)")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
@@ -126,8 +131,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("Windows is not supported. Please use WSL2")
 	}
 
+	if initBareMetal && p.OS != "linux" {
+		return fmt.Errorf("--bare-metal is only supported on Linux")
+	}
+
 	// Get the appropriate cluster manager
-	manager, err := platform.NewClusterManager(p, vibespaceHome)
+	manager, err := platform.NewClusterManager(p, vibespaceHome, platform.ClusterManagerOptions{BareMetal: initBareMetal})
 	if err != nil {
 		slog.Error("failed to create cluster manager", "error", err)
 		return fmt.Errorf("failed to create cluster manager: %w", err)
@@ -217,6 +226,20 @@ func runInit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to start cluster: %w", err)
 		}
 		spinner.Success("Cluster started")
+	}
+
+	// Persist cluster mode for subsequent commands
+	var mode platform.ClusterMode
+	switch {
+	case initBareMetal:
+		mode = platform.ClusterModeBareMetal
+	case p.OS == "darwin":
+		mode = platform.ClusterModeColima
+	default:
+		mode = platform.ClusterModeLima
+	}
+	if err := platform.SaveClusterState(vibespaceHome, mode); err != nil {
+		slog.Warn("failed to save cluster state", "error", err)
 	}
 
 	// Wait for cluster to be ready
