@@ -419,23 +419,87 @@ func quickDownLinux() error {
 // quickDownMacOS shuts down wireguard-go by removing its socket.
 func quickDownMacOS() error {
 	vsHome, _ := getVibespaceHome()
+	slog.Debug("quickDownMacOS called", "vsHome", vsHome)
 
 	// Read the saved tunnel name
-	tunNameData, err := os.ReadFile(filepath.Join(vsHome, "utun-name"))
-	tunName := strings.TrimSpace(string(tunNameData))
-	if err != nil || tunName == "" {
-		tunName = "utun" // fallback
+	var tunName string
+	if vsHome != "" {
+		tunNameData, err := os.ReadFile(filepath.Join(vsHome, "utun-name"))
+		tunName = strings.TrimSpace(string(tunNameData))
+		if err != nil || tunName == "" {
+			slog.Debug("no saved utun-name", "error", err)
+			tunName = ""
+		} else {
+			slog.Debug("found saved utun-name", "tunName", tunName)
+		}
 	}
 
-	// Remove the control socket - this causes wireguard-go to shut down
-	sockPath := filepath.Join("/var/run/wireguard", tunName+".sock")
-	cmd := exec.Command("sudo", "rm", "-f", sockPath)
-	cmd.Run() // Ignore errors
+	// If we don't have a saved name, look for an orphaned utun with our IP
+	if tunName == "" {
+		tunName = findOrphanUtun()
+		slog.Debug("findOrphanUtun result", "tunName", tunName)
+	}
+
+	if tunName != "" {
+		// Remove the control socket — this causes wireguard-go to shut down
+		sockPath := filepath.Join("/var/run/wireguard", tunName+".sock")
+		cmd := exec.Command("sudo", "rm", "-f", sockPath)
+		cmd.Stdin = os.Stdin
+		if out, err := cmd.CombinedOutput(); err != nil {
+			slog.Debug("rm socket failed", "error", err, "output", string(out))
+		}
+
+		// Remove the WireGuard subnet route
+		cmd = exec.Command("sudo", "route", "delete", "-net", "10.100.0.0/24")
+		cmd.Stdin = os.Stdin
+		if out, err := cmd.CombinedOutput(); err != nil {
+			slog.Debug("route delete failed", "error", err, "output", string(out))
+		} else {
+			slog.Debug("route delete succeeded", "output", string(out))
+		}
+
+		// Destroy the utun interface (handles orphans where wireguard-go already died).
+		// On macOS, "ifconfig down" only flips the flag; "destroy" removes the interface.
+		cmd = exec.Command("sudo", "ifconfig", tunName, "destroy")
+		cmd.Stdin = os.Stdin
+		if out, err := cmd.CombinedOutput(); err != nil {
+			slog.Debug("ifconfig destroy failed", "tunName", tunName, "error", err, "output", string(out))
+		} else {
+			slog.Debug("ifconfig destroy succeeded", "tunName", tunName)
+		}
+	} else {
+		slog.Debug("no tunnel interface found to clean up")
+	}
 
 	// Clean up saved tunnel name
-	os.Remove(filepath.Join(vsHome, "utun-name"))
+	if vsHome != "" {
+		os.Remove(filepath.Join(vsHome, "utun-name"))
+	}
 
 	return nil
+}
+
+// findOrphanUtun scans utun interfaces for the WireGuard subnet IP (10.100.0.x).
+// Returns the interface name (e.g. "utun4") or "" if not found.
+func findOrphanUtun() string {
+	output, err := exec.Command("ifconfig").Output()
+	if err != nil {
+		return ""
+	}
+
+	var currentIf string
+	for _, line := range strings.Split(string(output), "\n") {
+		// Interface header: "utun4: flags=..."
+		if !strings.HasPrefix(line, "\t") && !strings.HasPrefix(line, " ") && strings.Contains(line, ":") {
+			parts := strings.SplitN(line, ":", 2)
+			currentIf = parts[0]
+		}
+		// Look for our WireGuard IP on utun interfaces
+		if strings.HasPrefix(currentIf, "utun") && strings.Contains(line, "inet 10.100.0.") {
+			return currentIf
+		}
+	}
+	return ""
 }
 
 // InterfaceStatus returns the WireGuard interface status as a tri-state:
@@ -443,6 +507,15 @@ func quickDownMacOS() error {
 func InterfaceStatus() string {
 	wg, err := wgBin()
 	if err != nil {
+		slog.Debug("wgBin not found, checking for orphan utun", "error", err)
+		// Even without the wg binary, check for orphaned utun interfaces
+		// (e.g. after ~/.vibespace/ was deleted but the interface persists)
+		if runtime.GOOS == "darwin" {
+			if orphan := findOrphanUtun(); orphan != "" {
+				slog.Debug("found orphan utun interface", "interface", orphan)
+				return "up"
+			}
+		}
 		return "down"
 	}
 
@@ -475,7 +548,14 @@ func InterfaceStatus() string {
 		}
 	}
 
-	// Strategy 3: try sudo -n (non-interactive, won't prompt)
+	// Strategy 3: on macOS, check for utun interfaces with WireGuard IPs.
+	// This catches orphans where wireguard-go died but the interface persists,
+	// and doesn't require sudo.
+	if runtime.GOOS == "darwin" && findOrphanUtun() != "" {
+		return "up"
+	}
+
+	// Strategy 4: try sudo -n (non-interactive, won't prompt)
 	cmd = exec.Command("sudo", "-n", wg, "show", ifName)
 	if err := cmd.Run(); err == nil {
 		return "up"
