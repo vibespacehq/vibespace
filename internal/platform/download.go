@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -111,6 +112,7 @@ func downloadBinary(ctx context.Context, url, destPath, expectedSHA256 string) e
 		if err := verifySHA256(tmpPath, expectedSHA256); err != nil {
 			return fmt.Errorf("integrity verification failed for %s: %w", filepath.Base(destPath), err)
 		}
+		slog.Debug("SHA256 verified", "binary", filepath.Base(destPath), "sha256", expectedSHA256[:12]+"...")
 	}
 
 	// Make executable
@@ -269,6 +271,7 @@ func downloadAndExtractTarGz(ctx context.Context, url, destDir, expectedSHA256 s
 		if err := verifySHA256(tmpPath, expectedSHA256); err != nil {
 			return fmt.Errorf("integrity verification failed: %w", err)
 		}
+		slog.Debug("SHA256 verified", "archive", filepath.Base(url), "sha256", expectedSHA256[:12]+"...")
 
 		f, err := os.Open(tmpPath)
 		if err != nil {

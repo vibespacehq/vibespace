@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -844,6 +845,7 @@ func extractHomebrewBottle(r io.Reader, formula, destDir string, binaries []stri
 		if actual != expectedSHA256 {
 			return fmt.Errorf("bottle SHA256 mismatch: expected %s, got %s", expectedSHA256, actual)
 		}
+		slog.Debug("SHA256 verified", "file", formula+" bottle", "sha256", actual[:12]+"...")
 	}
 
 	// Extract using tar command (simpler than Go's archive/tar for nested gzip)
