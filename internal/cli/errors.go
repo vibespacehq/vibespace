@@ -69,7 +69,7 @@ func checkClusterRunning() error {
 	vibespaceHome := filepath.Join(home, ".vibespace")
 
 	p := platform.Detect()
-	manager, err := platform.NewClusterManager(p, vibespaceHome)
+	manager, err := platform.NewClusterManager(p, vibespaceHome, platform.ClusterManagerOptions{})
 	if err != nil {
 		return fmt.Errorf("run 'vibespace init' to start it: %w", vserrors.ErrClusterNotRunning)
 	}
