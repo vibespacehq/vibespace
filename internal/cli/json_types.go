@@ -256,6 +256,7 @@ type ForwardAddOutput struct {
 	Agent      string `json:"agent"`
 	LocalPort  int    `json:"local_port"`
 	RemotePort int    `json:"remote_port"`
+	DNSName    string `json:"dns_name,omitempty"`
 }
 
 // ForwardRemoveOutput is the JSON output for forward remove command

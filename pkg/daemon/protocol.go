@@ -31,6 +31,8 @@ type Request struct {
 	Agent     string      `json:"agent,omitempty"`     // Agent name (e.g., "claude-1")
 	Port      int         `json:"port,omitempty"`      // Remote port
 	Local     int         `json:"local,omitempty"`     // Local port override (0 = auto-allocate)
+	DNS       bool        `json:"dns,omitempty"`       // Register DNS record for this forward
+	DNSName   string      `json:"dns_name,omitempty"`  // Custom DNS name (default: agent.vibespace)
 }
 
 // Response is an IPC response from daemon to client
@@ -98,6 +100,7 @@ type AddForwardResponse struct {
 	LocalPort  int    `json:"local_port"`
 	RemotePort int    `json:"remote_port"`
 	Status     string `json:"status"`
+	DNSName    string `json:"dns_name,omitempty"` // Registered DNS name (if DNS was requested)
 }
 
 // DaemonStatusResponse is the data for a daemon status request

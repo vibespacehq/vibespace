@@ -39,45 +39,28 @@ func RemoveSystemResolver() error {
 
 func configureMacOSResolver(port int) error {
 	resolverDir := "/etc/resolver"
-
-	// Create resolver directory (requires sudo)
-	cmd := exec.Command("sudo", "mkdir", "-p", resolverDir)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create resolver directory: %w", err)
-	}
-
-	// Write resolver file
-	content := fmt.Sprintf("nameserver 127.0.0.1\nport %d\n", port)
 	resolverFile := resolverDir + "/" + Domain
+	content := fmt.Sprintf("nameserver 127.0.0.1\\nport %d\\n", port)
 
-	// Write via sudo tee
-	cmd = exec.Command("sudo", "tee", resolverFile)
+	// Single sudo command: create dir + write file
+	cmd := exec.Command("sudo", "bash", "-c",
+		fmt.Sprintf("mkdir -p %s && echo -e '%s' > %s", resolverDir, content, resolverFile))
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// Use a pipe for the content
-	pipe, err := cmd.StdinPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start tee: %w", err)
-	}
-
-	pipe.Write([]byte(content))
-	pipe.Close()
-
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("failed to write resolver file: %w", err)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to configure resolver: %w", err)
 	}
 
 	slog.Info("macOS resolver configured", "file", resolverFile, "port", port)
 	return nil
+}
+
+// ResolverFileExists checks if the macOS resolver file exists.
+func ResolverFileExists() bool {
+	_, err := os.Stat("/etc/resolver/" + Domain)
+	return err == nil
 }
 
 func removeMacOSResolver() error {
