@@ -125,7 +125,7 @@ func runForwardList(vibespace string) error {
 	}
 
 	// Build table rows
-	headers := []string{"AGENT", "LOCAL", "REMOTE", "TYPE", "STATUS"}
+	headers := []string{"AGENT", "LOCAL", "REMOTE", "TYPE", "STATUS", "DNS"}
 	var rows [][]string
 	for _, agent := range result.Agents {
 		for _, fwd := range agent.Forwards {
@@ -136,12 +136,14 @@ func runForwardList(vibespace string) error {
 			if fwd.Reconnects > 0 {
 				status = fmt.Sprintf("%s [%d reconnects]", status, fwd.Reconnects)
 			}
+			dns := fmt.Sprintf("%s.vibespace.internal:%d", agent.Name, fwd.LocalPort)
 			rows = append(rows, []string{
 				agent.Name,
 				strconv.Itoa(fwd.LocalPort),
 				strconv.Itoa(fwd.RemotePort),
 				fwd.Type,
 				status,
+				dns,
 			})
 		}
 	}
@@ -243,6 +245,7 @@ Examples:
 
 	slog.Info("forward add command completed", "vibespace", vibespace, "agent", agent, "local_port", result.LocalPort, "remote_port", result.RemotePort)
 	printSuccess("Forward added: localhost:%d -> %d", result.LocalPort, result.RemotePort)
+	fmt.Printf("  DNS: %s:%s.vibespace.internal:%d (use Safari — Chromium browsers bypass local DNS)\n", vibespace, agent, result.LocalPort)
 	return nil
 }
 
