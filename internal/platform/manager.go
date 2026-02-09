@@ -2,8 +2,66 @@ package platform
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 )
+
+// VMState represents the state of the cluster VM/service
+type VMState int
+
+const (
+	VMStateNotExists VMState = iota // VM/service doesn't exist
+	VMStateStopped                  // VM/service exists but is stopped
+	VMStateRunning                  // VM/service is running
+	VMStateBroken                   // VM/service is in a broken/inconsistent state
+)
+
+// ClusterMode represents how the cluster is managed
+type ClusterMode string
+
+const (
+	ClusterModeColima    ClusterMode = "colima"
+	ClusterModeLima      ClusterMode = "lima"
+	ClusterModeBareMetal ClusterMode = "baremetal"
+)
+
+// ClusterState persists the cluster mode so subsequent commands
+// automatically use the correct manager without flags.
+type ClusterState struct {
+	Mode ClusterMode `json:"mode"`
+}
+
+const clusterStateFile = "cluster.json"
+
+// SaveClusterState persists the cluster mode to ~/.vibespace/cluster.json
+func SaveClusterState(vibespaceHome string, mode ClusterMode) error {
+	state := ClusterState{Mode: mode}
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal cluster state: %w", err)
+	}
+	path := filepath.Join(vibespaceHome, clusterStateFile)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write cluster state: %w", err)
+	}
+	return nil
+}
+
+// LoadClusterState reads the persisted cluster mode from ~/.vibespace/cluster.json
+func LoadClusterState(vibespaceHome string) (*ClusterState, error) {
+	path := filepath.Join(vibespaceHome, clusterStateFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var state ClusterState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, fmt.Errorf("failed to parse cluster state: %w", err)
+	}
+	return &state, nil
+}
 
 // ClusterConfig contains configuration for cluster resources
 type ClusterConfig struct {
@@ -49,12 +107,35 @@ type ClusterManager interface {
 	KubeconfigPath() string
 }
 
-// NewClusterManager creates the appropriate cluster manager for the platform
-func NewClusterManager(p Platform, vibespaceHome string) (ClusterManager, error) {
+// ClusterManagerOptions configures which cluster manager to create
+type ClusterManagerOptions struct {
+	BareMetal bool // Use bare metal k3s (Linux only)
+}
+
+// NewClusterManager creates the appropriate cluster manager for the platform.
+// It checks persisted cluster.json first, then falls back to platform
+// detection combined with the provided options.
+func NewClusterManager(p Platform, vibespaceHome string, opts ClusterManagerOptions) (ClusterManager, error) {
+	// Check persisted cluster state first
+	if state, err := LoadClusterState(vibespaceHome); err == nil {
+		switch state.Mode {
+		case ClusterModeBareMetal:
+			return NewBareMetalManager(p, vibespaceHome), nil
+		case ClusterModeColima:
+			return NewColimaManager(p, vibespaceHome), nil
+		case ClusterModeLima:
+			return NewLimaManager(p, vibespaceHome), nil
+		}
+	}
+
+	// Fall back to platform detection + options
 	switch p.OS {
 	case "darwin":
 		return NewColimaManager(p, vibespaceHome), nil
 	case "linux":
+		if opts.BareMetal {
+			return NewBareMetalManager(p, vibespaceHome), nil
+		}
 		return NewLimaManager(p, vibespaceHome), nil
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", p.OS)

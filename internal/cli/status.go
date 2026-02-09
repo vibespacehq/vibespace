@@ -41,7 +41,7 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	// Check local cluster status
 	p := platform.Detect()
 	var localInstalled, localRunning bool
-	manager, err := platform.NewClusterManager(p, vibespaceHome)
+	manager, err := platform.NewClusterManager(p, vibespaceHome, platform.ClusterManagerOptions{})
 	if err == nil {
 		localInstalled, _ = manager.IsInstalled()
 		if localInstalled {
@@ -182,7 +182,7 @@ var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
 	Short: "Remove vibespace and all cluster data",
 	Long: `Completely remove vibespace including:
-- The Colima VM (macOS) or k3s cluster (Linux)
+- The Colima VM (macOS), Lima VM (Linux), or bare metal k3s (Linux --bare-metal)
 - All vibespace data in ~/.vibespace/
 - All vibespaces and their data
 
@@ -226,7 +226,7 @@ func runClusterStop(cmd *cobra.Command, args []string) error {
 	slog.Debug("platform detected", "os", p.OS, "arch", p.Arch)
 
 	// Get cluster manager
-	manager, err := platform.NewClusterManager(p, vibespaceHome)
+	manager, err := platform.NewClusterManager(p, vibespaceHome, platform.ClusterManagerOptions{})
 	if err != nil {
 		slog.Error("failed to create cluster manager", "error", err)
 		return fmt.Errorf("failed to create cluster manager: %w", err)
@@ -341,7 +341,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	slog.Debug("platform detected", "os", p.OS, "arch", p.Arch)
 
 	// Only uninstall cluster if binaries exist
-	manager, err := platform.NewClusterManager(p, vibespaceHome)
+	manager, err := platform.NewClusterManager(p, vibespaceHome, platform.ClusterManagerOptions{})
 	if err != nil {
 		slog.Warn("failed to create cluster manager", "error", err)
 	} else {

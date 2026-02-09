@@ -18,16 +18,6 @@ import (
 // Using a dedicated profile avoids conflicts with user's default Colima setup
 const colimaProfile = "vibespace"
 
-// VMState represents the state of the Colima VM
-type VMState int
-
-const (
-	VMStateNotExists VMState = iota // VM doesn't exist
-	VMStateStopped                  // VM exists but is stopped
-	VMStateRunning                  // VM is running
-	VMStateBroken                   // VM is in a broken/inconsistent state
-)
-
 // ColimaManager manages the Colima-based Kubernetes cluster on macOS
 type ColimaManager struct {
 	platform      Platform
