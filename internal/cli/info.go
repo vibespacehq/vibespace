@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yagizdagabak/vibespace/pkg/agent"
+	"github.com/yagizdagabak/vibespace/pkg/daemon"
 	"github.com/yagizdagabak/vibespace/pkg/model"
 	"github.com/yagizdagabak/vibespace/pkg/ui"
 	"github.com/yagizdagabak/vibespace/pkg/vibespace"
@@ -25,6 +26,7 @@ type InfoOutput struct {
 	Storage   string            `json:"storage"`
 	Mounts    []MountInfo       `json:"mounts,omitempty"`
 	Agents    []AgentInfoOutput `json:"agents"`
+	Forwards  []AgentForwardInfo `json:"forwards,omitempty"`
 	CreatedAt string            `json:"created_at"`
 }
 
@@ -74,6 +76,31 @@ func runInfo(vibespaceNameOrID string, args []string) error {
 		}
 	}
 
+	// Try to get forwards from daemon (best-effort)
+	var forwardAgents []AgentForwardInfo
+	if client, err := daemon.NewClient(); err == nil {
+		if result, err := client.ListForwardsForVibespace(vs.Name); err == nil {
+			for _, a := range result.Agents {
+				agentFwd := AgentForwardInfo{
+					Name:     a.Name,
+					PodName:  a.PodName,
+					Forwards: make([]ForwardInfo, len(a.Forwards)),
+				}
+				for j, fwd := range a.Forwards {
+					agentFwd.Forwards[j] = ForwardInfo{
+						LocalPort:  fwd.LocalPort,
+						RemotePort: fwd.RemotePort,
+						Type:       fwd.Type,
+						Status:     fwd.Status,
+						Error:      fwd.Error,
+						Reconnects: fwd.Reconnects,
+					}
+				}
+				forwardAgents = append(forwardAgents, agentFwd)
+			}
+		}
+	}
+
 	// Build output data
 	pvcName := fmt.Sprintf("vibespace-%s-pvc", vs.ID)
 	info := InfoOutput{
@@ -86,6 +113,8 @@ func runInfo(vibespaceNameOrID string, args []string) error {
 		Storage:   vs.Resources.Storage,
 		CreatedAt: vs.CreatedAt,
 	}
+
+	info.Forwards = forwardAgents
 
 	// Convert mounts
 	for _, m := range vs.Mounts {
@@ -137,7 +166,7 @@ func runInfo(vibespaceNameOrID string, args []string) error {
 	}
 
 	// Rich terminal output with lipgloss
-	return renderInfoRich(info, vs, agents, agentConfigs, out.NoColor())
+	return renderInfoRich(info, vs, agents, agentConfigs, forwardAgents, out.NoColor())
 }
 
 func renderInfoPlain(info InfoOutput, header bool) error {
@@ -166,10 +195,15 @@ func renderInfoPlain(info InfoOutput, header bool) error {
 		fmt.Printf("agent.%s.skip_permissions\t%v\n", a.Name, a.Config.SkipPermissions)
 		fmt.Printf("agent.%s.model\t%s\n", a.Name, a.Config.Model)
 	}
+	for _, a := range info.Forwards {
+		for _, fwd := range a.Forwards {
+			fmt.Printf("forward.%s.%d\t%d:%d:%s:%s\n", a.Name, fwd.RemotePort, fwd.LocalPort, fwd.RemotePort, fwd.Type, fwd.Status)
+		}
+	}
 	return nil
 }
 
-func renderInfoRich(info InfoOutput, vs *model.Vibespace, agents []vibespace.AgentInfo, agentConfigs map[string]*agent.Config, noColor bool) error {
+func renderInfoRich(info InfoOutput, vs *model.Vibespace, agents []vibespace.AgentInfo, agentConfigs map[string]*agent.Config, forwards []AgentForwardInfo, noColor bool) error {
 	out := getOutput()
 
 	// Define styles
@@ -299,6 +333,41 @@ func renderInfoRich(info InfoOutput, vs *model.Vibespace, agents []vibespace.Age
 			config = &agent.Config{}
 		}
 		printAgentConfigForInfo(a.AgentName, a.AgentType, a.Status, config, out, noColor)
+	}
+
+	// Forwards section (only if daemon is running and has forwards)
+	hasForwards := false
+	for _, a := range forwards {
+		if len(a.Forwards) > 0 {
+			hasForwards = true
+			break
+		}
+	}
+	if hasForwards {
+		fmt.Printf("\n%s\n", sectionStyle.Render("Forwards"))
+		for _, a := range forwards {
+			if len(a.Forwards) == 0 {
+				continue
+			}
+			for _, fwd := range a.Forwards {
+				fwdType := fwd.Type
+				if fwdType == "" {
+					fwdType = "manual"
+				}
+				status := fwd.Status
+				if fwd.Error != "" {
+					status = fmt.Sprintf("%s (%s)", status, fwd.Error)
+				}
+				line := fmt.Sprintf("  %s %s %s %s %s",
+					out.Bold(a.Name),
+					dimStyle.Render(fmt.Sprintf(":%d", fwd.LocalPort)),
+					mountArrowStyle.Render("→"),
+					dimStyle.Render(fmt.Sprintf(":%d", fwd.RemotePort)),
+					dimStyle.Render(fmt.Sprintf("[%s] %s", fwdType, status)),
+				)
+				fmt.Println(line)
+			}
+		}
 	}
 
 	// Created timestamp
