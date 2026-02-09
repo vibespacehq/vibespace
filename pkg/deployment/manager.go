@@ -898,6 +898,7 @@ func containerSecurityContext() *corev1.SecurityContext {
 				"NET_BIND_SERVICE", // bind ports < 1024 (sshd on 22)
 				"KILL",             // kill processes (supervisord, agent management)
 				"SYS_CHROOT",       // chroot (some package installs)
+				"AUDIT_WRITE",      // PAM loginuid for sshd privilege separation
 			},
 		},
 	}
