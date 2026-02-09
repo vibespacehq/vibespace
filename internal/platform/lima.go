@@ -205,16 +205,31 @@ func (m *LimaManager) downloadLima(ctx context.Context) error {
 	version := strings.TrimPrefix(release.TagName, "v")
 	assetName := fmt.Sprintf("lima-%s-Linux-%s.tar.gz", version, arch)
 
-	// Find the asset URL
-	var assetURL string
+	// Find the asset URL and SHA256SUMS
+	var assetURL, sha256sumsURL string
 	for _, asset := range release.Assets {
-		if asset.Name == assetName {
+		switch asset.Name {
+		case assetName:
 			assetURL = asset.BrowserDownloadURL
-			break
+		case "SHA256SUMS":
+			sha256sumsURL = asset.BrowserDownloadURL
 		}
 	}
 	if assetURL == "" {
 		return fmt.Errorf("Lima asset '%s' not found in release %s", assetName, release.TagName)
+	}
+
+	// Fetch SHA256 hash for verification
+	var expectedSHA256 string
+	if sha256sumsURL != "" {
+		content, err := fetchURL(ctx, sha256sumsURL)
+		if err != nil {
+			slog.Warn("could not fetch Lima SHA256SUMS, skipping verification", "error", err)
+		} else if hash, err := parseSHA256SUMS(content, assetName); err != nil {
+			slog.Warn("could not parse Lima SHA256SUMS, skipping verification", "error", err)
+		} else {
+			expectedSHA256 = hash
+		}
 	}
 
 	// Download and extract to ~/.vibespace/lima/
@@ -223,7 +238,7 @@ func (m *LimaManager) downloadLima(ctx context.Context) error {
 		return fmt.Errorf("failed to create lima directory: %w", err)
 	}
 
-	if err := downloadAndExtractTarGz(ctx, assetURL, limaDir); err != nil {
+	if err := downloadAndExtractTarGz(ctx, assetURL, limaDir, expectedSHA256); err != nil {
 		return fmt.Errorf("failed to download and extract Lima: %w", err)
 	}
 
@@ -248,7 +263,16 @@ func (m *LimaManager) downloadKubectl(ctx context.Context) error {
 		version, arch,
 	)
 
-	return downloadBinary(ctx, url, m.kubectlBin())
+	// Fetch SHA256 checksum sidecar
+	var expectedSHA256 string
+	checksumContent, err := fetchURL(ctx, url+".sha256")
+	if err != nil {
+		slog.Warn("could not fetch kubectl checksum, skipping verification", "error", err)
+	} else {
+		expectedSHA256 = strings.Fields(checksumContent)[0]
+	}
+
+	return downloadBinary(ctx, url, m.kubectlBin(), expectedSHA256)
 }
 
 // qemuBinDir returns the path to the QEMU binary directory
@@ -284,7 +308,8 @@ func (m *LimaManager) downloadQEMU(ctx context.Context) error {
 		return fmt.Errorf("failed to create qemu directory: %w", err)
 	}
 
-	if err := downloadAndExtractTarGz(ctx, assetURL, qemuDir); err != nil {
+	// TODO: Add SHA256 verification once checksums are published to vibespace-binaries repo
+	if err := downloadAndExtractTarGz(ctx, assetURL, qemuDir, ""); err != nil {
 		return fmt.Errorf("failed to download and extract QEMU: %w", err)
 	}
 

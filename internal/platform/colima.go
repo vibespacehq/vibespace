@@ -233,16 +233,31 @@ func (m *ColimaManager) downloadLima(ctx context.Context) error {
 	version := strings.TrimPrefix(release.TagName, "v")
 	assetName := fmt.Sprintf("lima-%s-Darwin-%s.tar.gz", version, arch)
 
-	// Find the asset URL
-	var assetURL string
+	// Find the asset URL and SHA256SUMS
+	var assetURL, sha256sumsURL string
 	for _, asset := range release.Assets {
-		if asset.Name == assetName {
+		switch asset.Name {
+		case assetName:
 			assetURL = asset.BrowserDownloadURL
-			break
+		case "SHA256SUMS":
+			sha256sumsURL = asset.BrowserDownloadURL
 		}
 	}
 	if assetURL == "" {
 		return fmt.Errorf("Lima asset '%s' not found in release %s", assetName, release.TagName)
+	}
+
+	// Fetch SHA256 hash for verification
+	var expectedSHA256 string
+	if sha256sumsURL != "" {
+		content, err := fetchURL(ctx, sha256sumsURL)
+		if err != nil {
+			slog.Warn("could not fetch Lima SHA256SUMS, skipping verification", "error", err)
+		} else if hash, err := parseSHA256SUMS(content, assetName); err != nil {
+			slog.Warn("could not parse Lima SHA256SUMS, skipping verification", "error", err)
+		} else {
+			expectedSHA256 = hash
+		}
 	}
 
 	// Download and extract to ~/.vibespace/lima/
@@ -252,7 +267,7 @@ func (m *ColimaManager) downloadLima(ctx context.Context) error {
 		return fmt.Errorf("failed to create lima directory: %w", err)
 	}
 
-	if err := downloadAndExtractTarGz(ctx, assetURL, limaDir); err != nil {
+	if err := downloadAndExtractTarGz(ctx, assetURL, limaDir, expectedSHA256); err != nil {
 		return fmt.Errorf("failed to download and extract Lima: %w", err)
 	}
 
@@ -273,12 +288,52 @@ func (m *ColimaManager) downloadColima(ctx context.Context) error {
 	// arm64 stays as arm64 for macOS
 
 	assetName := fmt.Sprintf("colima-Darwin-%s", arch)
-	url, err := getGitHubReleaseAssetURL(ctx, "abiosoft", "colima", "", assetName)
+	checksumAssetName := assetName + ".sha256sum"
+
+	// Fetch release to get both binary and checksum URLs in one API call
+	apiURL := "https://api.github.com/repos/abiosoft/colima/releases/latest"
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get Colima download URL: %w", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to fetch Colima release info: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var release GitHubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return fmt.Errorf("failed to parse Colima release info: %w", err)
 	}
 
-	return downloadBinary(ctx, url, m.colimaBin())
+	var binaryURL, checksumURL string
+	for _, asset := range release.Assets {
+		switch asset.Name {
+		case assetName:
+			binaryURL = asset.BrowserDownloadURL
+		case checksumAssetName:
+			checksumURL = asset.BrowserDownloadURL
+		}
+	}
+	if binaryURL == "" {
+		return fmt.Errorf("Colima asset '%s' not found in release %s", assetName, release.TagName)
+	}
+
+	// Fetch SHA256 checksum for verification
+	var expectedSHA256 string
+	if checksumURL != "" {
+		content, err := fetchURL(ctx, checksumURL)
+		if err != nil {
+			slog.Warn("could not fetch Colima checksum, skipping verification", "error", err)
+		} else if fields := strings.Fields(content); len(fields) > 0 {
+			expectedSHA256 = fields[0]
+		}
+	}
+
+	return downloadBinary(ctx, binaryURL, m.colimaBin(), expectedSHA256)
 }
 
 func (m *ColimaManager) downloadKubectl(ctx context.Context) error {
@@ -299,7 +354,16 @@ func (m *ColimaManager) downloadKubectl(ctx context.Context) error {
 		version, arch,
 	)
 
-	return downloadBinary(ctx, url, m.kubectlBin())
+	// Fetch SHA256 checksum sidecar
+	var expectedSHA256 string
+	checksumContent, err := fetchURL(ctx, url+".sha256")
+	if err != nil {
+		slog.Warn("could not fetch kubectl checksum, skipping verification", "error", err)
+	} else {
+		expectedSHA256 = strings.Fields(checksumContent)[0]
+	}
+
+	return downloadBinary(ctx, url, m.kubectlBin(), expectedSHA256)
 }
 
 func (m *ColimaManager) downloadDocker(ctx context.Context) error {
@@ -328,7 +392,8 @@ func (m *ColimaManager) downloadDocker(ctx context.Context) error {
 	}
 	defer os.RemoveAll(tempDir)
 
-	if err := downloadAndExtractTarGz(ctx, url, tempDir); err != nil {
+	// No SHA256 checksums available for Docker static binaries
+	if err := downloadAndExtractTarGz(ctx, url, tempDir, ""); err != nil {
 		return fmt.Errorf("failed to download and extract Docker: %w", err)
 	}
 

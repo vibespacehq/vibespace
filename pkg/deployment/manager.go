@@ -162,7 +162,8 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 									corev1.ResourceMemory: resource.MustParse(memoryLimitOrDefault(req.Resources.MemoryLimit, req.Resources.Memory)),
 								},
 							},
-							VolumeMounts: volumeMounts,
+							VolumeMounts:    volumeMounts,
+							SecurityContext: containerSecurityContext(),
 						},
 					},
 					Volumes: volumes,
@@ -335,7 +336,8 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 									corev1.ResourceMemory: resource.MustParse(memoryLimitOrDefault(req.Resources.MemoryLimit, req.Resources.Memory)),
 								},
 							},
-							VolumeMounts: volumeMounts,
+							VolumeMounts:    volumeMounts,
+							SecurityContext: containerSecurityContext(),
 						},
 					},
 					Volumes: volumes,
@@ -876,6 +878,29 @@ func deploymentStatusToString(deploy *appsv1.Deployment) string {
 	}
 
 	return "stopped"
+}
+
+// containerSecurityContext returns a SecurityContext that drops all Linux
+// capabilities except those needed for the agent container. Even though the
+// container grants passwordless sudo internally, the dropped capabilities
+// limit what root can actually do — preventing container escapes and host-level
+// damage while still allowing agents to install packages freely.
+func containerSecurityContext() *corev1.SecurityContext {
+	return &corev1.SecurityContext{
+		Capabilities: &corev1.Capabilities{
+			Drop: []corev1.Capability{"ALL"},
+			Add: []corev1.Capability{
+				"CHOWN",            // chown files (package installs)
+				"DAC_OVERRIDE",     // bypass file permission checks (sudo)
+				"FOWNER",           // bypass ownership checks (package installs)
+				"SETUID",           // su/sudo
+				"SETGID",           // su/sudo
+				"NET_BIND_SERVICE", // bind ports < 1024 (sshd on 22)
+				"KILL",             // kill processes (supervisord, agent management)
+				"SYS_CHROOT",       // chroot (some package installs)
+			},
+		},
+	}
 }
 
 func boolPtr(b bool) *bool {

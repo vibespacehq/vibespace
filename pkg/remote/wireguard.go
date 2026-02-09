@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -802,12 +804,13 @@ func downloadHomebrewBottle(ctx context.Context, formula, goArch, destDir string
 		return fmt.Errorf("failed to download bottle: status %d", resp.StatusCode)
 	}
 
-	// Extract the binaries we need
-	return extractHomebrewBottle(resp.Body, formula, destDir, binaries)
+	// Extract the binaries we need, verifying SHA256 from Homebrew API
+	return extractHomebrewBottle(resp.Body, formula, destDir, binaries, bottle.SHA256)
 }
 
 // extractHomebrewBottle extracts specific binaries from a Homebrew bottle (tar.gz).
-func extractHomebrewBottle(r io.Reader, formula, destDir string, binaries []string) error {
+// If expectedSHA256 is non-empty, the download is verified before extraction.
+func extractHomebrewBottle(r io.Reader, formula, destDir string, binaries []string, expectedSHA256 string) error {
 	// Homebrew bottles are gzipped tarballs
 	// Structure: <formula>/<version>/bin/<binary>
 
@@ -824,6 +827,24 @@ func extractHomebrewBottle(r io.Reader, formula, destDir string, binaries []stri
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
 	tmpFile.Close()
+
+	// Verify SHA256 if expected hash provided
+	if expectedSHA256 != "" {
+		f, err := os.Open(tmpPath)
+		if err != nil {
+			return fmt.Errorf("failed to open bottle for verification: %w", err)
+		}
+		h := sha256.New()
+		if _, err := io.Copy(h, f); err != nil {
+			f.Close()
+			return fmt.Errorf("failed to hash bottle: %w", err)
+		}
+		f.Close()
+		actual := hex.EncodeToString(h.Sum(nil))
+		if actual != expectedSHA256 {
+			return fmt.Errorf("bottle SHA256 mismatch: expected %s, got %s", expectedSHA256, actual)
+		}
+	}
 
 	// Extract using tar command (simpler than Go's archive/tar for nested gzip)
 	// First, let's list what's in there to find the right paths
