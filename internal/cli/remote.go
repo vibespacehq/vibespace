@@ -3,11 +3,15 @@ package cli
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"github.com/yagizdagabak/vibespace/internal/platform"
+	"github.com/yagizdagabak/vibespace/pkg/daemon"
 	"github.com/yagizdagabak/vibespace/pkg/remote"
 )
 
@@ -85,6 +89,11 @@ func runRemoteConnect(cmd *cobra.Command, args []string) error {
 	out := getOutput()
 	token := args[0]
 	ctx := context.Background()
+
+	// Stop local cluster if running — can't have both local and remote active
+	if err := stopLocalClusterIfRunning(ctx); err != nil {
+		slog.Warn("failed to stop local cluster", "error", err)
+	}
 
 	// Install WireGuard if needed
 	if !remote.IsWireGuardInstalled() {
@@ -281,6 +290,45 @@ func runRemoteStatus(cmd *cobra.Command, args []string) error {
 			fmt.Printf("Health: %s\n", out.Yellow("some checks failed"))
 		}
 	}
+
+	return nil
+}
+
+// stopLocalClusterIfRunning stops the local cluster and daemon before
+// connecting to a remote server, avoiding conflicting cluster states.
+func stopLocalClusterIfRunning(ctx context.Context) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	vibespaceHome := filepath.Join(home, ".vibespace")
+
+	p := platform.Detect()
+	manager, err := platform.NewClusterManager(p, vibespaceHome, platform.ClusterManagerOptions{})
+	if err != nil {
+		return nil // No manager means no local cluster
+	}
+
+	running, err := manager.IsRunning()
+	if err != nil || !running {
+		return nil
+	}
+
+	// Stop daemon first
+	if daemon.IsDaemonRunning() {
+		printStep("Stopping local daemon...")
+		if err := daemon.StopDaemon(); err != nil {
+			slog.Warn("failed to stop daemon", "error", err)
+		} else {
+			printSuccess("Local daemon stopped")
+		}
+	}
+
+	printStep("Stopping local cluster...")
+	if err := manager.Stop(ctx); err != nil {
+		return fmt.Errorf("failed to stop local cluster: %w", err)
+	}
+	printSuccess("Local cluster stopped")
 
 	return nil
 }
