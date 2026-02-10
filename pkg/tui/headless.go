@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/session"
-	"github.com/yagizdagabak/vibespace/pkg/vibespace"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/daemon"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // HeadlessRunner handles non-interactive mode for multi-agent sessions

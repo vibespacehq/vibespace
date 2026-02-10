@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/k8s"
-	"github.com/yagizdagabak/vibespace/pkg/model"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
+	"github.com/vibespacehq/vibespace/pkg/model"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

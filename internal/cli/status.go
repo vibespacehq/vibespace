@@ -9,10 +9,10 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/list"
-	"github.com/yagizdagabak/vibespace/internal/platform"
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
-	"github.com/yagizdagabak/vibespace/pkg/remote"
-	"github.com/yagizdagabak/vibespace/pkg/ui"
+	"github.com/vibespacehq/vibespace/internal/platform"
+	"github.com/vibespacehq/vibespace/pkg/daemon"
+	"github.com/vibespacehq/vibespace/pkg/remote"
+	"github.com/vibespacehq/vibespace/pkg/ui"
 
 	"github.com/spf13/cobra"
 )

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/session"
 )
 
 // Action represents a parsed user input action (SendAction or CommandAction)

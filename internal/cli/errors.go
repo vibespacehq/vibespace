@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yagizdagabak/vibespace/internal/platform"
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/k8s"
-	"github.com/yagizdagabak/vibespace/pkg/model"
-	"github.com/yagizdagabak/vibespace/pkg/remote"
-	"github.com/yagizdagabak/vibespace/pkg/vibespace"
+	"github.com/vibespacehq/vibespace/internal/platform"
+	"github.com/vibespacehq/vibespace/pkg/daemon"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
+	"github.com/vibespacehq/vibespace/pkg/model"
+	"github.com/vibespacehq/vibespace/pkg/remote"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // isRemoteConnected returns true if a remote connection is active.

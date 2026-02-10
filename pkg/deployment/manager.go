@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/k8s"
-	"github.com/yagizdagabak/vibespace/pkg/model"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
+	"github.com/vibespacehq/vibespace/pkg/model"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"

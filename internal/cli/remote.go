@@ -10,9 +10,9 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
-	"github.com/yagizdagabak/vibespace/internal/platform"
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
-	"github.com/yagizdagabak/vibespace/pkg/remote"
+	"github.com/vibespacehq/vibespace/internal/platform"
+	"github.com/vibespacehq/vibespace/pkg/daemon"
+	"github.com/vibespacehq/vibespace/pkg/remote"
 )
 
 var remoteCmd = &cobra.Command{

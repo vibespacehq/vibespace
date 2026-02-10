@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	vspkg "github.com/yagizdagabak/vibespace/pkg/vibespace"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	vspkg "github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // runConfig routes to config subcommands

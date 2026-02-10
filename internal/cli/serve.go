@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/yagizdagabak/vibespace/pkg/remote"
+	"github.com/vibespacehq/vibespace/pkg/remote"
 )
 
 var serveCmd = &cobra.Command{

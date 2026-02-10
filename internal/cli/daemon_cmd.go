@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
-	vsdns "github.com/yagizdagabak/vibespace/pkg/dns"
-	"github.com/yagizdagabak/vibespace/pkg/k8s"
-	"github.com/yagizdagabak/vibespace/pkg/portforward"
+	"github.com/vibespacehq/vibespace/pkg/daemon"
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
+	"github.com/vibespacehq/vibespace/pkg/portforward"
 
 	"github.com/spf13/cobra"
 )

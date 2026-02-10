@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yagizdagabak/vibespace/internal/platform"
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
+	"github.com/vibespacehq/vibespace/internal/platform"
+	"github.com/vibespacehq/vibespace/pkg/daemon"
 
 	"github.com/spf13/cobra"
 )

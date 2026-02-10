@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 )
 
 func TestGenerateSigningKey(t *testing.T) {

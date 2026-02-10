@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yagizdagabak/vibespace/pkg/permission"
+	"github.com/vibespacehq/vibespace/pkg/permission"
 )
 
 // PermissionPrompt is a Bubble Tea component for displaying permission prompts.

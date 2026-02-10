@@ -1,8 +1,8 @@
 package tui
 
 import (
-	"github.com/yagizdagabak/vibespace/pkg/permission"
-	"github.com/yagizdagabak/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/permission"
+	"github.com/vibespacehq/vibespace/pkg/session"
 )
 
 // RichMessageMsg is sent when an agent produces a rich message

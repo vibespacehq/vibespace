@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 )
 
 // RemoteState represents the client's remote connection state.

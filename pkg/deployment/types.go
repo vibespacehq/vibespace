@@ -1,8 +1,8 @@
 package deployment
 
 import (
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	"github.com/yagizdagabak/vibespace/pkg/model"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/model"
 )
 
 // AgentInfo contains information about an agent

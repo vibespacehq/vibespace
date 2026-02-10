@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/vibespace"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 
 	"github.com/spf13/cobra"
 )
