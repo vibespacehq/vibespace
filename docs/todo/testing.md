@@ -81,9 +81,18 @@ These tests build the binary, run it as a subprocess (like `exec.Command("vibesp
 
 ## Test Distribution
 
-### Every push — ubuntu-latest (~3-4 min)
+### Every push — `ci.yml` (3 parallel jobs)
 
-Fast feedback on every commit. Pure logic + k8s service layer. Includes k3s install (~30s), staticcheck install, and `go test -race` across all packages.
+Single workflow, three jobs that run in parallel (unit and integration both wait for lint):
+
+```
+ci.yml (every push)
+  ├── lint          (~30s)  — go vet, staticcheck, deadcode, gofmt
+  ├── unit          (~30s)  — go test -short -race (pure logic only)
+  └── integration   (~2min) — k3s install + go test -race (all tests)
+```
+
+Integration tests use `testing.Short()` to skip under `-short` flag, so the unit job runs only pure logic tests without k3s. The integration job runs everything including k8s service layer tests.
 
 ```
 Unit tests:
@@ -187,31 +196,7 @@ K8s service layer (k3s installed directly on the runner):
     TestListByLabel              — label selector works
 ```
 
-CI setup for this job:
-```yaml
-steps:
-  - uses: actions/checkout@v4
-  - uses: actions/setup-go@v5
-    with: { go-version: '1.24' }
-  - name: Install k3s
-    run: |
-      curl -sfL https://get.k3s.io | sudo sh -
-      sudo chmod 644 /etc/rancher/k3s/k3s.yaml
-      # vibespace reads kubeconfig from ~/.vibespace/kubeconfig, not KUBECONFIG env
-      mkdir -p ~/.vibespace
-      sudo cp /etc/rancher/k3s/k3s.yaml ~/.vibespace/kubeconfig
-      sudo chown $(id -u):$(id -g) ~/.vibespace/kubeconfig
-  - name: Lint
-    run: |
-      go vet ./...
-      go install honnef.co/go/tools/cmd/staticcheck@latest
-      staticcheck ./...
-  - name: Test
-    run: go test ./... -race -coverprofile=coverage.out
-  - name: Coverage
-    uses: codecov/codecov-action@v4
-    with: { files: coverage.out }
-```
+### PRs to main — `ci-e2e.yml` (future)
 
 ### PRs to main — ubuntu-latest (~5 min)
 
@@ -416,12 +401,12 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 
 ### Step 1: CI workflow + Tier 1 pure logic tests
 
-**CI workflow** (`.github/workflows/ci-unit.yml`): runs on every push to any branch. Lints with go vet, staticcheck, deadcode, and gofmt, then runs `go test ./... -race` with Codecov upload.
+**CI workflow** (`.github/workflows/ci.yml`): runs on every push to any branch. Three parallel jobs: lint, unit tests (`-short`), and integration tests (k3s). Codecov upload from both test jobs with separate flags.
 
-Workflows directory was reorganized with a `ci-` / `release-` prefix convention:
-- `ci-unit.yml` — lint + unit tests (every push)
-- `release-agent-images.yml` — agent container images (renamed from `build-image.yml`, fixed stale branch triggers)
-- `release-qemu-binaries.yml` — QEMU binaries (renamed from `build-qemu.yml`, trigger on `qemu-v*` tags + manual only)
+Workflows directory convention — `ci-` for continuous integration, `release-` for artifact publishing:
+- `ci.yml` — lint + unit + integration (every push, 3 parallel jobs)
+- `release-agent-images.yml` — agent container images (tag/manual trigger)
+- `release-qemu-binaries.yml` — QEMU binaries (`qemu-v*` tags + manual only)
 
 **17 test files, 77 tests** across 12 packages:
 
@@ -448,9 +433,15 @@ All tests pass with `-race`. No mocks — pure logic with `t.TempDir()` for file
 
 ### Step 3: K8s service layer tests
 
-Added k3s install to CI workflow (`ci-unit.yml`) so k8s integration tests run on every push. Tests skip gracefully without k3s (e.g., local dev without a cluster).
+Added k8s integration tests and restructured CI from a single-job `ci-unit.yml` into a three-job `ci.yml`:
 
-**CI change:** k3s installed on ubuntu runner, kubeconfig copied to `~/.vibespace/kubeconfig` (the path `pkg/k8s/client.go` expects). Installs after lint tools and before lint/test steps.
+- **lint** — go vet, staticcheck, deadcode, gofmt
+- **unit** (needs lint) — `go test -short -race` (pure logic only, integration tests skip via `testing.Short()`)
+- **integration** (needs lint) — k3s install + `go test -race` (all tests including k8s service layer)
+
+Unit and integration jobs run in parallel after lint passes. Integration tests use `testing.Short()` to skip in the unit job and `t.Skip("k8s not available")` to skip on machines without a cluster.
+
+**Bug fix:** `ScaleAllDeploymentsForVibespace` and `ScaleAgentDeployment` now use `retry.RetryOnConflict` — the k8s controller modifies deployments between List and Update, causing stale resourceVersion conflicts.
 
 **2 test files, 10 tests:**
 

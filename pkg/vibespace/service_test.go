@@ -17,6 +17,9 @@ import (
 
 func newTestService(t *testing.T) (*Service, *k8s.Client) {
 	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	client, err := k8s.NewClient()
 	if err != nil {
 		t.Skip("k8s not available:", err)
