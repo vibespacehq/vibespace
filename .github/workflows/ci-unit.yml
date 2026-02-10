@@ -17,6 +17,14 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@latest
           go install golang.org/x/tools/cmd/deadcode@latest
 
+      - name: Install k3s
+        run: |
+          curl -sfL https://get.k3s.io | sudo sh -
+          sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+          mkdir -p ~/.vibespace
+          sudo cp /etc/rancher/k3s/k3s.yaml ~/.vibespace/kubeconfig
+          sudo chown $(id -u):$(id -g) ~/.vibespace/kubeconfig
+
       - name: Lint (go vet)
         run: go vet ./...
 
