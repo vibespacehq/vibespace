@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/yagizdagabak/vibespace/pkg/remote"
+	"github.com/vibespacehq/vibespace/pkg/remote"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

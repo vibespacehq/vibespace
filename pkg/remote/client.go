@@ -18,7 +18,7 @@ import (
 
 	"strconv"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 )
 
 // chownToRealUser changes file ownership to the real user when running under sudo.

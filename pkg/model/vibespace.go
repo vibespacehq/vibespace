@@ -1,6 +1,6 @@
 package model
 
-import "github.com/yagizdagabak/vibespace/pkg/agent"
+import "github.com/vibespacehq/vibespace/pkg/agent"
 
 // Vibespace represents an isolated development environment with Claude Code.
 //

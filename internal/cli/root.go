@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 
 	"github.com/spf13/cobra"
 )

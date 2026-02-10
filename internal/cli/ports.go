@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 )
 
 // DetectedPort represents a port detected by the port detector daemon

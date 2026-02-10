@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/agent"
 )
 
 func init() {
@@ -38,7 +38,7 @@ func (a *Agent) DefaultAgentPrefix() string {
 
 // ContainerImage returns the Docker image for Claude Code.
 func (a *Agent) ContainerImage() string {
-	return "ghcr.io/yagizdagabak/vibespace/claude-code:latest"
+	return "ghcr.io/vibespacehq/vibespace/claude-code:latest"
 }
 
 // ConfigDirectory returns the config directory inside the container.

@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	vspkg "github.com/yagizdagabak/vibespace/pkg/vibespace"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	vspkg "github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // runAgent routes to agent subcommands
