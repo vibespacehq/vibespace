@@ -400,8 +400,8 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 
 ## Implementation Order
 
-1. CI workflow file (`.github/workflows/ci.yml`) — lint + build + unit tests
-2. Pure logic test files (Tier 1) — fastest to write, immediate value
+1. ~~CI workflow file — lint + build + unit tests~~ **Done**
+2. ~~Pure logic test files (Tier 1) — fastest to write, immediate value~~ **Done**
 3. K8s service layer tests — add k3s to CI, test against real cluster
 4. Binary lifecycle tests (bare metal) — ubuntu runner
 5. Binary lifecycle tests (colima) — macos-14 runner
@@ -409,3 +409,39 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 7. Remote mode E2E — SSH to VPS, WireGuard tunnel
 8. Lima lifecycle — self-hosted runner on VPS
 9. Codecov integration — coverage tracking and PR comments
+
+---
+
+## Completed Work
+
+### Step 1: CI workflow + Tier 1 pure logic tests
+
+**CI workflow** (`.github/workflows/ci-unit.yml`): runs on every push to any branch. Lints with go vet, staticcheck, deadcode, and gofmt, then runs `go test ./... -race` with Codecov upload.
+
+Workflows directory was reorganized with a `ci-` / `release-` prefix convention:
+- `ci-unit.yml` — lint + unit tests (every push)
+- `release-agent-images.yml` — agent container images (renamed from `build-image.yml`, fixed stale branch triggers)
+- `release-qemu-binaries.yml` — QEMU binaries (renamed from `build-qemu.yml`, trigger on `qemu-v*` tags + manual only)
+
+**17 test files, 77 tests** across 12 packages:
+
+| File | Tests | What's covered |
+|------|-------|----------------|
+| `pkg/errors/errors_test.go` | 3 | ErrorCode mapping, wrapped errors, unknown fallback |
+| `pkg/agent/agent_test.go` | 11 | ParseType, IsValid, Clone, Merge, IsEmpty, DefaultAllowedTools, AllowedToolsString |
+| `pkg/agent/registry_test.go` | 2 | Get known type, get unknown type |
+| `pkg/agent/claude/claude_test.go` | 10 | ParseStreamLine (6 message types + invalid + empty), BuildPrintModeCommand (4 configs) |
+| `pkg/vibespace/validate_test.go` | 2 | Valid names, invalid names with specific error messages |
+| `pkg/ui/table_test.go` | 3 | Plain table, rows only, with/without header |
+| `pkg/remote/token_test.go` | 7 | Key generation, encode/decode round-trip, sign/verify, expired, prefix, missing fields, unsigned |
+| `pkg/remote/state_test.go` | 4 | AllocateClientIP, AddClient, FindClientByPublicKey, JSON save/load |
+| `pkg/remote/tls_test.go` | 3 | Cert generation (IP + DNS), fingerprint verification, pinning TLS config |
+| `pkg/session/store_test.go` | 5 | Save/load, list sorted, SaveNew duplicate, delete, get not found |
+| `pkg/dns/server_test.go` | 4 | Add/remove record, start/stop, real DNS resolution, default fallback |
+| `pkg/daemon/protocol_test.go` | 3 | Request marshal, response marshal (success + error + nil), StatusResponse |
+| `internal/platform/detect_test.go` | 4 | String, IsMacOS, IsLinux, IsARM |
+| `internal/platform/download_test.go` | 5 | SHA256 verify, parseSHA256SUMS, extractTarGz, path traversal rejection, symlink |
+| `internal/platform/manager_test.go` | 6 | Save/load cluster state, darwin/linux/baremetal/unsupported/persisted state |
+| `internal/cli/output_test.go` | 2 | Error hints for each sentinel error, unknown error empty hint |
+
+All tests pass with `-race`. No mocks — pure logic with `t.TempDir()` for file I/O and real UDP for DNS.
