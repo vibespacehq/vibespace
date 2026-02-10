@@ -165,7 +165,10 @@ func runInfo(vibespaceNameOrID string, args []string) error {
 		return renderInfoPlain(info, out.Header())
 	}
 
-	// Rich terminal output with lipgloss
+	// Interactive TUI (if TTY) or static rich output
+	if out.IsTTY() && !out.NoColor() {
+		return runInfoTUI(info, agents, agentConfigs, forwardAgents)
+	}
 	return renderInfoRich(info, vs, agents, agentConfigs, forwardAgents, out.NoColor())
 }
 
