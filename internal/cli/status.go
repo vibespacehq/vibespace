@@ -186,8 +186,15 @@ var uninstallCmd = &cobra.Command{
 - All vibespaces and their data
 
 This action cannot be undone. Your ~/.kube/config is NOT affected.`,
-	Example: `  vibespace uninstall`,
-	RunE:    runUninstall,
+	Example: `  vibespace uninstall
+  vibespace uninstall --force`,
+	RunE: runUninstall,
+}
+
+var uninstallForce bool
+
+func init() {
+	uninstallCmd.Flags().BoolVarP(&uninstallForce, "force", "f", false, "Skip confirmation prompt")
 }
 
 func runClusterStop(cmd *cobra.Command, args []string) error {
@@ -278,21 +285,23 @@ func runClusterStop(cmd *cobra.Command, args []string) error {
 func runUninstall(cmd *cobra.Command, args []string) error {
 	slog.Info("uninstall command started")
 
-	fmt.Println("This will remove ALL vibespace data including:")
-	fmt.Println("  - The Colima VM (macOS) or k3s cluster (Linux)")
-	fmt.Println("  - All vibespaces and their data")
-	fmt.Println("  - All downloaded binaries")
-	fmt.Println("  - WireGuard interfaces and configuration")
-	fmt.Println()
-	fmt.Println("Your ~/.kube/config will NOT be affected.")
-	fmt.Println()
-	fmt.Print("Continue? [y/N] ")
+	if !uninstallForce {
+		fmt.Println("This will remove ALL vibespace data including:")
+		fmt.Println("  - The Colima VM (macOS) or k3s cluster (Linux)")
+		fmt.Println("  - All vibespaces and their data")
+		fmt.Println("  - All downloaded binaries")
+		fmt.Println("  - WireGuard interfaces and configuration")
+		fmt.Println()
+		fmt.Println("Your ~/.kube/config will NOT be affected.")
+		fmt.Println()
+		fmt.Print("Continue? [y/N] ")
 
-	var response string
-	fmt.Scanln(&response)
-	if response != "y" && response != "Y" {
-		fmt.Println("Aborted.")
-		return nil
+		var response string
+		fmt.Scanln(&response)
+		if response != "y" && response != "Y" {
+			fmt.Println("Aborted.")
+			return nil
+		}
 	}
 
 	// Stop daemon first
