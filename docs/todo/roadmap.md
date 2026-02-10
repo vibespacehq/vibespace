@@ -1,26 +1,6 @@
 # Roadmap
 
-## P0: Port Detection
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| Port detector in container | Daemon that scans for listening ports and writes `/tmp/vibespace-ports.json` | M |
-| Auto-forward detected ports | Optionally forward newly detected ports automatically | S |
-| Ports tab in info TUI | Add a "Ports" tab to the interactive `info` command showing detected ports | S |
-
-CLI reader (`vibespace <name> ports`) already exists but the in-container writer was never built.
-
-## P1: Help & Diagnostics
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| `vibespace doctor` | Diagnose common issues (Docker, ports, disk) | M |
-| `vibespace wait` | Wait for cluster ready state | S |
-| `<vs> wait` | Wait for agent(s) ready | S |
-| `vibespace help --json` | Machine-readable command schema | M |
-| Improve `--help` text | Consistent examples, better descriptions | S |
-
-## P2: Testing
+## P0: Testing
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -32,6 +12,26 @@ CLI reader (`vibespace <name> ports`) already exists but the in-container writer
 | CI pipeline | GitHub Actions on PR | M |
 | CI badges | Build, coverage, Go Report Card in README | S |
 | Codecov integration | Coverage reporting and PR comments | S |
+
+## P1: Port Detection
+
+| Task | Description | Effort |
+|------|-------------|--------|
+| Port detector in container | Daemon that scans for listening ports and writes `/tmp/vibespace-ports.json` | M |
+| Auto-forward detected ports | Optionally forward newly detected ports automatically | S |
+| Ports tab in info TUI | Add a "Ports" tab to the interactive `info` command showing detected ports | S |
+
+CLI reader (`vibespace <name> ports`) already exists but the in-container writer was never built.
+
+## P2: Help & Diagnostics
+
+| Task | Description | Effort |
+|------|-------------|--------|
+| `vibespace doctor` | Diagnose common issues (Docker, ports, disk) | M |
+| `vibespace wait` | Wait for cluster ready state | S |
+| `<vs> wait` | Wait for agent(s) ready | S |
+| `vibespace help --json` | Machine-readable command schema | M |
+| Improve `--help` text | Consistent examples, better descriptions | S |
 
 ## P3: Declarative Config
 
