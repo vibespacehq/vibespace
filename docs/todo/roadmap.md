@@ -1,5 +1,15 @@
 # Roadmap
 
+## P0: Port Detection
+
+| Task | Description | Effort |
+|------|-------------|--------|
+| Port detector in container | Daemon that scans for listening ports and writes `/tmp/vibespace-ports.json` | M |
+| Auto-forward detected ports | Optionally forward newly detected ports automatically | S |
+| Ports tab in info TUI | Add a "Ports" tab to the interactive `info` command showing detected ports | S |
+
+CLI reader (`vibespace <name> ports`) already exists but the in-container writer was never built.
+
 ## P1: Help & Diagnostics
 
 | Task | Description | Effort |
