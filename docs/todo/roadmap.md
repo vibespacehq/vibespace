@@ -1,10 +1,6 @@
 # Roadmap
 
-## P1: Bare Metal Mode
-
-Run k3s directly on Linux hosts without Lima/QEMU VM layer. Hetzner CPX shared CPU VPS has no /dev/kvm, so QEMU runs without hardware acceleration making init extremely slow. New `ClusterManager` implementation in `internal/platform/baremetal.go`.
-
-## P2: Help & Diagnostics
+## P1: Help & Diagnostics
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -14,7 +10,7 @@ Run k3s directly on Linux hosts without Lima/QEMU VM layer. Hetzner CPX shared C
 | `vibespace help --json` | Machine-readable command schema | M |
 | Improve `--help` text | Consistent examples, better descriptions | S |
 
-## P3: Testing
+## P2: Testing
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -27,7 +23,7 @@ Run k3s directly on Linux hosts without Lima/QEMU VM layer. Hetzner CPX shared C
 | CI badges | Build, coverage, Go Report Card in README | S |
 | Codecov integration | Coverage reporting and PR comments | S |
 
-## P4: Declarative Config
+## P3: Declarative Config
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -36,7 +32,7 @@ Run k3s directly on Linux hosts without Lima/QEMU VM layer. Hetzner CPX shared C
 | `vibespace export <vs>` | Export vibespace to YAML | M |
 | Spec schema | Define YAML schema, validate | M |
 
-## P5: Automation Enhancements
+## P4: Automation Enhancements
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -48,14 +44,14 @@ Run k3s directly on Linux hosts without Lima/QEMU VM layer. Hetzner CPX shared C
 | `--non-interactive` global flag | Disable all prompts | S |
 | `multi --stream --json` | JSONL streaming output | M |
 
-## P6: Versioning & Releases
+## P5: Versioning & Releases
 
 | Task | Description | Effort |
 |------|-------------|--------|
 | GitHub Actions release | Auto-release on tag | M |
 | Update checker | Notify when new version available | M |
 
-## P7: Distribution
+## P6: Distribution
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -67,7 +63,7 @@ Run k3s directly on Linux hosts without Lima/QEMU VM layer. Hetzner CPX shared C
 | RPM repository | For RHEL/Fedora | M |
 | AUR package | For Arch Linux | S |
 
-## P8: Feature Flags
+## P7: Feature Flags
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -77,7 +73,7 @@ Run k3s directly on Linux hosts without Lima/QEMU VM layer. Hetzner CPX shared C
 | `vibespace features enable <flag>` | Enable specific flag | S |
 | Feature graduation process | Promote stable features | S |
 
-## P9: JSON Enhancements
+## P8: JSON Enhancements
 
 | Task | Description | Effort |
 |------|-------------|--------|
