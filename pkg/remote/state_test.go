@@ -81,7 +81,7 @@ func TestServerStateSaveLoad(t *testing.T) {
 		Running:      true,
 		ListenPort:   51820,
 		ServerIP:     "10.100.0.1/24",
-		PublicKey:     "test-pub-key",
+		PublicKey:    "test-pub-key",
 		NextClientIP: 5,
 		Clients: []ClientRegistration{
 			{Name: "client1", PublicKey: "key1", AssignedIP: "10.100.0.2/32"},
