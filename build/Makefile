@@ -7,10 +7,10 @@
 #   make all           # Build all images
 #
 # Variables:
-#   REGISTRY - Container registry (default: ghcr.io/yagizdagabak/vibespace)
+#   REGISTRY - Container registry (default: ghcr.io/vibespacehq/vibespace)
 #   VERSION  - Image version tag (default: latest)
 
-REGISTRY ?= ghcr.io/yagizdagabak/vibespace
+REGISTRY ?= ghcr.io/vibespacehq/vibespace
 VERSION ?= latest
 
 .PHONY: all base claude-code codex push-all push-base push-claude-code push-codex clean

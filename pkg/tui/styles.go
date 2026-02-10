@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yagizdagabak/vibespace/pkg/ui"
+	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
 // Colors - imported from shared ui package with TUI-specific additions

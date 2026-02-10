@@ -5,7 +5,7 @@
 # - Codex CLI (@openai/codex)
 # - Codex-specific settings
 
-ARG REGISTRY=ghcr.io/yagizdagabak/vibespace
+ARG REGISTRY=ghcr.io/vibespacehq/vibespace
 ARG VERSION=latest
 
 FROM ${REGISTRY}/base:${VERSION}

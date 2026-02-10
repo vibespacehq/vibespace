@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 )
 
 // DaemonPaths contains paths for daemon state files

@@ -7,7 +7,7 @@ COMMIT=${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")}
 BUILD_DATE=${BUILD_DATE:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}
 
 # Package path for ldflags
-PKG="github.com/yagizdagabak/vibespace/internal/cli"
+PKG="github.com/vibespacehq/vibespace/internal/cli"
 
 echo "Building vibespace..."
 echo "  Version:    ${VERSION}"

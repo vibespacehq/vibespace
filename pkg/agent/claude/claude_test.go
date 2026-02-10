@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/agent"
 )
 
 func TestParseStreamLineAssistant(t *testing.T) {

@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/agent"
 	// Import agent implementations to trigger init() registration
-	_ "github.com/yagizdagabak/vibespace/pkg/agent/claude"
-	_ "github.com/yagizdagabak/vibespace/pkg/agent/codex"
-	"github.com/yagizdagabak/vibespace/pkg/deployment"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/k8s"
-	"github.com/yagizdagabak/vibespace/pkg/model"
+	_ "github.com/vibespacehq/vibespace/pkg/agent/claude"
+	_ "github.com/vibespacehq/vibespace/pkg/agent/codex"
+	"github.com/vibespacehq/vibespace/pkg/deployment"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
+	"github.com/vibespacehq/vibespace/pkg/model"
 
 	"github.com/google/uuid"
 	appsv1 "k8s.io/api/apps/v1"

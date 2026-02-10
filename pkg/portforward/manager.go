@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 	"k8s.io/client-go/rest"
 )
 

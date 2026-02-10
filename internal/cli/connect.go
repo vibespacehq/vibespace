@@ -9,9 +9,9 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/vibespace"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // browserFlag tracks whether to open browser instead of terminal

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yagizdagabak/vibespace/pkg/portforward"
+	"github.com/vibespacehq/vibespace/pkg/portforward"
 )
 
 // DaemonState represents the runtime state of the daemon

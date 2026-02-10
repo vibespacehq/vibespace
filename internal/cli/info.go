@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
-	"github.com/yagizdagabak/vibespace/pkg/model"
-	"github.com/yagizdagabak/vibespace/pkg/ui"
-	"github.com/yagizdagabak/vibespace/pkg/vibespace"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/daemon"
+	"github.com/vibespacehq/vibespace/pkg/model"
+	"github.com/vibespacehq/vibespace/pkg/ui"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // InfoOutput is the JSON output for the info command

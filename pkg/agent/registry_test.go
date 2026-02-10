@@ -3,8 +3,8 @@ package agent_test
 import (
 	"testing"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	_ "github.com/yagizdagabak/vibespace/pkg/agent/claude"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	_ "github.com/vibespacehq/vibespace/pkg/agent/claude"
 )
 
 func TestRegistryGetKnown(t *testing.T) {

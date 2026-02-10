@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 )
 
 func TestErrorHints(t *testing.T) {

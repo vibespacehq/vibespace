@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	_ "github.com/yagizdagabak/vibespace/pkg/agent/claude"
-	"github.com/yagizdagabak/vibespace/pkg/k8s"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	_ "github.com/vibespacehq/vibespace/pkg/agent/claude"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

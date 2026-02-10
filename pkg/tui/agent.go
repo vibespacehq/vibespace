@@ -14,13 +14,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/agent"
 	// Import agent implementations to trigger init() registration
-	_ "github.com/yagizdagabak/vibespace/pkg/agent/claude"
-	_ "github.com/yagizdagabak/vibespace/pkg/agent/codex"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/session"
-	"github.com/yagizdagabak/vibespace/pkg/vibespace"
+	_ "github.com/vibespacehq/vibespace/pkg/agent/claude"
+	_ "github.com/vibespacehq/vibespace/pkg/agent/codex"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // ContentBlock represents a content block in Claude's response

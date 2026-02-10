@@ -3,7 +3,7 @@ package tui
 import (
 	"time"
 
-	"github.com/yagizdagabak/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/session"
 
 	"github.com/google/uuid"
 )

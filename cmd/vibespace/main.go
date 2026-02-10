@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/yagizdagabak/vibespace/internal/cli"
+	"github.com/vibespacehq/vibespace/internal/cli"
 )
 
 func main() {
