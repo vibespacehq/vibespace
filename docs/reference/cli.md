@@ -199,6 +199,8 @@ Add a port forward.
 |------|-------|---------|-------------|
 | `--agent` | `-a` | `"claude-1"` | Agent to forward from |
 | `--local` | `-l` | auto | Local port to use |
+| `--dns` | | `false` | Enable DNS resolution (requires sudo for resolver setup) |
+| `--dns-name` | | auto | Custom DNS name (default: `agent.vibespace`) |
 
 ### `<name> forward remove <port>`
 
