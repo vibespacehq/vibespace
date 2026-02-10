@@ -17,17 +17,17 @@ import (
 
 // InfoOutput is the JSON output for the info command
 type InfoOutput struct {
-	Name      string            `json:"name"`
-	ID        string            `json:"id"`
-	Status    string            `json:"status"`
-	PVC       string            `json:"pvc"`
-	CPU       string            `json:"cpu"`
-	Memory    string            `json:"memory"`
-	Storage   string            `json:"storage"`
-	Mounts    []MountInfo       `json:"mounts,omitempty"`
-	Agents    []AgentInfoOutput `json:"agents"`
+	Name      string             `json:"name"`
+	ID        string             `json:"id"`
+	Status    string             `json:"status"`
+	PVC       string             `json:"pvc"`
+	CPU       string             `json:"cpu"`
+	Memory    string             `json:"memory"`
+	Storage   string             `json:"storage"`
+	Mounts    []MountInfo        `json:"mounts,omitempty"`
+	Agents    []AgentInfoOutput  `json:"agents"`
 	Forwards  []AgentForwardInfo `json:"forwards,omitempty"`
-	CreatedAt string            `json:"created_at"`
+	CreatedAt string             `json:"created_at"`
 }
 
 // MountInfo represents a mount in JSON output

@@ -22,8 +22,8 @@ type DesiredState struct {
 
 // DesiredStateManager manages desired state files for all vibespaces
 type DesiredStateManager struct {
-	dir    string                       // ~/.vibespace/forwards/
-	states map[string]*DesiredState     // vibespace -> state
+	dir    string                   // ~/.vibespace/forwards/
+	states map[string]*DesiredState // vibespace -> state
 	mu     sync.RWMutex
 }
 

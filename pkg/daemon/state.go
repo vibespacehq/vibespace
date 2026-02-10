@@ -12,15 +12,15 @@ import (
 
 // DaemonState represents the runtime state of the daemon
 type DaemonState struct {
-	StartedAt  time.Time                     `json:"started_at"`
-	Vibespaces map[string]*VibespaceState    `json:"vibespaces"` // vibespace name -> state
+	StartedAt  time.Time                  `json:"started_at"`
+	Vibespaces map[string]*VibespaceState `json:"vibespaces"` // vibespace name -> state
 	mu         sync.RWMutex
 }
 
 // VibespaceState represents the state of a single vibespace
 type VibespaceState struct {
-	ID     string                  `json:"id"`
-	Agents map[string]*AgentState  `json:"agents"` // agent name -> state
+	ID     string                 `json:"id"`
+	Agents map[string]*AgentState `json:"agents"` // agent name -> state
 	mu     sync.RWMutex
 }
 
@@ -160,12 +160,12 @@ type AgentState struct {
 
 // ForwardState represents the state of a single port-forward
 type ForwardState struct {
-	LocalPort  int                      `json:"local_port"`
-	RemotePort int                      `json:"remote_port"`
-	Type       portforward.ForwardType  `json:"type"`
+	LocalPort  int                       `json:"local_port"`
+	RemotePort int                       `json:"remote_port"`
+	Type       portforward.ForwardType   `json:"type"`
 	Status     portforward.ForwardStatus `json:"status"`
-	Error      string                   `json:"error,omitempty"`
-	Reconnects int                      `json:"reconnects"`
+	Error      string                    `json:"error,omitempty"`
+	Reconnects int                       `json:"reconnects"`
 }
 
 // EnsureDaemonDir ensures the daemon directory exists
@@ -186,4 +186,3 @@ func EnsureDaemonDir() error {
 
 	return nil
 }
-

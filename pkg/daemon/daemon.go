@@ -246,4 +246,3 @@ func WritePidFile(pid int) error {
 	}
 	return os.WriteFile(paths.PidFile, []byte(fmt.Sprintf("%d", pid)), 0644)
 }
-

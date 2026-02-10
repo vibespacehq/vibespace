@@ -44,8 +44,8 @@ func (t MessageType) String() string {
 type Message struct {
 	ID        string      `json:"id"`
 	Type      MessageType `json:"type"`
-	Sender    string      `json:"sender"`     // "You" or "claude-1@test"
-	Target    string      `json:"target"`     // "all" or "claude-1@test" (for user messages)
+	Sender    string      `json:"sender"` // "You" or "claude-1@test"
+	Target    string      `json:"target"` // "all" or "claude-1@test" (for user messages)
 	Content   string      `json:"content"`
 	Timestamp time.Time   `json:"timestamp"`
 	ToolName  string      `json:"tool_name,omitempty"`  // For tool use messages
@@ -117,8 +117,8 @@ func generateMessageID() string {
 // AgentState tracks the current state of an agent connection
 type AgentState struct {
 	Address    session.AgentAddress
-	SessionID  string // Claude --session-id UUID for conversation continuity
-	IsThinking bool   // True when waiting for Claude response
+	SessionID  string    // Claude --session-id UUID for conversation continuity
+	IsThinking bool      // True when waiting for Claude response
 	ThinkingAt time.Time // When thinking started (for animation)
 }
 

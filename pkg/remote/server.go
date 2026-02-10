@@ -30,7 +30,7 @@ import (
 
 // Server represents the remote mode server.
 type Server struct {
-	mu                 sync.Mutex   // Protects client registration (AddClient/RemoveClient)
+	mu                 sync.Mutex // Protects client registration (AddClient/RemoveClient)
 	state              *ServerState
 	mgmtServer         *http.Server // Private management API (WireGuard IP only)
 	registrationServer *http.Server // Public registration API (0.0.0.0)

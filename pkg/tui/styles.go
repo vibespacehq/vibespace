@@ -8,8 +8,7 @@ import (
 // Colors - imported from shared ui package with TUI-specific additions
 var (
 	// Brand colors from ui package
-	primaryColor   = ui.Teal   // #00ABAB
-	secondaryColor = ui.Pink   // #F102F3
+	secondaryColor = ui.Pink // #F102F3
 	successColor   = ui.Teal   // Use brand teal for success
 	warningColor   = ui.Orange // #FF7D4B
 	errorColor     = ui.ColorError
@@ -26,8 +25,6 @@ var (
 	thinkingColor  = ui.ColorThinking  // Pink for thinking indicator
 )
 
-// Agent colors palette - use shared palette from ui package
-var agentColors = ui.AgentColors
 
 // Styles contains all TUI styles
 type Styles struct {
@@ -51,11 +48,11 @@ type Styles struct {
 	AgentLabel lipgloss.Style
 
 	// Chat view specific
-	UserLabel  lipgloss.Style // For [You → target] labels
-	ToolLabel  lipgloss.Style // For [agent: Tool] labels
-	Timestamp  lipgloss.Style // For subtle timestamps
-	CodeBlock  lipgloss.Style // For code block styling
-	Thinking   lipgloss.Style // For thinking indicator
+	UserLabel lipgloss.Style // For [You → target] labels
+	ToolLabel lipgloss.Style // For [agent: Tool] labels
+	Timestamp lipgloss.Style // For subtle timestamps
+	CodeBlock lipgloss.Style // For code block styling
+	Thinking  lipgloss.Style // For thinking indicator
 
 	// Input
 	Input       lipgloss.Style

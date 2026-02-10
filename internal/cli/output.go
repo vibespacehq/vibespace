@@ -22,8 +22,8 @@ type Output struct {
 	noColor   bool
 	jsonMode  bool
 	plainMode bool
-	header    bool  // Include headers in plain mode
-	verbosity int   // -1=quiet, 0=normal, 1=verbose
+	header    bool // Include headers in plain mode
+	verbosity int  // -1=quiet, 0=normal, 1=verbose
 
 	mu sync.Mutex // protects concurrent writes
 

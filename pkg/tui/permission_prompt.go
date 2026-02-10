@@ -11,10 +11,10 @@ import (
 
 // PermissionPrompt is a Bubble Tea component for displaying permission prompts.
 type PermissionPrompt struct {
-	request   *permission.Request
-	selected  int  // 0=Allow, 1=Deny
-	width     int
-	height    int
+	request  *permission.Request
+	selected int // 0=Allow, 1=Deny
+	width    int
+	height   int
 }
 
 // NewPermissionPrompt creates a new permission prompt for the given request.
@@ -141,14 +141,16 @@ func (p *PermissionPrompt) View() string {
 	denyBtn := " Deny "
 
 	if p.selected == 0 {
-		allowBtn = selectedStyle.Copy().
+		activeAllow := selectedStyle
+		allowBtn = activeAllow.
 			Background(successColor).
 			Foreground(blackColor).
 			Render(" Allow ")
 		denyBtn = denyButtonStyle.Render(denyBtn)
 	} else {
 		allowBtn = allowButtonStyle.Render(allowBtn)
-		denyBtn = selectedStyle.Copy().
+		activeDeny := selectedStyle
+		denyBtn = activeDeny.
 			Background(errorColor).
 			Foreground(whiteColor).
 			Render(" Deny ")

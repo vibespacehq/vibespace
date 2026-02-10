@@ -24,9 +24,9 @@ type Vibespace struct {
 // ExposedService represents a dynamically detected service running in the vibespace.
 // Claude detects running processes (dev servers, APIs, etc.) and exposes them automatically.
 type ExposedService struct {
-	Name string `json:"name"`           // e.g., "next-dev", "api-server"
-	Port int    `json:"port"`           // Internal port (e.g., 3000)
-	URL  string `json:"url,omitempty"`  // External access URL
+	Name string `json:"name"`          // e.g., "next-dev", "api-server"
+	Port int    `json:"port"`          // Internal port (e.g., 3000)
+	URL  string `json:"url,omitempty"` // External access URL
 }
 
 // Resources represents resource allocations for a vibespace
