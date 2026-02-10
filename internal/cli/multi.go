@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/session"
-	"github.com/yagizdagabak/vibespace/pkg/tui"
-	"github.com/yagizdagabak/vibespace/pkg/ui"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/tui"
+	"github.com/vibespacehq/vibespace/pkg/ui"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"

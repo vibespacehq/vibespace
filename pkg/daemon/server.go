@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	vsdns "github.com/yagizdagabak/vibespace/pkg/dns"
-	"github.com/yagizdagabak/vibespace/pkg/portforward"
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
+	"github.com/vibespacehq/vibespace/pkg/portforward"
 )
 
 const defaultDNSPort = 5553

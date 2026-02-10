@@ -7,9 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	"github.com/yagizdagabak/vibespace/pkg/ui"
-	"github.com/yagizdagabak/vibespace/pkg/vibespace"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/ui"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // Tab indices

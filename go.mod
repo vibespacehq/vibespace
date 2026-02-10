@@ -1,4 +1,4 @@
-module github.com/yagizdagabak/vibespace
+module github.com/vibespacehq/vibespace
 
 go 1.24.0
 

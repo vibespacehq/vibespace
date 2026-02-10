@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yagizdagabak/vibespace/pkg/agent"
-	vserrors "github.com/yagizdagabak/vibespace/pkg/errors"
-	"github.com/yagizdagabak/vibespace/pkg/k8s"
-	"github.com/yagizdagabak/vibespace/pkg/model"
+	"github.com/vibespacehq/vibespace/pkg/agent"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
+	"github.com/vibespacehq/vibespace/pkg/model"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/util/retry"
 )
 
 // DeploymentManager manages Kubernetes Deployments and Services for vibespaces
@@ -444,10 +445,18 @@ func (m *DeploymentManager) ScaleAllDeploymentsForVibespace(ctx context.Context,
 	}
 
 	for _, deployment := range deployments.Items {
-		deployment.Spec.Replicas = &replicas
-		_, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, &deployment, metav1.UpdateOptions{})
+		name := deployment.Name
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			latest.Spec.Replicas = &replicas
+			_, err = m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, latest, metav1.UpdateOptions{})
+			return err
+		})
 		if err != nil {
-			return fmt.Errorf("failed to scale Deployment %s: %w", deployment.Name, err)
+			return fmt.Errorf("failed to scale Deployment %s: %w", name, err)
 		}
 	}
 
@@ -469,10 +478,18 @@ func (m *DeploymentManager) ScaleAgentDeployment(ctx context.Context, vibespaceI
 	}
 
 	for _, deployment := range deployments.Items {
-		deployment.Spec.Replicas = &replicas
-		_, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, &deployment, metav1.UpdateOptions{})
+		name := deployment.Name
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Get(ctx, name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			latest.Spec.Replicas = &replicas
+			_, err = m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, latest, metav1.UpdateOptions{})
+			return err
+		})
 		if err != nil {
-			return fmt.Errorf("failed to scale Deployment %s: %w", deployment.Name, err)
+			return fmt.Errorf("failed to scale Deployment %s: %w", name, err)
 		}
 	}
 

@@ -3,10 +3,11 @@ name: Build Container Images
 on:
   push:
     branches:
-      - vibespace-wip-agent-abstraction
+      - main
+      - develop
     paths:
       - 'build/**'
-      - '.github/workflows/build-image.yml'
+      - '.github/workflows/release-agent-images.yml'
   workflow_dispatch: # Allow manual trigger
 
 env:

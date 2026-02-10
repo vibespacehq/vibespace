@@ -1,0 +1,186 @@
+package agent
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestParseType(t *testing.T) {
+	tests := []struct {
+		input string
+		want  Type
+	}{
+		{"claude-code", TypeClaudeCode},
+		{"claude", TypeClaudeCode},
+		{"codex", TypeCodex},
+		{"", TypeClaudeCode},
+		{"CLAUDE-CODE", TypeClaudeCode},
+		{"  codex  ", TypeCodex},
+		{"unknown", TypeClaudeCode},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			if got := ParseType(tt.input); got != tt.want {
+				t.Errorf("ParseType(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsValid(t *testing.T) {
+	if !TypeClaudeCode.IsValid() {
+		t.Error("TypeClaudeCode.IsValid() = false, want true")
+	}
+	if !TypeCodex.IsValid() {
+		t.Error("TypeCodex.IsValid() = false, want true")
+	}
+	if Type("unknown").IsValid() {
+		t.Error(`Type("unknown").IsValid() = true, want false`)
+	}
+}
+
+func TestConfigClone(t *testing.T) {
+	original := &Config{
+		SkipPermissions: true,
+		AllowedTools:    []string{"Read", "Write"},
+		Model:           "test-model",
+		Extra:           map[string]interface{}{"key": "value"},
+	}
+
+	clone := original.Clone()
+
+	// Verify values are equal
+	if clone.SkipPermissions != original.SkipPermissions {
+		t.Error("Clone did not preserve SkipPermissions")
+	}
+	if clone.Model != original.Model {
+		t.Error("Clone did not preserve Model")
+	}
+
+	// Verify slices are independent
+	clone.AllowedTools[0] = "modified"
+	if original.AllowedTools[0] == "modified" {
+		t.Error("Clone shares AllowedTools slice with original")
+	}
+
+	// Verify maps are independent
+	clone.Extra["key"] = "changed"
+	if original.Extra["key"] == "changed" {
+		t.Error("Clone shares Extra map with original")
+	}
+}
+
+func TestConfigCloneNil(t *testing.T) {
+	var c *Config
+	if c.Clone() != nil {
+		t.Error("nil.Clone() should return nil")
+	}
+}
+
+func TestConfigMerge(t *testing.T) {
+	base := &Config{
+		Model:        "base-model",
+		AllowedTools: []string{"Read"},
+		MaxTurns:     5,
+	}
+
+	override := &Config{
+		Model:           "override-model",
+		SkipPermissions: true,
+	}
+
+	result := base.Merge(override)
+
+	if result.Model != "override-model" {
+		t.Errorf("Merge Model = %q, want %q", result.Model, "override-model")
+	}
+	if !result.SkipPermissions {
+		t.Error("Merge should set SkipPermissions from override")
+	}
+	if result.MaxTurns != 5 {
+		t.Errorf("Merge MaxTurns = %d, want 5 (preserved from base)", result.MaxTurns)
+	}
+}
+
+func TestConfigMergeNilBase(t *testing.T) {
+	var base *Config
+	other := &Config{Model: "test"}
+	result := base.Merge(other)
+	if result.Model != "test" {
+		t.Error("nil.Merge(other) should return clone of other")
+	}
+}
+
+func TestConfigMergeNilOther(t *testing.T) {
+	base := &Config{Model: "test"}
+	result := base.Merge(nil)
+	if result.Model != "test" {
+		t.Error("base.Merge(nil) should return base")
+	}
+}
+
+func TestConfigIsEmpty(t *testing.T) {
+	var nilConfig *Config
+	if !nilConfig.IsEmpty() {
+		t.Error("nil config should be empty")
+	}
+
+	if !(&Config{}).IsEmpty() {
+		t.Error("zero config should be empty")
+	}
+
+	if (&Config{Model: "test"}).IsEmpty() {
+		t.Error("config with Model should not be empty")
+	}
+
+	if (&Config{SkipPermissions: true}).IsEmpty() {
+		t.Error("config with SkipPermissions should not be empty")
+	}
+
+	if (&Config{AllowedTools: []string{"Read"}}).IsEmpty() {
+		t.Error("config with AllowedTools should not be empty")
+	}
+}
+
+func TestDefaultAllowedTools(t *testing.T) {
+	tools := DefaultAllowedTools()
+	if len(tools) != 6 {
+		t.Errorf("DefaultAllowedTools() returned %d items, want 6", len(tools))
+	}
+
+	expected := []string{"Bash(read_only:true)", "Read", "Write", "Edit", "Glob", "Grep"}
+	for i, want := range expected {
+		if tools[i] != want {
+			t.Errorf("DefaultAllowedTools()[%d] = %q, want %q", i, tools[i], want)
+		}
+	}
+}
+
+func TestAllowedToolsString(t *testing.T) {
+	c := &Config{AllowedTools: []string{"Read", "Write", "Bash"}}
+	got := c.AllowedToolsString()
+	if got != "Read,Write,Bash" {
+		t.Errorf("AllowedToolsString() = %q, want %q", got, "Read,Write,Bash")
+	}
+}
+
+func TestAllowedToolsStringDefault(t *testing.T) {
+	c := &Config{}
+	got := c.AllowedToolsString()
+	if !strings.Contains(got, "Read") {
+		t.Errorf("empty config AllowedToolsString() should contain default tools, got %q", got)
+	}
+}
+
+func TestConfigValidate(t *testing.T) {
+	c := &Config{
+		Model:           "test",
+		MaxTurns:        10,
+		SystemPrompt:    "test prompt",
+		ReasoningEffort: "high",
+	}
+	if c.IsEmpty() {
+		t.Error("config with multiple fields set should not be empty")
+	}
+}

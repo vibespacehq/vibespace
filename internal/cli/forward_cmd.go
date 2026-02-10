@@ -7,8 +7,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/yagizdagabak/vibespace/pkg/daemon"
-	vsdns "github.com/yagizdagabak/vibespace/pkg/dns"
+	"github.com/vibespacehq/vibespace/pkg/daemon"
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 )
 
 // runForwardCmd handles the forward subcommands

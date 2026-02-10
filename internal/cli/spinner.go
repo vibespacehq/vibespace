@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/yagizdagabak/vibespace/pkg/ui"
+	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
 // Spinner provides a simple text spinner for long operations
