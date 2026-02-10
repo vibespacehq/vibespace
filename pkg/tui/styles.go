@@ -8,7 +8,7 @@ import (
 // Colors - imported from shared ui package with TUI-specific additions
 var (
 	// Brand colors from ui package
-	secondaryColor = ui.Pink // #F102F3
+	secondaryColor = ui.Pink   // #F102F3
 	successColor   = ui.Teal   // Use brand teal for success
 	warningColor   = ui.Orange // #FF7D4B
 	errorColor     = ui.ColorError
@@ -24,7 +24,6 @@ var (
 	codeBlockFg    = ui.ColorCodeFg    // Code block text
 	thinkingColor  = ui.ColorThinking  // Pink for thinking indicator
 )
-
 
 // Styles contains all TUI styles
 type Styles struct {

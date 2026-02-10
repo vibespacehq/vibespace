@@ -202,7 +202,7 @@ func TestVerifyTokenMissingFields(t *testing.T) {
 		}},
 		{"missing Nonce", InviteToken{
 			ServerPublicKey: "key", Endpoint: "host:51820", ServerIP: "10.100.0.1",
-			ExpiresAt: time.Now().Add(30 * time.Minute).Unix(),
+			ExpiresAt:        time.Now().Add(30 * time.Minute).Unix(),
 			SigningPublicKey: pub, Signature: "sig",
 		}},
 	}
