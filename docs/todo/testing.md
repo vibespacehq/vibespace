@@ -389,7 +389,7 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 2. ~~Pure logic test files (Tier 1) — fastest to write, immediate value~~ **Done**
 3. ~~K8s service layer tests — add k3s to CI, test against real cluster~~ **Done**
 4. ~~Binary lifecycle tests (bare metal) — ubuntu runner~~ **Done**
-5. Binary lifecycle tests (colima) — macos-14 runner
+5. ~~Binary lifecycle tests (colima) — macos-14 runner~~ **Done**
 6. VPS security setup — ci-test user, SSH keys, sudoers
 7. Remote mode E2E — SSH to VPS, WireGuard tunnel
 8. Lima lifecycle — self-hosted runner on VPS
@@ -469,3 +469,22 @@ Added end-to-end tests that build the actual `vibespace` binary, run it as a sub
 | `test/e2e/baremetal_test.go` | `TestBareMetalLifecycle`: init (bare metal) → status (cluster running) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |
 
 Test files use `//go:build e2e` so `go test ./...` never picks them up. The lifecycle test uses `t.Cleanup` to always run `vibespace uninstall --force` even on failure.
+
+### Step 5: E2E binary lifecycle tests (Colima)
+
+Added Colima E2E lifecycle test for macOS, testing the default `vibespace init` path (no `--bare-metal` flag). This validates the full Colima flow: binary downloads (Lima, Colima, kubectl, Docker), VM creation, k3s-in-VM, and vibespace CRUD.
+
+**OS build constraints** split the E2E tests by platform:
+- `baremetal_test.go`: `//go:build e2e && linux` — only compiles on Linux
+- `colima_test.go`: `//go:build e2e && darwin` — only compiles on macOS
+- `helpers_test.go`: `//go:build e2e` — shared by both platforms
+
+No `-run` flag needed in CI — the build constraints handle test selection automatically.
+
+**CI workflow** (`.github/workflows/ci-e2e.yml`): added `colima` job on `macos-14` alongside existing `baremetal` job. 20-minute job timeout, 15-minute test timeout. Conservative VM resources (`--cpu 3 --memory 6 --disk 30`) for macos-14 runners (Apple Silicon M1, 3 cores, 7GB RAM, 14GB SSD).
+
+**1 new test file, 1 test function with 7 subtests:**
+
+| File | What's covered |
+|------|----------------|
+| `test/e2e/colima_test.go` | `TestColimaLifecycle`: init (Colima default) → status (platform=darwin) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |
