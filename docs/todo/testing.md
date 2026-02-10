@@ -388,7 +388,7 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 1. ~~CI workflow file — lint + build + unit tests~~ **Done**
 2. ~~Pure logic test files (Tier 1) — fastest to write, immediate value~~ **Done**
 3. ~~K8s service layer tests — add k3s to CI, test against real cluster~~ **Done**
-4. Binary lifecycle tests (bare metal) — ubuntu runner
+4. ~~Binary lifecycle tests (bare metal) — ubuntu runner~~ **Done**
 5. Binary lifecycle tests (colima) — macos-14 runner
 6. VPS security setup — ci-test user, SSH keys, sudoers
 7. Remote mode E2E — SSH to VPS, WireGuard tunnel
@@ -405,6 +405,7 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 
 Workflows directory convention — `ci-` for continuous integration, `release-` for artifact publishing:
 - `ci.yml` — lint + unit + integration (every push, 3 parallel jobs)
+- `ci-e2e.yml` — E2E binary lifecycle tests (PRs to main, bare metal on ubuntu-latest)
 - `release-agent-images.yml` — agent container images (tag/manual trigger)
 - `release-qemu-binaries.yml` — QEMU binaries (`qemu-v*` tags + manual only)
 
@@ -451,3 +452,20 @@ Unit and integration jobs run in parallel after lint passes. Integration tests u
 | `pkg/vibespace/service_test.go` | 6 | CreateVibespace (ID, status, resources, k8s Deployment), ListVibespaces (create 2, both appear), GetVibespace (by name, by ID, nonexistent), DeleteVibespace (resources cleaned up: Secret, PVC), CreateAgent (labels: is-agent, agent-type, agent-num), ListAgents (2 agents, primary flag, names) |
 
 All tests run against real k3s. Pods stay `Pending` (busybox image, no real agents) but Deployment specs, labels, Services, PVCs, and Secrets are validated. Each test uses unique UUIDs and cleans up via `t.Cleanup()`.
+
+### Step 4: E2E binary lifecycle tests (bare metal)
+
+Added end-to-end tests that build the actual `vibespace` binary, run it as a subprocess, and verify the entire stack on a Linux bare metal environment.
+
+**CI workflow** (`.github/workflows/ci-e2e.yml`): triggered on PRs to main only (not every push). Builds the binary, then runs E2E tests with `-tags e2e` on ubuntu-latest. Separate from `ci.yml` because `vibespace init --bare-metal` installs its own k3s (conflicts with integration job's direct k3s install). 15-minute job timeout, 10-minute test timeout.
+
+**CLI change:** Added `--force`/`-f` flag to `vibespace uninstall` to skip the confirmation prompt, matching the existing pattern from `vibespace delete -f`.
+
+**2 test files, 1 test function with 7 subtests:**
+
+| File | What's covered |
+|------|----------------|
+| `test/e2e/helpers_test.go` | Binary runner (`run`, `runJSON`, `mustSucceed`), JSON parsing (`parseData[T]`), mirrored JSON types (`JSONOutput`, `StatusData`, `CreateData`, `ListData`, `AgentsData`, `DeleteData`) |
+| `test/e2e/baremetal_test.go` | `TestBareMetalLifecycle`: init (bare metal) → status (cluster running) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |
+
+Test files use `//go:build e2e` so `go test ./...` never picks them up. The lifecycle test uses `t.Cleanup` to always run `vibespace uninstall --force` even on failure.
