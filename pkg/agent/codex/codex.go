@@ -227,11 +227,12 @@ func (a *Agent) ValidateConfig(config *agent.Config) error {
 
 // codexStreamMessage represents a JSONL message from Codex.
 // Actual format from Codex CLI:
-//   {"type":"thread.started","thread_id":"..."}
-//   {"type":"turn.started"}
-//   {"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"..."}}
-//   {"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"..."}}
-//   {"type":"turn.completed","usage":{...}}
+//
+//	{"type":"thread.started","thread_id":"..."}
+//	{"type":"turn.started"}
+//	{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"..."}}
+//	{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"..."}}
+//	{"type":"turn.completed","usage":{...}}
 type codexStreamMessage struct {
 	Type     string `json:"type"`
 	ThreadID string `json:"thread_id,omitempty"`

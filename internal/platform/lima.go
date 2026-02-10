@@ -216,7 +216,7 @@ func (m *LimaManager) downloadLima(ctx context.Context) error {
 		}
 	}
 	if assetURL == "" {
-		return fmt.Errorf("Lima asset '%s' not found in release %s", assetName, release.TagName)
+		return fmt.Errorf("lima asset '%s' not found in release %s", assetName, release.TagName)
 	}
 
 	// Fetch SHA256 hash for verification

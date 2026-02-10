@@ -14,10 +14,10 @@ import (
 
 // Tab indices
 const (
-	tabOverview  = 0
-	tabAgents    = 1
-	tabForwards  = 2
-	numTabs      = 3
+	tabOverview = 0
+	tabAgents   = 1
+	tabForwards = 2
+	numTabs     = 3
 )
 
 var tabNames = []string{"Overview", "Agents", "Forwards"}
@@ -419,7 +419,7 @@ func (m infoModel) renderForwards(width int) string {
 	if !hasForwards {
 		dim := lipgloss.NewStyle().Foreground(ui.ColorDim)
 		return dim.Render("  No active port forwards\n\n") +
-			dim.Render("  Use: vibespace " + m.info.Name + " forward add PORT")
+			dim.Render("  Use: vibespace "+m.info.Name+" forward add PORT")
 	}
 
 	// Build table rows

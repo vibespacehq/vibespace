@@ -26,7 +26,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-
 // Service handles vibespace operations
 type Service struct {
 	k8sClient         *k8s.Client
@@ -229,9 +228,9 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		VibespaceID: id,
 		Name:        req.Name,
 		AgentType:   agentType,
-		AgentNum:    1, // First agent
+		AgentNum:    1,             // First agent
 		AgentName:   req.AgentName, // Custom name or empty for default
-		Primary:     true, // This is the original agent created with the vibespace
+		Primary:     true,          // This is the original agent created with the vibespace
 		Image:       image,
 		Resources: deployment.Resources{
 			CPU:         resources.CPU,
@@ -270,8 +269,8 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 
 // DeleteOptions configures vibespace deletion behavior
 type DeleteOptions struct {
-	KeepData  bool              // If true, preserve PVC (storage data)
-	Vibespace *model.Vibespace  // If provided, skip lookup (avoids redundant API call)
+	KeepData  bool             // If true, preserve PVC (storage data)
+	Vibespace *model.Vibespace // If provided, skip lookup (avoids redundant API call)
 }
 
 // Delete deletes a vibespace by name or ID

@@ -191,7 +191,7 @@ func (r *HeadlessRunner) Close() {
 
 // MultiRequest represents a request to send to agents
 type MultiRequest struct {
-	Target  string `json:"target"`  // "all" or specific agent
+	Target  string `json:"target"` // "all" or specific agent
 	Message string `json:"message"`
 }
 

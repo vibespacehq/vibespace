@@ -8,7 +8,7 @@ import (
 
 // PortAllocator manages port allocation for agents
 type PortAllocator struct {
-	vibespace     string
+	vibespace      string
 	allocatedPorts map[string]int // key: "agent:remotePort" -> localPort
 	mu             sync.RWMutex
 }

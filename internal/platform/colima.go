@@ -234,7 +234,7 @@ func (m *ColimaManager) downloadLima(ctx context.Context) error {
 		}
 	}
 	if assetURL == "" {
-		return fmt.Errorf("Lima asset '%s' not found in release %s", assetName, release.TagName)
+		return fmt.Errorf("lima asset '%s' not found in release %s", assetName, release.TagName)
 	}
 
 	// Fetch SHA256 hash for verification
@@ -309,7 +309,7 @@ func (m *ColimaManager) downloadColima(ctx context.Context) error {
 		}
 	}
 	if binaryURL == "" {
-		return fmt.Errorf("Colima asset '%s' not found in release %s", assetName, release.TagName)
+		return fmt.Errorf("colima asset '%s' not found in release %s", assetName, release.TagName)
 	}
 
 	// Fetch SHA256 checksum for verification
@@ -788,4 +788,3 @@ func (w *logTeeWriter) Write(p []byte) (n int, err error) {
 
 	return n, nil
 }
-

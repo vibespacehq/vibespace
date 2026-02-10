@@ -41,4 +41,3 @@ type HookInput struct {
 	// Additional fields Claude might send
 	SessionID string `json:"sessionId,omitempty"`
 }
-

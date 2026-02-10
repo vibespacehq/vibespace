@@ -69,13 +69,13 @@ type Model struct {
 	contentDirty  bool // True when messages changed and viewport needs update
 
 	// State
-	ctx        context.Context
-	cancel     context.CancelFunc
-	ready      bool
-	quitting   bool
-	err        error
-	statusMsg  string
-	tickCount  int // For animations
+	ctx       context.Context
+	cancel    context.CancelFunc
+	ready     bool
+	quitting  bool
+	err       error
+	statusMsg string
+	tickCount int // For animations
 
 	// Default vibespace for short commands
 	defaultVibespace string
@@ -540,8 +540,8 @@ func (m *Model) renderAllMessages() string {
 	m.agentMu.RLock()
 	defer m.agentMu.RUnlock()
 
-	const leftPad = "  "  // Left padding for all content
-	const rightPad = 4    // Right margin
+	const leftPad = "  " // Left padding for all content
+	const rightPad = 4   // Right margin
 	wrapWidth := m.width - len(leftPad) - rightPad
 	if wrapWidth < 40 {
 		wrapWidth = 40

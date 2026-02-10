@@ -128,7 +128,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	if p.OS == "windows" {
 		slog.Error("unsupported platform", "os", p.OS)
-		return fmt.Errorf("Windows is not supported. Please use WSL2")
+		return fmt.Errorf("windows is not supported, please use WSL2")
 	}
 
 	if initBareMetal && p.OS != "linux" {

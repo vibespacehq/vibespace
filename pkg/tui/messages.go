@@ -123,6 +123,6 @@ type PermissionDecisionMsg struct {
 // AgentReconnectMsg is sent to trigger a reconnection attempt for an agent
 type AgentReconnectMsg struct {
 	Address  session.AgentAddress
-	Attempt  int  // Current attempt number
-	MaxRetry int  // Maximum retry attempts
+	Attempt  int // Current attempt number
+	MaxRetry int // Maximum retry attempts
 }

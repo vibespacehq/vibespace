@@ -23,10 +23,10 @@ import (
 // Stored at ~/.vibespace/remote.json
 type RemoteState struct {
 	Connected       bool      `json:"connected"`
-	ServerHost      string    `json:"server_host,omitempty"`      // Original SSH host (user@hostname)
-	ServerEndpoint  string    `json:"server_endpoint,omitempty"`  // WireGuard endpoint (hostname:51820)
-	LocalIP         string    `json:"local_ip,omitempty"`         // Client's WireGuard IP (10.100.0.2)
-	ServerIP        string    `json:"server_ip,omitempty"`        // Server's WireGuard IP (10.100.0.1)
+	ServerHost      string    `json:"server_host,omitempty"`     // Original SSH host (user@hostname)
+	ServerEndpoint  string    `json:"server_endpoint,omitempty"` // WireGuard endpoint (hostname:51820)
+	LocalIP         string    `json:"local_ip,omitempty"`        // Client's WireGuard IP (10.100.0.2)
+	ServerIP        string    `json:"server_ip,omitempty"`       // Server's WireGuard IP (10.100.0.1)
 	ConnectedAt     time.Time `json:"connected_at,omitempty"`
 	PublicKey       string    `json:"public_key,omitempty"`        // Client's WireGuard public key
 	ServerPublicKey string    `json:"server_public_key,omitempty"` // Server's WireGuard public key
@@ -59,15 +59,15 @@ type ClientRegistration struct {
 // InviteToken contains server connection info for clients.
 // Encoded as base64 JSON and shared via copy-paste.
 type InviteToken struct {
-	ServerPublicKey  string `json:"k"`             // Server's WireGuard public key
-	Endpoint         string `json:"e"`             // Server's public endpoint (host:port)
-	ServerIP         string `json:"s"`             // Server's WireGuard IP (e.g., "10.100.0.1")
-	ExpiresAt        int64  `json:"exp"`           // Unix timestamp (seconds)
-	Nonce            string `json:"n"`             // Random nonce (base64url)
-	SigningPublicKey string `json:"spk"`           // Server signing public key (base64url)
-	Signature        string `json:"sig"`           // Signature over payload (base64url)
-	CertFingerprint  string `json:"cf,omitempty"`  // Registration TLS cert fingerprint (sha256:hex)
-	Host             string `json:"h,omitempty"`   // Server host/IP for registration URL
+	ServerPublicKey  string `json:"k"`            // Server's WireGuard public key
+	Endpoint         string `json:"e"`            // Server's public endpoint (host:port)
+	ServerIP         string `json:"s"`            // Server's WireGuard IP (e.g., "10.100.0.1")
+	ExpiresAt        int64  `json:"exp"`          // Unix timestamp (seconds)
+	Nonce            string `json:"n"`            // Random nonce (base64url)
+	SigningPublicKey string `json:"spk"`          // Server signing public key (base64url)
+	Signature        string `json:"sig"`          // Signature over payload (base64url)
+	CertFingerprint  string `json:"cf,omitempty"` // Registration TLS cert fingerprint (sha256:hex)
+	Host             string `json:"h,omitempty"`  // Server host/IP for registration URL
 }
 
 // Default paths and values
@@ -76,12 +76,12 @@ const (
 	ServerStateFile  = "serve.json"
 	RemoteKubeconfig = "remote_kubeconfig"
 
-	DefaultWireGuardPort      = 51820
-	DefaultManagementPort     = 7780 // Private, binds to WireGuard IP only
-	DefaultRegistrationPort   = 7781 // Public, binds to 0.0.0.0 with self-signed TLS
-	DefaultServerIP           = "10.100.0.1"
-	DefaultClientIPStart      = 2
-	DefaultInviteTokenTTL     = 30 * time.Minute
+	DefaultWireGuardPort    = 51820
+	DefaultManagementPort   = 7780 // Private, binds to WireGuard IP only
+	DefaultRegistrationPort = 7781 // Public, binds to 0.0.0.0 with self-signed TLS
+	DefaultServerIP         = "10.100.0.1"
+	DefaultClientIPStart    = 2
+	DefaultInviteTokenTTL   = 30 * time.Minute
 )
 
 var (

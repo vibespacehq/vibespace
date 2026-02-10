@@ -17,8 +17,8 @@ import (
 // PodInfo contains information about a running pod
 type PodInfo struct {
 	Name      string
-	Agent     string          // Agent display name (e.g., "claude-1", "codex-2")
-	AgentType string          // Agent type (e.g., "claude-code", "codex")
+	Agent     string // Agent display name (e.g., "claude-1", "codex-2")
+	AgentType string // Agent type (e.g., "claude-code", "codex")
 	Vibespace string
 	Phase     corev1.PodPhase
 }

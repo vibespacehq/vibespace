@@ -169,13 +169,12 @@ func runStatus(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-
 var stopCmd = &cobra.Command{
-	Use:   "stop",
-	Short: "Stop the cluster",
-	Long:  `Stop the vibespace cluster. Data is preserved and can be started again with 'vibespace init'.`,
+	Use:     "stop",
+	Short:   "Stop the cluster",
+	Long:    `Stop the vibespace cluster. Data is preserved and can be started again with 'vibespace init'.`,
 	Example: `  vibespace stop`,
-	RunE: runClusterStop,
+	RunE:    runClusterStop,
 }
 
 var uninstallCmd = &cobra.Command{

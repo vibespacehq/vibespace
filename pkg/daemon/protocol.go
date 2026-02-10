@@ -64,20 +64,20 @@ func NewErrorResponse(err error) Response {
 
 // StatusResponse is the data for a status request
 type StatusResponse struct {
-	Vibespace   string         `json:"vibespace"`
-	Running     bool           `json:"running"`
-	StartedAt   string         `json:"started_at"`
-	Uptime      string         `json:"uptime"`
-	Agents      []AgentStatus  `json:"agents"`
-	TotalPorts  int            `json:"total_ports"`
-	ActivePorts int            `json:"active_ports"`
+	Vibespace   string        `json:"vibespace"`
+	Running     bool          `json:"running"`
+	StartedAt   string        `json:"started_at"`
+	Uptime      string        `json:"uptime"`
+	Agents      []AgentStatus `json:"agents"`
+	TotalPorts  int           `json:"total_ports"`
+	ActivePorts int           `json:"active_ports"`
 }
 
 // AgentStatus contains status info for an agent
 type AgentStatus struct {
-	Name     string         `json:"name"`
-	PodName  string         `json:"pod_name"`
-	Forwards []ForwardInfo  `json:"forwards"`
+	Name     string        `json:"name"`
+	PodName  string        `json:"pod_name"`
+	Forwards []ForwardInfo `json:"forwards"`
 }
 
 // ForwardInfo contains info about a single forward

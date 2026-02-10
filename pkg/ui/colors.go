@@ -35,14 +35,14 @@ var (
 // AgentColors provides a palette of 8 colors for agent identification.
 // Colors are rotated based on agent index.
 var AgentColors = []lipgloss.Color{
-	Teal,                          // #00ABAB - Primary brand teal
-	Pink,                          // #F102F3 - Brand pink
-	Orange,                        // #FF7D4B - Brand orange
-	Yellow,                        // #F5F50A - Brand yellow
-	lipgloss.Color("#00D9FF"),     // Cyan
-	lipgloss.Color("#7B61FF"),     // Purple
-	lipgloss.Color("#00FF9F"),     // Green
-	lipgloss.Color("#FF6B6B"),     // Coral
+	Teal,                      // #00ABAB - Primary brand teal
+	Pink,                      // #F102F3 - Brand pink
+	Orange,                    // #FF7D4B - Brand orange
+	Yellow,                    // #F5F50A - Brand yellow
+	lipgloss.Color("#00D9FF"), // Cyan
+	lipgloss.Color("#7B61FF"), // Purple
+	lipgloss.Color("#00FF9F"), // Green
+	lipgloss.Color("#FF6B6B"), // Coral
 }
 
 // GetAgentColor returns a color for an agent based on index (cycles through palette).

@@ -86,10 +86,10 @@ type ComponentStatus struct {
 
 // DaemonStatus represents the daemon status for JSON output
 type DaemonStatus struct {
-	Running     bool                         `json:"running"`
-	Pid         int                          `json:"pid,omitempty"`
-	Uptime      string                       `json:"uptime,omitempty"`
-	Vibespaces  map[string]DaemonVibespace   `json:"vibespaces,omitempty"`
+	Running    bool                       `json:"running"`
+	Pid        int                        `json:"pid,omitempty"`
+	Uptime     string                     `json:"uptime,omitempty"`
+	Vibespaces map[string]DaemonVibespace `json:"vibespaces,omitempty"`
 }
 
 // DaemonVibespace represents a vibespace managed by the daemon
@@ -99,9 +99,9 @@ type DaemonVibespace struct {
 
 // AgentsOutput is the JSON output for the agents command
 type AgentsOutput struct {
-	Vibespace string           `json:"vibespace"`
-	Agents    []AgentListItem  `json:"agents"`
-	Count     int              `json:"count"`
+	Vibespace string          `json:"vibespace"`
+	Agents    []AgentListItem `json:"agents"`
+	Count     int             `json:"count"`
 }
 
 // AgentListItem represents an agent in list output
@@ -114,8 +114,8 @@ type AgentListItem struct {
 
 // ForwardsOutput is the JSON output for the forward list command
 type ForwardsOutput struct {
-	Vibespace string              `json:"vibespace"`
-	Agents    []AgentForwardInfo  `json:"agents"`
+	Vibespace string             `json:"vibespace"`
+	Agents    []AgentForwardInfo `json:"agents"`
 }
 
 // AgentForwardInfo represents an agent with its forwards
@@ -143,18 +143,18 @@ type SessionListOutput struct {
 
 // SessionListItem represents a session in list output
 type SessionListItem struct {
-	Name        string    `json:"name"`
-	Vibespaces  int       `json:"vibespaces"`
-	LastUsed    time.Time `json:"last_used"`
+	Name       string    `json:"name"`
+	Vibespaces int       `json:"vibespaces"`
+	LastUsed   time.Time `json:"last_used"`
 }
 
 // SessionShowOutput is the JSON output for session show command
 type SessionShowOutput struct {
-	Name        string               `json:"name"`
-	CreatedAt   time.Time            `json:"created_at"`
-	LastUsed    time.Time            `json:"last_used"`
-	Layout      string               `json:"layout"`
-	Vibespaces  []SessionVibespace   `json:"vibespaces"`
+	Name       string             `json:"name"`
+	CreatedAt  time.Time          `json:"created_at"`
+	LastUsed   time.Time          `json:"last_used"`
+	Layout     string             `json:"layout"`
+	Vibespaces []SessionVibespace `json:"vibespaces"`
 }
 
 // SessionVibespace represents a vibespace in a session
@@ -165,9 +165,9 @@ type SessionVibespace struct {
 
 // DeleteOutput is the JSON output for delete command
 type DeleteOutput struct {
-	Name      string `json:"name"`
-	KeepData  bool   `json:"keep_data"`
-	DryRun    bool   `json:"dry_run,omitempty"`
+	Name      string   `json:"name"`
+	KeepData  bool     `json:"keep_data"`
+	DryRun    bool     `json:"dry_run,omitempty"`
 	Resources []string `json:"resources,omitempty"` // Resources that would be/were deleted
 }
 
@@ -187,8 +187,8 @@ type ConfigShowOutput struct {
 
 // ConfigShowAllOutput is the JSON output for config show command (all agents)
 type ConfigShowAllOutput struct {
-	Vibespace string              `json:"vibespace"`
-	Agents    []AgentConfigItem   `json:"agents"`
+	Vibespace string            `json:"vibespace"`
+	Agents    []AgentConfigItem `json:"agents"`
 }
 
 // AgentConfigItem represents an agent with its config in list output
@@ -314,17 +314,17 @@ type MultiRequestInfo struct {
 
 // MultiAgentResponse represents a response from a single agent
 type MultiAgentResponse struct {
-	Agent     string             `json:"agent"`
-	Timestamp string             `json:"timestamp"`
-	Content   string             `json:"content"`
-	ToolUses  []MultiToolUse     `json:"tool_uses,omitempty"`
-	Error     string             `json:"error,omitempty"`
+	Agent     string         `json:"agent"`
+	Timestamp string         `json:"timestamp"`
+	Content   string         `json:"content"`
+	ToolUses  []MultiToolUse `json:"tool_uses,omitempty"`
+	Error     string         `json:"error,omitempty"`
 }
 
 // MultiToolUse represents a tool use in an agent response
 type MultiToolUse struct {
-	Tool   string `json:"tool"`
-	Input  string `json:"input,omitempty"`
+	Tool  string `json:"tool"`
+	Input string `json:"input,omitempty"`
 }
 
 // ExecOutput is the JSON output for exec command
@@ -395,4 +395,3 @@ type ClientOutput struct {
 	Hostname     string `json:"hostname,omitempty"`
 	RegisteredAt string `json:"registered_at"`
 }
-

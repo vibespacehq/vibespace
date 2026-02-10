@@ -62,11 +62,11 @@ type ClaudeMessage struct {
 
 // AgentConn represents a connection to a coding agent in print mode
 type AgentConn struct {
-	address        session.AgentAddress
-	localPort      int
-	sessionManager *AgentSessionManager // Shared session manager for --session-id vs --resume
-	multiSessionID string                // Multi-session ID for session isolation
-	resume         bool                  // If true, use --resume with existing session; if false, use --session-id
+	address         session.AgentAddress
+	localPort       int
+	sessionManager  *AgentSessionManager // Shared session manager for --session-id vs --resume
+	multiSessionID  string               // Multi-session ID for session isolation
+	resume          bool                 // If true, use --resume with existing session; if false, use --session-id
 	forceNewSession bool                 // If true, use --session-id even if session exists (for /session @agent new)
 
 	// Agent type and configuration

@@ -382,8 +382,9 @@ Examples:
 
 // runStart scales up agents in a vibespace
 // Usage:
-//   vibespace foo start           # scale all agents to 1
-//   vibespace foo start claude-2  # scale specific agent to 1
+//
+//	vibespace foo start           # scale all agents to 1
+//	vibespace foo start claude-2  # scale specific agent to 1
 func runStart(vibespace string, args []string) error {
 	ctx := context.Background()
 	out := getOutput()
@@ -471,8 +472,9 @@ Examples:
 
 // runStop scales down agents in a vibespace
 // Usage:
-//   vibespace foo stop           # scale all agents to 0
-//   vibespace foo stop claude-2  # scale specific agent to 0
+//
+//	vibespace foo stop           # scale all agents to 0
+//	vibespace foo stop claude-2  # scale specific agent to 0
 func runStop(vibespace string, args []string) error {
 	ctx := context.Background()
 	out := getOutput()
