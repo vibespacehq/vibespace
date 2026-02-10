@@ -402,7 +402,7 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 
 1. ~~CI workflow file — lint + build + unit tests~~ **Done**
 2. ~~Pure logic test files (Tier 1) — fastest to write, immediate value~~ **Done**
-3. K8s service layer tests — add k3s to CI, test against real cluster
+3. ~~K8s service layer tests — add k3s to CI, test against real cluster~~ **Done**
 4. Binary lifecycle tests (bare metal) — ubuntu runner
 5. Binary lifecycle tests (colima) — macos-14 runner
 6. VPS security setup — ci-test user, SSH keys, sudoers
@@ -445,3 +445,18 @@ Workflows directory was reorganized with a `ci-` / `release-` prefix convention:
 | `internal/cli/output_test.go` | 2 | Error hints for each sentinel error, unknown error empty hint |
 
 All tests pass with `-race`. No mocks — pure logic with `t.TempDir()` for file I/O and real UDP for DNS.
+
+### Step 3: K8s service layer tests
+
+Added k3s install to CI workflow (`ci-unit.yml`) so k8s integration tests run on every push. Tests skip gracefully without k3s (e.g., local dev without a cluster).
+
+**CI change:** k3s installed on ubuntu runner, kubeconfig copied to `~/.vibespace/kubeconfig` (the path `pkg/k8s/client.go` expects). Installs after lint tools and before lint/test steps.
+
+**2 test files, 10 tests:**
+
+| File | Tests | What's covered |
+|------|-------|----------------|
+| `pkg/deployment/manager_test.go` | 4 | CreateDeployment (labels, container, ports, resources, Service), ScaleDeployment (0 then 1), DeleteDeployment (Deployment + Service gone), ListByLabel (ListDeployments + ListAgentsForVibespace filtering) |
+| `pkg/vibespace/service_test.go` | 6 | CreateVibespace (ID, status, resources, k8s Deployment), ListVibespaces (create 2, both appear), GetVibespace (by name, by ID, nonexistent), DeleteVibespace (resources cleaned up: Secret, PVC), CreateAgent (labels: is-agent, agent-type, agent-num), ListAgents (2 agents, primary flag, names) |
+
+All tests run against real k3s. Pods stay `Pending` (busybox image, no real agents) but Deployment specs, labels, Services, PVCs, and Secrets are validated. Each test uses unique UUIDs and cleans up via `t.Cleanup()`.
