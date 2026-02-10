@@ -4,9 +4,20 @@
 
 - **Core CLI**: Stable — create, list, delete, connect, exec, multi all verified
 - **Remote Mode**: E2E tested — serve, connect, create vibespace, uninstall. Auto-reconnect untested
-- **Daemon**: Port forwarding and session management verified. DNS resolution untested
-- **TUI**: Verified locally, untested in remote mode
-- **Cluster**: Lima/Colima on macOS verified, Lima/QEMU on Linux verified (slow without KVM)
+- **Daemon**: Port forwarding, session management, and embedded DNS server verified
+- **DNS**: Working on macOS via `/etc/resolver/`. Chromium browsers bypass it (Safari/curl work)
+- **TUI**: Verified locally, untested in remote mode. Info command has interactive tabbed view
+- **Security**: Container SecurityContext with AUDIT_WRITE capability — SSH and browser mode verified
+- **Cluster**: Lima/Colima on macOS verified, Lima/QEMU on Linux verified, bare metal mode E2E tested on VPS
+
+## Recent Work (2026-02-09)
+
+- Fixed SSH failure caused by missing AUDIT_WRITE capability in container SecurityContext
+- Implemented opt-in DNS resolution for port forwards (`--dns` / `--dns-name` flags)
+- Fixed `configureMacOSResolver` pipe conflict (Stdin + StdinPipe)
+- Added interactive tabbed TUI for `vibespace info` (bubbletea + lipgloss)
+- DNS names use `agent.vibespace.vibespace.internal` format, customizable via `--dns-name`
+- Resolver file creation moved to CLI level (daemon can't sudo when detached)
 
 ## Recent Work (2026-02-08)
 
@@ -19,8 +30,10 @@
 
 ## Known Issues
 
+- Chromium browsers bypass macOS `/etc/resolver/` — use Safari or curl for DNS-based access
+- `InterfaceStatus()` reports `tunnel_up: false` even when tunnel works — needs ping-based check
 - Permission hook fails in interactive mode — use `--skip-permissions` as workaround
-- VPS init extremely slow (no KVM, QEMU software emulation) — bare metal mode will fix this
+- VPS init slow with Lima/QEMU (no KVM) — use `--bare-metal` flag instead
 - Linux WireGuard install only uses apt-get (multi-distro detection added but untested beyond apt)
 
 ## What's Next
