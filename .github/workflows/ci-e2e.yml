@@ -26,19 +26,9 @@ jobs:
           VIBESPACE_DEBUG: "1"
           GOCOVERDIR: ${{ github.workspace }}/coverdir
 
-      - name: Debug coverdir
-        if: always()
-        run: |
-          echo "GOCOVERDIR=$GOCOVERDIR"
-          echo "ls coverdir:"
-          ls -la coverdir/ 2>&1 || echo "coverdir does not exist"
-
       - name: Convert coverage
         if: always()
-        run: |
-          if [ -d coverdir ] && ls coverdir/*.covcounters.* >/dev/null 2>&1; then
-            go tool covdata textfmt -i=coverdir -o=coverage-e2e-baremetal.out
-          fi
+        run: go tool covdata textfmt -i=${{ github.workspace }}/coverdir -o=coverage-e2e-baremetal.out
 
       - name: Upload coverage
         if: always()
@@ -77,19 +67,9 @@ jobs:
           VIBESPACE_DEBUG: "1"
           GOCOVERDIR: ${{ github.workspace }}/coverdir
 
-      - name: Debug coverdir
-        if: always()
-        run: |
-          echo "GOCOVERDIR=$GOCOVERDIR"
-          echo "ls coverdir:"
-          ls -la coverdir/ 2>&1 || echo "coverdir does not exist"
-
       - name: Convert coverage
         if: always()
-        run: |
-          if [ -d coverdir ] && ls coverdir/*.covcounters.* >/dev/null 2>&1; then
-            go tool covdata textfmt -i=coverdir -o=coverage-e2e-colima.out
-          fi
+        run: go tool covdata textfmt -i=${{ github.workspace }}/coverdir -o=coverage-e2e-colima.out
 
       - name: Upload coverage
         if: always()
@@ -128,19 +108,9 @@ jobs:
           VIBESPACE_DEBUG: "1"
           GOCOVERDIR: ${{ github.workspace }}/coverdir
 
-      - name: Debug coverdir
-        if: always()
-        run: |
-          echo "GOCOVERDIR=$GOCOVERDIR"
-          echo "ls coverdir:"
-          ls -la coverdir/ 2>&1 || echo "coverdir does not exist"
-
       - name: Convert coverage
         if: always()
-        run: |
-          if [ -d coverdir ] && ls coverdir/*.covcounters.* >/dev/null 2>&1; then
-            go tool covdata textfmt -i=coverdir -o=coverage-e2e-lima.out
-          fi
+        run: go tool covdata textfmt -i=${{ github.workspace }}/coverdir -o=coverage-e2e-lima.out
 
       - name: Upload coverage
         if: always()
