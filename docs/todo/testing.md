@@ -273,36 +273,26 @@ WireGuard UDP from GitHub runners to external servers with stable IPs works fine
 
 ---
 
-## VPS Runner for CI
+## Self-Hosted Runners
 
-The VPS (Hetzner CPX, 49.13.120.186) runs a self-hosted GitHub Actions runner for tests that need real Linux infrastructure (Lima lifecycle, remote mode server). No SSH keys or secrets needed — the runner executes jobs directly.
+Two self-hosted runners for tests that need real hardware (VM creation, hardware virtualization):
 
-### Runner setup
+| Label | Machine | Use |
+|-------|---------|-----|
+| `macos-m2` | Mac Mini M2 | Colima E2E tests |
+| `linux-hub` | Home Linux PC (i5-3470S, 16GB, KVM) | Lima E2E tests |
 
-- **User:** `github-runner` (dedicated, `NOPASSWD: ALL` sudo)
-- **Runner:** GitHub Actions Runner v2.331.0, installed as systemd service
-- **Label:** `linux-vps` (use `runs-on: linux-vps` in workflows)
+### linux-hub setup
+
+- **User:** `github-runner` (dedicated, `NOPASSWD: ALL` sudo, `kvm` group)
+- **Runner:** GitHub Actions Runner v2.331.0, systemd service
 - **Go:** 1.24.0 system-wide (`/usr/local/go/bin/go`)
-- **Service:** `actions.runner.vibespacehq.vps-runner.service` (enabled, auto-starts on boot)
+- **KVM:** Hardware virtualization for fast QEMU (no TCG)
+- **Power:** Sleep/suspend disabled, wifi power save disabled
 
 ### Test isolation
 
-CI tests use `/home/github-runner/.vibespace/` — completely separate from any production state under `/home/vibeuser/.vibespace/`.
-
-### Workflow guards
-
-```yaml
-# Only run VPS-touching jobs on PRs from this repo, never forks
-if: github.event.pull_request.head.repo.full_name == github.repository
-```
-
-GitHub Actions does not expose secrets to fork PRs by default. This guard makes it explicit.
-
-### Self-hosted runner convention
-
-Two self-hosted runners, matching label-per-machine pattern:
-- `macos-m2` — Mac Mini M2 for Colima E2E tests
-- `linux-hub` — Home Linux PC (i5-3470S, 16GB, KVM) for Lima lifecycle
+CI tests use `/home/github-runner/.vibespace/` — completely separate from any user state. The `vibespace uninstall --force` cleanup in tests tears down everything, so the runner machine cannot simultaneously run a user's vibespace instance.
 
 ---
 
@@ -408,8 +398,8 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 5. ~~Binary lifecycle tests (colima) — macos-14 runner~~ **Done**
 6. ~~VPS runner setup — self-hosted GitHub Actions runner on VPS~~ **Done**
 7. ~~Lima lifecycle — self-hosted runner on VPS~~ **Done**
-8. Remote mode E2E — WireGuard tunnel tests on linux-vps runner
-9. Codecov integration — coverage tracking and PR comments
+8. Remote mode E2E — WireGuard tunnel tests on linux-hub runner
+9. ~~Codecov integration — coverage tracking and PR comments~~ **Done**
 
 ---
 
@@ -505,24 +495,16 @@ No `-run` flag needed in CI — the build constraints handle test selection auto
 |------|----------------|
 | `test/e2e/colima_test.go` | `TestColimaLifecycle`: init (Colima default) → status (platform=darwin) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |
 
-### Step 6: VPS runner setup
+### Step 6: Self-hosted runner setup
 
-Replaced the original plan (dedicated `ci-test` user + SSH keys + GitHub Secrets) with a simpler approach: a self-hosted GitHub Actions runner installed directly on the VPS. This matches the existing `macos-m2` pattern — no SSH keys, no secrets, jobs just run on the machine.
+Originally planned as VPS runner (Hetzner CPX, TCG software emulation). Moved to a home Linux PC (`linux-hub`) with KVM hardware acceleration after discovering TCG was too slow (~11min for VM boot) and the VPS couldn't host both a runner and a user's vibespace instance simultaneously.
 
-**What was provisioned on the VPS (49.13.120.186):**
+**linux-hub (home iMac, i5-3470S, 16GB RAM, KVM):**
 
-- **Go 1.24.0** installed system-wide (replaced 1.22.2 symlink at `/usr/bin/go` → `/usr/local/go/bin/go`)
-- **`github-runner` user** created with `NOPASSWD: ALL` sudo (needs root for k3s, WireGuard, systemctl)
-- **GitHub Actions Runner v2.331.0** downloaded, configured with `--labels linux-vps --name vps-runner`, registered to `vibespacehq` org
-- **Systemd service** `actions.runner.vibespacehq.vps-runner.service` installed and enabled (auto-starts on boot)
-
-**Usage in workflows:**
-
-```yaml
-runs-on: linux-vps
-```
-
-This enables steps 7 (Lima lifecycle) and 8 (remote mode E2E) to run directly on the VPS without SSH orchestration from GitHub-hosted runners.
+- **`github-runner` user** with `NOPASSWD: ALL` sudo and `kvm` group
+- **GitHub Actions Runner v2.331.0**, systemd service, label `linux-hub`
+- **Go 1.24.0** system-wide
+- **Sleep/suspend disabled**, wifi power save disabled for always-on operation
 
 ### Step 7: Lima lifecycle E2E tests
 
@@ -535,3 +517,21 @@ Tests the Lima+QEMU path on Linux — `vibespace init` without `--bare-metal`, w
 | File | What's covered |
 |------|----------------|
 | `test/e2e/lima_test.go` | `TestLimaLifecycle`: init (Lima, no --bare-metal) → status (platform=linux) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |
+
+### Step 9: Codecov integration
+
+Binary coverage for E2E tests using `go build -cover` + `GOCOVERDIR`. Standard `go test -cover` only tracks lines inside the test process — E2E tests run vibespace as a subprocess, so CLI handlers, platform managers, and k8s orchestration would show 0% without this. The coverage-instrumented binary writes `.covcounters` files to `GOCOVERDIR` on each exit, then `go tool covdata textfmt` converts them to standard Go coverage format for upload.
+
+**5 Codecov flags** with carryforward (partial uploads don't tank reported coverage):
+- `unit` — `go test -short -coverprofile` (ci.yml, every push)
+- `integration` — `go test -coverprofile` with k3s (ci.yml, every push)
+- `e2e-baremetal` — binary coverage on ubuntu-latest (ci-e2e.yml, PRs to main)
+- `e2e-colima` — binary coverage on macos-m2 (ci-e2e.yml, PRs to main)
+- `e2e-lima` — binary coverage on linux-hub (ci-e2e.yml, PRs to main)
+
+**Configuration:**
+- `codecov.yml` at repo root — flag definitions, carryforward, PR comment layout
+- `CODECOV_TOKEN` repo secret for private repo auth
+- `codecov-action@v5` for uploads
+- `VIBESPACE_DEBUG=1` on all E2E jobs with debug log artifact upload on failure
+- Cluster readiness timeout increased to 10min for slow environments
