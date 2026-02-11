@@ -20,6 +20,16 @@ jobs:
 
       - name: Run E2E tests
         run: go test -tags e2e -v -timeout 10m -count=1 ./test/e2e/
+        env:
+          VIBESPACE_DEBUG: "1"
+
+      - name: Upload debug log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-log-baremetal
+          path: ~/.vibespace/debug.log
+          if-no-files-found: ignore
 
   colima:
     runs-on: macos-m2
@@ -37,6 +47,16 @@ jobs:
 
       - name: Run E2E tests
         run: go test -tags e2e -v -timeout 15m -count=1 ./test/e2e/
+        env:
+          VIBESPACE_DEBUG: "1"
+
+      - name: Upload debug log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-log-colima
+          path: ~/.vibespace/debug.log
+          if-no-files-found: ignore
 
   lima:
     runs-on: linux-hub
@@ -54,3 +74,13 @@ jobs:
 
       - name: Run E2E tests
         run: go test -tags "e2e lima" -run TestLimaLifecycle -v -timeout 10m -count=1 ./test/e2e/
+        env:
+          VIBESPACE_DEBUG: "1"
+
+      - name: Upload debug log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-log-lima
+          path: ~/.vibespace/debug.log
+          if-no-files-found: ignore
