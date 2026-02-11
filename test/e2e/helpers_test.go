@@ -613,50 +613,11 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	// === Post-ready tests (needs Running pods) ===
-
-	// --- agent create (second agent) ---
-	t.Run("agent-create", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "agent", "create", "-t", "claude-code")
-		data := parseData[AgentCreateData](t, out)
-
-		if data.Vibespace != vsName {
-			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
-		}
-		if data.Agent != "claude-2" {
-			t.Errorf("expected agent=claude-2, got %s", data.Agent)
-		}
-		t.Logf("created agent: %s (type=%s)", data.Agent, data.Type)
-	})
-
-	// --- agent list (verify 2 agents) ---
-	t.Run("agent-list-two", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "agent")
-		data := parseData[AgentsData](t, out)
-
-		if data.Count != 2 {
-			t.Errorf("expected 2 agents, got %d", data.Count)
-		}
-	})
-
-	// --- agent delete (remove claude-2) ---
-	t.Run("agent-delete", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "agent", "delete", "claude-2")
-		data := parseData[AgentDeleteData](t, out)
-
-		if data.Agent != "claude-2" {
-			t.Errorf("expected agent=claude-2, got %s", data.Agent)
-		}
-	})
-
-	// --- agent list (verify back to 1) ---
-	t.Run("agent-list-one", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "agent")
-		data := parseData[AgentsData](t, out)
-
-		if data.Count != 1 {
-			t.Errorf("expected 1 agent, got %d", data.Count)
-		}
-	})
+	// NOTE: Forward/multi tests run BEFORE agent CRUD to avoid daemon stale-state
+	// issues. On colima, deleting claude-2 leaves the daemon with stale SSH tunnels
+	// and the portforward manager may not re-register claude-1 before forward-add
+	// runs (~30s reconciliation interval). Running forward/multi first ensures the
+	// daemon has clean state with only claude-1 registered.
 
 	// --- wait for daemon (SSH tunnel ready) ---
 	t.Run("wait-for-daemon", func(t *testing.T) {
@@ -787,6 +748,53 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 				errMsg = out.Error.Message
 			}
 			t.Logf("multi message: success=false (expected — no API key): %s", errMsg)
+		}
+	})
+
+	// === Agent CRUD tests ===
+	// These run after forward/multi tests to avoid daemon stale-state issues.
+
+	// --- agent create (second agent) ---
+	t.Run("agent-create", func(t *testing.T) {
+		out := mustSucceed(t, vsName, "agent", "create", "-t", "claude-code")
+		data := parseData[AgentCreateData](t, out)
+
+		if data.Vibespace != vsName {
+			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
+		}
+		if data.Agent != "claude-2" {
+			t.Errorf("expected agent=claude-2, got %s", data.Agent)
+		}
+		t.Logf("created agent: %s (type=%s)", data.Agent, data.Type)
+	})
+
+	// --- agent list (verify 2 agents) ---
+	t.Run("agent-list-two", func(t *testing.T) {
+		out := mustSucceed(t, vsName, "agent")
+		data := parseData[AgentsData](t, out)
+
+		if data.Count != 2 {
+			t.Errorf("expected 2 agents, got %d", data.Count)
+		}
+	})
+
+	// --- agent delete (remove claude-2) ---
+	t.Run("agent-delete", func(t *testing.T) {
+		out := mustSucceed(t, vsName, "agent", "delete", "claude-2")
+		data := parseData[AgentDeleteData](t, out)
+
+		if data.Agent != "claude-2" {
+			t.Errorf("expected agent=claude-2, got %s", data.Agent)
+		}
+	})
+
+	// --- agent list (verify back to 1) ---
+	t.Run("agent-list-one", func(t *testing.T) {
+		out := mustSucceed(t, vsName, "agent")
+		data := parseData[AgentsData](t, out)
+
+		if data.Count != 1 {
+			t.Errorf("expected 1 agent, got %d", data.Count)
 		}
 	})
 
