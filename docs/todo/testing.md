@@ -322,7 +322,27 @@ Not using `golangci-lint` — `staticcheck` is already configured and sufficient
 
 ### Coverage
 
-- Upload to Codecov on every push
+**Important:** Standard `go test -cover` only measures lines executed inside the test process. Our E2E tests run the binary as a subprocess (`exec.Command("./vibespace", ...)`), so the bulk of the codebase — CLI handlers, platform managers, k8s orchestration — shows 0% despite being fully exercised.
+
+To get real coverage numbers, E2E jobs must build with `go build -cover` and set `GOCOVERDIR` so the binary writes coverage data on exit. Then merge unit + E2E profiles before uploading.
+
+```bash
+# Unit tests — standard coverage
+go test -coverprofile=unit.out ./...
+
+# E2E tests — binary coverage
+mkdir -p /tmp/covdata
+go build -cover -o vibespace ./cmd/vibespace
+GOCOVERDIR=/tmp/covdata go test -tags e2e -v -timeout 15m -count=1 ./test/e2e/
+go tool covdata textfmt -i=/tmp/covdata -o=e2e.out
+
+# Merge profiles
+go tool cover -merge unit.out e2e.out -o merged.out
+```
+
+Without this, Codecov would report ~15-25% (unit tests only) which is misleading — the real coverage including E2E is much higher.
+
+- Upload merged profile to Codecov on every push
 - No minimum threshold initially — start with visibility, ratchet up over time
 - PR comments showing coverage diff
 
@@ -341,13 +361,13 @@ All costs for GitHub Actions hosted runners (private repo):
 |-----|---------|--------|-----------|---------|------|------|
 | Unit + k3s | Every push | ubuntu-latest | 200 | 700 | $0.008/min | $5.60 |
 | Bare metal + remote | PR to main | ubuntu-latest | 10 | 50 | $0.008/min | $0.40 |
-| Colima + remote | PR to main | macos-14 | 10 | 80 | $0.08/min | $6.40 |
-| Lima + QEMU | PR to main | self-hosted | 10 | 100 | $0 | $0 |
-| **Total** | | | | | | **~$12/month** |
+| Colima + remote | PR to main | self-hosted (mac-m2) | 10 | 80 | $0 | $0 |
+| Lima + QEMU | PR to main | self-hosted (linux-vps) | 10 | 100 | $0 | $0 |
+| **Total** | | | | | | **~$6/month** |
 
-Free if public repo. Fits within the 2,000 min/month free tier for private repos (850 Linux + 80×10 macOS multiplier = 1,650 equivalent minutes).
+Free if public repo. Fits within the 2,000 min/month free tier for private repos (750 Linux equivalent minutes).
 
-CircleCI was evaluated and rejected: $29/month (Performance plan) for the same workload, with macOS costing 200 credits/min (M4 Pro, since M1/M2 reach EOL Feb 16, 2026). No advantage for cross-runner networking.
+GitHub's macos-14 runners use M1 VMs which don't support nested virtualization (Colima/Lima need to create VMs). Apple added nested virtualization support starting with M3 chips on macOS 15, but GitHub hasn't updated their runners yet. Self-hosted mac-m2 runner on real hardware avoids this limitation.
 
 ---
 
@@ -389,7 +409,7 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 2. ~~Pure logic test files (Tier 1) — fastest to write, immediate value~~ **Done**
 3. ~~K8s service layer tests — add k3s to CI, test against real cluster~~ **Done**
 4. ~~Binary lifecycle tests (bare metal) — ubuntu runner~~ **Done**
-5. Binary lifecycle tests (colima) — macos-14 runner
+5. ~~Binary lifecycle tests (colima) — macos-14 runner~~ **Done**
 6. VPS security setup — ci-test user, SSH keys, sudoers
 7. Remote mode E2E — SSH to VPS, WireGuard tunnel
 8. Lima lifecycle — self-hosted runner on VPS
@@ -469,3 +489,22 @@ Added end-to-end tests that build the actual `vibespace` binary, run it as a sub
 | `test/e2e/baremetal_test.go` | `TestBareMetalLifecycle`: init (bare metal) → status (cluster running) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |
 
 Test files use `//go:build e2e` so `go test ./...` never picks them up. The lifecycle test uses `t.Cleanup` to always run `vibespace uninstall --force` even on failure.
+
+### Step 5: E2E binary lifecycle tests (Colima)
+
+Added Colima E2E lifecycle test for macOS, testing the default `vibespace init` path (no `--bare-metal` flag). This validates the full Colima flow: binary downloads (Lima, Colima, kubectl, Docker), VM creation, k3s-in-VM, and vibespace CRUD.
+
+**OS build constraints** split the E2E tests by platform:
+- `baremetal_test.go`: `//go:build e2e && linux` — only compiles on Linux
+- `colima_test.go`: `//go:build e2e && darwin` — only compiles on macOS
+- `helpers_test.go`: `//go:build e2e` — shared by both platforms
+
+No `-run` flag needed in CI — the build constraints handle test selection automatically.
+
+**CI workflow** (`.github/workflows/ci-e2e.yml`): added `colima` job on `macos-14` alongside existing `baremetal` job. 20-minute job timeout, 15-minute test timeout. Conservative VM resources (`--cpu 3 --memory 6 --disk 30`) for macos-14 runners (Apple Silicon M1, 3 cores, 7GB RAM, 14GB SSD).
+
+**1 new test file, 1 test function with 7 subtests:**
+
+| File | What's covered |
+|------|----------------|
+| `test/e2e/colima_test.go` | `TestColimaLifecycle`: init (Colima default) → status (platform=darwin) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |
