@@ -15,11 +15,38 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Build binary
-        run: go build -o vibespace ./cmd/vibespace
+      - name: Build binary with coverage
+        run: go build -cover -o vibespace ./cmd/vibespace
 
       - name: Run E2E tests
         run: go test -tags e2e -v -timeout 10m -count=1 ./test/e2e/
+        env:
+          VIBESPACE_DEBUG: "1"
+          GOCOVERDIR: ${{ github.workspace }}/coverdir
+
+      - name: Convert coverage
+        if: always()
+        run: |
+          if [ -d coverdir ] && ls coverdir/*.covcounters.* >/dev/null 2>&1; then
+            go tool covdata textfmt -i=coverdir -o=coverage-e2e-baremetal.out
+          fi
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage-e2e-baremetal.out
+          flags: e2e-baremetal
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Upload debug log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-log-baremetal
+          path: ~/.vibespace/debug.log
+          if-no-files-found: ignore
 
   colima:
     runs-on: macos-m2
@@ -32,11 +59,38 @@ jobs:
           go-version: "1.24"
           cache: false
 
-      - name: Build binary
-        run: go build -o vibespace ./cmd/vibespace
+      - name: Build binary with coverage
+        run: go build -cover -o vibespace ./cmd/vibespace
 
       - name: Run E2E tests
         run: go test -tags e2e -v -timeout 15m -count=1 ./test/e2e/
+        env:
+          VIBESPACE_DEBUG: "1"
+          GOCOVERDIR: ${{ github.workspace }}/coverdir
+
+      - name: Convert coverage
+        if: always()
+        run: |
+          if [ -d coverdir ] && ls coverdir/*.covcounters.* >/dev/null 2>&1; then
+            go tool covdata textfmt -i=coverdir -o=coverage-e2e-colima.out
+          fi
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage-e2e-colima.out
+          flags: e2e-colima
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Upload debug log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-log-colima
+          path: ~/.vibespace/debug.log
+          if-no-files-found: ignore
 
   lima:
     runs-on: linux-hub
@@ -49,8 +103,35 @@ jobs:
           go-version: "1.24"
           cache: false
 
-      - name: Build binary
-        run: go build -o vibespace ./cmd/vibespace
+      - name: Build binary with coverage
+        run: go build -cover -o vibespace ./cmd/vibespace
 
       - name: Run E2E tests
         run: go test -tags "e2e lima" -run TestLimaLifecycle -v -timeout 10m -count=1 ./test/e2e/
+        env:
+          VIBESPACE_DEBUG: "1"
+          GOCOVERDIR: ${{ github.workspace }}/coverdir
+
+      - name: Convert coverage
+        if: always()
+        run: |
+          if [ -d coverdir ] && ls coverdir/*.covcounters.* >/dev/null 2>&1; then
+            go tool covdata textfmt -i=coverdir -o=coverage-e2e-lima.out
+          fi
+
+      - name: Upload coverage
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage-e2e-lima.out
+          flags: e2e-lima
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: Upload debug log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-log-lima
+          path: ~/.vibespace/debug.log
+          if-no-files-found: ignore

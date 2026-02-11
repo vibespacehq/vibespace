@@ -14,5 +14,6 @@
 
 - **Daemon regression risk** — port forwarding + DNS integration is critical path but has no dedicated test coverage. Should add E2E subtests after `create`: verify port forwards are reachable, DNS records resolve, cleanup happens on `delete`.
 - **TUI non-TTY mode** — bubbletea has a non-interactive fallback when there's no TTY. This is testable as a subprocess (same as other E2E tests) and should be covered since CI and scripted usage always hit this path.
+- **Codecov will be misleading without binary coverage** — standard `go test -cover` only tracks lines inside the test process. E2E tests run `vibespace` as a subprocess, so CLI handlers, platform managers, and k8s orchestration show 0% despite being fully exercised. Step 9 (Codecov) must use `go build -cover` + `GOCOVERDIR` to capture binary coverage and merge with unit profiles. Without this, reported coverage will be ~15-25% instead of the real ~45%+. See testing.md Coverage section for implementation details.
 
 ## Known Bugs
