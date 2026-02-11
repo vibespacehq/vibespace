@@ -273,31 +273,21 @@ WireGuard UDP from GitHub runners to external servers with stable IPs works fine
 
 ---
 
-## VPS Security for CI
+## VPS Runner for CI
 
-The VPS is used as both a test target (SSH from runners) and a self-hosted runner (Lima tests). Security measures:
+The VPS (Hetzner CPX, 49.13.120.186) runs a self-hosted GitHub Actions runner for tests that need real Linux infrastructure (Lima lifecycle, remote mode server). No SSH keys or secrets needed — the runner executes jobs directly.
 
-### Dedicated CI user
+### Runner setup
 
-```bash
-sudo useradd -m -s /bin/bash ci-test
-# Limited sudo — only vibespace and k3s commands
-echo 'ci-test ALL=(ALL) NOPASSWD: /usr/local/bin/vibespace, /usr/local/bin/k3s, \
-  /usr/bin/systemctl stop k3s, /usr/bin/systemctl start k3s, \
-  /usr/local/bin/k3s-uninstall.sh' | sudo tee /etc/sudoers.d/ci-test
-```
-
-### SSH key restrictions
-
-Separate SSH key for CI (not the personal key), stored in GitHub Secrets. Optionally restrict to a command whitelist in `authorized_keys`:
-
-```
-command="/home/ci-test/ci-runner.sh",no-port-forwarding,no-X11-forwarding ssh-ed25519 AAAA... github-ci
-```
+- **User:** `github-runner` (dedicated, `NOPASSWD: ALL` sudo)
+- **Runner:** GitHub Actions Runner v2.331.0, installed as systemd service
+- **Label:** `linux-vps` (use `runs-on: linux-vps` in workflows)
+- **Go:** 1.24.0 system-wide (`/usr/local/go/bin/go`)
+- **Service:** `actions.runner.vibespacehq.vps-runner.service` (enabled, auto-starts on boot)
 
 ### Test isolation
 
-CI tests use `/home/ci-test/.vibespace/` — completely separate from any production state under `/home/vibeuser/.vibespace/`.
+CI tests use `/home/github-runner/.vibespace/` — completely separate from any production state under `/home/vibeuser/.vibespace/`.
 
 ### Workflow guards
 
@@ -307,6 +297,12 @@ if: github.event.pull_request.head.repo.full_name == github.repository
 ```
 
 GitHub Actions does not expose secrets to fork PRs by default. This guard makes it explicit.
+
+### Self-hosted runner convention
+
+Two self-hosted runners, matching label-per-machine pattern:
+- `macos-m2` — Mac Mini M2 for Colima E2E tests
+- `linux-hub` — Home Linux PC (i5-3470S, 16GB, KVM) for Lima lifecycle
 
 ---
 
@@ -410,9 +406,9 @@ Coverage target: ~50-60 test functions across ~20 test files. Pure logic tests r
 3. ~~K8s service layer tests — add k3s to CI, test against real cluster~~ **Done**
 4. ~~Binary lifecycle tests (bare metal) — ubuntu runner~~ **Done**
 5. ~~Binary lifecycle tests (colima) — macos-14 runner~~ **Done**
-6. VPS security setup — ci-test user, SSH keys, sudoers
-7. Remote mode E2E — SSH to VPS, WireGuard tunnel
-8. Lima lifecycle — self-hosted runner on VPS
+6. ~~VPS runner setup — self-hosted GitHub Actions runner on VPS~~ **Done**
+7. ~~Lima lifecycle — self-hosted runner on VPS~~ **Done**
+8. Remote mode E2E — WireGuard tunnel tests on linux-vps runner
 9. Codecov integration — coverage tracking and PR comments
 
 ---
@@ -508,3 +504,34 @@ No `-run` flag needed in CI — the build constraints handle test selection auto
 | File | What's covered |
 |------|----------------|
 | `test/e2e/colima_test.go` | `TestColimaLifecycle`: init (Colima default) → status (platform=darwin) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |
+
+### Step 6: VPS runner setup
+
+Replaced the original plan (dedicated `ci-test` user + SSH keys + GitHub Secrets) with a simpler approach: a self-hosted GitHub Actions runner installed directly on the VPS. This matches the existing `macos-m2` pattern — no SSH keys, no secrets, jobs just run on the machine.
+
+**What was provisioned on the VPS (49.13.120.186):**
+
+- **Go 1.24.0** installed system-wide (replaced 1.22.2 symlink at `/usr/bin/go` → `/usr/local/go/bin/go`)
+- **`github-runner` user** created with `NOPASSWD: ALL` sudo (needs root for k3s, WireGuard, systemctl)
+- **GitHub Actions Runner v2.331.0** downloaded, configured with `--labels linux-vps --name vps-runner`, registered to `vibespacehq` org
+- **Systemd service** `actions.runner.vibespacehq.vps-runner.service` installed and enabled (auto-starts on boot)
+
+**Usage in workflows:**
+
+```yaml
+runs-on: linux-vps
+```
+
+This enables steps 7 (Lima lifecycle) and 8 (remote mode E2E) to run directly on the VPS without SSH orchestration from GitHub-hosted runners.
+
+### Step 7: Lima lifecycle E2E tests
+
+Tests the Lima+QEMU path on Linux — `vibespace init` without `--bare-metal`, which creates a VM with k3s inside. Runs on `linux-hub` (home Linux PC with KVM hardware acceleration). Build tag `lima` keeps this from compiling on ubuntu-latest where baremetal tests live.
+
+**CI workflow** (`.github/workflows/ci-e2e.yml`): added `lima` job on `linux-hub` alongside `baremetal` and `colima`. 15-minute job timeout, 10-minute test timeout. VM resources: `--cpu 4 --memory 4 --disk 20`.
+
+**1 new test file, 1 test function with 7 subtests:**
+
+| File | What's covered |
+|------|----------------|
+| `test/e2e/lima_test.go` | `TestLimaLifecycle`: init (Lima, no --bare-metal) → status (platform=linux) → create (vibespace + agent) → list (vibespace exists) → agents (claude-code agent exists) → delete (force) → verify (vibespace gone) |

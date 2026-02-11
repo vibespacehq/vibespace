@@ -1,0 +1,134 @@
+//go:build e2e && lima
+
+package e2e
+
+import (
+	"testing"
+)
+
+// TestLimaLifecycle runs a full lifecycle test of the vibespace binary
+// using the Lima+QEMU path on Linux: init → status → create → list →
+// agents → delete → verify.
+//
+// This exercises the Lima platform manager (not bare metal, not Colima).
+// On the VPS runner there is no /dev/kvm, so QEMU uses TCG (software
+// emulation) — expect longer init times.
+//
+// Build tag "lima" keeps this file from compiling on ubuntu-latest where
+// the baremetal tests live.
+func TestLimaLifecycle(t *testing.T) {
+	// Always clean up — uninstall vibespace even if the test fails.
+	t.Cleanup(func() {
+		t.Log("cleanup: uninstalling vibespace")
+		r := run(t, "uninstall", "--force")
+		t.Logf("cleanup stdout: %s", r.Stdout)
+		t.Logf("cleanup stderr: %s", r.Stderr)
+	})
+
+	// --- init (Lima — no --bare-metal flag) ---
+	t.Run("init", func(t *testing.T) {
+		r := run(t, "init", "--cpu", "4", "--memory", "4", "--disk", "20")
+		t.Logf("stdout: %s", r.Stdout)
+		t.Logf("stderr: %s", r.Stderr)
+		if r.ExitCode != 0 {
+			t.Fatalf("init failed with exit code %d\nstderr: %s", r.ExitCode, r.Stderr)
+		}
+	})
+
+	// --- status ---
+	t.Run("status", func(t *testing.T) {
+		out := mustSucceed(t, "status")
+		data := parseData[StatusData](t, out)
+
+		if !data.Cluster.Installed {
+			t.Error("expected cluster.installed=true")
+		}
+		if !data.Cluster.Running {
+			t.Error("expected cluster.running=true")
+		}
+		if data.Cluster.Platform != "linux" {
+			t.Errorf("expected platform=linux, got %s", data.Cluster.Platform)
+		}
+	})
+
+	// --- create ---
+	var vibespaceID string
+	t.Run("create", func(t *testing.T) {
+		out := mustSucceed(t, "create", "e2e-test", "-t", "claude-code")
+		data := parseData[CreateData](t, out)
+
+		if data.Name != "e2e-test" {
+			t.Errorf("expected name=e2e-test, got %s", data.Name)
+		}
+		if data.ID == "" {
+			t.Error("expected non-empty id")
+		}
+		vibespaceID = data.ID
+		t.Logf("created vibespace: name=%s id=%s", data.Name, data.ID)
+	})
+
+	if vibespaceID == "" {
+		t.Fatal("create did not return a vibespace ID, cannot continue")
+	}
+
+	// --- list ---
+	t.Run("list", func(t *testing.T) {
+		out := mustSucceed(t, "list")
+		data := parseData[ListData](t, out)
+
+		found := false
+		for _, vs := range data.Vibespaces {
+			if vs.Name == "e2e-test" {
+				found = true
+				if vs.Agents < 1 {
+					t.Errorf("expected at least 1 agent, got %d", vs.Agents)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("vibespace 'e2e-test' not found in list: %+v", data.Vibespaces)
+		}
+	})
+
+	// --- agents ---
+	t.Run("agents", func(t *testing.T) {
+		out := mustSucceed(t, "e2e-test", "agent")
+		data := parseData[AgentsData](t, out)
+
+		if data.Count < 1 {
+			t.Fatalf("expected at least 1 agent, got %d", data.Count)
+		}
+
+		foundClaudeCode := false
+		for _, a := range data.Agents {
+			if a.Type == "claude-code" {
+				foundClaudeCode = true
+			}
+		}
+		if !foundClaudeCode {
+			t.Errorf("expected a claude-code agent, got: %+v", data.Agents)
+		}
+	})
+
+	// --- delete ---
+	t.Run("delete", func(t *testing.T) {
+		out := mustSucceed(t, "delete", "e2e-test", "-f")
+		data := parseData[DeleteData](t, out)
+
+		if data.Name != "e2e-test" {
+			t.Errorf("expected name=e2e-test, got %s", data.Name)
+		}
+	})
+
+	// --- verify deletion ---
+	t.Run("verify-deleted", func(t *testing.T) {
+		out := mustSucceed(t, "list")
+		data := parseData[ListData](t, out)
+
+		for _, vs := range data.Vibespaces {
+			if vs.Name == "e2e-test" {
+				t.Errorf("vibespace 'e2e-test' still exists after delete: %+v", vs)
+			}
+		}
+	})
+}
