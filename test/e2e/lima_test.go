@@ -110,7 +110,7 @@ func TestLimaLifecycle(t *testing.T) {
 		}
 	})
 
-	// --- expanded subtests (info, config, exec, forward, ports, multi, plain, stop, start) ---
+	// --- expanded subtests (info, config, exec, forward, ports, multi, agent CRUD, plain, stop, start) ---
 	runExpandedSubtests(t, "e2e-test")
 
 	// --- delete ---
