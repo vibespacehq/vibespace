@@ -54,7 +54,14 @@ func run(t *testing.T, args ...string) RunResult {
 	t.Helper()
 	bin := binaryPath(t)
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append(os.Environ(), "NO_COLOR=1", "VIBESPACE_DEBUG=1")
+	env := append(os.Environ(), "NO_COLOR=1", "VIBESPACE_DEBUG=1")
+
+	// Ensure GOCOVERDIR exists so coverage-instrumented binaries can write data.
+	if dir := os.Getenv("GOCOVERDIR"); dir != "" {
+		os.MkdirAll(dir, 0755)
+	}
+
+	cmd.Env = env
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
