@@ -12,9 +12,10 @@
 
 ## Recent Work (2026-02-11)
 
-- Expanded E2E lifecycle tests from 7 to ~25 subtests per platform
-- New subtests: info, config show/set, session list, agent create/delete, exec, forward add/list/remove, ports, multi list-sessions/list-agents/message, stop, start
-- Added waitForReady helper (polls list --json until status=running)
+- Expanded E2E lifecycle tests from 7 to ~37 subtests per platform
+- JSON mode subtests: info, config show/set, session list, agent create/delete, exec, forward add/list/remove, ports, multi list-sessions/list-agents/message, stop, start
+- Plain mode subtests: re-run all 10 read-only commands with --plain flag
+- Added waitForReady + waitForDaemonReady helpers for CI reliability
 - Rewrote testing.md to be concise, cleaned up notes.md and roadmap.md
 
 ## Recent Work (2026-02-09)
