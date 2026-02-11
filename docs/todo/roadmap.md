@@ -6,7 +6,7 @@
 |------|-------------|--------|
 | Unit tests (77 tests, 17 files) | Pure logic across all packages | Done |
 | K8s service layer tests (10 tests) | CRUD against real k3s | Done |
-| E2E binary lifecycle (~25 subtests × 3 platforms) | Full CLI coverage | Done |
+| E2E binary lifecycle (~37 subtests × 3 platforms) | Full CLI coverage (JSON + plain modes) | Done |
 | CI pipeline (ci.yml + ci-e2e.yml) | Lint + unit + integration + E2E | Done |
 | Codecov integration | Binary coverage + PR comments | Done |
 | CI badges | Build, coverage in README | Done |

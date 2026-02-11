@@ -33,7 +33,7 @@ None of these apply today.
 
 ### Tier 3: Full binary lifecycle (E2E)
 
-~25 subtests per platform, testing the entire CLI stack as a subprocess.
+~37 subtests per platform, testing the entire CLI stack as a subprocess.
 
 | Platform | Runner | Build tag |
 |----------|--------|-----------|
@@ -44,12 +44,17 @@ None of these apply today.
 Subtest flow:
 ```
 init → status → create → list → agents →
+  // JSON mode
   info → config-show-all → config-show → config-set → config-verify →
   session-list → wait-for-ready →
   agent-create → agent-list-two → agent-delete → agent-list-one →
-  exec → forward-list-empty → forward-add → forward-list-active →
+  exec → forward-list-default → forward-add → forward-list-active →
   forward-remove → ports → multi-list-sessions → multi-list-agents →
   multi-message → stop → start →
+  // Plain mode (re-run read-only commands with --plain)
+  plain/list → plain/info → plain/agents → plain/config-show-all →
+  plain/config-show → plain/session-list → plain/forward-list →
+  plain/ports → plain/multi-list-sessions → plain/multi-list-agents →
 delete → verify-deleted
 ```
 

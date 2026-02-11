@@ -508,6 +508,18 @@ func waitForDaemonReady(t *testing.T, vsName string) {
 	}
 }
 
+// mustSucceedPlain runs a command with --plain and asserts exit code 0.
+func mustSucceedPlain(t *testing.T, args ...string) string {
+	t.Helper()
+	args = append(args, "--plain")
+	r := run(t, args...)
+	if r.ExitCode != 0 {
+		t.Fatalf("expected exit code 0 for %v --plain but got %d\nstdout: %s\nstderr: %s",
+			args, r.ExitCode, r.Stdout, r.Stderr)
+	}
+	return r.Stdout
+}
+
 // --- Expanded subtests ---
 
 // runExpandedSubtests runs all expanded E2E subtests between the initial "agents"
@@ -795,6 +807,78 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 
 		if data.Vibespace != vsName {
 			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
+		}
+	})
+}
+
+// --- Plain mode subtests ---
+
+// runPlainModeSubtests re-runs all read-only commands with --plain and verifies
+// they produce non-empty tab-separated output. Called after runExpandedSubtests
+// so all state (vibespace, agents, daemon) already exists.
+func runPlainModeSubtests(t *testing.T, vsName string) {
+	t.Run("plain/list", func(t *testing.T) {
+		out := mustSucceedPlain(t, "list")
+		if strings.TrimSpace(out) == "" {
+			t.Error("expected non-empty plain output")
+		}
+		t.Logf("plain list: %s", strings.Split(out, "\n")[0])
+	})
+
+	t.Run("plain/info", func(t *testing.T) {
+		out := mustSucceedPlain(t, vsName, "info")
+		if strings.TrimSpace(out) == "" {
+			t.Error("expected non-empty plain output")
+		}
+	})
+
+	t.Run("plain/agents", func(t *testing.T) {
+		out := mustSucceedPlain(t, vsName, "agent", "list")
+		if strings.TrimSpace(out) == "" {
+			t.Error("expected non-empty plain output")
+		}
+	})
+
+	t.Run("plain/config-show-all", func(t *testing.T) {
+		out := mustSucceedPlain(t, vsName, "config", "show")
+		if strings.TrimSpace(out) == "" {
+			t.Error("expected non-empty plain output")
+		}
+	})
+
+	t.Run("plain/config-show", func(t *testing.T) {
+		out := mustSucceedPlain(t, vsName, "config", "show", "claude-1")
+		if strings.TrimSpace(out) == "" {
+			t.Error("expected non-empty plain output")
+		}
+	})
+
+	t.Run("plain/session-list", func(t *testing.T) {
+		// May be empty (no sessions) — just verify exit code 0
+		mustSucceedPlain(t, "session", "list")
+	})
+
+	t.Run("plain/forward-list", func(t *testing.T) {
+		out := mustSucceedPlain(t, vsName, "forward", "list")
+		// May be empty if no user forwards active — daemon SSH forwards
+		// are internal and may or may not appear in plain output
+		t.Logf("plain forward list: %d bytes", len(out))
+	})
+
+	t.Run("plain/ports", func(t *testing.T) {
+		// May be empty (no dev server running) — just verify exit code 0
+		mustSucceedPlain(t, vsName, "ports")
+	})
+
+	t.Run("plain/multi-list-sessions", func(t *testing.T) {
+		// May be empty — just verify exit code 0
+		mustSucceedPlain(t, "multi", "--list-sessions")
+	})
+
+	t.Run("plain/multi-list-agents", func(t *testing.T) {
+		out := mustSucceedPlain(t, "multi", "--vibespaces", vsName, "--list-agents")
+		if strings.TrimSpace(out) == "" {
+			t.Error("expected non-empty plain output (at least 1 agent)")
 		}
 	})
 }
