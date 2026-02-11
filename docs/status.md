@@ -10,6 +10,13 @@
 - **Security**: Container SecurityContext with AUDIT_WRITE capability — SSH and browser mode verified
 - **Cluster**: Lima/Colima on macOS verified, Lima/QEMU on Linux verified, bare metal mode E2E tested on VPS
 
+## Recent Work (2026-02-11)
+
+- Expanded E2E lifecycle tests from 7 to ~25 subtests per platform
+- New subtests: info, config show/set, session list, agent create/delete, exec, forward add/list/remove, ports, multi list-sessions/list-agents/message, stop, start
+- Added waitForReady helper (polls list --json until status=running)
+- Rewrote testing.md to be concise, cleaned up notes.md and roadmap.md
+
 ## Recent Work (2026-02-09)
 
 - Fixed SSH failure caused by missing AUDIT_WRITE capability in container SecurityContext
@@ -38,4 +45,7 @@
 
 ## What's Next
 
-See `todo/roadmap.md` for the full prioritized roadmap. Top priority is **bare metal mode** (P1) to eliminate the QEMU/Lima overhead on Linux servers.
+1. **Remote mode E2E** — WireGuard tunnel tests: `vibespace serve` on VPS, `remote connect` from runners
+2. **Port detection (P1)** — in-container port detector that writes `/tmp/vibespace-ports.json`
+
+See `todo/roadmap.md` for the full prioritized roadmap.
