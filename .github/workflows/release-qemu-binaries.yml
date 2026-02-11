@@ -168,7 +168,7 @@ jobs:
           ls -la package/share/qemu/ | head -20
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}
           path: qemu-${{ env.QEMU_VERSION }}-linux-${{ matrix.arch }}.tar.gz

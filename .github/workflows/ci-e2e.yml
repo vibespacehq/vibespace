@@ -41,7 +41,7 @@ jobs:
 
       - name: Upload debug log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: debug-log-baremetal
           path: ~/.vibespace/debug.log
@@ -82,7 +82,7 @@ jobs:
 
       - name: Upload debug log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: debug-log-colima
           path: ~/.vibespace/debug.log
@@ -128,7 +128,7 @@ jobs:
 
       - name: Upload debug log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: debug-log-lima
           path: ~/.vibespace/debug.log
