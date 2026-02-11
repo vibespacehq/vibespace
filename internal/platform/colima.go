@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -462,12 +463,17 @@ func (m *ColimaManager) Start(ctx context.Context, config ClusterConfig) error {
 	slog.Debug("executing colima start", "command", commandStr)
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)
-	stdout, stderr := subprocessWriters("colima start")
+	stdout, stderrLog := subprocessWriters("colima start")
+	var stderrBuf bytes.Buffer
 	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	cmd.Stderr = io.MultiWriter(stderrLog, &stderrBuf)
 
 	if err := cmd.Run(); err != nil {
-		slog.Error("colima start failed", "error", err)
+		detail := strings.TrimSpace(stderrBuf.String())
+		slog.Error("colima start failed", "error", err, "stderr", detail)
+		if detail != "" {
+			return fmt.Errorf("failed to start Colima: %w\n%s", err, detail)
+		}
 		return fmt.Errorf("failed to start Colima: %w", err)
 	}
 
@@ -492,12 +498,17 @@ func (m *ColimaManager) Resume(ctx context.Context) error {
 	slog.Debug("executing colima resume (start stopped VM)", "command", commandStr)
 
 	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)
-	stdout, stderr := subprocessWriters("colima resume")
+	stdout, stderrLog := subprocessWriters("colima resume")
+	var stderrBuf bytes.Buffer
 	cmd.Stdout = stdout
-	cmd.Stderr = stderr
+	cmd.Stderr = io.MultiWriter(stderrLog, &stderrBuf)
 
 	if err := cmd.Run(); err != nil {
-		slog.Error("colima resume failed", "error", err)
+		detail := strings.TrimSpace(stderrBuf.String())
+		slog.Error("colima resume failed", "error", err, "stderr", detail)
+		if detail != "" {
+			return fmt.Errorf("failed to resume Colima: %w\n%s", err, detail)
+		}
 		return fmt.Errorf("failed to resume Colima: %w", err)
 	}
 

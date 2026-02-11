@@ -1,4 +1,4 @@
-//go:build e2e && linux
+//go:build e2e && darwin
 
 package e2e
 
@@ -6,14 +6,15 @@ import (
 	"testing"
 )
 
-// TestBareMetalLifecycle runs a full lifecycle test of the vibespace binary
-// in bare metal mode: init → status → create → list → agents → delete → verify.
+// TestColimaLifecycle runs a full lifecycle test of the vibespace binary
+// using the default macOS path (Colima): init → status → create → list →
+// agents → delete → verify.
 //
-// This test requires a Linux environment (ubuntu-latest CI runner) and will
-// install k3s directly on the host. It uses t.Cleanup to uninstall afterward.
-func TestBareMetalLifecycle(t *testing.T) {
+// This test requires a macOS environment (macos-14 CI runner) and will
+// download Lima, Colima, kubectl, and Docker, then create a VM with k3s.
+// It uses t.Cleanup to uninstall afterward.
+func TestColimaLifecycle(t *testing.T) {
 	// Always clean up — uninstall vibespace even if the test fails.
-	// CI runners are ephemeral, but this keeps things tidy.
 	t.Cleanup(func() {
 		t.Log("cleanup: uninstalling vibespace")
 		r := run(t, "uninstall", "--force")
@@ -21,9 +22,9 @@ func TestBareMetalLifecycle(t *testing.T) {
 		t.Logf("cleanup stderr: %s", r.Stderr)
 	})
 
-	// --- init ---
+	// --- init (Colima — no --bare-metal flag) ---
 	t.Run("init", func(t *testing.T) {
-		r := run(t, "init", "--bare-metal", "--cpu", "2", "--memory", "2", "--disk", "10")
+		r := run(t, "init", "--cpu", "3", "--memory", "6", "--disk", "30")
 		t.Logf("stdout: %s", r.Stdout)
 		t.Logf("stderr: %s", r.Stderr)
 		if r.ExitCode != 0 {
@@ -42,8 +43,8 @@ func TestBareMetalLifecycle(t *testing.T) {
 		if !data.Cluster.Running {
 			t.Error("expected cluster.running=true")
 		}
-		if data.Cluster.Platform != "linux" {
-			t.Errorf("expected platform=linux, got %s", data.Cluster.Platform)
+		if data.Cluster.Platform != "darwin" {
+			t.Errorf("expected platform=darwin, got %s", data.Cluster.Platform)
 		}
 	})
 

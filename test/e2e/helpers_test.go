@@ -54,7 +54,7 @@ func run(t *testing.T, args ...string) RunResult {
 	t.Helper()
 	bin := binaryPath(t)
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Env = append(os.Environ(), "NO_COLOR=1", "VIBESPACE_DEBUG=1")
 
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -83,7 +83,7 @@ func runWithStdin(t *testing.T, stdin string, args ...string) RunResult {
 	t.Helper()
 	bin := binaryPath(t)
 	cmd := exec.Command(bin, args...)
-	cmd.Env = append(os.Environ(), "NO_COLOR=1")
+	cmd.Env = append(os.Environ(), "NO_COLOR=1", "VIBESPACE_DEBUG=1")
 	cmd.Stdin = strings.NewReader(stdin)
 
 	var stdout, stderr strings.Builder
