@@ -302,7 +302,7 @@ GitHub Actions does not expose secrets to fork PRs by default. This guard makes 
 
 Two self-hosted runners, matching label-per-machine pattern:
 - `macos-m2` — Mac Mini M2 for Colima E2E tests
-- `linux-vps` — Hetzner VPS for Lima lifecycle and remote mode server
+- `linux-hub` — Home Linux PC (i5-3470S, 16GB, KVM) for Lima lifecycle
 
 ---
 
@@ -526,9 +526,9 @@ This enables steps 7 (Lima lifecycle) and 8 (remote mode E2E) to run directly on
 
 ### Step 7: Lima lifecycle E2E tests
 
-Tests the Lima+QEMU path on Linux — `vibespace init` without `--bare-metal`, which creates a VM with k3s inside. The VPS has no `/dev/kvm`, so QEMU uses TCG (software emulation). Build tag `lima` keeps this from compiling on ubuntu-latest where baremetal tests live.
+Tests the Lima+QEMU path on Linux — `vibespace init` without `--bare-metal`, which creates a VM with k3s inside. Runs on `linux-hub` (home Linux PC with KVM hardware acceleration). Build tag `lima` keeps this from compiling on ubuntu-latest where baremetal tests live.
 
-**CI workflow** (`.github/workflows/ci-e2e.yml`): added `lima` job on `linux-vps` alongside `baremetal` and `colima`. 25-minute job timeout, 20-minute test timeout (TCG is slower than KVM). VM resources: `--cpu 4 --memory 4 --disk 20` (VPS has 8 vCPUs).
+**CI workflow** (`.github/workflows/ci-e2e.yml`): added `lima` job on `linux-hub` alongside `baremetal` and `colima`. 15-minute job timeout, 10-minute test timeout. VM resources: `--cpu 4 --memory 4 --disk 20`.
 
 **1 new test file, 1 test function with 7 subtests:**
 
