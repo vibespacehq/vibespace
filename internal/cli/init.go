@@ -339,7 +339,7 @@ func initExternalCluster(vibespaceHome, kubeconfig string) error {
 }
 
 func waitForCluster(ctx context.Context, manager platform.ClusterManager) error {
-	timeout := 5 * time.Minute
+	timeout := 10 * time.Minute
 	interval := 5 * time.Second
 	deadline := time.Now().Add(timeout)
 
