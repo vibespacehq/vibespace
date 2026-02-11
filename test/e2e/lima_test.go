@@ -110,6 +110,9 @@ func TestLimaLifecycle(t *testing.T) {
 		}
 	})
 
+	// --- expanded subtests (info, config, exec, forward, ports, multi, stop, start) ---
+	runExpandedSubtests(t, "e2e-test")
+
 	// --- delete ---
 	t.Run("delete", func(t *testing.T) {
 		out := mustSucceed(t, "delete", "e2e-test", "-f")
