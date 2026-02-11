@@ -1,15 +1,18 @@
 # Roadmap
 
-## P0: Testing ✓
+## P0: Testing (WIP)
 
 | Task | Description | Status |
 |------|-------------|--------|
 | Unit tests (77 tests, 17 files) | Pure logic across all packages | Done |
 | K8s service layer tests (10 tests) | CRUD against real k3s | Done |
-| E2E binary lifecycle (~37 subtests × 3 platforms) | Full CLI coverage (JSON + plain modes) | Done |
+| E2E binary lifecycle (~37 subtests × 3 platforms) | JSON + plain mode coverage | Done |
 | CI pipeline (ci.yml + ci-e2e.yml) | Lint + unit + integration + E2E | Done |
 | Codecov integration | Binary coverage + PR comments | Done |
 | CI badges | Build, coverage in README | Done |
+| Default (human-readable) output E2E | Exercise table/color/spinner paths | Todo |
+| Error path E2E | Invalid args, not found, conflict | Todo |
+| Remote mode E2E | WireGuard tunnel: serve + connect from runners | Todo |
 
 ## P1: Port Detection
 

@@ -106,7 +106,65 @@ Standard `go test -cover` only measures lines inside the test process. E2E tests
 
 ---
 
+## Increasing Coverage
+
+Current `internal/cli/` coverage is ~26%. Every command has 3 output modes (JSON, plain, default) and E2E only exercises JSON + plain. The main uncovered areas:
+
+### Default (human-readable) output mode
+
+Every command has a default output path with tables, colors, and spinners that E2E never hits (E2E always passes `--json` or `--plain`). This is the largest coverage gap.
+
+**How to cover:** Add `runDefaultModeSubtests(t, vsName)` — same pattern as plain mode, run commands without `--json`/`--plain`, assert exit code 0 and non-empty stdout. Won't validate formatting but will exercise the code paths.
+
+### Error paths
+
+Commands like `delete nonexistent`, `exec` on a stopped vibespace, `config set` with invalid flags, `agent delete` on primary agent — none of these are tested.
+
+**How to cover:** Add `runErrorSubtests(t, vsName)` — run commands expected to fail, assert non-zero exit code and that JSON error output has the right error code.
+
+### Flag parsing variants
+
+Commands accept both `--flag value` and `--flag=value`. E2E only uses the space-separated form. The `=` form has separate parsing branches.
+
+**How to cover:** Re-run a few commands with `=` style flags (e.g., `config set claude-1 --model=opus`).
+
+### `--help` blocks
+
+Every command has 10-30 lines of help text that are never executed.
+
+**How to cover:** Run each command with `--help`, assert exit code 0. Low ROI but easy.
+
+### Connect (interactive SSH)
+
+`connect.go` is at 0% because it opens an interactive SSH session. But it can be tested non-interactively by piping commands through stdin using the existing `runWithStdin` helper:
+
+```go
+r := runWithStdin(t, "whoami && exit\n", vsName, "connect")
+// verify exit code 0 and stdout contains username
+```
+
+### 0% files
+
+| File | Why 0% | How to cover |
+|------|--------|--------------|
+| `connect.go` | Interactive SSH session | Pipe commands via stdin (see above) |
+| `serve.go` | Starts WireGuard server, needs real network | Remote mode E2E |
+| `remote.go` | Connects via WireGuard tunnel | Remote mode E2E |
+| `daemon_cmd.go` | Internal daemon entry point | Covered indirectly by forward tests |
+| `info_tui.go` | Bubbletea TUI, requires TTY | Manual only |
+| `suggestions.go` | "Did you mean?" for typos | Error path E2E |
+
+### Priority order
+
+1. Default output mode subtests — biggest coverage gain (~15-20% increase), easy to add
+2. Error path subtests — covers error handling + `suggestions.go`
+3. Remote mode E2E — covers `serve.go`, `remote.go`, needs VPS runner
+4. Help flag subtests — low ROI, do last
+
+---
+
 ## What's Next
 
-1. **Expanded E2E subtests** — ~25 subtests covering info, config, exec, forward, ports, multi, stop, start (this PR)
-2. **Remote mode E2E (Step 8)** — WireGuard tunnel tests: `vibespace serve` on VPS, `remote connect` from runners
+1. **Default output mode E2E** — exercise table/color/spinner code paths
+2. **Error path E2E** — invalid args, not found, conflict scenarios
+3. **Remote mode E2E** — WireGuard tunnel tests: `vibespace serve` on VPS, `remote connect` from runners
