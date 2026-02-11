@@ -1,17 +1,15 @@
 # Roadmap
 
-## P0: Testing
+## P0: Testing ✓
 
-| Task | Description | Effort |
+| Task | Description | Status |
 |------|-------------|--------|
-| Unit tests for `internal/cli` | Test each command handler | L |
-| Unit tests for `pkg/errors` | Test exit code mapping | S |
-| Unit tests for `pkg/ui` | Test table/style rendering | S |
-| Integration tests | End-to-end CLI workflows | L |
-| Contract tests | Validate JSON/plain output schemas | M |
-| CI pipeline | GitHub Actions on PR | M |
-| CI badges | Build, coverage, Go Report Card in README | S |
-| Codecov integration | Coverage reporting and PR comments | S |
+| Unit tests (77 tests, 17 files) | Pure logic across all packages | Done |
+| K8s service layer tests (10 tests) | CRUD against real k3s | Done |
+| E2E binary lifecycle (~25 subtests × 3 platforms) | Full CLI coverage | Done |
+| CI pipeline (ci.yml + ci-e2e.yml) | Lint + unit + integration + E2E | Done |
+| Codecov integration | Binary coverage + PR comments | Done |
+| CI badges | Build, coverage in README | Done |
 
 ## P1: Port Detection
 
