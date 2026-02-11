@@ -477,6 +477,37 @@ func waitForReady(t *testing.T, vsName string) {
 	}
 }
 
+// waitForDaemonReady polls `vibespace <name> forward list --json` until the daemon
+// returns at least 1 agent with an active SSH forward. The daemon auto-starts on
+// first forward command but needs time to: spawn → reconcile pods → set up kubectl
+// port-forwards for SSH. On slow CI runners this can take 10-20 seconds.
+// Polls every 3 seconds with a 60-second timeout.
+func waitForDaemonReady(t *testing.T, vsName string) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for daemon to have agent with active SSH forward for '%s'", vsName)
+		}
+
+		out := runJSON(t, vsName, "forward", "list")
+		if out.Success {
+			data := parseData[ForwardsData](t, out)
+			for _, agent := range data.Agents {
+				for _, fwd := range agent.Forwards {
+					if fwd.Type == "ssh" && fwd.Status == "active" {
+						t.Logf("daemon ready: agent=%s ssh_port=%d", agent.Name, fwd.LocalPort)
+						return
+					}
+				}
+			}
+		}
+
+		t.Logf("waiting for daemon to be ready for '%s'...", vsName)
+		time.Sleep(3 * time.Second)
+	}
+}
+
 // --- Expanded subtests ---
 
 // runExpandedSubtests runs all expanded E2E subtests between the initial "agents"
@@ -615,20 +646,18 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		}
 	})
 
+	// --- wait for daemon (SSH tunnel ready) ---
+	t.Run("wait-for-daemon", func(t *testing.T) {
+		// The daemon auto-starts on first forward command. It needs time to:
+		// spawn process → reconcile (discover pods) → create kubectl port-forward
+		// for SSH (port 2222) → tunnel becomes active. On slow CI runners this
+		// takes 10-20+ seconds. We poll until the SSH forward is active.
+		waitForDaemonReady(t, vsName)
+	})
+
 	// --- exec ---
 	t.Run("exec", func(t *testing.T) {
-		// exec requires a working SSH tunnel via the daemon. The daemon may not
-		// have the tunnel ready immediately after agent-delete, so treat failure
-		// as non-fatal — we still exercise the code path for coverage.
-		out := runJSON(t, vsName, "exec", "whoami")
-		if !out.Success {
-			errMsg := ""
-			if out.Error != nil {
-				errMsg = out.Error.Message
-			}
-			t.Logf("exec returned error (daemon SSH tunnel may not be ready): %s", errMsg)
-			return
-		}
+		out := mustSucceed(t, vsName, "exec", "whoami")
 		data := parseData[ExecData](t, out)
 
 		if data.Vibespace != vsName {
@@ -640,34 +669,23 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		t.Logf("exec whoami: stdout=%q", strings.TrimSpace(data.Stdout))
 	})
 
-	// --- forward list (empty) ---
-	t.Run("forward-list-empty", func(t *testing.T) {
+	// --- forward list (with default SSH/ttyd forwards) ---
+	t.Run("forward-list-default", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "forward", "list")
 		data := parseData[ForwardsData](t, out)
 
 		if data.Vibespace != vsName {
 			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
 		}
-		// Agents list should exist (may have 0 forwards per agent)
+		if len(data.Agents) < 1 {
+			t.Errorf("expected at least 1 agent in forward list, got %d", len(data.Agents))
+		}
 		t.Logf("forward list: %d agents", len(data.Agents))
 	})
 
 	// --- forward add ---
-	// Forward commands require the daemon to have the agent registered with an
-	// active SSH tunnel. After agent-delete disrupts daemon state, this may fail.
-	// Treat as non-fatal — we still exercise the code path for coverage.
-	forwardAdded := false
 	t.Run("forward-add", func(t *testing.T) {
-		out := runJSON(t, vsName, "forward", "add", "8080")
-		if !out.Success {
-			errMsg := ""
-			if out.Error != nil {
-				errMsg = out.Error.Message
-			}
-			t.Logf("forward add returned error (daemon may not have agent registered): %s", errMsg)
-			return
-		}
-		forwardAdded = true
+		out := mustSucceed(t, vsName, "forward", "add", "8080")
 		data := parseData[ForwardAddData](t, out)
 
 		if data.Vibespace != vsName {
@@ -684,9 +702,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 
 	// --- forward list (active) ---
 	t.Run("forward-list-active", func(t *testing.T) {
-		if !forwardAdded {
-			t.Skip("skipping: forward-add did not succeed")
-		}
 		out := mustSucceed(t, vsName, "forward", "list")
 		data := parseData[ForwardsData](t, out)
 
@@ -705,9 +720,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 
 	// --- forward remove ---
 	t.Run("forward-remove", func(t *testing.T) {
-		if !forwardAdded {
-			t.Skip("skipping: forward-add did not succeed")
-		}
 		out := mustSucceed(t, vsName, "forward", "remove", "8080")
 		data := parseData[ForwardRemoveData](t, out)
 
@@ -739,12 +751,13 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 
 	// --- multi list-agents ---
 	t.Run("multi-list-agents", func(t *testing.T) {
-		// multi --list-agents needs running agents with SSH connectivity.
-		// In CI the daemon may not have tunnels ready, so 0 agents is acceptable.
 		out := mustSucceed(t, "multi", "--vibespaces", vsName, "--list-agents")
 		data := parseData[MultiListAgentsData](t, out)
 
-		t.Logf("multi list-agents: session=%s agents=%v count=%d", data.Session, data.Agents, data.Count)
+		if len(data.Agents) < 1 {
+			t.Errorf("expected at least 1 agent, got %d", len(data.Agents))
+		}
+		t.Logf("multi list-agents: session=%s agents=%v", data.Session, data.Agents)
 	})
 
 	// --- multi message ---
