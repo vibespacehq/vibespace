@@ -790,33 +790,8 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		}
 	})
 
-	// --- stop ---
-	t.Run("stop", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "stop")
-		data := parseData[StopData](t, out)
+	// === Plain mode subtests (run while pods are still Running, before stop/start) ===
 
-		if !data.Stopped {
-			t.Error("expected stopped=true")
-		}
-	})
-
-	// --- start ---
-	t.Run("start", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "start")
-		data := parseData[StartData](t, out)
-
-		if data.Vibespace != vsName {
-			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
-		}
-	})
-}
-
-// --- Plain mode subtests ---
-
-// runPlainModeSubtests re-runs all read-only commands with --plain and verifies
-// they produce non-empty tab-separated output. Called after runExpandedSubtests
-// so all state (vibespace, agents, daemon) already exists.
-func runPlainModeSubtests(t *testing.T, vsName string) {
 	t.Run("plain/list", func(t *testing.T) {
 		out := mustSucceedPlain(t, "list")
 		if strings.TrimSpace(out) == "" {
@@ -860,8 +835,6 @@ func runPlainModeSubtests(t *testing.T, vsName string) {
 
 	t.Run("plain/forward-list", func(t *testing.T) {
 		out := mustSucceedPlain(t, vsName, "forward", "list")
-		// May be empty if no user forwards active — daemon SSH forwards
-		// are internal and may or may not appear in plain output
 		t.Logf("plain forward list: %d bytes", len(out))
 	})
 
@@ -879,6 +852,26 @@ func runPlainModeSubtests(t *testing.T, vsName string) {
 		out := mustSucceedPlain(t, "multi", "--vibespaces", vsName, "--list-agents")
 		if strings.TrimSpace(out) == "" {
 			t.Error("expected non-empty plain output (at least 1 agent)")
+		}
+	})
+
+	// --- stop ---
+	t.Run("stop", func(t *testing.T) {
+		out := mustSucceed(t, vsName, "stop")
+		data := parseData[StopData](t, out)
+
+		if !data.Stopped {
+			t.Error("expected stopped=true")
+		}
+	})
+
+	// --- start ---
+	t.Run("start", func(t *testing.T) {
+		out := mustSucceed(t, vsName, "start")
+		data := parseData[StartData](t, out)
+
+		if data.Vibespace != vsName {
+			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
 		}
 	})
 }

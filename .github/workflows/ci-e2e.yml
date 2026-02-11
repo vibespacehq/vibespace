@@ -94,6 +94,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Clean stale state
+        run: |
+          rm -rf ~/.vibespace ~/.lima/vibespace
+          limactl delete vibespace --force 2>/dev/null || true
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
