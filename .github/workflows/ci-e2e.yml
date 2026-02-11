@@ -26,6 +26,13 @@ jobs:
           VIBESPACE_DEBUG: "1"
           GOCOVERDIR: ${{ github.workspace }}/coverdir
 
+      - name: Debug coverdir
+        if: always()
+        run: |
+          echo "GOCOVERDIR=$GOCOVERDIR"
+          echo "ls coverdir:"
+          ls -la coverdir/ 2>&1 || echo "coverdir does not exist"
+
       - name: Convert coverage
         if: always()
         run: |
@@ -70,6 +77,13 @@ jobs:
           VIBESPACE_DEBUG: "1"
           GOCOVERDIR: ${{ github.workspace }}/coverdir
 
+      - name: Debug coverdir
+        if: always()
+        run: |
+          echo "GOCOVERDIR=$GOCOVERDIR"
+          echo "ls coverdir:"
+          ls -la coverdir/ 2>&1 || echo "coverdir does not exist"
+
       - name: Convert coverage
         if: always()
         run: |
@@ -113,6 +127,13 @@ jobs:
         env:
           VIBESPACE_DEBUG: "1"
           GOCOVERDIR: ${{ github.workspace }}/coverdir
+
+      - name: Debug coverdir
+        if: always()
+        run: |
+          echo "GOCOVERDIR=$GOCOVERDIR"
+          echo "ls coverdir:"
+          ls -la coverdir/ 2>&1 || echo "coverdir does not exist"
 
       - name: Convert coverage
         if: always()
