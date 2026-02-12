@@ -95,7 +95,7 @@ func NewStyles() Styles {
 		// Text
 		Title: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(whiteColor),
+			Foreground(ui.ColorText),
 
 		Subtitle: lipgloss.NewStyle().
 			Foreground(dimColor),
