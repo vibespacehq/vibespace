@@ -15,6 +15,7 @@ type Vibespace struct {
 	Resources  Resources        `json:"resources"`
 	Services   []ExposedService `json:"services,omitempty"` // Dynamically detected services
 	Persistent bool             `json:"persistent"`
+	Image      string           `json:"image,omitempty"`  // Container image
 	Mounts     []Mount          `json:"mounts,omitempty"` // Host directory mounts
 	CreatedAt  string           `json:"created_at"`
 	UpdatedAt  string           `json:"updated_at,omitempty"`
