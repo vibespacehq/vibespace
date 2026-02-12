@@ -22,34 +22,8 @@ var appBorderStyle = lipgloss.NewStyle().
 
 // --- Tab bar ---
 
-var (
-	activeTabLabelStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(ui.Teal).
-				Padding(0, 2)
-
-	inactiveTabLabelStyle = lipgloss.NewStyle().
-				Foreground(ui.ColorDim).
-				Padding(0, 2)
-)
-
 // brandGradient defines the colors for the animated tab underline.
 var brandGradient = []lipgloss.Color{ui.Teal, ui.Pink}
-
-// --- Status bar ---
-
-var (
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(ui.ColorDim).
-			Padding(0, 1)
-
-	statusKeyStyle = lipgloss.NewStyle().
-			Foreground(ui.Teal).
-			Bold(true)
-
-	statusDescStyle = lipgloss.NewStyle().
-			Foreground(ui.ColorDim)
-)
 
 // --- Overlay ---
 

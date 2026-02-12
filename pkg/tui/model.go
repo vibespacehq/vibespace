@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +19,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/wordwrap"
-	"golang.org/x/term"
 )
 
 // LayoutMode represents the TUI layout mode
@@ -834,22 +832,3 @@ func (m *Model) Close() {
 	}
 }
 
-// Run starts the TUI
-// resume indicates whether to resume existing Claude sessions (true) or start fresh (false)
-// Returns an error if stdin/stdout are not TTYs
-func Run(sess *session.Session, resume bool) error {
-	// Guard: TUI requires a terminal
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
-		return fmt.Errorf("TUI requires an interactive terminal (stdin is not a TTY); use --json for non-interactive mode")
-	}
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		return fmt.Errorf("TUI requires an interactive terminal (stdout is not a TTY); use --json for non-interactive mode")
-	}
-
-	m := NewModel(sess, resume)
-	p := tea.NewProgram(m, tea.WithAltScreen())
-
-	_, err := p.Run()
-	m.Close()
-	return err
-}
