@@ -15,7 +15,7 @@ require (
 	golang.org/x/crypto v0.47.0
 	golang.org/x/sync v0.19.0
 	golang.org/x/term v0.39.0
-	golang.org/x/time v0.11.0
+	golang.org/x/time v0.14.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
