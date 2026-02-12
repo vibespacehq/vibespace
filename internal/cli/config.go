@@ -245,63 +245,63 @@ func printAgentConfig(agentName string, agentType agent.Type, config *agent.Conf
 	out := getOutput()
 	isCodex := agentType == agent.TypeCodex
 
-	// Header with agent name
-	fmt.Printf("\n  %s %s\n", out.Bold("⬡"), out.Bold(agentName))
+	// Header: name  type
+	fmt.Printf("%s  %s\n", out.Bold(agentName), out.Dim(agentType.String()))
 	fmt.Println()
 
-	// Helper to print a config row
-	printRow := func(icon, label, value string, valueColor func(string) string) {
-		fmt.Printf("    %s %-20s %s\n", out.Dim(icon), out.Dim(label), valueColor(value))
+	// Helper for label-value rows
+	printField := func(label, value string) {
+		fmt.Printf("  %s %s\n", out.Dim(fmt.Sprintf("%-19s", label)), value)
 	}
 
-	// skip_permissions (Claude only - Codex always runs in yolo mode)
+	// skip_permissions
 	if isCodex {
-		printRow("◉", "skip_permissions", "always (yolo mode)", out.Green)
+		printField("skip_permissions", out.Green("always"))
 	} else if config.SkipPermissions {
-		printRow("◉", "skip_permissions", "enabled", out.Green)
+		printField("skip_permissions", out.Green("true"))
 	} else {
-		printRow("○", "skip_permissions", "disabled", out.Dim)
+		printField("skip_permissions", "false")
 	}
 
 	// share_credentials
 	if config.ShareCredentials {
-		printRow("◉", "share_credentials", "enabled", out.Green)
+		printField("share_credentials", out.Green("true"))
 	} else {
-		printRow("○", "share_credentials", "disabled", out.Dim)
+		printField("share_credentials", "false")
 	}
 
-	// allowed_tools (Claude only - Codex doesn't have tool restrictions)
+	// allowed_tools
 	if isCodex {
-		printRow("⚙", "allowed_tools", "all (no restrictions)", out.Green)
+		printField("allowed_tools", out.Green("all"))
 	} else if len(config.AllowedTools) > 0 {
-		printRow("⚙", "allowed_tools", strings.Join(config.AllowedTools, ", "), func(s string) string { return s })
+		printField("allowed_tools", strings.Join(config.AllowedTools, ", "))
 	} else if config.SkipPermissions {
-		printRow("⚙", "allowed_tools", "all", out.Green)
+		printField("allowed_tools", out.Green("all"))
 	} else {
-		printRow("⚙", "allowed_tools", strings.Join(agent.DefaultAllowedTools(), ", ")+" "+out.Dim("(default)"), func(s string) string { return s })
+		printField("allowed_tools", strings.Join(agent.DefaultAllowedTools(), ", ")+" "+out.Dim("(default)"))
 	}
 
-	// disallowed_tools (Claude only)
+	// disallowed_tools
 	if isCodex {
-		printRow("⊘", "disallowed_tools", "n/a", out.Dim)
+		printField("disallowed_tools", out.Dim("-"))
 	} else if len(config.DisallowedTools) > 0 {
-		printRow("⊘", "disallowed_tools", strings.Join(config.DisallowedTools, ", "), out.Red)
+		printField("disallowed_tools", out.Red(strings.Join(config.DisallowedTools, ", ")))
 	} else {
-		printRow("⊘", "disallowed_tools", "none", out.Dim)
+		printField("disallowed_tools", out.Dim("-"))
 	}
 
 	// model
 	if config.Model != "" {
-		printRow("◈", "model", config.Model, func(s string) string { return s })
+		printField("model", config.Model)
 	} else {
-		printRow("◈", "model", "default", out.Dim)
+		printField("model", out.Dim("default"))
 	}
 
 	// max_turns
 	if config.MaxTurns > 0 {
-		printRow("↻", "max_turns", strconv.Itoa(config.MaxTurns), func(s string) string { return s })
+		printField("max_turns", strconv.Itoa(config.MaxTurns))
 	} else {
-		printRow("↻", "max_turns", "unlimited", out.Dim)
+		printField("max_turns", out.Dim("unlimited"))
 	}
 
 	// system_prompt (only show if set)
@@ -310,15 +310,13 @@ func printAgentConfig(agentName string, agentType agent.Type, config *agent.Conf
 		if len(prompt) > 40 {
 			prompt = prompt[:37] + "..."
 		}
-		printRow("✎", "system_prompt", prompt, func(s string) string { return s })
+		printField("system_prompt", prompt)
 	}
 
 	// reasoning_effort (Codex only)
 	if config.ReasoningEffort != "" {
-		printRow("◆", "reasoning_effort", config.ReasoningEffort, func(s string) string { return s })
+		printField("reasoning_effort", config.ReasoningEffort)
 	}
-
-	fmt.Println()
 }
 
 func runConfigSet(vibespace string, args []string) error {
