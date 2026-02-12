@@ -122,35 +122,35 @@ region for mouse click support.
 **Responsive:** At 80 columns, AGE and STORAGE columns are hidden. At 60 columns, CPU
 and MEMORY are also hidden. Table widths are set dynamically based on terminal width.
 
-### 4.2 Expanded View (Enter on a vibespace)
+### 4.2 Agent View (Enter on a vibespace)
 
-Pressing Enter toggles inline expansion below the selected row. The expansion shows
-the vibespace's agents as a `lipgloss/tree`, resources, and forwards.
+Pressing Enter on a vibespace row navigates into a full-screen agent view for that
+vibespace, completely replacing the table. This is stack navigation — `Esc` or
+`Backspace` returns to the vibespace list.
 
 ```
- │ ┌────────────┬──────────┬────────┬───────┬────────┬─────────┬─────────┐ │
- │ │ NAME       │ STATUS   │ AGENTS │ CPU   │ MEMORY │ STORAGE │ AGE     │ │
- │ ├────────────┼──────────┼────────┼───────┼────────┼─────────┼─────────┤ │
- │ │▸myproject  │ running  │ 3      │ 750m  │ 1.5Gi  │ 10Gi    │ 2d      │ │
- │ │            │                                                        │ │
- │ │  myproject                                                          │ │
- │ │  ├── claude-1   claude-code  running  model=sonnet  skip=true       │ │
- │ │  ├── claude-2   claude-code  running  model=opus    skip=false      │ │
- │ │  └── codex-1    codex        running  model=default                 │ │
- │ │                                                                     │ │
- │ │  Resources   CPU 750m   Memory 1.5Gi   Storage 10Gi                 │ │
- │ │  Mounts      ~/code → /workspace (rw)                               │ │
- │ │  Forwards    :52341→:22 [ssh]  :3000→:3000                          │ │
- │ │                                                                     │ │
- │ │  x: connect  b: browser  e: config  a: add agent                    │ │
- │ │            │                                                        │ │
- │ │ backend-api│ running  │ 2      │ 500m  │ 1Gi    │ 10Gi    │ 5d      │ │
- │ │ ml-pipeline│ stopped  │ 1      │ 250m  │ 512Mi  │ 20Gi    │ 12d     │ │
- │ │ experiment │ running  │ 4      │ 1000m │ 2Gi    │ 10Gi    │ 1h      │ │
- │ └────────────┴──────────┴────────┴───────┴────────┴─────────┴─────────┘ │
+ │  ← myproject                                          running │
+ │ ────────────────────────────────────────────────────────────── │
+ │                                                               │
+ │  myproject                                                    │
+ │  ├── claude-1   claude-code  running  model=sonnet  skip=true │
+ │  ├── claude-2   claude-code  running  model=opus    skip=false│
+ │  └── codex-1    codex        running  model=default           │
+ │                                                               │
+ │  Resources   CPU 750m (limit 1000m)  Mem 1.5Gi (limit 2Gi)   │
+ │  Storage     10Gi (PVC)                                       │
+ │  Mounts      ~/code → /workspace (rw)                         │
+ │  Forwards    :52341→:22 [ssh]  :3000→:3000                    │
+ │  Image       ghcr.io/vibespacehq/vibespace/claude-code:latest │
+ │                                                               │
+ │  Recent Logs                                                  │
+ │  ──────────────────────────────────────────────────────────── │
+ │  2026-02-12 16:23:25 INFO spawned: 'sshd' with pid 28        │
+ │  2026-02-12 16:23:25 INFO spawned: 'ttyd' with pid 29        │
+ │  ...                                                          │
 ```
 
-The tree is rendered with `lipgloss/tree`:
+The agent tree is rendered with `lipgloss/tree`:
 
 ```go
 t := tree.Root("myproject").
@@ -162,9 +162,8 @@ t := tree.Root("myproject").
     ItemStyle(itemStyle)
 ```
 
-When expanded, the agent names within the tree are `bubblezone.Mark()` regions — click
-an agent name to select it, then press `e` to edit config, `x` to connect, etc. Use
-`j`/`k` within the expansion to move the cursor between agents.
+Use `j`/`k` to move the cursor between agents. Press `x` to connect, `e` to edit
+config, `a` to add agent, `b` for browser (actions implemented in phase 3c/3d).
 
 ### 4.3 Connect (SSH into Vibespace/Agent)
 
