@@ -5,12 +5,20 @@ import (
 	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
-// Tab bar heights used by App to calculate content area.
+// Layout constants used by App to calculate content area.
 const (
-	titleBarPad     = 1 // top padding to clear transparent terminal title bars
-	tabBarHeight    = titleBarPad + 2 // pad + tab text + animated border
-	statusBarHeight = 1
+	tabBarHeight    = 2 // tab text + border line
+	statusBarHeight = 2 // border line + text
+	borderH         = 2 // top + bottom border lines
+	borderW         = 2 // left + right border
 )
+
+// --- App border ---
+
+var appBorderStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(ui.ColorMuted).
+	Padding(0, 0)
 
 // --- Tab bar ---
 

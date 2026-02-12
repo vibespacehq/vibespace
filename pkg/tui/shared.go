@@ -11,6 +11,7 @@ import (
 // SharedState holds data shared across all tabs.
 type SharedState struct {
 	SessionStore *session.Store
+	HistoryStore *HistoryStore
 	Daemon       *daemon.Client
 
 	// Cached status (refreshed async via Refresh)
@@ -28,6 +29,12 @@ func NewSharedState() *SharedState {
 		s.SessionStore = store
 	} else {
 		slog.Debug("shared state: session store unavailable", "err", err)
+	}
+
+	if hs, err := NewHistoryStore(); err == nil {
+		s.HistoryStore = hs
+	} else {
+		slog.Debug("shared state: history store unavailable", "err", err)
 	}
 
 	if dc, err := daemon.NewClient(); err == nil {

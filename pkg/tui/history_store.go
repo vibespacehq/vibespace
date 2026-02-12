@@ -162,6 +162,18 @@ func (s *HistoryStore) List() ([]string, error) {
 	return sessions, nil
 }
 
+// LoadTail reads the last n messages from a session's history file.
+func (s *HistoryStore) LoadTail(sessionName string, n int) ([]*Message, error) {
+	msgs, err := s.Load(sessionName)
+	if err != nil {
+		return nil, err
+	}
+	if len(msgs) > n {
+		msgs = msgs[len(msgs)-n:]
+	}
+	return msgs, nil
+}
+
 // Exists checks if history exists for a session
 func (s *HistoryStore) Exists(sessionName string) bool {
 	path := s.historyPath(sessionName)
