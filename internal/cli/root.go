@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/tui"
 
 	"github.com/spf13/cobra"
 )
@@ -66,7 +67,7 @@ Environment Variables:
 	// Handle unknown commands as vibespace names
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
-			return cmd.Help()
+			return tui.RunApp()
 		}
 		// Treat first argument as a vibespace name
 		return handleVibespaceCommand(args)

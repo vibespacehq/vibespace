@@ -246,7 +246,7 @@ func runMultiCmd(cmd *cobra.Command, args []string) error {
 	}
 
 	// Interactive TUI mode
-	return tui.Run(sess, false)
+	return tui.RunAppWithChat(sess, false)
 }
 
 // buildSession creates a session from the provided flags
@@ -439,7 +439,7 @@ func runSessionResume(ctx context.Context, sessionID string, nonInteractive, jso
 	}
 
 	// Interactive mode - start TUI with resume
-	return tui.Run(sess, true)
+	return tui.RunAppWithChat(sess, true)
 }
 
 // runSessionPicker shows an interactive session picker
@@ -517,7 +517,7 @@ func runSessionPicker(ctx context.Context) error {
 	defer cleanup()
 
 	// Resume existing Claude sessions (use --resume)
-	return tui.Run(selected, true)
+	return tui.RunAppWithChat(selected, true)
 }
 
 // runNonInteractive runs in non-interactive mode with JSON output
