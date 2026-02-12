@@ -20,6 +20,7 @@ var (
 	ColorMuted   = lipgloss.Color("#444444")
 	ColorWhite   = lipgloss.Color("#FFFFFF")
 	ColorBlack   = lipgloss.Color("#000000")
+	ColorText    = lipgloss.AdaptiveColor{Light: "#1a1a1a", Dark: "#FFFFFF"} // adapts to terminal bg
 )
 
 // Extended semantic colors for TUI

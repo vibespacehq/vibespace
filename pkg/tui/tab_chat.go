@@ -34,7 +34,7 @@ func (ct *ChatTab) Title() string { return TabNames[TabChat] }
 
 func (ct *ChatTab) ShortHelp() []key.Binding {
 	return []key.Binding{
-		key.NewBinding(key.WithKeys("ctrl+]"), key.WithHelp("ctrl+]", "exit to tabs")),
+		key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "switch tab")),
 		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "send")),
 		key.NewBinding(key.WithKeys("@"), key.WithHelp("@agent", "mention")),
 		key.NewBinding(key.WithKeys("/"), key.WithHelp("/cmd", "command")),
