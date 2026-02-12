@@ -12,10 +12,7 @@ import (
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 	"github.com/vibespacehq/vibespace/pkg/session"
 	"github.com/vibespacehq/vibespace/pkg/tui"
-	"github.com/vibespacehq/vibespace/pkg/ui"
 
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -447,6 +444,7 @@ func runSessionResume(ctx context.Context, sessionID string, nonInteractive, jso
 
 // runSessionPicker shows an interactive session picker
 func runSessionPicker(ctx context.Context) error {
+	out := getOutput()
 	store, err := session.NewStore()
 	if err != nil {
 		return err
@@ -465,91 +463,61 @@ func runSessionPicker(ctx context.Context) error {
 		return nil
 	}
 
-	// Build options for picker with detailed info
-	options := make([]huh.Option[string], len(sessions))
+	// Print header
+	fmt.Println(out.Bold("Resume Session"))
+	fmt.Println()
+	fmt.Printf("  %s %s %s %s\n",
+		out.Dim(fmt.Sprintf("%-5s", "#")),
+		out.Dim(fmt.Sprintf("%-18s", "SESSION")),
+		out.Dim(fmt.Sprintf("%-22s", "VIBESPACE(S)")),
+		out.Dim("LAST USED"))
+
+	// Print numbered list
 	for i, sess := range sessions {
+		vsNames := make([]string, len(sess.Vibespaces))
+		for j, vs := range sess.Vibespaces {
+			vsNames[j] = vs.Name
+		}
+		vsInfo := strings.Join(vsNames, ", ")
+		if vsInfo == "" {
+			vsInfo = "(empty)"
+		}
+		vsInfo = truncateStr(vsInfo, 20)
 		lastUsed := formatRelativeTime(sess.LastUsed)
 
-		// Build vibespace and agent info
-		var vsInfo, agentInfo string
-		if len(sess.Vibespaces) == 0 {
-			vsInfo = "(empty)"
-			agentInfo = "-"
-		} else {
-			vsNames := make([]string, len(sess.Vibespaces))
-			var agentNames []string
-			for j, vs := range sess.Vibespaces {
-				vsNames[j] = vs.Name
-				if len(vs.Agents) > 0 {
-					for _, a := range vs.Agents {
-						agentNames = append(agentNames, a+"@"+vs.Name)
-					}
-				}
-			}
-			vsInfo = strings.Join(vsNames, ", ")
-			if len(agentNames) > 0 {
-				agentInfo = strings.Join(agentNames, ", ")
-			} else {
-				agentInfo = "all"
-			}
-		}
-
-		// Truncate long values to fit columns
-		vsInfo = truncateStr(vsInfo, 20)
-		agentInfo = truncateStr(agentInfo, 20)
-
-		// Format with aligned columns
-		label := fmt.Sprintf("%-16s │ %-20s │ %-20s │ %s", sess.Name, vsInfo, agentInfo, lastUsed)
-		options[i] = huh.NewOption(label, sess.Name)
+		num := fmt.Sprintf("%-5s", fmt.Sprintf("%d)", i+1))
+		fmt.Printf("  %s %s %s %s\n",
+			num,
+			out.Bold(fmt.Sprintf("%-18s", sess.Name)),
+			out.Teal(fmt.Sprintf("%-22s", vsInfo)),
+			out.Dim(lastUsed))
 	}
 
-	var selected string
-	// Add 2 spaces prefix to align with huh's "> " selector prefix
-	header := fmt.Sprintf("  %-16s │ %-20s │ %-20s │ %s", "SESSION", "VIBESPACE(S)", "AGENTS", "LAST USED")
+	// Prompt for selection
+	fmt.Println()
+	fmt.Print("Select session (number): ")
 
-	// Custom theme with brand colors
-	theme := huh.ThemeBase()
-	theme.Focused.Title = lipgloss.NewStyle().Foreground(ui.Orange).Bold(true)
-	theme.Focused.Description = lipgloss.NewStyle().Foreground(ui.Pink)
-	theme.Focused.SelectSelector = lipgloss.NewStyle().Foreground(ui.Teal).SetString("> ")
-	theme.Focused.SelectedOption = lipgloss.NewStyle().Foreground(ui.Teal)
-	theme.Focused.UnselectedOption = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	theme.Blurred = theme.Focused
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Resume Session").
-				Description(header).
-				Options(options...).
-				Value(&selected),
-		),
-	).WithTheme(theme)
-
-	if err := form.Run(); err != nil {
-		return err
+	var choice int
+	if _, err := fmt.Scan(&choice); err != nil {
+		return nil // User cancelled (e.g. Ctrl+C or empty input)
 	}
 
-	if selected == "" {
-		return nil // User cancelled
+	if choice < 1 || choice > len(sessions) {
+		return fmt.Errorf("invalid selection: %d", choice)
 	}
 
-	// Load and start the selected session
-	sess, err := store.Get(selected)
-	if err != nil {
-		return err
-	}
+	selected := &sessions[choice-1]
 
 	// Update last used
-	sess.LastUsed = time.Now()
-	_ = store.Save(sess)
+	selected.LastUsed = time.Now()
+	_ = store.Save(selected)
 
 	// Setup TUI logging
 	cleanup := setupLogging(LogConfig{Mode: LogModeTUI})
 	defer cleanup()
 
 	// Resume existing Claude sessions (use --resume)
-	return tui.Run(sess, true)
+	return tui.Run(selected, true)
 }
 
 // runNonInteractive runs in non-interactive mode with JSON output
