@@ -49,4 +49,8 @@ Depends on: `pkg/remote/` state files (remote.json, serve.json), WireGuard statu
 
 **Design doc §9.2 (lines 691-730)**. Replace stub with fuzzy-filtered action list. `bubbles/textinput` for filter, action list below. Actions: switch tab, chat with vibespace, new session, connect, start/stop, etc.
 
+## Hardcoded Values
+
+- Agent container images in `pkg/tui/tab_vibespaces.go` (`agentImage()`) are hardcoded per agent type (`claude-code` → `ghcr.io/vibespacehq/vibespace/claude-code:latest`, `codex` → `ghcr.io/vibespacehq/vibespace/codex:latest`). Should be resolved from the deployment/k8s layer instead — `vibespace.AgentInfo` doesn't carry an image field.
+
 ## Known Bugs
