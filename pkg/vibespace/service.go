@@ -565,14 +565,23 @@ func extractResourcesFromDeployment(deploy *appsv1.Deployment) model.Resources {
 	}
 
 	requests := containers[0].Resources.Requests
+	limits := containers[0].Resources.Limits
 	cpu := ""
+	cpuLimit := ""
 	memory := ""
+	memoryLimit := ""
 
 	if cpuQty, ok := requests[corev1.ResourceCPU]; ok {
 		cpu = cpuQty.String()
 	}
+	if cpuQty, ok := limits[corev1.ResourceCPU]; ok {
+		cpuLimit = cpuQty.String()
+	}
 	if memQty, ok := requests[corev1.ResourceMemory]; ok {
 		memory = memQty.String()
+	}
+	if memQty, ok := limits[corev1.ResourceMemory]; ok {
+		memoryLimit = memQty.String()
 	}
 
 	// Storage is stored as annotation since it's actually in the PVC
@@ -582,9 +591,11 @@ func extractResourcesFromDeployment(deploy *appsv1.Deployment) model.Resources {
 	}
 
 	return model.Resources{
-		CPU:     cpu,
-		Memory:  memory,
-		Storage: storage,
+		CPU:         cpu,
+		CPULimit:    cpuLimit,
+		Memory:      memory,
+		MemoryLimit: memoryLimit,
+		Storage:     storage,
 	}
 }
 
