@@ -7,12 +7,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/list"
 	"github.com/vibespacehq/vibespace/internal/platform"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
 	"github.com/vibespacehq/vibespace/pkg/remote"
-	"github.com/vibespacehq/vibespace/pkg/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -107,65 +104,53 @@ func runStatus(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Styles
-	tealStyle := lipgloss.NewStyle().Foreground(ui.Teal)
-	pinkStyle := lipgloss.NewStyle().Foreground(ui.Pink)
-	orangeStyle := lipgloss.NewStyle().Foreground(ui.Orange)
-	boldStyle := lipgloss.NewStyle().Bold(true)
-
-	// Determine cluster status label
-	var clusterLabel string
+	// Determine cluster status
 	if remoteConnected && !localRunning {
-		clusterLabel = fmt.Sprintf("%s %s", boldStyle.Render("Cluster"), tealStyle.Render("remote"))
+		fmt.Printf("%s  %s\n", out.Bold("Cluster"), out.Teal("remote"))
 	} else if localRunning && remoteConnected {
-		clusterLabel = fmt.Sprintf("%s %s", boldStyle.Render("Cluster"), tealStyle.Render("running + remote"))
+		fmt.Printf("%s  %s\n", out.Bold("Cluster"), out.Teal("running + remote"))
 	} else {
-		clusterLabel = fmt.Sprintf("%s %s", boldStyle.Render("Cluster"), tealStyle.Render("running"))
+		fmt.Printf("%s  %s\n", out.Bold("Cluster"), out.Teal("running"))
 	}
 
-	l := list.New(clusterLabel)
-
-	// Remote connection section (show first when it's the primary cluster)
+	// Remote connection section
 	if remoteConnected {
-		l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Remote"), tealStyle.Render("connected")))
-		l.Item(list.New(
-			fmt.Sprintf("server %s", pinkStyle.Render(remoteState.ServerHost)),
-			fmt.Sprintf("local IP %s", pinkStyle.Render(remoteState.LocalIP)),
-		))
+		fmt.Println()
+		fmt.Printf("%s  %s\n", out.Bold("Remote"), out.Teal("connected"))
+		fmt.Printf("  server   %s\n", out.Orange(remoteState.ServerHost))
+		fmt.Printf("  local IP %s\n", out.Orange(remoteState.LocalIP))
 	}
 
 	// Daemon section
 	if daemon.IsDaemonRunning() {
 		daemonStatus, err := daemon.GetDaemonStatus()
+		fmt.Println()
 		if err != nil {
-			l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Daemon"), out.Yellow("error")))
-			l.Item(list.New(out.Dim(err.Error())))
+			fmt.Printf("%s  %s\n", out.Bold("Daemon"), out.Yellow("error"))
+			fmt.Printf("  %s\n", out.Dim(err.Error()))
 		} else {
-			l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Daemon"), tealStyle.Render("running")))
-			l.Item(list.New(
-				fmt.Sprintf("uptime %s", pinkStyle.Render(daemonStatus.Uptime)),
-				fmt.Sprintf("pid %s", pinkStyle.Render(fmt.Sprintf("%d", daemonStatus.Pid))),
-			))
+			fmt.Printf("%s  %s\n", out.Bold("Daemon"), out.Teal("running"))
+			fmt.Printf("  uptime   %s\n", out.Orange(daemonStatus.Uptime))
+			fmt.Printf("  pid      %s\n", out.Orange(fmt.Sprintf("%d", daemonStatus.Pid)))
 
 			if len(daemonStatus.Vibespaces) > 0 {
-				var vsItems []any
+				fmt.Println()
+				fmt.Printf("%s %s\n", out.Bold("Vibespaces"), out.Dim(fmt.Sprintf("(%d)", len(daemonStatus.Vibespaces))))
 				for name, vs := range daemonStatus.Vibespaces {
 					agentCount := len(vs.Agents)
 					suffix := ""
 					if agentCount != 1 {
 						suffix = "s"
 					}
-					vsItems = append(vsItems, fmt.Sprintf("%s %s", orangeStyle.Render(name), out.Dim(fmt.Sprintf("(%d agent%s)", agentCount, suffix))))
+					fmt.Printf("  %s %s\n", out.Orange(name), out.Dim(fmt.Sprintf("(%d agent%s)", agentCount, suffix)))
 				}
-				l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Vibespaces"), out.Dim(fmt.Sprintf("(%d)", len(daemonStatus.Vibespaces)))))
-				l.Item(list.New(vsItems...))
 			}
 		}
 	} else if !remoteConnected {
-		l.Item(fmt.Sprintf("%s %s", boldStyle.Render("Daemon"), out.Dim("not running")))
+		fmt.Println()
+		fmt.Printf("%s  %s\n", out.Bold("Daemon"), out.Dim("not running"))
 	}
 
-	fmt.Println(l)
 	return nil
 }
 

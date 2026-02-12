@@ -1,11 +1,19 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
 )
+
+// ansiRegex matches ANSI SGR escape sequences for width measurement.
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// stripAnsi removes ANSI escape sequences from a string.
+func StripAnsi(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
 
 // TableOptions configures table rendering.
 type TableOptions struct {
@@ -13,8 +21,6 @@ type TableOptions struct {
 	NoColor bool
 	// HeaderColor overrides the default header color (Teal).
 	HeaderColor lipgloss.Color
-	// BorderColor overrides the default border color (ColorMuted).
-	BorderColor lipgloss.Color
 }
 
 // NewTable creates a styled table with the given headers and rows.
@@ -28,33 +34,79 @@ func NewTableWithOptions(headers []string, rows [][]string, opts TableOptions) s
 	if opts.NoColor {
 		return renderPlainTable(headers, rows)
 	}
+	return renderColumnAligned(headers, rows, opts)
+}
 
+// renderColumnAligned renders a column-aligned table with colored headers.
+func renderColumnAligned(headers []string, rows [][]string, opts TableOptions) string {
 	headerColor := opts.HeaderColor
 	if headerColor == "" {
 		headerColor = Teal
 	}
 
-	borderColor := opts.BorderColor
-	if borderColor == "" {
-		borderColor = ColorMuted
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(headerColor)
+	gap := "  " // 2-space gap between columns
+
+	// Compute max column widths (using visible width, stripping ANSI)
+	numCols := len(headers)
+	widths := make([]int, numCols)
+	for i, h := range headers {
+		w := len(StripAnsi(h))
+		if w > widths[i] {
+			widths[i] = w
+		}
+	}
+	for _, row := range rows {
+		for i := 0; i < numCols && i < len(row); i++ {
+			w := len(StripAnsi(row[i]))
+			if w > widths[i] {
+				widths[i] = w
+			}
+		}
 	}
 
-	t := table.New().
-		Border(lipgloss.RoundedBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(borderColor)).
-		Headers(headers...).
-		Rows(rows...).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return lipgloss.NewStyle().
-					Bold(true).
-					Foreground(headerColor).
-					Padding(0, 1)
-			}
-			return lipgloss.NewStyle().Padding(0, 1)
-		})
+	var sb strings.Builder
 
-	return t.String()
+	// Render headers
+	for i, h := range headers {
+		styled := headerStyle.Render(h)
+		if i < numCols-1 {
+			// Pad based on visible width
+			visible := len(StripAnsi(h))
+			padding := widths[i] - visible
+			sb.WriteString(styled)
+			sb.WriteString(strings.Repeat(" ", padding))
+			sb.WriteString(gap)
+		} else {
+			sb.WriteString(styled)
+		}
+	}
+	sb.WriteString("\n")
+
+	// Render data rows
+	for _, row := range rows {
+		for i := 0; i < numCols; i++ {
+			cell := ""
+			if i < len(row) {
+				cell = row[i]
+			}
+			if i < numCols-1 {
+				visible := len(StripAnsi(cell))
+				padding := widths[i] - visible
+				if padding < 0 {
+					padding = 0
+				}
+				sb.WriteString(cell)
+				sb.WriteString(strings.Repeat(" ", padding))
+				sb.WriteString(gap)
+			} else {
+				sb.WriteString(cell)
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	return sb.String()
 }
 
 // renderPlainTable renders a simple tab-separated table for scripting.
