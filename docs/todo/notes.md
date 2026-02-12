@@ -26,7 +26,7 @@ All future phases reference `docs/ideas/tui-design-document.md`.
 | Sub-phase | Scope | Design doc ref |
 |-----------|-------|----------------|
 | 3a | Table view: NAME, STATUS, AGENTS, CPU, MEM, STORAGE, AGE. `j/k` nav, status colors, responsive column hiding | §4.1 (lines 64-130) |
-| 3b | Inline expansion: `Enter` toggles agent tree below row. Resources, mounts, forwards display | §4.2 (lines 131-200) |
+| 3b | Agent view: `Enter` navigates to full-screen agent view (stack nav). Agent tree, resources, mounts, forwards, logs. `Esc`/`Backspace` returns to list | §4.2 (lines 131-200) |
 | 3c | Connect actions: `x` SSH via `tea.ExecProcess`, `b` browser via ttyd URL | §4.3 (lines 201-240) |
 | 3d | Inline forms: `n` create, `d` delete, `a` add agent, `S` start/stop | §5.1-5.2 (lines 241-320) |
 | 3e | Inline editors: `e` config editor, `f` forward manager | §5.3-5.4 (lines 321-380) |
