@@ -102,13 +102,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.highlightX = float64(a.tabOffsets[a.activeTab])
 			a.targetX = a.highlightX
 		}
+		iw := a.innerWidth()
 		contentH := a.contentHeight()
 		a.help.SetSize(a.width, a.height)
 		a.palette.SetSize(a.width, a.height)
-		a.tabs[a.activeTab].SetSize(a.width, contentH)
+		a.tabs[a.activeTab].SetSize(iw, contentH)
 		// Forward adjusted size to active tab
 		_, cmd := a.tabs[a.activeTab].Update(tea.WindowSizeMsg{
-			Width: a.width, Height: contentH,
+			Width: iw, Height: contentH,
 		})
 		return a, cmd
 
@@ -143,7 +144,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionRelease {
 			// Click anywhere in the tab bar area (label row + underline row)
-			if msg.Y >= titleBarPad && msg.Y < tabBarHeight && len(a.tabOffsets) > 0 {
+			if msg.Y < tabBarHeight && len(a.tabOffsets) > 0 {
 				x := msg.X
 				for i := tabCount - 1; i >= 0; i-- {
 					if x >= a.tabOffsets[i] {
@@ -229,7 +230,12 @@ func (a *App) View() string {
 		MaxHeight(contentHeight).
 		Render(content)
 
-	base := lipgloss.JoinVertical(lipgloss.Left, tabBar, styledContent, statusBar)
+	inner := lipgloss.JoinVertical(lipgloss.Left, tabBar, styledContent, statusBar)
+
+	base := appBorderStyle.
+		Width(a.innerWidth()).
+		Height(a.height - borderH).
+		Render(inner)
 
 	// Overlays render on top
 	if a.help.Visible() {
@@ -275,7 +281,8 @@ func (a *App) switchTab(idx int) tea.Cmd {
 	}
 
 	// Resize and activate
-	a.tabs[idx].SetSize(a.width, a.contentHeight())
+	iw := a.innerWidth()
+	a.tabs[idx].SetSize(iw, a.contentHeight())
 	_, cmd = a.tabs[idx].Update(TabActivateMsg{})
 	if cmd != nil {
 		cmds = append(cmds, cmd)
@@ -283,7 +290,7 @@ func (a *App) switchTab(idx int) tea.Cmd {
 
 	// Send size to new tab
 	_, cmd = a.tabs[idx].Update(tea.WindowSizeMsg{
-		Width: a.width, Height: a.contentHeight(),
+		Width: iw, Height: a.contentHeight(),
 	})
 	if cmd != nil {
 		cmds = append(cmds, cmd)
@@ -308,9 +315,8 @@ func (a *App) computeTabLayout() {
 	a.tabWidths = make([]int, tabCount)
 	x := 0
 	for i := 0; i < tabCount; i++ {
-		label := fmt.Sprintf(" %d %s ", i+1, TabNames[i])
-		// tabLabelStyle has Padding(0, 2) so add 4 for horizontal padding
-		w := lipgloss.Width(label) + 4
+		label := fmt.Sprintf("  %d %s  ", i+1, TabNames[i]) // matches renderTabBar format
+		w := len([]rune(label))
 		a.tabOffsets[i] = x
 		a.tabWidths[i] = w
 		x += w
@@ -320,40 +326,99 @@ func (a *App) computeTabLayout() {
 // --- Rendering helpers ---
 
 func (a *App) contentHeight() int {
-	h := a.height - tabBarHeight - statusBarHeight
+	h := a.height - tabBarHeight - statusBarHeight - borderH
 	if h < 1 {
 		h = 1
 	}
 	return h
 }
 
+// innerWidth returns the usable width inside the border.
+func (a *App) innerWidth() int {
+	w := a.width - borderW
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
 func (a *App) renderTabBar() string {
-	var labels []string
+	iw := a.innerWidth()
+
+	// Build flat text content: "  1 Vibespaces    2 Chat  ..." with padding per tab
+	var fullText []rune
 	for i := 0; i < tabCount; i++ {
-		label := fmt.Sprintf(" %d %s ", i+1, TabNames[i])
-		var rendered string
-		if i == a.activeTab {
-			rendered = renderGradientText(label, brandGradient)
+		label := fmt.Sprintf("  %d %s  ", i+1, TabNames[i])
+		fullText = append(fullText, []rune(label)...)
+	}
+	// Pad to full width
+	for len(fullText) < iw {
+		fullText = append(fullText, ' ')
+	}
+	if len(fullText) > iw {
+		fullText = fullText[:iw]
+	}
+
+	// Highlight region (animated position)
+	activeW := 0
+	if a.activeTab < len(a.tabWidths) {
+		activeW = a.tabWidths[a.activeTab]
+	}
+	hlStart := int(math.Round(a.highlightX))
+	hlEnd := hlStart + activeW
+	if hlStart < 0 {
+		hlStart = 0
+	}
+	if hlEnd > iw {
+		hlEnd = iw
+	}
+
+	// Pre-compute gradient colors for the highlight segment
+	segLen := hlEnd - hlStart
+	var gradColors []lipgloss.Color
+	if segLen > 0 {
+		gradColors = buildGradient(segLen, brandGradient)
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	mutedStyle := lipgloss.NewStyle().Foreground(ui.ColorMuted)
+
+	// Row 1: tab labels — gradient foreground text for active, dim for inactive
+	var labelRow strings.Builder
+	for i, r := range fullText {
+		if i >= hlStart && i < hlEnd {
+			gc := gradColors[i-hlStart]
+			labelRow.WriteString(lipgloss.NewStyle().
+				Bold(true).
+				Foreground(gc).
+				Render(string(r)))
 		} else {
-			rendered = inactiveTabLabelStyle.Render(label)
+			labelRow.WriteString(dimStyle.Render(string(r)))
 		}
-		labels = append(labels, zone.Mark(tabZoneID(i), rendered))
-	}
-	textRow := lipgloss.JoinHorizontal(lipgloss.Bottom, labels...)
-	if gap := a.width - lipgloss.Width(textRow); gap > 0 {
-		textRow += strings.Repeat(" ", gap)
 	}
 
-	borderRow := a.renderGradientBorder()
+	// Row 2: underline — gradient ─ under active tab, dim ─ elsewhere
+	var underline strings.Builder
+	for i := 0; i < iw; i++ {
+		if i >= hlStart && i < hlEnd {
+			gc := gradColors[i-hlStart]
+			underline.WriteString(lipgloss.NewStyle().
+				Foreground(gc).
+				Render("─"))
+		} else {
+			underline.WriteString(mutedStyle.Render("─"))
+		}
+	}
 
-	return strings.Repeat("\n", titleBarPad) + textRow + "\n" + borderRow
+	return labelRow.String() + "\n" + underline.String()
 }
 
 // renderGradientText renders a string with per-character gradient colors + bold.
 func renderGradientText(s string, stops []lipgloss.Color) string {
-	// Pad matches activeTabLabelStyle Padding(0, 2)
-	padded := "  " + s + "  "
-	runes := []rune(padded)
+	runes := []rune(s)
+	if len(runes) == 0 {
+		return ""
+	}
 	colors := buildGradient(len(runes), stops)
 
 	var b strings.Builder
@@ -363,58 +428,62 @@ func renderGradientText(s string, stops []lipgloss.Color) string {
 	return b.String()
 }
 
-func (a *App) renderGradientBorder() string {
-	if a.width <= 0 {
+// renderGradientTabLabel renders a tab label with padding and gradient colors.
+func renderGradientTabLabel(s string, stops []lipgloss.Color) string {
+	return "  " + renderGradientText(s, stops) + "  "
+}
+
+// renderGradientBg renders a string with white bold text on a per-character gradient background.
+func renderGradientBg(s string, stops []lipgloss.Color) string {
+	runes := []rune(s)
+	if len(runes) == 0 {
 		return ""
 	}
+	colors := buildGradient(len(runes), stops)
 
-	activeW := 0
-	if a.activeTab < len(a.tabWidths) {
-		activeW = a.tabWidths[a.activeTab]
-	}
-
-	hlStart := int(math.Round(a.highlightX))
-	hlEnd := hlStart + activeW
-	if hlStart < 0 {
-		hlStart = 0
-	}
-	if hlEnd > a.width {
-		hlEnd = a.width
-	}
-
-	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorMuted)
 	var b strings.Builder
-	b.Grow(a.width * 4)
-
-	if hlStart > 0 {
-		b.WriteString(dimStyle.Render(strings.Repeat("─", hlStart)))
+	for i, r := range runes {
+		b.WriteString(lipgloss.NewStyle().
+			Bold(true).
+			Foreground(ui.ColorWhite).
+			Background(colors[i]).
+			Render(string(r)))
 	}
-
-	// Pre-compute gradient colors, then batch adjacent identical colors
-	segLen := hlEnd - hlStart
-	if segLen > 0 {
-		colors := buildGradient(segLen, brandGradient)
-		runColor := colors[0]
-		runLen := 1
-		for i := 1; i < segLen; i++ {
-			if colors[i] == runColor {
-				runLen++
-			} else {
-				b.WriteString(lipgloss.NewStyle().Foreground(runColor).Render(
-					strings.Repeat("─", runLen)))
-				runColor = colors[i]
-				runLen = 1
-			}
-		}
-		b.WriteString(lipgloss.NewStyle().Foreground(runColor).Render(
-			strings.Repeat("─", runLen)))
-	}
-
-	if hlEnd < a.width {
-		b.WriteString(dimStyle.Render(strings.Repeat("─", a.width-hlEnd)))
-	}
-
 	return b.String()
+}
+
+
+// renderGradientRow applies a single gradient across all cells of a table row.
+// Each cell gets the gradient slice corresponding to its position in the full row.
+func renderGradientRow(cells []string, stops []lipgloss.Color) []string {
+	// Count total runes across all cells
+	var allRunes [][]rune
+	total := 0
+	for _, c := range cells {
+		r := []rune(c)
+		allRunes = append(allRunes, r)
+		total += len(r)
+	}
+	if total == 0 {
+		return cells
+	}
+
+	colors := buildGradient(total, stops)
+
+	result := make([]string, len(cells))
+	offset := 0
+	for i, runes := range allRunes {
+		var b strings.Builder
+		for j, r := range runes {
+			b.WriteString(lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colors[offset+j]).
+				Render(string(r)))
+		}
+		result[i] = b.String()
+		offset += len(runes)
+	}
+	return result
 }
 
 // buildGradient pre-computes gradient colors for n characters across the given stops.
@@ -450,17 +519,49 @@ func buildGradient(n int, stops []lipgloss.Color) []lipgloss.Color {
 }
 
 func (a *App) renderStatusBar() string {
+	iw := a.innerWidth()
+
+	// Dim top border
+	border := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", iw))
+
+	// Collect just the key strings for gradient
 	bindings := a.tabs[a.activeTab].ShortHelp()
-	var parts []string
+	var keys []string
 	for _, b := range bindings {
-		h := b.Help()
-		parts = append(parts,
-			statusKeyStyle.Render(h.Key)+" "+statusDescStyle.Render(h.Desc),
-		)
+		keys = append(keys, b.Help().Key)
 	}
 
-	bar := strings.Join(parts, statusDescStyle.Render("  |  "))
-	return statusBarStyle.Width(a.width).Render(bar)
+	// Build gradient across all keys combined
+	totalKeyRunes := 0
+	for _, k := range keys {
+		totalKeyRunes += len([]rune(k))
+	}
+	gradColors := buildGradient(totalKeyRunes, brandGradient)
+
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	var parts []string
+	offset := 0
+	for i, b := range bindings {
+		h := b.Help()
+		keyRunes := []rune(keys[i])
+
+		// Gradient key
+		var kb strings.Builder
+		for j, r := range keyRunes {
+			kb.WriteString(lipgloss.NewStyle().
+				Bold(true).
+				Foreground(gradColors[offset+j]).
+				Render(string(r)))
+		}
+		offset += len(keyRunes)
+
+		parts = append(parts, kb.String()+" "+dimStyle.Render(h.Desc))
+	}
+
+	text := " " + strings.Join(parts, dimStyle.Render("  |  "))
+
+	return border + "\n" + text
 }
 
 func tabZoneID(idx int) string {

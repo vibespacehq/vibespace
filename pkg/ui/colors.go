@@ -32,15 +32,14 @@ var (
 	ColorThinking  = Pink                      // Thinking indicator
 )
 
-// AgentColors provides a palette of 8 colors for agent identification.
-// Colors are rotated based on agent index.
+// AgentColors provides a palette of 7 colors for agent identification.
+// Teal is reserved for the user — agents never use it.
 var AgentColors = []lipgloss.Color{
-	Teal,                      // #00ABAB - Primary brand teal
 	Pink,                      // #F102F3 - Brand pink
 	Orange,                    // #FF7D4B - Brand orange
-	Yellow,                    // #F5F50A - Brand yellow
 	lipgloss.Color("#00D9FF"), // Cyan
 	lipgloss.Color("#7B61FF"), // Purple
+	Yellow,                    // #F5F50A - Brand yellow
 	lipgloss.Color("#00FF9F"), // Green
 	lipgloss.Color("#FF6B6B"), // Coral
 }
