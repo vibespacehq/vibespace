@@ -5,7 +5,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 // SharedState holds data shared across all tabs.
@@ -13,6 +15,7 @@ type SharedState struct {
 	SessionStore *session.Store
 	HistoryStore *HistoryStore
 	Daemon       *daemon.Client
+	Vibespace    *vibespace.Service
 
 	// Cached status (refreshed async via Refresh)
 	DaemonRunning bool
@@ -41,6 +44,17 @@ func NewSharedState() *SharedState {
 		s.Daemon = dc
 	} else {
 		slog.Debug("shared state: daemon client unavailable", "err", err)
+	}
+
+	// Vibespace service requires a k8s client.
+	// resolveKubeconfig is in internal/cli, so we rely on KUBECONFIG being set
+	// (which it is when the TUI is launched via CLI commands).
+	if kc, err := k8s.NewClient(); err == nil {
+		s.Vibespace = vibespace.NewService(kc)
+	} else {
+		// Still create a nil-client service for graceful degradation
+		s.Vibespace = vibespace.NewService(nil)
+		slog.Debug("shared state: k8s client unavailable, vibespace service degraded", "err", err)
 	}
 
 	return s
