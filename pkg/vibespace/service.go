@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -349,6 +350,47 @@ func (s *Service) deletePVC(ctx context.Context, name string) error {
 	return nil
 }
 
+// GetLogs returns the last tailLines of logs for a vibespace's primary pod.
+func (s *Service) GetLogs(ctx context.Context, nameOrID string, tailLines int64) (string, error) {
+	if err := s.ensureClients(); err != nil {
+		return "", fmt.Errorf("kubernetes client not available: %w", err)
+	}
+
+	vs, err := s.Get(ctx, nameOrID)
+	if err != nil {
+		return "", err
+	}
+
+	// Find pods for this vibespace
+	pods, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vs.ID),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to list pods: %w", err)
+	}
+	if len(pods.Items) == 0 {
+		return "", fmt.Errorf("no pods found for vibespace %q", vs.Name)
+	}
+
+	// Use the first pod (primary)
+	pod := pods.Items[0]
+	opts := &corev1.PodLogOptions{
+		Container: "vibespace",
+		TailLines: &tailLines,
+	}
+	stream, err := s.k8sClient.Clientset().CoreV1().Pods(k8s.VibespaceNamespace).GetLogs(pod.Name, opts).Stream(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get logs: %w", err)
+	}
+	defer stream.Close()
+
+	data, err := io.ReadAll(stream)
+	if err != nil {
+		return "", fmt.Errorf("failed to read logs: %w", err)
+	}
+	return string(data), nil
+}
+
 // deleteSecret deletes a Secret
 func (s *Service) deleteSecret(ctx context.Context, name string) error {
 	err := s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -538,6 +580,13 @@ func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
 	// Extract resources from the Deployment spec
 	resources := extractResourcesFromDeployment(deploy)
 
+	// Extract container image
+	image := ""
+	containers := deploy.Spec.Template.Spec.Containers
+	if len(containers) > 0 {
+		image = containers[0].Image
+	}
+
 	// Extract mounts from annotation
 	var mounts []model.Mount
 	if annotations != nil {
@@ -552,6 +601,7 @@ func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
 		Status:     status,
 		Resources:  resources,
 		Persistent: true,
+		Image:      image,
 		Mounts:     mounts,
 		CreatedAt:  createdAt,
 	}
