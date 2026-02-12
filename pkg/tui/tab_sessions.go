@@ -776,17 +776,6 @@ func (t *SessionsTab) loadPreview() tea.Cmd {
 	}
 }
 
-func (t *SessionsTab) createSession(name string) tea.Cmd {
-	store := t.shared.SessionStore
-	return func() tea.Msg {
-		if store == nil {
-			return sessionCreatedMsg{err: fmt.Errorf("session store unavailable")}
-		}
-		sess, err := store.Create(name)
-		return sessionCreatedMsg{session: sess, err: err}
-	}
-}
-
 func (t *SessionsTab) loadVibespacesForPicker() tea.Cmd {
 	svc := t.shared.Vibespace
 	return func() tea.Msg {

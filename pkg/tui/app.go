@@ -428,31 +428,6 @@ func renderGradientText(s string, stops []lipgloss.Color) string {
 	return b.String()
 }
 
-// renderGradientTabLabel renders a tab label with padding and gradient colors.
-func renderGradientTabLabel(s string, stops []lipgloss.Color) string {
-	return "  " + renderGradientText(s, stops) + "  "
-}
-
-// renderGradientBg renders a string with white bold text on a per-character gradient background.
-func renderGradientBg(s string, stops []lipgloss.Color) string {
-	runes := []rune(s)
-	if len(runes) == 0 {
-		return ""
-	}
-	colors := buildGradient(len(runes), stops)
-
-	var b strings.Builder
-	for i, r := range runes {
-		b.WriteString(lipgloss.NewStyle().
-			Bold(true).
-			Foreground(ui.ColorWhite).
-			Background(colors[i]).
-			Render(string(r)))
-	}
-	return b.String()
-}
-
-
 // renderGradientRow applies a single gradient across all cells of a table row.
 // Each cell gets the gradient slice corresponding to its position in the full row.
 func renderGradientRow(cells []string, stops []lipgloss.Color) []string {
@@ -562,10 +537,6 @@ func (a *App) renderStatusBar() string {
 	text := " " + strings.Join(parts, dimStyle.Render("  |  "))
 
 	return border + "\n" + text
-}
-
-func tabZoneID(idx int) string {
-	return fmt.Sprintf("tab-%d", idx)
 }
 
 // --- Public entry points ---
