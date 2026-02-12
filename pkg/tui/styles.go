@@ -173,7 +173,7 @@ func AgentLabelStyle(color lipgloss.Color) lipgloss.Style {
 // UserLabelWithTarget returns styled user label with target
 func UserLabelWithTarget(target string) string {
 	style := lipgloss.NewStyle().
-		Foreground(userColor).
+		Foreground(ui.Teal).
 		Bold(true)
 	return style.Render("[You → " + target + "]")
 }

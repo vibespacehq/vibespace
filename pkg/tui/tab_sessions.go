@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
-	"github.com/charmbracelet/lipgloss/tree"
 	"github.com/vibespacehq/vibespace/pkg/session"
 	"github.com/vibespacehq/vibespace/pkg/ui"
 )
@@ -39,6 +38,13 @@ type sessionCreatedMsg struct {
 	err     error
 }
 
+// sessionHistoryMsg delivers recent messages for the selected session.
+type sessionHistoryMsg struct {
+	sessionName string
+	messages    []*Message
+	totalCount  int
+}
+
 // SessionsTab manages multi-agent sessions.
 type SessionsTab struct {
 	shared   *SharedState
@@ -47,8 +53,11 @@ type SessionsTab struct {
 	width    int
 	height   int
 	mode     sessionsMode
-	nameInput textinput.Model
-	err      string // transient error message
+	nameInput       textinput.Model
+	err             string     // transient error message
+	previewName     string     // session name for cached preview messages
+	previewMsgs     []*Message // last N messages for selected session
+	previewTotal    int        // total message count for selected session
 }
 
 func NewSessionsTab(shared *SharedState) *SessionsTab {
@@ -105,6 +114,14 @@ func (t *SessionsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.sessions = msg.sessions
 		t.clampSelected()
 		t.err = ""
+		return t, t.loadPreview()
+
+	case sessionHistoryMsg:
+		if t.selected < len(t.sessions) && t.sessions[t.selected].Name == msg.sessionName {
+			t.previewName = msg.sessionName
+			t.previewMsgs = msg.messages
+			t.previewTotal = msg.totalCount
+		}
 		return t, nil
 
 	case sessionDeletedMsg:
@@ -178,17 +195,33 @@ func (t *SessionsTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "j", "down":
 			if len(t.sessions) > 0 {
+				prev := t.selected
 				t.selected = min(t.selected+1, len(t.sessions)-1)
+				if t.selected != prev {
+					return t, t.loadPreview()
+				}
 			}
 		case "k", "up":
 			if len(t.sessions) > 0 {
+				prev := t.selected
 				t.selected = max(t.selected-1, 0)
+				if t.selected != prev {
+					return t, t.loadPreview()
+				}
 			}
 		case "g":
+			prev := t.selected
 			t.selected = 0
+			if t.selected != prev {
+				return t, t.loadPreview()
+			}
 		case "G":
 			if len(t.sessions) > 0 {
+				prev := t.selected
 				t.selected = len(t.sessions) - 1
+				if t.selected != prev {
+					return t, t.loadPreview()
+				}
 			}
 		case "enter":
 			if t.selected < len(t.sessions) {
@@ -225,30 +258,44 @@ func (t *SessionsTab) View() string {
 		return t.viewEmpty()
 	}
 
-	var sections []string
+	var top []string
 
 	// Table (skip when no sessions exist, e.g. new-session form on empty state)
 	if len(t.sessions) > 0 {
-		sections = append(sections, t.viewTable())
+		top = append(top, t.viewTable())
 	}
 
 	// Inline prompt (delete confirmation or new session form)
 	if prompt := t.viewPrompt(); prompt != "" {
-		sections = append(sections, prompt)
+		top = append(top, prompt)
 	}
 
 	// Error line
 	if t.err != "" {
 		errStyle := lipgloss.NewStyle().Foreground(ui.ColorError).Padding(0, 2)
-		sections = append(sections, errStyle.Render(t.err))
+		top = append(top, errStyle.Render(t.err))
 	}
 
-	// Detail tree for selected session
+	topBlock := strings.Join(top, "\n")
+
+	// Detail pushed to bottom
+	var bottom string
 	if t.mode == sessionsModeList && t.selected < len(t.sessions) {
-		sections = append(sections, t.viewDetail())
+		bottom = t.viewDetail()
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	if bottom == "" {
+		return topBlock
+	}
+
+	topH := lipgloss.Height(topBlock)
+	bottomH := lipgloss.Height(bottom)
+	gap := t.height - topH - bottomH
+	if gap < 1 {
+		gap = 1
+	}
+
+	return topBlock + strings.Repeat("\n", gap) + bottom
 }
 
 // --- View helpers ---
@@ -270,19 +317,29 @@ func (t *SessionsTab) viewEmpty() string {
 func (t *SessionsTab) viewTable() string {
 	rows := make([][]string, len(t.sessions))
 	for i, sess := range t.sessions {
-		rows[i] = []string{
-			sess.Name,
-			sessVibespaceNames(sess),
-			sessAgentCount(sess),
-			timeAgo(sess.LastUsed),
+		name := "  " + sess.Name
+		vs := sessVibespaceNames(sess)
+		agents := sessAgentCount(sess)
+		lastUsed := timeAgo(sess.LastUsed)
+
+		if i == t.selected {
+			cells := []string{"› " + sess.Name, vs, agents, lastUsed}
+			colored := renderGradientRow(cells, brandGradient)
+			rows[i] = colored
+		} else {
+			rows[i] = []string{name, vs, agents, lastUsed}
 		}
 	}
 
 	sel := t.selected
 	tbl := table.New().
-		Headers("SESSION", "VIBESPACES", "AGENTS", "LAST USED").
+		Headers("Session", "Vibespaces", "Agents", "Last Used").
 		Rows(rows...).
 		Border(lipgloss.NormalBorder()).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
 		BorderStyle(lipgloss.NewStyle().Foreground(ui.ColorMuted)).
 		Width(t.width - 4).
 		StyleFunc(func(row, col int) lipgloss.Style {
@@ -291,51 +348,112 @@ func (t *SessionsTab) viewTable() string {
 				return s.Bold(true).Foreground(ui.ColorDim)
 			}
 			if row == sel {
-				return s.Foreground(ui.Teal)
+				return s
 			}
-			return s.Foreground(ui.ColorWhite)
+			return s.Foreground(ui.ColorDim)
 		})
 
-	return lipgloss.NewStyle().Padding(1, 2, 0, 2).Render(tbl.Render())
+	noun := "sessions"
+	if len(t.sessions) == 1 {
+		noun = "session"
+	}
+	countText := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(fmt.Sprintf("(%d %s)", len(t.sessions), noun))
+	count := lipgloss.NewStyle().Width(t.width - 4).Align(lipgloss.Right).
+		PaddingTop(1).Render(countText)
+
+	return lipgloss.NewStyle().Padding(1, 2).Render(tbl.Render() + "\n" + count)
 }
 
 func (t *SessionsTab) viewDetail() string {
 	sess := t.sessions[t.selected]
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	labelStyle := lipgloss.NewStyle().Foreground(ui.ColorMuted)
 
-	header := lipgloss.NewStyle().Bold(true).Foreground(ui.Teal).
-		Render(fmt.Sprintf("Session: %s", sess.Name))
+	// --- Metadata section ---
+	var meta []string
 
-	created := lipgloss.NewStyle().Foreground(ui.ColorDim).
-		Render(fmt.Sprintf("Created    %s", sess.CreatedAt.Format("2006-01-02 15:04:05")))
+	created := fmt.Sprintf("%s  %s",
+		labelStyle.Render("Created"),
+		dimStyle.Render(sess.CreatedAt.Format("2006-01-02 15:04:05")))
+	meta = append(meta, created)
 
-	detail := header + "\n" + created
-
-	if len(sess.Vibespaces) > 0 {
-		tr := tree.Root("Vibespaces").
-			Enumerator(tree.RoundedEnumerator).
-			RootStyle(lipgloss.NewStyle().Foreground(ui.ColorWhite)).
-			EnumeratorStyle(lipgloss.NewStyle().Foreground(ui.ColorDim))
-
-		for _, vs := range sess.Vibespaces {
-			vsNode := tree.Root(vs.Name).
-				Enumerator(tree.RoundedEnumerator).
-				RootStyle(lipgloss.NewStyle().Foreground(ui.Teal)).
-				EnumeratorStyle(lipgloss.NewStyle().Foreground(ui.ColorDim)).
-				ItemStyle(lipgloss.NewStyle().Foreground(ui.ColorDim))
-
-			if len(vs.Agents) == 0 {
-				vsNode.Child("(all agents)")
-			} else {
-				for _, agent := range vs.Agents {
-					vsNode.Child(agent)
-				}
-			}
-			tr.Child(vsNode)
-		}
-		detail += "\n" + tr.String()
+	if t.previewName == sess.Name {
+		msgCount := fmt.Sprintf("%s  %s",
+			labelStyle.Render("Messages"),
+			dimStyle.Render(fmt.Sprintf("%d", t.previewTotal)))
+		meta = append(meta, msgCount)
 	}
 
-	return lipgloss.NewStyle().Padding(1, 2).Render(detail)
+	metaHeader := lipgloss.NewStyle().Italic(true).Foreground(ui.ColorMuted).
+		Render("Details")
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+	metaBlock := metaHeader + "\n" + mutedLine + "\n" + strings.Join(meta, "\n") + "\n" + mutedLine
+
+	// --- Messages section ---
+	var msgBlock string
+	if t.previewName == sess.Name && len(t.previewMsgs) > 0 {
+		header := lipgloss.NewStyle().Italic(true).Foreground(ui.ColorMuted).
+			Render("Latest Messages")
+
+		contentStyle := dimStyle
+		toolStyle := lipgloss.NewStyle().Foreground(ui.Orange)
+		youStyle := lipgloss.NewStyle().Bold(true).Foreground(ui.Teal)
+
+		// Assign colors to unique agent senders
+		agentColorMap := make(map[string]lipgloss.Color)
+		agentIdx := 0
+		for _, msg := range t.previewMsgs {
+			if msg.Type != MessageTypeUser && msg.Sender != "" {
+				if _, ok := agentColorMap[msg.Sender]; !ok {
+					agentColorMap[msg.Sender] = ui.GetAgentColor(agentIdx)
+					agentIdx++
+				}
+			}
+		}
+
+		var lines []string
+		for _, msg := range t.previewMsgs {
+			ts := msg.Timestamp.Format("15:04")
+			tsStr := lipgloss.NewStyle().Foreground(ui.ColorTimestamp).Render(ts)
+			agentStyle := lipgloss.NewStyle().Bold(true).Foreground(agentColorMap[msg.Sender])
+
+			switch msg.Type {
+			case MessageTypeUser:
+				lines = append(lines, fmt.Sprintf("%s %s %s",
+					tsStr,
+					youStyle.Render("You →"),
+					contentStyle.Render(truncate(msg.Content, 60))))
+			case MessageTypeAssistant:
+				lines = append(lines, fmt.Sprintf("%s %s %s",
+					tsStr,
+					agentStyle.Render(msg.Sender),
+					contentStyle.Render(truncate(msg.Content, 60))))
+			case MessageTypeToolUse:
+				lines = append(lines, fmt.Sprintf("%s %s %s",
+					tsStr,
+					agentStyle.Render(msg.Sender),
+					toolStyle.Render(fmt.Sprintf("[%s] %s", msg.ToolName, truncate(msg.ToolInput, 40)))))
+			}
+		}
+		mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+			Render(strings.Repeat("─", t.width-4))
+		msgBlock = header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
+	} else if t.previewName == sess.Name {
+		msgBlock = lipgloss.NewStyle().Italic(true).Foreground(ui.ColorMuted).
+			Render("No messages yet.")
+	}
+
+	// Assemble with vertical spacing
+	var sections []string
+	sections = append(sections, metaBlock)
+	if msgBlock != "" {
+		sections = append(sections, msgBlock)
+	}
+
+	return lipgloss.NewStyle().Padding(0, 2).Render(
+		strings.Join(sections, "\n\n"))
 }
 
 func (t *SessionsTab) viewPrompt() string {
@@ -377,6 +495,33 @@ func (t *SessionsTab) deleteSession(name string) tea.Cmd {
 			return sessionDeletedMsg{err: fmt.Errorf("session store unavailable")}
 		}
 		return sessionDeletedMsg{err: store.Delete(name)}
+	}
+}
+
+func (t *SessionsTab) loadPreview() tea.Cmd {
+	if t.selected >= len(t.sessions) {
+		return nil
+	}
+	name := t.sessions[t.selected].Name
+	hs := t.shared.HistoryStore
+	return func() tea.Msg {
+		if hs == nil {
+			return sessionHistoryMsg{sessionName: name}
+		}
+		allMsgs, _ := hs.Load(name)
+		totalCount := len(allMsgs)
+
+		// Take last 5 user/assistant/tool messages
+		var filtered []*Message
+		for _, m := range allMsgs {
+			if m.Type == MessageTypeUser || m.Type == MessageTypeAssistant || m.Type == MessageTypeToolUse {
+				filtered = append(filtered, m)
+			}
+		}
+		if len(filtered) > 5 {
+			filtered = filtered[len(filtered)-5:]
+		}
+		return sessionHistoryMsg{sessionName: name, messages: filtered, totalCount: totalCount}
 	}
 }
 
@@ -424,6 +569,18 @@ func sessAgentCount(sess session.Session) string {
 		return "-"
 	}
 	return fmt.Sprintf("%d", len(seen))
+}
+
+func truncate(s string, maxLen int) string {
+	// Truncate to first line, then to maxLen
+	if idx := strings.IndexByte(s, '\n'); idx >= 0 {
+		s = s[:idx]
+	}
+	runes := []rune(s)
+	if len(runes) > maxLen {
+		return string(runes[:maxLen-1]) + "…"
+	}
+	return s
 }
 
 func timeAgo(t time.Time) string {
