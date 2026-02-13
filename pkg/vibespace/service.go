@@ -666,6 +666,11 @@ func deploymentStatusToVibespaceStatus(deploy *appsv1.Deployment) string {
 		return "creating"
 	}
 
+	// Spec says replicas desired but status hasn't caught up yet (e.g. just created)
+	if deploy.Spec.Replicas != nil && *deploy.Spec.Replicas > 0 && deploy.Status.ReadyReplicas == 0 {
+		return "creating"
+	}
+
 	return "stopped"
 }
 
