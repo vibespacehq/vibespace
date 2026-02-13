@@ -229,6 +229,34 @@ Examples:
 		}
 	}
 
+	// Validate tools against supported tools for the agent type (when type is explicit)
+	if agentType != "" && (allowedTools != "" || disallowedTools != "") {
+		impl, implErr := agent.Get(agentType)
+		if implErr == nil {
+			supported := impl.SupportedTools()
+			supportedSet := make(map[string]bool, len(supported))
+			for _, t := range supported {
+				supportedSet[t] = true
+			}
+			if allowedTools != "" {
+				for _, tool := range strings.Split(allowedTools, ",") {
+					tool = strings.TrimSpace(tool)
+					if !supportedSet[tool] {
+						return fmt.Errorf("invalid allowed tool '%s' for %s (valid: %s)", tool, agentType, strings.Join(supported, ", "))
+					}
+				}
+			}
+			if disallowedTools != "" {
+				for _, tool := range strings.Split(disallowedTools, ",") {
+					tool = strings.TrimSpace(tool)
+					if !supportedSet[tool] {
+						return fmt.Errorf("invalid disallowed tool '%s' for %s (valid: %s)", tool, agentType, strings.Join(supported, ", "))
+					}
+				}
+			}
+		}
+	}
+
 	slog.Info("agent create command started", "vibespace", vibespace, "name", customName, "agent_type", agentType, "share_credentials", shareCredentials)
 
 	svc, err := getVibespaceServiceWithCheck()
@@ -305,6 +333,18 @@ Examples:
 		}
 		if len(agentConfig.AllowedTools) > 0 {
 			fmt.Printf("  Allowed tools: %s\n", strings.Join(agentConfig.AllowedTools, ","))
+			// Show excluded tools (supported but not in allowed list)
+			if resolvedType := agentType; resolvedType != "" {
+				if impl, err := agent.Get(resolvedType); err == nil {
+					excluded := excludedToolsFromAllowed(impl.SupportedTools(), agentConfig.AllowedTools)
+					if len(excluded) > 0 {
+						fmt.Printf("  Excluded tools: %s\n", strings.Join(excluded, ","))
+					}
+				}
+			}
+		}
+		if len(agentConfig.DisallowedTools) > 0 {
+			fmt.Printf("  Disallowed tools: %s\n", strings.Join(agentConfig.DisallowedTools, ","))
 		}
 		if agentConfig.Model != "" {
 			fmt.Printf("  Model: %s\n", agentConfig.Model)
@@ -559,4 +599,24 @@ Examples:
 	}
 
 	return nil
+}
+
+// excludedToolsFromAllowed returns tools from supported that are not in the allowed list.
+func excludedToolsFromAllowed(supported, allowed []string) []string {
+	allowedBase := make(map[string]bool, len(allowed))
+	for _, t := range allowed {
+		// Strip tool params like "Bash(read_only:true)" → "Bash"
+		base := t
+		if idx := strings.Index(t, "("); idx >= 0 {
+			base = t[:idx]
+		}
+		allowedBase[base] = true
+	}
+	var excluded []string
+	for _, t := range supported {
+		if !allowedBase[t] {
+			excluded = append(excluded, t)
+		}
+	}
+	return excluded
 }

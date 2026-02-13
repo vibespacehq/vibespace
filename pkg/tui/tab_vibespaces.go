@@ -165,9 +165,15 @@ const (
 type addAgentFormField int
 
 const (
-	addAgentFieldType  addAgentFormField = iota // selector (j/k)
-	addAgentFieldName                           // text input, optional
-	addAgentFieldCount                          // sentinel
+	addAgentFieldType            addAgentFormField = iota // selector (j/k)
+	addAgentFieldName                                     // text input, optional
+	addAgentFieldModel                                    // text input, optional
+	addAgentFieldMaxTurns                                 // text input, optional
+	addAgentFieldShareCreds                               // toggle (j/k)
+	addAgentFieldSkipPerms                                // toggle (j/k)
+	addAgentFieldAllowedTools                             // multi-select (j/k navigate, space toggle)
+	addAgentFieldDisallowedTools                          // multi-select (j/k navigate, space toggle)
+	addAgentFieldCount                                    // sentinel
 )
 
 // VibespacesTab displays the vibespace list with inline expansion.
@@ -212,9 +218,17 @@ type VibespacesTab struct {
 	deleteInput string
 
 	// Add agent form state (agent view)
-	addAgentField addAgentFormField
-	addAgentType  agent.Type
-	addAgentName  string
+	addAgentField           addAgentFormField
+	addAgentType            agent.Type
+	addAgentName            string
+	addAgentModel           string
+	addAgentMaxTurns        string
+	addAgentShareCreds      bool
+	addAgentSkipPerms       bool
+	addAgentToolsList       []string        // available tools for current agent type
+	addAgentAllowedSet      map[string]bool // selected allowed tools
+	addAgentDisallowedSet   map[string]bool // selected disallowed tools
+	addAgentToolsCursor     int             // cursor within tools list for multi-select
 }
 
 func NewVibespacesTab(shared *SharedState) *VibespacesTab {
@@ -525,6 +539,14 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				t.addAgentField = addAgentFieldType
 				t.addAgentType = agent.TypeClaudeCode
 				t.addAgentName = ""
+				t.addAgentModel = ""
+				t.addAgentMaxTurns = ""
+				t.addAgentShareCreds = false
+				t.addAgentSkipPerms = false
+				t.addAgentToolsList = agentSupportedTools(agent.TypeClaudeCode)
+				t.addAgentAllowedSet = make(map[string]bool)
+				t.addAgentDisallowedSet = make(map[string]bool)
+				t.addAgentToolsCursor = 0
 				t.err = ""
 				return t, nil
 			}
@@ -1052,8 +1074,15 @@ func (t *VibespacesTab) viewAgentDetail() string {
 			dimStyle.Render(allowedStr)))
 
 		disallowedStr := "-"
-		if !isCodex && len(cfg.DisallowedTools) > 0 {
-			disallowedStr = strings.Join(cfg.DisallowedTools, ", ")
+		if !isCodex {
+			if len(cfg.DisallowedTools) > 0 {
+				disallowedStr = strings.Join(cfg.DisallowedTools, ", ")
+			} else if len(cfg.AllowedTools) > 0 {
+				excluded := excludedTools(ag.AgentType, cfg.AllowedTools)
+				if len(excluded) > 0 {
+					disallowedStr = strings.Join(excluded, ", ") + " (excluded)"
+				}
+			}
 		}
 		cfgLines = append(cfgLines, fmt.Sprintf("%s  %s",
 			labelStyle.Render("disallowed_tools"),
@@ -2009,30 +2038,102 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if t.addAgentField >= addAgentFieldCount {
 			return t, t.submitAddAgent()
 		}
-		return t, nil
-
-	case k == "backspace":
-		if t.addAgentField == addAgentFieldName && len(t.addAgentName) > 0 {
-			t.addAgentName = t.addAgentName[:len(t.addAgentName)-1]
+		// Reset tools cursor when entering a multi-select field
+		if t.addAgentField == addAgentFieldAllowedTools || t.addAgentField == addAgentFieldDisallowedTools {
+			t.addAgentToolsCursor = 0
 		}
 		return t, nil
 
+	case k == "backspace":
+		t.addAgentBackspace()
+		return t, nil
+
 	default:
-		if t.addAgentField == addAgentFieldType {
+		// Selector fields: j/k to toggle value
+		switch t.addAgentField {
+		case addAgentFieldType:
 			if k == "j" || k == "k" {
 				if t.addAgentType == agent.TypeClaudeCode {
 					t.addAgentType = agent.TypeCodex
 				} else {
 					t.addAgentType = agent.TypeClaudeCode
 				}
+				// Refresh tools list for the new agent type and reset selections
+				t.addAgentToolsList = agentSupportedTools(t.addAgentType)
+				t.addAgentAllowedSet = make(map[string]bool)
+				t.addAgentDisallowedSet = make(map[string]bool)
+				t.addAgentToolsCursor = 0
 			}
 			return t, nil
+		case addAgentFieldShareCreds:
+			if k == "j" || k == "k" {
+				t.addAgentShareCreds = !t.addAgentShareCreds
+			}
+			return t, nil
+		case addAgentFieldSkipPerms:
+			if k == "j" || k == "k" {
+				t.addAgentSkipPerms = !t.addAgentSkipPerms
+			}
+			return t, nil
+
+		// Multi-select fields: j/k navigate, space toggles
+		case addAgentFieldAllowedTools:
+			return t, t.handleToolsMultiSelect(k, t.addAgentAllowedSet)
+		case addAgentFieldDisallowedTools:
+			return t, t.handleToolsMultiSelect(k, t.addAgentDisallowedSet)
 		}
 
-		if len(k) == 1 && t.addAgentField == addAgentFieldName {
-			t.addAgentName += k
+		// Text fields
+		if len(k) == 1 {
+			switch t.addAgentField {
+			case addAgentFieldName:
+				t.addAgentName += k
+			case addAgentFieldModel:
+				t.addAgentModel += k
+			case addAgentFieldMaxTurns:
+				t.addAgentMaxTurns += k
+			}
 		}
 		return t, nil
+	}
+}
+
+// handleToolsMultiSelect handles j/k navigation and space toggle for tool multi-select fields.
+func (t *VibespacesTab) handleToolsMultiSelect(k string, set map[string]bool) tea.Cmd {
+	n := len(t.addAgentToolsList)
+	if n == 0 {
+		return nil
+	}
+	switch k {
+	case "j", "down":
+		t.addAgentToolsCursor = min(t.addAgentToolsCursor+1, n-1)
+	case "k", "up":
+		t.addAgentToolsCursor = max(t.addAgentToolsCursor-1, 0)
+	case " ":
+		tool := t.addAgentToolsList[t.addAgentToolsCursor]
+		if set[tool] {
+			delete(set, tool)
+		} else {
+			set[tool] = true
+		}
+	}
+	return nil
+}
+
+func (t *VibespacesTab) addAgentBackspace() {
+	switch t.addAgentField {
+	case addAgentFieldName:
+		if len(t.addAgentName) > 0 {
+			t.addAgentName = t.addAgentName[:len(t.addAgentName)-1]
+		}
+	case addAgentFieldModel:
+		if len(t.addAgentModel) > 0 {
+			t.addAgentModel = t.addAgentModel[:len(t.addAgentModel)-1]
+		}
+	case addAgentFieldMaxTurns:
+		if len(t.addAgentMaxTurns) > 0 {
+			t.addAgentMaxTurns = t.addAgentMaxTurns[:len(t.addAgentMaxTurns)-1]
+		}
 	}
 }
 
@@ -2122,31 +2223,100 @@ func (t *VibespacesTab) viewAddAgentForm() string {
 	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
 		Render("Add agent")
 
-	var lines []string
-
-	// Agent type field
-	typeLabel := fmt.Sprintf("%-12s", "Agent type")
-	if t.addAgentField == addAgentFieldType {
-		val := activeStyle.Render("["+string(t.addAgentType)+"]") + "  " + dimStyle.Render("j/k to change")
-		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(typeLabel), val))
-	} else {
-		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(typeLabel), dimStyle.Render(string(t.addAgentType))))
+	boolStr := func(v bool) string {
+		if v {
+			return "yes"
+		}
+		return "no"
 	}
 
-	// Name field
-	nameLabel := fmt.Sprintf("%-12s", "Name")
-	if t.addAgentField == addAgentFieldName {
-		val := activeStyle.Render(t.addAgentName + "█")
-		if t.addAgentName == "" {
-			val += "  " + dimStyle.Render("optional, auto-generated if empty")
+	// Collect selected tools as comma-separated summary
+	selectedTools := func(set map[string]bool) string {
+		if len(set) == 0 {
+			return ""
 		}
-		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(nameLabel), val))
-	} else {
-		nameVal := t.addAgentName
-		if nameVal == "" {
-			nameVal = "(auto)"
+		var names []string
+		for _, tool := range t.addAgentToolsList {
+			if set[tool] {
+				names = append(names, tool)
+			}
 		}
-		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(nameLabel), dimStyle.Render(nameVal)))
+		return strings.Join(names, ", ")
+	}
+
+	type formEntry struct {
+		label       string
+		field       addAgentFormField
+		value       string
+		hint        string
+		isSelect    bool        // j/k toggle (single value)
+		isMulti     bool        // multi-select (j/k + space)
+		multiSet    map[string]bool
+		isEmpty     func() bool
+		emptyVal    string
+	}
+
+	allowedSummary := selectedTools(t.addAgentAllowedSet)
+	disallowedSummary := selectedTools(t.addAgentDisallowedSet)
+
+	entries := []formEntry{
+		{"Agent type", addAgentFieldType, string(t.addAgentType), "j/k to change", true, false, nil, nil, ""},
+		{"Name", addAgentFieldName, t.addAgentName, "optional, auto-generated if empty", false, false, nil,
+			func() bool { return t.addAgentName == "" }, "(auto)"},
+		{"Model", addAgentFieldModel, t.addAgentModel, "e.g. opus, sonnet", false, false, nil,
+			func() bool { return t.addAgentModel == "" }, "(default)"},
+		{"Max turns", addAgentFieldMaxTurns, t.addAgentMaxTurns, "0 = unlimited", false, false, nil,
+			func() bool { return t.addAgentMaxTurns == "" }, "(unlimited)"},
+		{"Share creds", addAgentFieldShareCreds, boolStr(t.addAgentShareCreds), "j/k to toggle", true, false, nil, nil, ""},
+		{"Skip perms", addAgentFieldSkipPerms, boolStr(t.addAgentSkipPerms), "j/k to toggle", true, false, nil, nil, ""},
+		{"Allowed tools", addAgentFieldAllowedTools, allowedSummary, "j/k navigate, space toggle", false, true, t.addAgentAllowedSet,
+			func() bool { return len(t.addAgentAllowedSet) == 0 }, "(default)"},
+		{"Disallow tools", addAgentFieldDisallowedTools, disallowedSummary, "j/k navigate, space toggle", false, true, t.addAgentDisallowedSet,
+			func() bool { return len(t.addAgentDisallowedSet) == 0 }, "(none)"},
+	}
+
+	var lines []string
+	for _, e := range entries {
+		label := fmt.Sprintf("%-15s", e.label)
+		isActive := e.field == t.addAgentField
+
+		if isActive && e.isMulti {
+			// Render inline multi-select: label + hint, then tool checkboxes
+			lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(label), dimStyle.Render(e.hint)))
+			for i, tool := range t.addAgentToolsList {
+				check := "[ ]"
+				if e.multiSet[tool] {
+					check = "[x]"
+				}
+				prefix := "    "
+				if i == t.addAgentToolsCursor {
+					lines = append(lines, prefix+activeStyle.Render(check+" "+tool))
+				} else {
+					lines = append(lines, prefix+dimStyle.Render(check+" "+tool))
+				}
+			}
+			continue
+		}
+
+		var val string
+		if isActive {
+			if e.isSelect {
+				val = activeStyle.Render("["+e.value+"]") + "  " + dimStyle.Render(e.hint)
+			} else {
+				val = activeStyle.Render(e.value + "█")
+				if e.isEmpty != nil && e.isEmpty() {
+					val += "  " + dimStyle.Render(e.hint)
+				}
+			}
+		} else {
+			display := e.value
+			if e.isEmpty != nil && e.isEmpty() {
+				display = e.emptyVal
+			}
+			val = dimStyle.Render(display)
+		}
+
+		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(label), val))
 	}
 
 	if t.err != "" {
@@ -2233,6 +2403,21 @@ func (t *VibespacesTab) submitAddAgent() tea.Cmd {
 	vsName := t.selectedVS.Name
 	agentType := t.addAgentType
 	agentName := t.addAgentName
+	shareCreds := t.addAgentShareCreds
+	skipPerms := t.addAgentSkipPerms
+	modelName := t.addAgentModel
+	maxTurnsStr := t.addAgentMaxTurns
+
+	// Collect selected tools preserving order from the tools list
+	var allowedTools, disallowedTools []string
+	for _, tool := range t.addAgentToolsList {
+		if t.addAgentAllowedSet[tool] {
+			allowedTools = append(allowedTools, tool)
+		}
+		if t.addAgentDisallowedSet[tool] {
+			disallowedTools = append(disallowedTools, tool)
+		}
+	}
 
 	return func() tea.Msg {
 		if svc == nil {
@@ -2242,8 +2427,22 @@ func (t *VibespacesTab) submitAddAgent() tea.Cmd {
 		defer cancel()
 
 		opts := &vibespace.SpawnAgentOptions{
-			Name:      agentName,
-			AgentType: agentType,
+			Name:             agentName,
+			AgentType:        agentType,
+			ShareCredentials: shareCreds,
+		}
+
+		// Build agent config if any config flags are set
+		maxTurns, _ := strconv.Atoi(maxTurnsStr)
+		if skipPerms || len(allowedTools) > 0 || len(disallowedTools) > 0 || modelName != "" || maxTurns > 0 {
+			cfg := &agent.Config{
+				SkipPermissions: skipPerms,
+				Model:           modelName,
+				MaxTurns:        maxTurns,
+				AllowedTools:    allowedTools,
+				DisallowedTools: disallowedTools,
+			}
+			opts.Config = cfg
 		}
 
 		_, err := svc.SpawnAgent(ctx, vsName, opts)
@@ -2261,6 +2460,36 @@ func (t *VibespacesTab) scheduleRefreshIfNeeded() tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// agentSupportedTools returns the supported tools list for a given agent type.
+func agentSupportedTools(agentType agent.Type) []string {
+	impl, err := agent.Get(agentType)
+	if err != nil {
+		return nil
+	}
+	return impl.SupportedTools()
+}
+
+// excludedTools returns tools from SupportedTools that are not in the allowed list.
+// Handles parameterized tools like "Bash(read_only:true)" by comparing base names.
+func excludedTools(agentType agent.Type, allowed []string) []string {
+	supported := agentSupportedTools(agentType)
+	allowedBase := make(map[string]bool, len(allowed))
+	for _, t := range allowed {
+		base := t
+		if idx := strings.Index(t, "("); idx >= 0 {
+			base = t[:idx]
+		}
+		allowedBase[base] = true
+	}
+	var excluded []string
+	for _, t := range supported {
+		if !allowedBase[t] {
+			excluded = append(excluded, t)
+		}
+	}
+	return excluded
 }
 
 // --- Helpers ---
