@@ -128,109 +128,140 @@ Pressing Enter on a vibespace row navigates into a full-screen agent view for th
 vibespace, completely replacing the table. This is stack navigation — `Esc` or
 `Backspace` returns to the vibespace list.
 
+The agent view has two sections: a top agent table (Name, Type, Model, Status) and a
+bottom detail panel that dynamically updates per the selected agent. `j`/`k` moves the
+cursor between agents.
+
 ```
  │  ← myproject                                          running │
  │ ────────────────────────────────────────────────────────────── │
  │                                                               │
- │  myproject                                                    │
- │  ├── claude-1   claude-code  running  model=sonnet  skip=true │
- │  ├── claude-2   claude-code  running  model=opus    skip=false│
- │  └── codex-1    codex        running  model=default           │
+ │  Name       Type         Model    Status                      │
+ │ ─────────────────────────────────────────                     │
+ │ › claude-1  claude-code  sonnet   running                     │
+ │   claude-2  claude-code  opus     running                     │
+ │   codex-1   codex        default  running                     │
  │                                                               │
- │  Resources   CPU 750m (limit 1000m)  Mem 1.5Gi (limit 2Gi)   │
- │  Storage     10Gi (PVC)                                       │
- │  Mounts      ~/code → /workspace (rw)                         │
- │  Forwards    :52341→:22 [ssh]  :3000→:3000                    │
- │  Image       ghcr.io/vibespacehq/vibespace/claude-code:latest │
  │                                                               │
- │  Recent Logs                                                  │
- │  ──────────────────────────────────────────────────────────── │
- │  2026-02-12 16:23:25 INFO spawned: 'sshd' with pid 28        │
- │  2026-02-12 16:23:25 INFO spawned: 'ttyd' with pid 29        │
- │  ...                                                          │
+ │ Details                                                       │
+ │ ─────────────────────────────────────────                     │
+ │ Resources  CPU 750m (limit 1000m)  Mem 1.5Gi (limit 2Gi)     │
+ │ Storage    10Gi (PVC)                                         │
+ │ Mounts     ~/code → /workspace (rw)                           │
+ │ Image      ghcr.io/vibespacehq/vibespace/claude-code:latest   │
+ │                                                               │
+ │ Configuration                                                 │
+ │ ─────────────────────────────────────────                     │
+ │ type              claude-code                                 │
+ │ skip_permissions  true                                        │
+ │ allowed_tools     all                                         │
+ │ model             sonnet                                      │
+ │                                                               │
+ │ Forwards                                                      │
+ │ ─────────────────────────────────────────                     │
+ │ :22    → :52341  ssh     active                               │
+ │ :7681  → :7682   ttyd    active                               │
 ```
 
-The agent tree is rendered with `lipgloss/tree`:
+The agent table is rendered with `lipgloss/table`. The selected agent row uses the
+brand gradient (teal→pink). The detail panel shows per-agent resources, configuration
+(matching CLI `config show` output), image (resolved per agent type), and forwards
+(filtered to the selected agent).
 
-```go
-t := tree.Root("myproject").
-    Child("claude-1   claude-code  running  model=sonnet  skip=true").
-    Child("claude-2   claude-code  running  model=opus    skip=false").
-    Child("codex-1    codex        running  model=default").
-    Enumerator(tree.RoundedEnumerator).
-    RootStyle(rootStyle).
-    ItemStyle(itemStyle)
+Pressing `Enter` on an agent navigates deeper into a session list view (§4.3).
+
+### 4.3 Session List (Enter on an agent)
+
+Pressing Enter on an agent in the agent view navigates into the agent's session list.
+This is the third level of stack navigation:
+
+```
+Vibespace list → Enter → Agent view → Enter → Session list → Enter → Resume
+                  Esc ←               Esc ←                   Esc ←
 ```
 
-Use `j`/`k` to move the cursor between agents. Press `x` to connect, `e` to edit
-config, `a` to add agent, `b` for browser (actions implemented in phase 3c/3d).
+Sessions are loaded by SSHing into the agent's pod and reading the agent's session
+history file (e.g., `~/.claude/history.jsonl` for claude-code, `~/.codex/sessions/`
+for codex). The TUI ensures the daemon and SSH forward are active before loading.
 
-### 4.3 Connect (SSH into Vibespace/Agent)
-
-Two connect modes, both accessible from the Vibespaces tab:
-
-**Shell connect (`x` on a vibespace row, collapsed):** Opens a raw SSH shell into the
-vibespace container itself. No agent — just a terminal. Uses `tea.ExecProcess` to
-suspend the TUI and run SSH as a child process. When the SSH session exits, the TUI
-resumes exactly where it was.
-
-**Agent connect (`x` on an agent row, expanded):** SSH into the specific agent container
-and launches its interactive CLI (claude-code or codex). This is a direct connection —
-the agent's own interface, not the multi-agent chat.
-
-Both use the same mechanism under the hood:
-
-```go
-// Shell connect (no agent) — raw terminal
-cmd := connectViaSSH(localPort, "")
-return tea.ExecProcess(cmd, func(err error) tea.Msg {
-    return connectFinishedMsg{err: err}
-})
-
-// Agent connect — launches agent CLI in container
-cmd := connectViaSSH(localPort, agentRemoteCommand)
-return tea.ExecProcess(cmd, func(err error) tea.Msg {
-    return connectFinishedMsg{err: err}
-})
+```
+ │  ← claude-1 sessions                                         │
+ │ ────────────────────────────────────────────────────────────── │
+ │                                                               │
+ │  ID        Last Active  Turns  Title                          │
+ │ ─────────────────────────────────────────────────────────     │
+ │ › b59c819e  4m ago      19     fix authentication bug         │
+ │   a1929abc  12h ago     1      Phase 3b implementation        │
+ │   47ecb32d  12h ago     17     refactor TUI components        │
+ │   9cb54fe8  1d ago      5      update test coverage           │
+ │                                                               │
 ```
 
-Before connecting, the TUI ensures the daemon is running and an SSH forward exists
-for the target. If no forward is active, it starts one automatically.
+Pressing Enter on a session resumes it via `tea.ExecProcess` — the TUI suspends and
+the agent's CLI opens with the session resumed (e.g., `claude --resume <id>` for
+claude-code, `codex resume <id>` for codex). When the agent exits, the TUI resumes
+and refreshes the session list.
 
-**Browser mode (`b`):** Same as `x` but opens the connection in the system browser
-via ttyd (equivalent to `vibespace connect --browser`). Instead of `tea.ExecProcess`,
-this launches ttyd on a local port and opens the URL. The TUI stays running — no
-suspend needed. A status line shows "Browser session active on :7681" while it's open.
+**Data flow:**
+1. Ensure daemon running + SSH forward for the agent
+2. `ssh ... "cat ~/.claude/history.jsonl 2>/dev/null || true"` (captures stdout)
+3. Parse JSONL output in Go — group by sessionId, filter by project `/vibespace`
+4. Display in table sorted by last activity
+5. On Enter: build `ssh ... -t "bash -l -c 'cd /vibespace && claude --resume <id>'"`,
+   return `tea.ExecProcess`
 
-```go
-// Browser connect — start ttyd, open browser
-url, cleanup := startTtydSession(localPort, agentName)
-exec.Command("open", url).Start()  // macOS
-return browserSessionStartedMsg{url: url, cleanup: cleanup}
-```
+**Two-step process execution:** The session resume uses a two-step pattern because
+`tea.ExecProcess` must be returned from `Update()`, not from inside a `tea.Cmd`
+goroutine. Step 1: async command ensures SSH forward and returns a `vsConnectReadyMsg`
+with the port. Step 2: `Update` handles the message and returns `tea.ExecProcess`.
 
-**Connect vs /focus:** These are different. `x` (connect) suspends the TUI for a
-direct 1:1 SSH session. `/focus` (from the Chat tab) launches the agent CLI inside
-tmux for detach/reattach within the multi-agent chat context.
+### 4.3.1 Shell and Browser Connect
+
+In addition to session-based connect, direct connect modes are available:
+
+**Shell connect (`x` on a vibespace row in list mode):** Opens a raw SSH shell into
+the primary agent's pod. Uses `tea.ExecProcess` to suspend the TUI. All agent pods
+share the same PVC, so a shell into any pod gives the same filesystem view.
+
+**Agent connect (`x` on an agent in agent view):** SSH into the specific agent's pod
+and launches its interactive CLI (equivalent to `vibespace <name> connect <agent>`).
+
+**Browser mode (`b`):** Opens the agent's ttyd interface in the system browser. The
+TUI stays running — no suspend needed.
 
 ### 4.4 Vibespace Actions
 
-From the vibespaces tab, with a vibespace selected:
+Three-level stack navigation with context-dependent keys:
+
+**List mode (vibespace table):**
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Toggle inline expansion |
-| `x` | Connect — shell into vibespace (collapsed) or agent (expanded) |
-| `b` | Connect in browser via ttyd (same as `--browser` flag) |
+| `j`/`k` | Navigate vibespaces |
+| `Enter` | Agent view (stack nav) |
+| `x` | SSH shell into primary agent pod |
+| `b` | Browser connect via ttyd |
 | `n` | Create new vibespace (inline form) |
 | `d` | Delete vibespace (inline confirmation) |
-| `c` | Open Chat tab with this vibespace's agents |
-| `m` | Open Monitor tab focused on this vibespace |
 | `S` | Start/stop vibespace |
-| `e` | Edit selected agent's config (when expanded) |
-| `a` | Add agent to selected vibespace |
-| `f` | Manage forwards for selected vibespace |
-| `/` | Filter/search vibespaces |
+
+**Agent view (agent table + detail):**
+
+| Key | Action |
+|-----|--------|
+| `j`/`k` | Navigate agents |
+| `Enter` | Session list for selected agent (claude-code/codex) |
+| `x` | SSH into agent pod + launch agent CLI |
+| `b` | Browser connect via ttyd |
+| `Esc` | Back to list |
+
+**Session list:**
+
+| Key | Action |
+|-----|--------|
+| `j`/`k` | Navigate sessions |
+| `Enter` | Resume session (suspends TUI via `tea.ExecProcess`) |
+| `Esc` | Back to agent view |
 
 ### 4.5 Inline Create Form
 
@@ -893,22 +924,19 @@ barView := bc.View()
 
 ### 11.2 Vibespaces Tab
 
-| Key | Action |
-|-----|--------|
-| `j` / `k` / `↑` / `↓` | Navigate rows |
-| `g` / `G` | Top / bottom |
-| `Enter` | Toggle expansion |
-| `x` | Connect — shell (collapsed) or agent CLI (expanded) |
-| `b` | Connect in browser (ttyd) |
-| `n` | New vibespace |
-| `d` | Delete vibespace |
-| `c` | Chat with vibespace |
-| `S` | Start/stop |
-| `e` | Edit agent config (when expanded) |
-| `a` | Add agent |
-| `f` | Manage forwards |
-| `/` | Search/filter |
-| `Esc` | Collapse / cancel |
+Three-level stack navigation: list → agent view → session list.
+
+| Key | List mode | Agent view | Session list |
+|-----|-----------|------------|--------------|
+| `j`/`k`/`↑`/`↓` | Navigate vibespaces | Navigate agents | Navigate sessions |
+| `g`/`G` | Top / bottom | Top / bottom | Top / bottom |
+| `Enter` | Agent view | Session list | Resume session |
+| `x` | SSH shell (primary pod) | SSH + agent CLI | — |
+| `b` | Browser (ttyd) | Browser (ttyd) | — |
+| `n` | New vibespace | — | — |
+| `d` | Delete vibespace | — | — |
+| `S` | Start/stop | — | — |
+| `Esc` | — | Back to list | Back to agent view |
 
 ### 11.3 Chat Tab
 
