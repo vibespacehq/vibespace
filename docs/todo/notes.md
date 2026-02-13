@@ -27,7 +27,7 @@ All future phases reference `docs/ideas/tui-design-document.md`.
 |-----------|-------|----------------|
 | 3a | Table view: NAME, STATUS, AGENTS, CPU, MEM, STORAGE, AGE. `j/k` nav, status colors, responsive column hiding | §4.1 (lines 64-130) |
 | 3b | Agent view: `Enter` navigates to full-screen agent view (stack nav). Agent tree, resources, mounts, forwards, logs. `Esc`/`Backspace` returns to list | §4.2 (lines 131-200) |
-| 3c | Connect actions: `x` SSH via `tea.ExecProcess`, `b` browser via ttyd URL | §4.3 (lines 201-240) |
+| 3c | Session list: `Enter` on agent → session table (SSH + parse `history.jsonl`), `Enter` resumes via `tea.ExecProcess`. Claude-code done, codex pending. Also: `x` SSH shell, `b` browser via ttyd | §4.3 (lines 168-215) |
 | 3d | Inline forms: `n` create, `d` delete, `a` add agent, `S` start/stop | §5.1-5.2 (lines 241-320) |
 | 3e | Inline editors: `e` config editor, `f` forward manager | §5.3-5.4 (lines 321-380) |
 

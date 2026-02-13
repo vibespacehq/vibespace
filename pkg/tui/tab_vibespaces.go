@@ -1,8 +1,16 @@
 package tui
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os/exec"
+	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,8 +29,18 @@ import (
 type vibespacesMode int
 
 const (
-	vibespacesModeList      vibespacesMode = iota // table view
-	vibespacesModeAgentView                       // full-screen agent detail
+	vibespacesModeList        vibespacesMode = iota // table view
+	vibespacesModeAgentView                         // full-screen agent detail
+	vibespacesModeSessionList                       // session list for an agent
+)
+
+// vsConnectMode distinguishes connect action types.
+type vsConnectMode int
+
+const (
+	vsConnectModeSessionResume vsConnectMode = iota // resume a session
+	vsConnectModeShell                              // raw SSH shell
+	vsConnectModeAgentCLI                           // SSH + agent interactive CLI
 )
 
 // vibespacesLoadedMsg delivers vibespace data from the service.
@@ -63,6 +81,47 @@ type vsForwardsLoadedMsg struct {
 	agents      []daemon.AgentStatus
 }
 
+// vsSessionInfo represents a parsed Claude Code session summary.
+type vsSessionInfo struct {
+	ID       string
+	Title    string
+	LastTime time.Time
+	Prompts  int
+}
+
+// vsSessionsLoadedMsg delivers parsed sessions from inside the agent pod.
+type vsSessionsLoadedMsg struct {
+	agentName string
+	sessions  []vsSessionInfo
+	err       error
+}
+
+// vsConnectReadyMsg signals that SSH forward is ready for a connect action.
+type vsConnectReadyMsg struct {
+	sshPort   int
+	agentName string
+	agentType agent.Type
+	sessionID string
+	mode      vsConnectMode
+	err       error
+}
+
+// vsSessionResumeMsg signals that a session resume process has completed.
+type vsSessionResumeMsg struct {
+	err error
+}
+
+// vsBrowserReadyMsg signals that a ttyd forward is ready for browser open.
+type vsBrowserReadyMsg struct {
+	ttydPort int
+	err      error
+}
+
+// vsExecReturnMsg signals that a shell/agent CLI process has completed.
+type vsExecReturnMsg struct {
+	err error
+}
+
 // VibespacesTab displays the vibespace list with inline expansion.
 type VibespacesTab struct {
 	shared     *SharedState
@@ -85,6 +144,12 @@ type VibespacesTab struct {
 	agentConfigs map[string]*agent.Config      // agent name → config
 	forwards     []daemon.AgentStatus          // forward info from daemon
 	agentCursor  int                           // cursor position within agents list
+
+	// Session list state
+	sessions      []vsSessionInfo // sessions for the selected agent
+	sessionCursor    int        // cursor in session list
+	sessionAgent     string     // agent name whose sessions are shown
+	sessionAgentType agent.Type // agent type whose sessions are shown
 }
 
 func NewVibespacesTab(shared *SharedState) *VibespacesTab {
@@ -98,15 +163,28 @@ func NewVibespacesTab(shared *SharedState) *VibespacesTab {
 func (t *VibespacesTab) Title() string { return TabNames[TabVibespaces] }
 
 func (t *VibespacesTab) ShortHelp() []key.Binding {
-	if t.mode == vibespacesModeAgentView {
+	switch t.mode {
+	case vibespacesModeSessionList:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "resume")),
+		}
+	case vibespacesModeAgentView:
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate agents")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "sessions")),
+			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "connect")),
+			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "browser")),
 		}
-	}
-	return []key.Binding{
-		key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
-		key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "view")),
+	default:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "view")),
+			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "connect")),
+			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "browser")),
+		}
 	}
 }
 
@@ -119,12 +197,19 @@ func (t *VibespacesTab) Init() tea.Cmd {
 func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case TabActivateMsg:
-		if t.mode == vibespacesModeAgentView && t.selectedVS != nil {
-			return t, tea.Batch(
-				t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
-				t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
-				t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
-			)
+		switch t.mode {
+		case vibespacesModeSessionList:
+			if t.selectedVS != nil && t.sessionAgent != "" {
+				return t, t.loadSessions(t.selectedVS.Name, t.sessionAgent, t.sessionAgentType)
+			}
+		case vibespacesModeAgentView:
+			if t.selectedVS != nil {
+				return t, tea.Batch(
+					t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+					t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
+					t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+				)
+			}
 		}
 		return t, t.loadVibespaces()
 
@@ -169,6 +254,71 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return t, nil
 
+	case vsSessionsLoadedMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+			return t, nil
+		}
+		if t.sessionAgent == msg.agentName {
+			t.sessions = msg.sessions
+			t.sessionCursor = 0
+			t.err = ""
+		}
+		return t, nil
+
+	case vsConnectReadyMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+			return t, nil
+		}
+		switch msg.mode {
+		case vsConnectModeSessionResume:
+			return t, t.execSessionResume(msg.sshPort, msg.agentName, msg.agentType, msg.sessionID)
+		case vsConnectModeShell:
+			return t, t.execShellConnect(msg.sshPort)
+		case vsConnectModeAgentCLI:
+			return t, t.execAgentConnect(msg.sshPort, msg.agentName, msg.agentType)
+		}
+		return t, nil
+
+	case vsSessionResumeMsg:
+		// Returned from tea.ExecProcess — refresh data
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		if t.selectedVS != nil && t.sessionAgent != "" {
+			return t, t.loadSessions(t.selectedVS.Name, t.sessionAgent, t.sessionAgentType)
+		}
+		return t, nil
+
+	case vsBrowserReadyMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+			return t, nil
+		}
+		url := fmt.Sprintf("http://localhost:%d", msg.ttydPort)
+		if err := openBrowserURL(url); err != nil {
+			t.err = fmt.Sprintf("open browser: %s", err)
+		}
+		return t, nil
+
+	case vsExecReturnMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		switch t.mode {
+		case vibespacesModeAgentView:
+			if t.selectedVS != nil {
+				return t, tea.Batch(
+					t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+					t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+				)
+			}
+		case vibespacesModeList:
+			return t, t.loadVibespaces()
+		}
+		return t, nil
+
 	case tea.KeyMsg:
 		return t.handleKey(msg)
 	}
@@ -178,6 +328,36 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch t.mode {
+	case vibespacesModeSessionList:
+		switch msg.String() {
+		case "esc", "backspace":
+			t.mode = vibespacesModeAgentView
+			t.sessions = nil
+			t.sessionCursor = 0
+			t.sessionAgent = ""
+			return t, nil
+		case "j", "down":
+			if len(t.sessions) > 0 {
+				t.sessionCursor = min(t.sessionCursor+1, len(t.sessions)-1)
+			}
+		case "k", "up":
+			if len(t.sessions) > 0 {
+				t.sessionCursor = max(t.sessionCursor-1, 0)
+			}
+		case "g":
+			t.sessionCursor = 0
+		case "G":
+			if len(t.sessions) > 0 {
+				t.sessionCursor = len(t.sessions) - 1
+			}
+		case "enter":
+			if t.sessionCursor < len(t.sessions) && t.selectedVS != nil {
+				sess := t.sessions[t.sessionCursor]
+				return t, t.prepareSessionResume(t.selectedVS.Name, t.sessionAgent, t.sessionAgentType, sess.ID)
+			}
+		}
+		return t, nil
+
 	case vibespacesModeAgentView:
 		switch msg.String() {
 		case "esc", "backspace":
@@ -201,6 +381,28 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "G":
 			if len(t.viewAgents) > 0 {
 				t.agentCursor = len(t.viewAgents) - 1
+			}
+		case "enter":
+			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+				ag := t.viewAgents[t.agentCursor]
+				if ag.AgentType == agent.TypeClaudeCode || ag.AgentType == agent.TypeCodex {
+					t.mode = vibespacesModeSessionList
+					t.sessionAgent = ag.AgentName
+					t.sessionAgentType = ag.AgentType
+					t.sessions = nil
+					t.sessionCursor = 0
+					return t, t.loadSessions(t.selectedVS.Name, ag.AgentName, ag.AgentType)
+				}
+			}
+		case "x":
+			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+				ag := t.viewAgents[t.agentCursor]
+				return t, t.prepareAgentConnect(t.selectedVS.Name, ag.AgentName, ag.AgentType)
+			}
+		case "b":
+			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+				ag := t.viewAgents[t.agentCursor]
+				return t, t.prepareBrowserConnect(t.selectedVS.Name, ag.AgentName)
 			}
 		}
 		return t, nil
@@ -237,6 +439,16 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					t.loadForwards(vs.ID, vs.Name),
 				)
 			}
+		case "x":
+			if t.selected < len(t.vibespaces) {
+				vs := t.vibespaces[t.selected]
+				return t, t.prepareShellConnectPrimary(vs.Name)
+			}
+		case "b":
+			if t.selected < len(t.vibespaces) {
+				vs := t.vibespaces[t.selected]
+				return t, t.prepareBrowserConnectPrimary(vs.Name)
+			}
 		}
 		if t.selected != prev {
 			return t, t.loadLogsForSelected()
@@ -253,8 +465,11 @@ func (t *VibespacesTab) View() string {
 			Render(fmt.Sprintf("Error loading vibespaces: %s", t.err))
 	}
 
-	if t.mode == vibespacesModeAgentView {
+	switch t.mode {
+	case vibespacesModeAgentView:
 		return t.viewAgentView()
+	case vibespacesModeSessionList:
+		return t.viewSessionList()
 	}
 
 	if len(t.vibespaces) == 0 {
@@ -509,7 +724,7 @@ func (t *VibespacesTab) viewAgentView() string {
 
 	// Header: ← name                                          status
 	backArrow := renderGradientText("← ", brandGradient)
-	nameText := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorWhite).Render(vs.Name)
+	nameText := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorText).Render(vs.Name)
 	statusText := vsStatusStyled(vs.Status)
 
 	headerLeft := backArrow + nameText
@@ -628,25 +843,37 @@ func (t *VibespacesTab) viewAgentDetail() string {
 		labelStyle.Render("type"),
 		dimStyle.Render(string(ag.AgentType))))
 
+	isCodex := ag.AgentType == agent.TypeCodex
+
 	if cfg, ok := t.agentConfigs[ag.AgentName]; ok && cfg != nil {
+		// skip_permissions: codex → "always", else true/false
+		skipStr := fmt.Sprintf("%v", cfg.SkipPermissions)
+		if isCodex {
+			skipStr = "always"
+		}
 		cfgLines = append(cfgLines, fmt.Sprintf("%s  %s",
 			labelStyle.Render("skip_permissions"),
-			dimStyle.Render(fmt.Sprintf("%v", cfg.SkipPermissions))))
+			dimStyle.Render(skipStr)))
 
 		cfgLines = append(cfgLines, fmt.Sprintf("%s  %s",
 			labelStyle.Render("share_credentials"),
 			dimStyle.Render(fmt.Sprintf("%v", cfg.ShareCredentials))))
 
-		allowedStr := "all"
-		if len(cfg.AllowedTools) > 0 {
+		// allowed_tools: codex → "all", skip=true → "all", custom → join, else → defaults + (default)
+		var allowedStr string
+		if isCodex || cfg.SkipPermissions {
+			allowedStr = "all"
+		} else if len(cfg.AllowedTools) > 0 {
 			allowedStr = strings.Join(cfg.AllowedTools, ", ")
+		} else {
+			allowedStr = strings.Join(agent.DefaultAllowedTools(), ", ") + " (default)"
 		}
 		cfgLines = append(cfgLines, fmt.Sprintf("%s  %s",
 			labelStyle.Render("allowed_tools"),
 			dimStyle.Render(allowedStr)))
 
 		disallowedStr := "-"
-		if len(cfg.DisallowedTools) > 0 {
+		if !isCodex && len(cfg.DisallowedTools) > 0 {
 			disallowedStr = strings.Join(cfg.DisallowedTools, ", ")
 		}
 		cfgLines = append(cfgLines, fmt.Sprintf("%s  %s",
@@ -683,12 +910,27 @@ func (t *VibespacesTab) viewAgentDetail() string {
 	if len(agentForwards) > 0 {
 		fwdHeader := lipgloss.NewStyle().Italic(true).Foreground(ui.ColorMuted).
 			Render("Forwards")
+		// Compute column widths for alignment
+		var maxRemote, maxLocal, maxType int
+		for _, fwd := range agentForwards {
+			if r := len(fmt.Sprintf(":%d", fwd.RemotePort)); r > maxRemote {
+				maxRemote = r
+			}
+			if l := len(fmt.Sprintf(":%d", fwd.LocalPort)); l > maxLocal {
+				maxLocal = l
+			}
+			if len(fwd.Type) > maxType {
+				maxType = len(fwd.Type)
+			}
+		}
 		var fwdLines []string
 		for _, fwd := range agentForwards {
+			remote := fmt.Sprintf(":%d", fwd.RemotePort)
+			local := fmt.Sprintf(":%d", fwd.LocalPort)
 			line := fmt.Sprintf("%s  %s  %s  %s",
-				dimStyle.Render(fmt.Sprintf(":%d", fwd.LocalPort)),
-				dimStyle.Render(fmt.Sprintf("→ :%d", fwd.RemotePort)),
-				dimStyle.Render(fwd.Type),
+				dimStyle.Render(fmt.Sprintf("%-*s", maxRemote, remote)),
+				dimStyle.Render(fmt.Sprintf("→ %-*s", maxLocal, local)),
+				dimStyle.Render(fmt.Sprintf("%-*s", maxType, fwd.Type)),
 				dimStyle.Render(fwd.Status))
 			fwdLines = append(fwdLines, line)
 		}
@@ -763,6 +1005,100 @@ func (t *VibespacesTab) forwardsForAgent(agentName string) []daemon.ForwardInfo 
 		}
 	}
 	return nil
+}
+
+// viewSessionList renders the session list for a claude-code agent.
+func (t *VibespacesTab) viewSessionList() string {
+	if t.selectedVS == nil {
+		return ""
+	}
+
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	// Header: ← agent-name sessions
+	backArrow := renderGradientText("← ", brandGradient)
+	nameText := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorText).
+		Render(t.sessionAgent + " sessions")
+	header := backArrow + nameText
+
+	var topParts []string
+	topParts = append(topParts, header, mutedLine)
+
+	if t.err != "" {
+		topParts = append(topParts, lipgloss.NewStyle().Foreground(ui.ColorError).
+			Render("Error: "+t.err))
+	} else if t.sessions == nil {
+		topParts = append(topParts, dimStyle.Render("Loading sessions..."))
+	} else if len(t.sessions) == 0 {
+		topParts = append(topParts, dimStyle.Render("No sessions found."))
+	} else {
+		topParts = append(topParts, t.viewSessionTable())
+	}
+
+	return lipgloss.NewStyle().Padding(1, 2).Render(
+		strings.Join(topParts, "\n\n"))
+}
+
+// viewSessionTable renders sessions as a table with gradient-highlighted selected row.
+func (t *VibespacesTab) viewSessionTable() string {
+	rows := make([][]string, len(t.sessions))
+	for i, s := range t.sessions {
+		idShort := s.ID
+		if len(idShort) > 8 {
+			idShort = idShort[:8]
+		}
+
+		title := s.Title
+		if len(title) > 50 {
+			title = title[:47] + "..."
+		}
+		title = strings.ReplaceAll(title, "\n", " ")
+
+		ago := formatSessionAge(s.LastTime)
+		prompts := fmt.Sprintf("%d", s.Prompts)
+
+		if i == t.sessionCursor {
+			cells := []string{"› " + idShort, ago, prompts, title}
+			rows[i] = renderGradientRow(cells, brandGradient)
+		} else {
+			rows[i] = []string{"  " + idShort, ago, prompts, title}
+		}
+	}
+
+	sel := t.sessionCursor
+	tbl := table.New().
+		Headers("ID", "Last Active", "Turns", "Title").
+		Rows(rows...).
+		Border(lipgloss.NormalBorder()).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.ColorMuted)).
+		Width(t.width - 4).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			s := lipgloss.NewStyle().Padding(0, 1)
+			if row == table.HeaderRow {
+				return s.Bold(true).Foreground(ui.ColorDim)
+			}
+			if row == sel {
+				return s
+			}
+			return s.Foreground(ui.ColorDim)
+		})
+
+	noun := "sessions"
+	if len(t.sessions) == 1 {
+		noun = "session"
+	}
+	countText := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(fmt.Sprintf("(%d %s)", len(t.sessions), noun))
+	count := lipgloss.NewStyle().Width(t.width - 4).Align(lipgloss.Right).
+		PaddingTop(1).Render(countText)
+
+	return tbl.Render() + "\n" + count
 }
 
 // --- Commands ---
@@ -882,6 +1218,485 @@ func (t *VibespacesTab) loadForwards(vsID, vsName string) tea.Cmd {
 			return vsForwardsLoadedMsg{vibespaceID: vsID}
 		}
 		return vsForwardsLoadedMsg{vibespaceID: vsID, agents: resp.Agents}
+	}
+}
+
+func (t *VibespacesTab) loadSessions(vsName, agentName string, agentType agent.Type) tea.Cmd {
+	return func() tea.Msg {
+		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		if err != nil {
+			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("SSH forward: %w", err)}
+		}
+
+		keyPath := vibespace.GetSSHPrivateKeyPath()
+		if keyPath == "" {
+			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("no SSH key found")}
+		}
+
+		// Build remote command based on agent type
+		var remoteCmd string
+		switch agentType {
+		case agent.TypeCodex:
+			remoteCmd = "cat ~/.codex/history.jsonl 2>/dev/null || true"
+		default:
+			remoteCmd = "cat ~/.claude/history.jsonl 2>/dev/null || true"
+		}
+
+		cmd := exec.Command("ssh",
+			"-i", keyPath,
+			"-p", strconv.Itoa(sshPort),
+			"-o", "StrictHostKeyChecking=no",
+			"-o", "UserKnownHostsFile=/dev/null",
+			"-o", "LogLevel=ERROR",
+			"-o", "ConnectTimeout=5",
+			"user@localhost",
+			remoteCmd,
+		)
+
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		output, err := cmd.Output()
+		if err != nil {
+			detail := stderr.String()
+			if detail == "" {
+				detail = err.Error()
+			}
+			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("read sessions: %s", strings.TrimSpace(detail))}
+		}
+
+		var sessions []vsSessionInfo
+		switch agentType {
+		case agent.TypeCodex:
+			sessions = parseCodexHistory(output)
+		default:
+			sessions = parseHistoryJSONL(output, "/vibespace")
+		}
+		return vsSessionsLoadedMsg{agentName: agentName, sessions: sessions}
+	}
+}
+
+// prepareSessionResume ensures the SSH forward is ready, then sends vsConnectReadyMsg.
+func (t *VibespacesTab) prepareSessionResume(vsName, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+	return func() tea.Msg {
+		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		if err != nil {
+			return vsConnectReadyMsg{agentName: agentName, agentType: agentType, sessionID: sessionID, mode: vsConnectModeSessionResume, err: err}
+		}
+		return vsConnectReadyMsg{sshPort: sshPort, agentName: agentName, agentType: agentType, sessionID: sessionID, mode: vsConnectModeSessionResume}
+	}
+}
+
+// execSessionResume builds the SSH command and returns tea.ExecProcess to suspend the TUI.
+func (t *VibespacesTab) execSessionResume(sshPort int, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+	keyPath := vibespace.GetSSHPrivateKeyPath()
+	if keyPath == "" {
+		return func() tea.Msg {
+			return vsSessionResumeMsg{err: fmt.Errorf("no SSH key found")}
+		}
+	}
+
+	var cfg *agent.Config
+	if c, ok := t.agentConfigs[agentName]; ok {
+		cfg = c
+	}
+
+	agentImpl := agent.MustGet(agentType)
+	agentCmd := agentImpl.BuildInteractiveCommand(sessionID, cfg)
+	remoteCmd := fmt.Sprintf("bash -l -c 'cd /vibespace && %s'", agentCmd)
+
+	slog.Debug("resuming session", "agent", agentName, "session", sessionID, "type", agentType)
+
+	cmd := exec.Command("ssh",
+		"-i", keyPath,
+		"-p", strconv.Itoa(sshPort),
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
+		"-t",
+		"user@localhost",
+		remoteCmd,
+	)
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return vsSessionResumeMsg{err: err}
+	})
+}
+
+// ensureSSHForward ensures daemon is running and an SSH forward exists for the agent.
+// Returns the local port for SSH access.
+func (t *VibespacesTab) ensureSSHForward(vsName, agentName string) (int, error) {
+	if !daemon.IsDaemonRunning() {
+		if err := daemon.SpawnDaemon(); err != nil {
+			return 0, fmt.Errorf("start daemon: %w", err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	client, err := daemon.NewClient()
+	if err != nil {
+		return 0, fmt.Errorf("connect to daemon: %w", err)
+	}
+
+	// Try to find existing SSH forward
+	if port, ok := findSSHForward(client, vsName, agentName); ok {
+		return port, nil
+	}
+
+	// Refresh daemon state and retry
+	_ = client.Refresh()
+	time.Sleep(2 * time.Second)
+
+	if port, ok := findSSHForward(client, vsName, agentName); ok {
+		return port, nil
+	}
+
+	return 0, fmt.Errorf("no active SSH forward for %s/%s", vsName, agentName)
+}
+
+// findSSHForward queries the daemon for an active SSH forward.
+func findSSHForward(client *daemon.Client, vsName, agentName string) (int, bool) {
+	result, err := client.ListForwardsForVibespace(vsName)
+	if err != nil || result == nil {
+		return 0, false
+	}
+	for _, ag := range result.Agents {
+		if ag.Name == agentName {
+			for _, fwd := range ag.Forwards {
+				if fwd.Type == "ssh" && fwd.Status == "active" {
+					return fwd.LocalPort, true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+// prepareShellConnectPrimary finds the primary agent and ensures SSH forward for a raw shell.
+func (t *VibespacesTab) prepareShellConnectPrimary(vsName string) tea.Cmd {
+	svc := t.shared.Vibespace
+	return func() tea.Msg {
+		if svc == nil {
+			return vsConnectReadyMsg{mode: vsConnectModeShell, err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		agents, err := svc.ListAgents(ctx, vsName)
+		if err != nil {
+			return vsConnectReadyMsg{mode: vsConnectModeShell, err: fmt.Errorf("list agents: %w", err)}
+		}
+		primary := primaryAgent(agents)
+		if primary == nil {
+			return vsConnectReadyMsg{mode: vsConnectModeShell, err: fmt.Errorf("no agents in %s", vsName)}
+		}
+		sshPort, err := t.ensureSSHForward(vsName, primary.AgentName)
+		if err != nil {
+			return vsConnectReadyMsg{mode: vsConnectModeShell, err: err}
+		}
+		return vsConnectReadyMsg{sshPort: sshPort, mode: vsConnectModeShell}
+	}
+}
+
+// prepareAgentConnect ensures SSH forward for the agent's interactive CLI.
+func (t *VibespacesTab) prepareAgentConnect(vsName, agentName string, agentType agent.Type) tea.Cmd {
+	return func() tea.Msg {
+		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		if err != nil {
+			return vsConnectReadyMsg{agentName: agentName, agentType: agentType, mode: vsConnectModeAgentCLI, err: err}
+		}
+		return vsConnectReadyMsg{sshPort: sshPort, agentName: agentName, agentType: agentType, mode: vsConnectModeAgentCLI}
+	}
+}
+
+// prepareBrowserConnect ensures ttyd forward for the selected agent.
+func (t *VibespacesTab) prepareBrowserConnect(vsName, agentName string) tea.Cmd {
+	return func() tea.Msg {
+		port, err := t.ensureTtydForward(vsName, agentName)
+		if err != nil {
+			return vsBrowserReadyMsg{err: err}
+		}
+		return vsBrowserReadyMsg{ttydPort: port}
+	}
+}
+
+// prepareBrowserConnectPrimary finds the primary agent and ensures ttyd forward.
+func (t *VibespacesTab) prepareBrowserConnectPrimary(vsName string) tea.Cmd {
+	svc := t.shared.Vibespace
+	return func() tea.Msg {
+		if svc == nil {
+			return vsBrowserReadyMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		agents, err := svc.ListAgents(ctx, vsName)
+		if err != nil {
+			return vsBrowserReadyMsg{err: fmt.Errorf("list agents: %w", err)}
+		}
+		primary := primaryAgent(agents)
+		if primary == nil {
+			return vsBrowserReadyMsg{err: fmt.Errorf("no agents in %s", vsName)}
+		}
+		port, err := t.ensureTtydForward(vsName, primary.AgentName)
+		if err != nil {
+			return vsBrowserReadyMsg{err: err}
+		}
+		return vsBrowserReadyMsg{ttydPort: port}
+	}
+}
+
+// execShellConnect builds a plain SSH command (no remote command) and returns tea.ExecProcess.
+func (t *VibespacesTab) execShellConnect(sshPort int) tea.Cmd {
+	keyPath := vibespace.GetSSHPrivateKeyPath()
+	if keyPath == "" {
+		return func() tea.Msg {
+			return vsExecReturnMsg{err: fmt.Errorf("no SSH key found")}
+		}
+	}
+
+	cmd := exec.Command("ssh",
+		"-i", keyPath,
+		"-p", strconv.Itoa(sshPort),
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
+		"-t",
+		"user@localhost",
+	)
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return vsExecReturnMsg{err: err}
+	})
+}
+
+// execAgentConnect builds an SSH command with the agent's interactive CLI and returns tea.ExecProcess.
+func (t *VibespacesTab) execAgentConnect(sshPort int, agentName string, agentType agent.Type) tea.Cmd {
+	keyPath := vibespace.GetSSHPrivateKeyPath()
+	if keyPath == "" {
+		return func() tea.Msg {
+			return vsExecReturnMsg{err: fmt.Errorf("no SSH key found")}
+		}
+	}
+
+	var cfg *agent.Config
+	if c, ok := t.agentConfigs[agentName]; ok {
+		cfg = c
+	}
+
+	agentImpl := agent.MustGet(agentType)
+	agentCmd := agentImpl.BuildInteractiveCommand("", cfg)
+	remoteCmd := fmt.Sprintf("bash -l -c 'cd /vibespace && %s'", agentCmd)
+
+	slog.Debug("agent connect", "agent", agentName, "type", agentType)
+
+	cmd := exec.Command("ssh",
+		"-i", keyPath,
+		"-p", strconv.Itoa(sshPort),
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "LogLevel=ERROR",
+		"-t",
+		"user@localhost",
+		remoteCmd,
+	)
+
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		return vsExecReturnMsg{err: err}
+	})
+}
+
+// ensureTtydForward ensures daemon is running and a ttyd forward exists for the agent.
+func (t *VibespacesTab) ensureTtydForward(vsName, agentName string) (int, error) {
+	if !daemon.IsDaemonRunning() {
+		if err := daemon.SpawnDaemon(); err != nil {
+			return 0, fmt.Errorf("start daemon: %w", err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	client, err := daemon.NewClient()
+	if err != nil {
+		return 0, fmt.Errorf("connect to daemon: %w", err)
+	}
+
+	if port, ok := findTtydForward(client, vsName, agentName); ok {
+		return port, nil
+	}
+
+	_ = client.Refresh()
+	time.Sleep(2 * time.Second)
+
+	if port, ok := findTtydForward(client, vsName, agentName); ok {
+		return port, nil
+	}
+
+	return 0, fmt.Errorf("no active ttyd forward for %s/%s", vsName, agentName)
+}
+
+// findTtydForward queries the daemon for an active ttyd forward.
+func findTtydForward(client *daemon.Client, vsName, agentName string) (int, bool) {
+	result, err := client.ListForwardsForVibespace(vsName)
+	if err != nil || result == nil {
+		return 0, false
+	}
+	for _, ag := range result.Agents {
+		if ag.Name == agentName {
+			for _, fwd := range ag.Forwards {
+				if fwd.Type == "ttyd" && fwd.Status == "active" {
+					return fwd.LocalPort, true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+// primaryAgent returns the primary agent (AgentNum == 1) or the first agent.
+func primaryAgent(agents []vibespace.AgentInfo) *vibespace.AgentInfo {
+	for i := range agents {
+		if agents[i].AgentNum == 1 {
+			return &agents[i]
+		}
+	}
+	if len(agents) > 0 {
+		return &agents[0]
+	}
+	return nil
+}
+
+// openBrowserURL opens the URL in the default system browser.
+func openBrowserURL(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+	return cmd.Run()
+}
+
+// historyEntry is the JSON structure of each line in ~/.claude/history.jsonl.
+type historyEntry struct {
+	Display   string `json:"display"`
+	Timestamp int64  `json:"timestamp"`
+	Project   string `json:"project"`
+	SessionID string `json:"sessionId"`
+}
+
+// parseHistoryJSONL parses Claude Code's history.jsonl and returns session summaries.
+func parseHistoryJSONL(data []byte, project string) []vsSessionInfo {
+	sessions := map[string]*vsSessionInfo{}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+
+	for scanner.Scan() {
+		var entry historyEntry
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			continue
+		}
+		if entry.Project != project || entry.SessionID == "" {
+			continue
+		}
+
+		s, ok := sessions[entry.SessionID]
+		if !ok {
+			// Clean up display text for title
+			title := strings.TrimSpace(entry.Display)
+			title = strings.ReplaceAll(title, "\n", " ")
+			s = &vsSessionInfo{
+				ID:    entry.SessionID,
+				Title: title,
+			}
+			sessions[entry.SessionID] = s
+		}
+
+		s.Prompts++
+		ts := time.UnixMilli(entry.Timestamp)
+		if ts.After(s.LastTime) {
+			s.LastTime = ts
+		}
+	}
+
+	// Sort by last activity, most recent first
+	result := make([]vsSessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		result = append(result, *s)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].LastTime.After(result[j].LastTime)
+	})
+
+	return result
+}
+
+// codexHistoryEntry is the JSON structure of each line in ~/.codex/history.jsonl.
+type codexHistoryEntry struct {
+	SessionID string `json:"session_id"`
+	Timestamp int64  `json:"ts"`
+	Text      string `json:"text"`
+}
+
+// parseCodexHistory parses Codex's history.jsonl and returns session summaries.
+func parseCodexHistory(data []byte) []vsSessionInfo {
+	sessions := map[string]*vsSessionInfo{}
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	scanner.Buffer(make([]byte, 256*1024), 256*1024)
+
+	for scanner.Scan() {
+		var entry codexHistoryEntry
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			continue
+		}
+		if entry.SessionID == "" {
+			continue
+		}
+
+		s, ok := sessions[entry.SessionID]
+		if !ok {
+			title := strings.TrimSpace(entry.Text)
+			title = strings.ReplaceAll(title, "\n", " ")
+			s = &vsSessionInfo{
+				ID:    entry.SessionID,
+				Title: title,
+			}
+			sessions[entry.SessionID] = s
+		}
+
+		s.Prompts++
+		ts := time.Unix(entry.Timestamp, 0)
+		if ts.After(s.LastTime) {
+			s.LastTime = ts
+		}
+	}
+
+	result := make([]vsSessionInfo, 0, len(sessions))
+	for _, s := range sessions {
+		result = append(result, *s)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].LastTime.After(result[j].LastTime)
+	})
+
+	return result
+}
+
+func formatSessionAge(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	ago := time.Since(t)
+	switch {
+	case ago.Hours() >= 24*7:
+		return fmt.Sprintf("%.0fw ago", ago.Hours()/(24*7))
+	case ago.Hours() >= 24:
+		return fmt.Sprintf("%.0fd ago", ago.Hours()/24)
+	case ago.Hours() >= 1:
+		return fmt.Sprintf("%.0fh ago", ago.Hours())
+	default:
+		return fmt.Sprintf("%.0fm ago", ago.Minutes())
 	}
 }
 
