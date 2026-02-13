@@ -29,9 +29,12 @@ import (
 type vibespacesMode int
 
 const (
-	vibespacesModeList        vibespacesMode = iota // table view
-	vibespacesModeAgentView                         // full-screen agent detail
-	vibespacesModeSessionList                       // session list for an agent
+	vibespacesModeList          vibespacesMode = iota // table view
+	vibespacesModeAgentView                           // full-screen agent detail
+	vibespacesModeSessionList                         // session list for an agent
+	vibespacesModeCreateForm                          // inline create form
+	vibespacesModeDeleteConfirm                       // inline delete confirmation
+	vibespacesModeAddAgent                            // inline add agent form (in agent view)
 )
 
 // vsConnectMode distinguishes connect action types.
@@ -122,6 +125,51 @@ type vsExecReturnMsg struct {
 	err error
 }
 
+// vsRefreshTickMsg triggers a periodic reload while vibespaces are in a transitional state.
+type vsRefreshTickMsg struct{}
+
+// vsCreateDoneMsg signals completion of a vibespace creation.
+type vsCreateDoneMsg struct {
+	err error
+}
+
+// vsDeleteDoneMsg signals completion of a vibespace deletion.
+type vsDeleteDoneMsg struct {
+	err error
+}
+
+// vsStartStopDoneMsg signals completion of a start/stop operation.
+type vsStartStopDoneMsg struct {
+	action string
+	err    error
+}
+
+// vsAddAgentDoneMsg signals completion of an agent spawn.
+type vsAddAgentDoneMsg struct {
+	err error
+}
+
+// createFormField identifies which field is active in the create form.
+type createFormField int
+
+const (
+	createFieldName      createFormField = iota
+	createFieldAgentType                        // selector (j/k)
+	createFieldCPU
+	createFieldMemory
+	createFieldStorage
+	createFieldCount // sentinel
+)
+
+// addAgentFormField identifies which field is active in the add agent form.
+type addAgentFormField int
+
+const (
+	addAgentFieldType  addAgentFormField = iota // selector (j/k)
+	addAgentFieldName                           // text input, optional
+	addAgentFieldCount                          // sentinel
+)
+
 // VibespacesTab displays the vibespace list with inline expansion.
 type VibespacesTab struct {
 	shared     *SharedState
@@ -146,10 +194,27 @@ type VibespacesTab struct {
 	agentCursor  int                           // cursor position within agents list
 
 	// Session list state
-	sessions      []vsSessionInfo // sessions for the selected agent
-	sessionCursor    int        // cursor in session list
-	sessionAgent     string     // agent name whose sessions are shown
-	sessionAgentType agent.Type // agent type whose sessions are shown
+	sessions         []vsSessionInfo // sessions for the selected agent
+	sessionCursor    int             // cursor in session list
+	sessionAgent     string          // agent name whose sessions are shown
+	sessionAgentType agent.Type      // agent type whose sessions are shown
+
+	// Create form state
+	createField     createFormField
+	createName      string
+	createAgentType agent.Type
+	createCPU       string
+	createMemory    string
+	createStorage   string
+
+	// Delete confirm state
+	deleteName  string
+	deleteInput string
+
+	// Add agent form state (agent view)
+	addAgentField addAgentFormField
+	addAgentType  agent.Type
+	addAgentName  string
 }
 
 func NewVibespacesTab(shared *SharedState) *VibespacesTab {
@@ -164,6 +229,25 @@ func (t *VibespacesTab) Title() string { return TabNames[TabVibespaces] }
 
 func (t *VibespacesTab) ShortHelp() []key.Binding {
 	switch t.mode {
+	case vibespacesModeCreateForm:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "next")),
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "skip")),
+			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "submit")),
+		}
+	case vibespacesModeDeleteConfirm:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+		}
+	case vibespacesModeAddAgent:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "next")),
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "skip")),
+			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "submit")),
+		}
 	case vibespacesModeSessionList:
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
@@ -175,6 +259,7 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate agents")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "sessions")),
+			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add agent")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "connect")),
 			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "browser")),
 		}
@@ -182,6 +267,9 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "view")),
+			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "create")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
+			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "start/stop")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "connect")),
 			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "browser")),
 		}
@@ -221,7 +309,10 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.vibespaces = msg.vibespaces
 		t.clampSelected()
 		t.err = ""
-		return t, tea.Batch(t.loadAgentInfo(), t.loadLogsForSelected())
+		return t, tea.Batch(t.loadAgentInfo(), t.loadLogsForSelected(), t.scheduleRefreshIfNeeded())
+
+	case vsRefreshTickMsg:
+		return t, t.loadVibespaces()
 
 	case agentInfoLoadedMsg:
 		t.agentCounts = msg.counts
@@ -319,6 +410,40 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return t, nil
 
+	case vsCreateDoneMsg:
+		t.mode = vibespacesModeList
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		return t, t.loadVibespaces()
+
+	case vsDeleteDoneMsg:
+		t.mode = vibespacesModeList
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		return t, t.loadVibespaces()
+
+	case vsStartStopDoneMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		return t, t.loadVibespaces()
+
+	case vsAddAgentDoneMsg:
+		t.mode = vibespacesModeAgentView
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		if t.selectedVS != nil {
+			return t, tea.Batch(
+				t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+			)
+		}
+		return t, nil
+
 	case tea.KeyMsg:
 		return t.handleKey(msg)
 	}
@@ -394,6 +519,15 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return t, t.loadSessions(t.selectedVS.Name, ag.AgentName, ag.AgentType)
 				}
 			}
+		case "a":
+			if t.selectedVS != nil {
+				t.mode = vibespacesModeAddAgent
+				t.addAgentField = addAgentFieldType
+				t.addAgentType = agent.TypeClaudeCode
+				t.addAgentName = ""
+				t.err = ""
+				return t, nil
+			}
 		case "x":
 			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
 				ag := t.viewAgents[t.agentCursor]
@@ -406,6 +540,15 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return t, nil
+
+	case vibespacesModeCreateForm:
+		return t.handleCreateFormKey(msg)
+
+	case vibespacesModeDeleteConfirm:
+		return t.handleDeleteConfirmKey(msg)
+
+	case vibespacesModeAddAgent:
+		return t.handleAddAgentKey(msg)
 
 	default: // list mode
 		prev := t.selected
@@ -449,6 +592,29 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				vs := t.vibespaces[t.selected]
 				return t, t.prepareBrowserConnectPrimary(vs.Name)
 			}
+		case "n":
+			t.mode = vibespacesModeCreateForm
+			t.createField = createFieldName
+			t.createName = ""
+			t.createAgentType = agent.TypeClaudeCode
+			t.createCPU = "250m"
+			t.createMemory = "512Mi"
+			t.createStorage = "10Gi"
+			t.err = ""
+			return t, nil
+		case "d":
+			if t.selected < len(t.vibespaces) {
+				t.mode = vibespacesModeDeleteConfirm
+				t.deleteName = t.vibespaces[t.selected].Name
+				t.deleteInput = ""
+				t.err = ""
+				return t, nil
+			}
+		case "S":
+			if t.selected < len(t.vibespaces) {
+				vs := t.vibespaces[t.selected]
+				return t, t.toggleStartStop(vs.Name, vs.Status)
+			}
 		}
 		if t.selected != prev {
 			return t, t.loadLogsForSelected()
@@ -466,19 +632,27 @@ func (t *VibespacesTab) View() string {
 	}
 
 	switch t.mode {
-	case vibespacesModeAgentView:
+	case vibespacesModeAgentView, vibespacesModeAddAgent:
 		return t.viewAgentView()
 	case vibespacesModeSessionList:
 		return t.viewSessionList()
 	}
 
-	if len(t.vibespaces) == 0 {
+	if len(t.vibespaces) == 0 && t.mode == vibespacesModeList {
 		return t.viewEmpty()
 	}
 
 	topBlock := t.viewTable()
 
-	bottom := t.viewDetail()
+	var bottom string
+	switch t.mode {
+	case vibespacesModeCreateForm:
+		bottom = t.viewCreateForm()
+	case vibespacesModeDeleteConfirm:
+		bottom = t.viewDeleteConfirm()
+	default:
+		bottom = t.viewDetail()
+	}
 
 	topH := lipgloss.Height(topBlock)
 	bottomH := lipgloss.Height(bottom)
@@ -746,8 +920,13 @@ func (t *VibespacesTab) viewAgentView() string {
 	topBlock := lipgloss.NewStyle().Padding(1, 2).Render(
 		strings.Join(topParts, "\n\n"))
 
-	// --- Bottom block: vibespace info + selected agent config ---
-	bottom := t.viewAgentDetail()
+	// --- Bottom block: agent detail or add-agent form ---
+	var bottom string
+	if t.mode == vibespacesModeAddAgent {
+		bottom = t.viewAddAgentForm()
+	} else {
+		bottom = t.viewAgentDetail()
+	}
 
 	topH := lipgloss.Height(topBlock)
 	bottomH := lipgloss.Height(bottom)
@@ -1698,6 +1877,390 @@ func formatSessionAge(t time.Time) string {
 	default:
 		return fmt.Sprintf("%.0fm ago", ago.Minutes())
 	}
+}
+
+// --- Form key handlers ---
+
+func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+
+	switch {
+	case k == "esc":
+		t.mode = vibespacesModeList
+		return t, nil
+
+	case k == "ctrl+s":
+		if t.createName == "" {
+			return t, nil
+		}
+		return t, t.submitCreateForm()
+
+	case k == "tab":
+		t.createField++
+		if t.createField >= createFieldCount {
+			if t.createName == "" {
+				t.createField = createFieldName
+				return t, nil
+			}
+			return t, t.submitCreateForm()
+		}
+		return t, nil
+
+	case k == "enter":
+		if t.createField == createFieldName && t.createName == "" {
+			return t, nil
+		}
+		t.createField++
+		if t.createField >= createFieldCount {
+			return t, t.submitCreateForm()
+		}
+		return t, nil
+
+	case k == "backspace":
+		switch t.createField {
+		case createFieldName:
+			if len(t.createName) > 0 {
+				t.createName = t.createName[:len(t.createName)-1]
+			}
+		case createFieldCPU:
+			if len(t.createCPU) > 0 {
+				t.createCPU = t.createCPU[:len(t.createCPU)-1]
+			}
+		case createFieldMemory:
+			if len(t.createMemory) > 0 {
+				t.createMemory = t.createMemory[:len(t.createMemory)-1]
+			}
+		case createFieldStorage:
+			if len(t.createStorage) > 0 {
+				t.createStorage = t.createStorage[:len(t.createStorage)-1]
+			}
+		}
+		return t, nil
+
+	default:
+		if t.createField == createFieldAgentType {
+			if k == "j" || k == "k" {
+				if t.createAgentType == agent.TypeClaudeCode {
+					t.createAgentType = agent.TypeCodex
+				} else {
+					t.createAgentType = agent.TypeClaudeCode
+				}
+			}
+			return t, nil
+		}
+
+		if len(k) == 1 {
+			switch t.createField {
+			case createFieldName:
+				t.createName += k
+			case createFieldCPU:
+				t.createCPU += k
+			case createFieldMemory:
+				t.createMemory += k
+			case createFieldStorage:
+				t.createStorage += k
+			}
+		}
+		return t, nil
+	}
+}
+
+func (t *VibespacesTab) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+
+	switch {
+	case k == "esc":
+		t.mode = vibespacesModeList
+		return t, nil
+
+	case k == "enter":
+		if t.deleteInput == t.deleteName {
+			return t, t.submitDelete()
+		}
+		return t, nil
+
+	case k == "backspace":
+		if len(t.deleteInput) > 0 {
+			t.deleteInput = t.deleteInput[:len(t.deleteInput)-1]
+		}
+		return t, nil
+
+	default:
+		if len(k) == 1 {
+			t.deleteInput += k
+		}
+		return t, nil
+	}
+}
+
+func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+
+	switch {
+	case k == "esc":
+		t.mode = vibespacesModeAgentView
+		return t, nil
+
+	case k == "ctrl+s":
+		return t, t.submitAddAgent()
+
+	case k == "tab", k == "enter":
+		t.addAgentField++
+		if t.addAgentField >= addAgentFieldCount {
+			return t, t.submitAddAgent()
+		}
+		return t, nil
+
+	case k == "backspace":
+		if t.addAgentField == addAgentFieldName && len(t.addAgentName) > 0 {
+			t.addAgentName = t.addAgentName[:len(t.addAgentName)-1]
+		}
+		return t, nil
+
+	default:
+		if t.addAgentField == addAgentFieldType {
+			if k == "j" || k == "k" {
+				if t.addAgentType == agent.TypeClaudeCode {
+					t.addAgentType = agent.TypeCodex
+				} else {
+					t.addAgentType = agent.TypeClaudeCode
+				}
+			}
+			return t, nil
+		}
+
+		if len(k) == 1 && t.addAgentField == addAgentFieldName {
+			t.addAgentName += k
+		}
+		return t, nil
+	}
+}
+
+// --- Form views ---
+
+func (t *VibespacesTab) viewCreateForm() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	labelStyle := lipgloss.NewStyle().Foreground(ui.ColorMuted)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
+		Render("Create vibespace")
+
+	type formField struct {
+		label    string
+		field    createFormField
+		value    string
+		isSelect bool
+	}
+
+	fields := []formField{
+		{"Name", createFieldName, t.createName, false},
+		{"Agent type", createFieldAgentType, string(t.createAgentType), true},
+		{"CPU", createFieldCPU, t.createCPU, false},
+		{"Memory", createFieldMemory, t.createMemory, false},
+		{"Storage", createFieldStorage, t.createStorage, false},
+	}
+
+	var lines []string
+	for _, f := range fields {
+		label := fmt.Sprintf("%-12s", f.label)
+		isActive := f.field == t.createField
+
+		var val string
+		if isActive {
+			if f.isSelect {
+				val = activeStyle.Render("["+f.value+"]") + "  " + dimStyle.Render("j/k to change")
+			} else {
+				val = activeStyle.Render(f.value+"█")
+			}
+		} else {
+			val = dimStyle.Render(f.value)
+		}
+
+		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(label), val))
+	}
+
+	if t.err != "" {
+		lines = append(lines, "", lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err))
+	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
+func (t *VibespacesTab) viewDeleteConfirm() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.ColorError).
+		Render(fmt.Sprintf("Delete \"%s\"?", t.deleteName))
+
+	prompt := fmt.Sprintf("  Type %s to confirm: %s",
+		dimStyle.Render(t.deleteName),
+		activeStyle.Render(t.deleteInput+"█"))
+
+	var errLine string
+	if t.err != "" {
+		errLine = "\n" + lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err)
+	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + prompt + errLine + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
+func (t *VibespacesTab) viewAddAgentForm() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	labelStyle := lipgloss.NewStyle().Foreground(ui.ColorMuted)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
+		Render("Add agent")
+
+	var lines []string
+
+	// Agent type field
+	typeLabel := fmt.Sprintf("%-12s", "Agent type")
+	if t.addAgentField == addAgentFieldType {
+		val := activeStyle.Render("["+string(t.addAgentType)+"]") + "  " + dimStyle.Render("j/k to change")
+		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(typeLabel), val))
+	} else {
+		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(typeLabel), dimStyle.Render(string(t.addAgentType))))
+	}
+
+	// Name field
+	nameLabel := fmt.Sprintf("%-12s", "Name")
+	if t.addAgentField == addAgentFieldName {
+		val := activeStyle.Render(t.addAgentName + "█")
+		if t.addAgentName == "" {
+			val += "  " + dimStyle.Render("optional, auto-generated if empty")
+		}
+		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(nameLabel), val))
+	} else {
+		nameVal := t.addAgentName
+		if nameVal == "" {
+			nameVal = "(auto)"
+		}
+		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(nameLabel), dimStyle.Render(nameVal)))
+	}
+
+	if t.err != "" {
+		lines = append(lines, "", lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err))
+	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
+// --- Form submit commands ---
+
+func (t *VibespacesTab) submitCreateForm() tea.Cmd {
+	svc := t.shared.Vibespace
+	name := t.createName
+	agentType := t.createAgentType
+	cpu := t.createCPU
+	memory := t.createMemory
+	storage := t.createStorage
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsCreateDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		req := &model.CreateVibespaceRequest{
+			Name:       name,
+			Persistent: true,
+			AgentType:  agentType,
+			Resources: &model.Resources{
+				CPU:         cpu,
+				CPULimit:    "1000m",
+				Memory:      memory,
+				MemoryLimit: "1Gi",
+				Storage:     storage,
+			},
+		}
+
+		_, err := svc.Create(ctx, req)
+		return vsCreateDoneMsg{err: err}
+	}
+}
+
+func (t *VibespacesTab) submitDelete() tea.Cmd {
+	svc := t.shared.Vibespace
+	name := t.deleteName
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsDeleteDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err := svc.Delete(ctx, name, &vibespace.DeleteOptions{})
+		return vsDeleteDoneMsg{err: err}
+	}
+}
+
+func (t *VibespacesTab) toggleStartStop(name, status string) tea.Cmd {
+	svc := t.shared.Vibespace
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsStartStopDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if status == "running" {
+			return vsStartStopDoneMsg{action: "stop", err: svc.Stop(ctx, name)}
+		}
+		return vsStartStopDoneMsg{action: "start", err: svc.Start(ctx, name)}
+	}
+}
+
+func (t *VibespacesTab) submitAddAgent() tea.Cmd {
+	svc := t.shared.Vibespace
+	if t.selectedVS == nil {
+		return nil
+	}
+	vsName := t.selectedVS.Name
+	agentType := t.addAgentType
+	agentName := t.addAgentName
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsAddAgentDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		opts := &vibespace.SpawnAgentOptions{
+			Name:      agentName,
+			AgentType: agentType,
+		}
+
+		_, err := svc.SpawnAgent(ctx, vsName, opts)
+		return vsAddAgentDoneMsg{err: err}
+	}
+}
+
+// scheduleRefreshIfNeeded returns a tick command if any vibespace is in a transitional state.
+func (t *VibespacesTab) scheduleRefreshIfNeeded() tea.Cmd {
+	for _, vs := range t.vibespaces {
+		if vs.Status == "creating" {
+			return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+				return vsRefreshTickMsg{}
+			})
+		}
+	}
+	return nil
 }
 
 // --- Helpers ---
