@@ -742,8 +742,6 @@ func monitorBar(used, total int64, width int, detail string) string {
 	return fmt.Sprintf("%s %s", bar, monitorTextStyle.Render(fmt.Sprintf("%s (%s)", pctStr, detail)))
 }
 
-
-
 func formatCPU(millis int64) string {
 	return fmt.Sprintf("%dm", millis)
 }
