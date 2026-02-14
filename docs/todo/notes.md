@@ -33,11 +33,13 @@ All future phases reference `docs/ideas/tui-design-document.md`.
 
 Depends on: `pkg/vibespace/service.go` (List, ListAgents, Create, Delete, Start, Stop), `pkg/daemon/client.go` (ListForwardsForVibespace), k8s cluster access.
 
-### Phase 4a: Monitor Tab (`pkg/tui/tab_monitor.go`)
+### Phase 4a: Monitor Tab (`pkg/tui/tab_monitor.go`) — ✅ Implemented
 
-**Design doc §6 (lines 381-504)**. Three sections: resource table with bar charts, agent activity table, CPU sparkline (`ntcharts/sparkline`). Auto-refresh via `tea.Tick` (1s), `p` pauses, `R` force refresh, `1/2/3` toggle sections, `v` vibespace picker.
+Core implemented. Remaining improvements:
 
-Depends on: k8s metrics API, daemon client, session manager.
+- **Viewport scrolling**: Wrap dashboard in `bubbles/viewport` for arrow/j/k/pgup/pgdn/mouse wheel scrolling when content overflows
+- **Agent table overflow**: Sort agents by CPU descending, show top 5, "and N more..." for the rest
+- **Scrollable agent list**: When scrolled down, reveal remaining agents beyond the top 5
 
 ### Phase 4b: Remote Tab (`pkg/tui/tab_remote.go`)
 
