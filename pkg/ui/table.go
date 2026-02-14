@@ -21,6 +21,8 @@ type TableOptions struct {
 	NoColor bool
 	// HeaderColor overrides the default header color (Teal).
 	HeaderColor lipgloss.Color
+	// HeaderStyle, if non-nil, overrides the default header style entirely.
+	HeaderStyle *lipgloss.Style
 }
 
 // NewTable creates a styled table with the given headers and rows.
@@ -39,26 +41,30 @@ func NewTableWithOptions(headers []string, rows [][]string, opts TableOptions) s
 
 // renderColumnAligned renders a column-aligned table with colored headers.
 func renderColumnAligned(headers []string, rows [][]string, opts TableOptions) string {
-	headerColor := opts.HeaderColor
-	if headerColor == "" {
-		headerColor = Teal
+	var headerStyle lipgloss.Style
+	if opts.HeaderStyle != nil {
+		headerStyle = *opts.HeaderStyle
+	} else {
+		headerColor := opts.HeaderColor
+		if headerColor == "" {
+			headerColor = Teal
+		}
+		headerStyle = lipgloss.NewStyle().Bold(true).Foreground(headerColor)
 	}
-
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(headerColor)
 	gap := "  " // 2-space gap between columns
 
 	// Compute max column widths (using visible width, stripping ANSI)
 	numCols := len(headers)
 	widths := make([]int, numCols)
 	for i, h := range headers {
-		w := len(StripAnsi(h))
+		w := lipgloss.Width(h)
 		if w > widths[i] {
 			widths[i] = w
 		}
 	}
 	for _, row := range rows {
 		for i := 0; i < numCols && i < len(row); i++ {
-			w := len(StripAnsi(row[i]))
+			w := lipgloss.Width(row[i])
 			if w > widths[i] {
 				widths[i] = w
 			}
@@ -72,7 +78,7 @@ func renderColumnAligned(headers []string, rows [][]string, opts TableOptions) s
 		styled := headerStyle.Render(h)
 		if i < numCols-1 {
 			// Pad based on visible width
-			visible := len(StripAnsi(h))
+			visible := lipgloss.Width(h)
 			padding := widths[i] - visible
 			sb.WriteString(styled)
 			sb.WriteString(strings.Repeat(" ", padding))
@@ -91,7 +97,7 @@ func renderColumnAligned(headers []string, rows [][]string, opts TableOptions) s
 				cell = row[i]
 			}
 			if i < numCols-1 {
-				visible := len(StripAnsi(cell))
+				visible := lipgloss.Width(cell)
 				padding := widths[i] - visible
 				if padding < 0 {
 					padding = 0
