@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
+	"github.com/vibespacehq/vibespace/pkg/metrics"
 	"github.com/vibespacehq/vibespace/pkg/session"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
@@ -16,6 +17,7 @@ type SharedState struct {
 	HistoryStore *HistoryStore
 	Daemon       *daemon.Client
 	Vibespace    *vibespace.Service
+	Metrics      *metrics.Fetcher
 
 	// Cached status (refreshed async via Refresh)
 	DaemonRunning bool
@@ -49,8 +51,11 @@ func NewSharedState() *SharedState {
 	// Vibespace service requires a k8s client.
 	// resolveKubeconfig is in internal/cli, so we rely on KUBECONFIG being set
 	// (which it is when the TUI is launched via CLI commands).
-	if kc, err := k8s.NewClient(); err == nil {
+	var kc *k8s.Client
+	if c, err := k8s.NewClient(); err == nil {
+		kc = c
 		s.Vibespace = vibespace.NewService(kc)
+		s.Metrics = metrics.NewFetcher(kc)
 	} else {
 		// Still create a nil-client service for graceful degradation
 		s.Vibespace = vibespace.NewService(nil)
