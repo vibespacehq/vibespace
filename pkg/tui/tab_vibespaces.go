@@ -35,6 +35,8 @@ const (
 	vibespacesModeCreateForm                          // inline create form
 	vibespacesModeDeleteConfirm                       // inline delete confirmation
 	vibespacesModeAddAgent                            // inline add agent form (in agent view)
+	vibespacesModeEditConfig                          // inline edit config form (in agent view)
+	vibespacesModeForwardManager                      // inline forward manager (in agent view)
 )
 
 // vsConnectMode distinguishes connect action types.
@@ -149,6 +151,21 @@ type vsAddAgentDoneMsg struct {
 	err error
 }
 
+// vsEditConfigDoneMsg signals completion of an agent config update.
+type vsEditConfigDoneMsg struct {
+	err error
+}
+
+// vsAddForwardDoneMsg signals completion of adding a forward.
+type vsAddForwardDoneMsg struct {
+	err error
+}
+
+// vsRemoveForwardDoneMsg signals completion of removing a forward.
+type vsRemoveForwardDoneMsg struct {
+	err error
+}
+
 // createFormField identifies which field is active in the create form.
 type createFormField int
 
@@ -174,6 +191,27 @@ const (
 	addAgentFieldAllowedTools                             // multi-select (j/k navigate, space toggle)
 	addAgentFieldDisallowedTools                          // multi-select (j/k navigate, space toggle)
 	addAgentFieldCount                                    // sentinel
+)
+
+// editConfigFormField identifies which field is active in the edit config form.
+type editConfigFormField int
+
+const (
+	editConfigFieldModel          editConfigFormField = iota // text input
+	editConfigFieldMaxTurns                                  // text input
+	editConfigFieldSkipPerms                                 // toggle (j/k)
+	editConfigFieldAllowedTools                              // multi-select
+	editConfigFieldDisallowedTools                           // multi-select
+	editConfigFieldCount                                     // sentinel
+)
+
+// fwdManagerAddField identifies which field is active in the add forward sub-form.
+type fwdManagerAddField int
+
+const (
+	fwdManagerAddFieldRemote fwdManagerAddField = iota // text input (remote port)
+	fwdManagerAddFieldLocal                            // text input (local port, 0 = auto)
+	fwdManagerAddFieldCount                            // sentinel
 )
 
 // VibespacesTab displays the vibespace list with inline expansion.
@@ -229,6 +267,24 @@ type VibespacesTab struct {
 	addAgentAllowedSet      map[string]bool // selected allowed tools
 	addAgentDisallowedSet   map[string]bool // selected disallowed tools
 	addAgentToolsCursor     int             // cursor within tools list for multi-select
+
+	// Edit config form state (agent view)
+	editConfigField         editConfigFormField
+	editConfigAgentName     string
+	editConfigModel         string
+	editConfigMaxTurns      string
+	editConfigSkipPerms     bool
+	editConfigToolsList     []string        // available tools for current agent type
+	editConfigAllowedSet    map[string]bool // selected allowed tools
+	editConfigDisallowedSet map[string]bool // selected disallowed tools
+	editConfigToolsCursor   int             // cursor within tools list for multi-select
+
+	// Forward manager state (agent view)
+	fwdManagerCursor    int
+	fwdManagerAdding    bool               // true when add forward sub-form is active
+	fwdManagerAddRemote string             // remote port input
+	fwdManagerAddLocal  string             // local port input
+	fwdManagerAddField  fwdManagerAddField // which add-form field is active
 }
 
 func NewVibespacesTab(shared *SharedState) *VibespacesTab {
@@ -262,6 +318,21 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "skip")),
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "submit")),
 		}
+	case vibespacesModeEditConfig:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "next")),
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "skip")),
+			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "save")),
+		}
+	case vibespacesModeForwardManager:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
+			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "remove")),
+			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+		}
 	case vibespacesModeSessionList:
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
@@ -274,6 +345,8 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate agents")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "sessions")),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add agent")),
+			key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit config")),
+			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forwards")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "connect")),
 			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "browser")),
 		}
@@ -458,6 +531,35 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return t, nil
 
+	case vsEditConfigDoneMsg:
+		t.mode = vibespacesModeAgentView
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		if t.selectedVS != nil {
+			return t, t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name)
+		}
+		return t, nil
+
+	case vsAddForwardDoneMsg:
+		t.fwdManagerAdding = false
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		if t.selectedVS != nil {
+			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
+		}
+		return t, nil
+
+	case vsRemoveForwardDoneMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		if t.selectedVS != nil {
+			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
+		}
+		return t, nil
+
 	case tea.KeyMsg:
 		return t.handleKey(msg)
 	}
@@ -560,6 +662,48 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				ag := t.viewAgents[t.agentCursor]
 				return t, t.prepareBrowserConnect(t.selectedVS.Name, ag.AgentName)
 			}
+		case "e":
+			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+				ag := t.viewAgents[t.agentCursor]
+				t.mode = vibespacesModeEditConfig
+				t.editConfigAgentName = ag.AgentName
+				t.editConfigField = editConfigFieldModel
+				t.editConfigToolsList = agentSupportedTools(ag.AgentType)
+				t.editConfigToolsCursor = 0
+				t.err = ""
+				// Pre-populate from existing config
+				if cfg, ok := t.agentConfigs[ag.AgentName]; ok && cfg != nil {
+					t.editConfigModel = cfg.Model
+					t.editConfigMaxTurns = ""
+					if cfg.MaxTurns > 0 {
+						t.editConfigMaxTurns = strconv.Itoa(cfg.MaxTurns)
+					}
+					t.editConfigSkipPerms = cfg.SkipPermissions
+					t.editConfigAllowedSet = make(map[string]bool)
+					for _, tool := range cfg.AllowedTools {
+						t.editConfigAllowedSet[tool] = true
+					}
+					t.editConfigDisallowedSet = make(map[string]bool)
+					for _, tool := range cfg.DisallowedTools {
+						t.editConfigDisallowedSet[tool] = true
+					}
+				} else {
+					t.editConfigModel = ""
+					t.editConfigMaxTurns = ""
+					t.editConfigSkipPerms = false
+					t.editConfigAllowedSet = make(map[string]bool)
+					t.editConfigDisallowedSet = make(map[string]bool)
+				}
+				return t, nil
+			}
+		case "f":
+			if t.selectedVS != nil {
+				t.mode = vibespacesModeForwardManager
+				t.fwdManagerCursor = 0
+				t.fwdManagerAdding = false
+				t.err = ""
+				return t, nil
+			}
 		}
 		return t, nil
 
@@ -571,6 +715,12 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case vibespacesModeAddAgent:
 		return t.handleAddAgentKey(msg)
+
+	case vibespacesModeEditConfig:
+		return t.handleEditConfigKey(msg)
+
+	case vibespacesModeForwardManager:
+		return t.handleForwardManagerKey(msg)
 
 	default: // list mode
 		prev := t.selected
@@ -654,7 +804,7 @@ func (t *VibespacesTab) View() string {
 	}
 
 	switch t.mode {
-	case vibespacesModeAgentView, vibespacesModeAddAgent:
+	case vibespacesModeAgentView, vibespacesModeAddAgent, vibespacesModeEditConfig, vibespacesModeForwardManager:
 		return t.viewAgentView()
 	case vibespacesModeSessionList:
 		return t.viewSessionList()
@@ -942,11 +1092,16 @@ func (t *VibespacesTab) viewAgentView() string {
 	topBlock := lipgloss.NewStyle().Padding(1, 2).Render(
 		strings.Join(topParts, "\n\n"))
 
-	// --- Bottom block: agent detail or add-agent form ---
+	// --- Bottom block: agent detail or inline form ---
 	var bottom string
-	if t.mode == vibespacesModeAddAgent {
+	switch t.mode {
+	case vibespacesModeAddAgent:
 		bottom = t.viewAddAgentForm()
-	} else {
+	case vibespacesModeEditConfig:
+		bottom = t.viewEditConfigForm()
+	case vibespacesModeForwardManager:
+		bottom = t.viewForwardManager()
+	default:
 		bottom = t.viewAgentDetail()
 	}
 
@@ -2098,19 +2253,24 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// handleToolsMultiSelect handles j/k navigation and space toggle for tool multi-select fields.
+// handleToolsMultiSelect handles j/k navigation and space toggle for tool multi-select fields (add agent).
 func (t *VibespacesTab) handleToolsMultiSelect(k string, set map[string]bool) tea.Cmd {
-	n := len(t.addAgentToolsList)
+	return t.handleToolsMultiSelectWith(k, t.addAgentToolsList, &t.addAgentToolsCursor, set)
+}
+
+// handleToolsMultiSelectWith is the generic helper for tool multi-select navigation.
+func (t *VibespacesTab) handleToolsMultiSelectWith(k string, toolsList []string, cursor *int, set map[string]bool) tea.Cmd {
+	n := len(toolsList)
 	if n == 0 {
 		return nil
 	}
 	switch k {
 	case "j", "down":
-		t.addAgentToolsCursor = min(t.addAgentToolsCursor+1, n-1)
+		*cursor = min(*cursor+1, n-1)
 	case "k", "up":
-		t.addAgentToolsCursor = max(t.addAgentToolsCursor-1, 0)
+		*cursor = max(*cursor-1, 0)
 	case " ":
-		tool := t.addAgentToolsList[t.addAgentToolsCursor]
+		tool := toolsList[*cursor]
 		if set[tool] {
 			delete(set, tool)
 		} else {
@@ -2135,6 +2295,158 @@ func (t *VibespacesTab) addAgentBackspace() {
 			t.addAgentMaxTurns = t.addAgentMaxTurns[:len(t.addAgentMaxTurns)-1]
 		}
 	}
+}
+
+func (t *VibespacesTab) handleEditConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+
+	switch {
+	case k == "esc":
+		t.mode = vibespacesModeAgentView
+		return t, nil
+
+	case k == "ctrl+s":
+		return t, t.submitEditConfig()
+
+	case k == "tab", k == "enter":
+		t.editConfigField++
+		if t.editConfigField >= editConfigFieldCount {
+			return t, t.submitEditConfig()
+		}
+		// Reset tools cursor when entering a multi-select field
+		if t.editConfigField == editConfigFieldAllowedTools || t.editConfigField == editConfigFieldDisallowedTools {
+			t.editConfigToolsCursor = 0
+		}
+		return t, nil
+
+	case k == "backspace":
+		switch t.editConfigField {
+		case editConfigFieldModel:
+			if len(t.editConfigModel) > 0 {
+				t.editConfigModel = t.editConfigModel[:len(t.editConfigModel)-1]
+			}
+		case editConfigFieldMaxTurns:
+			if len(t.editConfigMaxTurns) > 0 {
+				t.editConfigMaxTurns = t.editConfigMaxTurns[:len(t.editConfigMaxTurns)-1]
+			}
+		}
+		return t, nil
+
+	default:
+		switch t.editConfigField {
+		case editConfigFieldSkipPerms:
+			if k == "j" || k == "k" {
+				t.editConfigSkipPerms = !t.editConfigSkipPerms
+			}
+			return t, nil
+		case editConfigFieldAllowedTools:
+			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigAllowedSet)
+		case editConfigFieldDisallowedTools:
+			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigDisallowedSet)
+		}
+
+		// Text fields
+		if len(k) == 1 {
+			switch t.editConfigField {
+			case editConfigFieldModel:
+				t.editConfigModel += k
+			case editConfigFieldMaxTurns:
+				t.editConfigMaxTurns += k
+			}
+		}
+		return t, nil
+	}
+}
+
+func (t *VibespacesTab) handleForwardManagerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if t.fwdManagerAdding {
+		return t.handleFwdManagerAddKey(msg)
+	}
+
+	k := msg.String()
+	switch k {
+	case "esc", "backspace":
+		t.mode = vibespacesModeAgentView
+		return t, nil
+	case "j", "down":
+		fwds := t.currentAgentForwards()
+		if len(fwds) > 0 {
+			t.fwdManagerCursor = min(t.fwdManagerCursor+1, len(fwds)-1)
+		}
+	case "k", "up":
+		if t.fwdManagerCursor > 0 {
+			t.fwdManagerCursor--
+		}
+	case "a":
+		t.fwdManagerAdding = true
+		t.fwdManagerAddRemote = ""
+		t.fwdManagerAddLocal = ""
+		t.fwdManagerAddField = fwdManagerAddFieldRemote
+		t.err = ""
+	case "d":
+		fwds := t.currentAgentForwards()
+		if t.fwdManagerCursor < len(fwds) {
+			fwd := fwds[t.fwdManagerCursor]
+			return t, t.submitRemoveForward(fwd.RemotePort)
+		}
+	case "r":
+		if t.selectedVS != nil {
+			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
+		}
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleFwdManagerAddKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+
+	switch {
+	case k == "esc":
+		t.fwdManagerAdding = false
+		return t, nil
+
+	case k == "ctrl+s":
+		return t, t.submitAddForward()
+
+	case k == "enter", k == "tab":
+		t.fwdManagerAddField++
+		if t.fwdManagerAddField >= fwdManagerAddFieldCount {
+			return t, t.submitAddForward()
+		}
+		return t, nil
+
+	case k == "backspace":
+		switch t.fwdManagerAddField {
+		case fwdManagerAddFieldRemote:
+			if len(t.fwdManagerAddRemote) > 0 {
+				t.fwdManagerAddRemote = t.fwdManagerAddRemote[:len(t.fwdManagerAddRemote)-1]
+			}
+		case fwdManagerAddFieldLocal:
+			if len(t.fwdManagerAddLocal) > 0 {
+				t.fwdManagerAddLocal = t.fwdManagerAddLocal[:len(t.fwdManagerAddLocal)-1]
+			}
+		}
+		return t, nil
+
+	default:
+		if len(k) == 1 {
+			switch t.fwdManagerAddField {
+			case fwdManagerAddFieldRemote:
+				t.fwdManagerAddRemote += k
+			case fwdManagerAddFieldLocal:
+				t.fwdManagerAddLocal += k
+			}
+		}
+		return t, nil
+	}
+}
+
+// currentAgentForwards returns the forwards for the currently selected agent.
+func (t *VibespacesTab) currentAgentForwards() []daemon.ForwardInfo {
+	if t.agentCursor >= len(t.viewAgents) {
+		return nil
+	}
+	return t.forwardsForAgent(t.viewAgents[t.agentCursor].AgentName)
 }
 
 // --- Form views ---
@@ -2327,6 +2639,212 @@ func (t *VibespacesTab) viewAddAgentForm() string {
 	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
 }
 
+func (t *VibespacesTab) viewEditConfigForm() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	labelStyle := lipgloss.NewStyle().Foreground(ui.ColorMuted)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
+		Render(fmt.Sprintf("Edit config: %s", t.editConfigAgentName))
+
+	boolStr := func(v bool) string {
+		if v {
+			return "yes"
+		}
+		return "no"
+	}
+
+	// Collect selected tools as comma-separated summary
+	selectedTools := func(set map[string]bool) string {
+		if len(set) == 0 {
+			return ""
+		}
+		var names []string
+		for _, tool := range t.editConfigToolsList {
+			if set[tool] {
+				names = append(names, tool)
+			}
+		}
+		return strings.Join(names, ", ")
+	}
+
+	type formEntry struct {
+		label    string
+		field    editConfigFormField
+		value    string
+		hint     string
+		isSelect bool
+		isMulti  bool
+		multiSet map[string]bool
+		isEmpty  func() bool
+		emptyVal string
+	}
+
+	allowedSummary := selectedTools(t.editConfigAllowedSet)
+	disallowedSummary := selectedTools(t.editConfigDisallowedSet)
+
+	entries := []formEntry{
+		{"Model", editConfigFieldModel, t.editConfigModel, "e.g. opus, sonnet", false, false, nil,
+			func() bool { return t.editConfigModel == "" }, "(default)"},
+		{"Max turns", editConfigFieldMaxTurns, t.editConfigMaxTurns, "0 = unlimited", false, false, nil,
+			func() bool { return t.editConfigMaxTurns == "" }, "(unlimited)"},
+		{"Skip perms", editConfigFieldSkipPerms, boolStr(t.editConfigSkipPerms), "j/k to toggle", true, false, nil, nil, ""},
+		{"Allowed tools", editConfigFieldAllowedTools, allowedSummary, "j/k navigate, space toggle", false, true, t.editConfigAllowedSet,
+			func() bool { return len(t.editConfigAllowedSet) == 0 }, "(default)"},
+		{"Disallow tools", editConfigFieldDisallowedTools, disallowedSummary, "j/k navigate, space toggle", false, true, t.editConfigDisallowedSet,
+			func() bool { return len(t.editConfigDisallowedSet) == 0 }, "(none)"},
+	}
+
+	var lines []string
+	for _, e := range entries {
+		label := fmt.Sprintf("%-15s", e.label)
+		isActive := e.field == t.editConfigField
+
+		if isActive && e.isMulti {
+			lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(label), dimStyle.Render(e.hint)))
+			for i, tool := range t.editConfigToolsList {
+				check := "[ ]"
+				if e.multiSet[tool] {
+					check = "[x]"
+				}
+				prefix := "    "
+				if i == t.editConfigToolsCursor {
+					lines = append(lines, prefix+activeStyle.Render(check+" "+tool))
+				} else {
+					lines = append(lines, prefix+dimStyle.Render(check+" "+tool))
+				}
+			}
+			continue
+		}
+
+		var val string
+		if isActive {
+			if e.isSelect {
+				val = activeStyle.Render("["+e.value+"]") + "  " + dimStyle.Render(e.hint)
+			} else {
+				val = activeStyle.Render(e.value + "█")
+				if e.isEmpty != nil && e.isEmpty() {
+					val += "  " + dimStyle.Render(e.hint)
+				}
+			}
+		} else {
+			display := e.value
+			if e.isEmpty != nil && e.isEmpty() {
+				display = e.emptyVal
+			}
+			val = dimStyle.Render(display)
+		}
+
+		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(label), val))
+	}
+
+	if t.err != "" {
+		lines = append(lines, "", lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err))
+	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
+func (t *VibespacesTab) viewForwardManager() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	labelStyle := lipgloss.NewStyle().Foreground(ui.ColorMuted)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	agentName := ""
+	if t.agentCursor < len(t.viewAgents) {
+		agentName = t.viewAgents[t.agentCursor].AgentName
+	}
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
+		Render(fmt.Sprintf("Forwards: %s", agentName))
+
+	fwds := t.currentAgentForwards()
+
+	var lines []string
+
+	if len(fwds) == 0 {
+		lines = append(lines, "  "+dimStyle.Render("No forwards."))
+	} else {
+		// Compute column widths for alignment
+		var maxRemote, maxLocal, maxType int
+		for _, fwd := range fwds {
+			if r := len(fmt.Sprintf(":%d", fwd.RemotePort)); r > maxRemote {
+				maxRemote = r
+			}
+			if l := len(fmt.Sprintf(":%d", fwd.LocalPort)); l > maxLocal {
+				maxLocal = l
+			}
+			if len(fwd.Type) > maxType {
+				maxType = len(fwd.Type)
+			}
+		}
+
+		for i, fwd := range fwds {
+			remote := fmt.Sprintf(":%d", fwd.RemotePort)
+			local := fmt.Sprintf(":%d", fwd.LocalPort)
+			line := fmt.Sprintf("%-*s  → %-*s  %-*s  %s",
+				maxRemote, remote,
+				maxLocal, local,
+				maxType, fwd.Type,
+				fwd.Status)
+
+			if i == t.fwdManagerCursor {
+				lines = append(lines, "  "+activeStyle.Render("› "+line))
+			} else {
+				lines = append(lines, "  "+dimStyle.Render("  "+line))
+			}
+		}
+	}
+
+	// Add forward sub-form
+	if t.fwdManagerAdding {
+		lines = append(lines, "")
+		addHeader := lipgloss.NewStyle().Italic(true).Foreground(ui.ColorMuted).
+			Render("  Add forward")
+		lines = append(lines, addHeader)
+
+		remoteLabel := fmt.Sprintf("  %-14s", "Remote port")
+		localLabel := fmt.Sprintf("  %-14s", "Local port")
+
+		if t.fwdManagerAddField == fwdManagerAddFieldRemote {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				labelStyle.Render(remoteLabel),
+				activeStyle.Render(t.fwdManagerAddRemote+"█")))
+		} else {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				labelStyle.Render(remoteLabel),
+				dimStyle.Render(t.fwdManagerAddRemote)))
+		}
+
+		if t.fwdManagerAddField == fwdManagerAddFieldLocal {
+			lines = append(lines, fmt.Sprintf("  %s %s  %s",
+				labelStyle.Render(localLabel),
+				activeStyle.Render(t.fwdManagerAddLocal+"█"),
+				dimStyle.Render("0 = auto")))
+		} else {
+			display := t.fwdManagerAddLocal
+			if display == "" {
+				display = "(auto)"
+			}
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				labelStyle.Render(localLabel),
+				dimStyle.Render(display)))
+		}
+	}
+
+	if t.err != "" {
+		lines = append(lines, "", lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err))
+	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
 // --- Form submit commands ---
 
 func (t *VibespacesTab) submitCreateForm() tea.Cmd {
@@ -2447,6 +2965,97 @@ func (t *VibespacesTab) submitAddAgent() tea.Cmd {
 
 		_, err := svc.SpawnAgent(ctx, vsName, opts)
 		return vsAddAgentDoneMsg{err: err}
+	}
+}
+
+func (t *VibespacesTab) submitEditConfig() tea.Cmd {
+	svc := t.shared.Vibespace
+	if t.selectedVS == nil {
+		return nil
+	}
+	vsName := t.selectedVS.Name
+	agentName := t.editConfigAgentName
+	modelName := t.editConfigModel
+	maxTurnsStr := t.editConfigMaxTurns
+	skipPerms := t.editConfigSkipPerms
+
+	// Collect selected tools preserving order from the tools list
+	var allowedTools, disallowedTools []string
+	for _, tool := range t.editConfigToolsList {
+		if t.editConfigAllowedSet[tool] {
+			allowedTools = append(allowedTools, tool)
+		}
+		if t.editConfigDisallowedSet[tool] {
+			disallowedTools = append(disallowedTools, tool)
+		}
+	}
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsEditConfigDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		maxTurns, _ := strconv.Atoi(maxTurnsStr)
+		cfg := &agent.Config{
+			SkipPermissions: skipPerms,
+			Model:           modelName,
+			MaxTurns:        maxTurns,
+			AllowedTools:    allowedTools,
+			DisallowedTools: disallowedTools,
+		}
+
+		err := svc.UpdateAgentConfig(ctx, vsName, agentName, cfg)
+		return vsEditConfigDoneMsg{err: err}
+	}
+}
+
+func (t *VibespacesTab) submitAddForward() tea.Cmd {
+	dc := t.shared.Daemon
+	if t.selectedVS == nil || t.agentCursor >= len(t.viewAgents) {
+		return nil
+	}
+	vsName := t.selectedVS.Name
+	agentName := t.viewAgents[t.agentCursor].AgentName
+	remoteStr := t.fwdManagerAddRemote
+	localStr := t.fwdManagerAddLocal
+
+	return func() tea.Msg {
+		if dc == nil {
+			return vsAddForwardDoneMsg{err: fmt.Errorf("daemon not available")}
+		}
+		remotePort, err := strconv.Atoi(remoteStr)
+		if err != nil {
+			return vsAddForwardDoneMsg{err: fmt.Errorf("invalid remote port: %s", remoteStr)}
+		}
+		localPort := 0
+		if localStr != "" {
+			localPort, err = strconv.Atoi(localStr)
+			if err != nil {
+				return vsAddForwardDoneMsg{err: fmt.Errorf("invalid local port: %s", localStr)}
+			}
+		}
+
+		_, err = dc.AddForwardForVibespace(vsName, agentName, remotePort, localPort, false, "")
+		return vsAddForwardDoneMsg{err: err}
+	}
+}
+
+func (t *VibespacesTab) submitRemoveForward(remotePort int) tea.Cmd {
+	dc := t.shared.Daemon
+	if t.selectedVS == nil || t.agentCursor >= len(t.viewAgents) {
+		return nil
+	}
+	vsName := t.selectedVS.Name
+	agentName := t.viewAgents[t.agentCursor].AgentName
+
+	return func() tea.Msg {
+		if dc == nil {
+			return vsRemoveForwardDoneMsg{err: fmt.Errorf("daemon not available")}
+		}
+		err := dc.RemoveForwardForVibespace(vsName, agentName, remotePort)
+		return vsRemoveForwardDoneMsg{err: err}
 	}
 }
 
