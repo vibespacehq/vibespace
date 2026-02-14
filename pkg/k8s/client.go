@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 const (
@@ -22,8 +23,9 @@ const (
 
 // Client wraps the Kubernetes client
 type Client struct {
-	clientset *kubernetes.Clientset
-	config    *rest.Config
+	clientset  *kubernetes.Clientset
+	config     *rest.Config
+	metricsset metricsv.Interface
 }
 
 // NewClient creates a new Kubernetes client
@@ -98,6 +100,19 @@ func (c *Client) Clientset() *kubernetes.Clientset {
 // Config returns the underlying Kubernetes REST config
 func (c *Client) Config() *rest.Config {
 	return c.config
+}
+
+// MetricsClientset returns the metrics API clientset, creating it on first call.
+func (c *Client) MetricsClientset() (metricsv.Interface, error) {
+	if c.metricsset != nil {
+		return c.metricsset, nil
+	}
+	mc, err := metricsv.NewForConfig(c.config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create metrics clientset: %w", err)
+	}
+	c.metricsset = mc
+	return c.metricsset, nil
 }
 
 // EnsureNamespace ensures the vibespace namespace exists
