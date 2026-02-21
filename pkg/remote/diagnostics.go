@@ -94,12 +94,24 @@ func checkWireGuardHandshake() DiagnosticResult {
 	}
 
 	ifName := wireguardInterfaceName()
-	out, err := exec.Command("sudo", wg, "show", ifName, "latest-handshakes").Output()
-	if err != nil {
+
+	// Try without sudo first (works on Linux with CAP_NET_ADMIN),
+	// then with sudo -n (non-interactive — won't prompt for password).
+	var out []byte
+	for _, args := range [][]string{
+		{wg, "show", ifName, "latest-handshakes"},
+		{"sudo", "-n", wg, "show", ifName, "latest-handshakes"},
+	} {
+		if o, err := exec.Command(args[0], args[1:]...).Output(); err == nil {
+			out = o
+			break
+		}
+	}
+	if out == nil {
 		return DiagnosticResult{
 			Check:   "WireGuard Handshake",
 			Status:  false,
-			Message: "Could not read handshake info (interface may be down)",
+			Message: "Could not read handshake info (needs sudo credentials cached)",
 		}
 	}
 
