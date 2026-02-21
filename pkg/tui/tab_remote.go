@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -43,6 +44,7 @@ type remoteTickMsg struct{}
 type remoteExecReturnMsg struct {
 	err error
 }
+
 
 // RemoteTab shows WireGuard remote connection status.
 type RemoteTab struct {
@@ -532,6 +534,7 @@ func (t *RemoteTab) loadRemoteState(withDiagnostics bool) tea.Cmd {
 
 		var diag []remote.DiagnosticResult
 		if withDiagnostics && rs.Connected {
+			ensureSudoCached()
 			diag = remote.RunDiagnostics(rs)
 		}
 
@@ -593,6 +596,50 @@ func (t *RemoteTab) execGenerateToken() tea.Cmd {
 }
 
 // --- Helpers ---
+
+// ensureSudoCached checks if sudo credentials are cached, and if not,
+// prompts the user via a platform-native GUI dialog (osascript on macOS,
+// pkexec/systemd-ask-password on Linux) so background diagnostics can
+// use sudo -n without needing terminal access.
+func ensureSudoCached() {
+	// Already cached? Nothing to do.
+	if exec.Command("sudo", "-n", "true").Run() == nil {
+		return
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		// Native macOS password dialog via AppleScript
+		script := `text returned of (display dialog "vibespace needs administrator access for WireGuard diagnostics." default answer "" with hidden answer with title "vibespace" with icon caution)`
+		out, err := exec.Command("osascript", "-e", script).Output()
+		if err != nil {
+			return // user cancelled
+		}
+		pw := strings.TrimSpace(string(out))
+		if pw == "" {
+			return
+		}
+		cmd := exec.Command("sudo", "-S", "-v")
+		cmd.Stdin = strings.NewReader(pw + "\n")
+		cmd.Run() // best-effort
+
+	case "linux":
+		// Try systemd-ask-password (works on systemd-based distros)
+		if _, err := exec.LookPath("systemd-ask-password"); err == nil {
+			out, err := exec.Command("systemd-ask-password", "--timeout=30", "vibespace needs sudo for WireGuard diagnostics:").Output()
+			if err != nil {
+				return
+			}
+			pw := strings.TrimSpace(string(out))
+			if pw == "" {
+				return
+			}
+			cmd := exec.Command("sudo", "-S", "-v")
+			cmd.Stdin = strings.NewReader(pw + "\n")
+			cmd.Run()
+		}
+	}
+}
 
 // extractHost returns the host part from a "host:port" endpoint string.
 func extractHost(endpoint string) string {
