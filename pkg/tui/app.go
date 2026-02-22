@@ -186,8 +186,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.switchTab(4)
 		}
 
-		// Number keys and overlays only outside Chat tab
-		if a.activeTab != TabChat {
+		// Number keys and overlays only when no tab is capturing text input
+		if !a.tabCapturingInput() {
 			switch msg.String() {
 			case "1":
 				return a, a.switchTab(0)
@@ -245,6 +245,20 @@ func (a *App) View() string {
 	}
 
 	return zone.Scan(base)
+}
+
+// tabCapturingInput returns true when the active tab has a focused text input
+// (e.g. Chat, token input, sudo prompt) so the app skips number-key tab switching.
+func (a *App) tabCapturingInput() bool {
+	if a.activeTab == TabChat {
+		return true
+	}
+	if rt, ok := a.tabs[TabRemote].(*RemoteTab); ok && a.activeTab == TabRemote {
+		if rt.mode == remoteModeTokenInput || rt.mode == remoteModeSudoPrompt {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Tab switching ---
