@@ -380,7 +380,7 @@ func quickUpMacOS(addr string) error {
 
 	// Save the tunnel name for QuickDown
 	vsHome, _ := getVibespaceHome()
-	os.WriteFile(filepath.Join(vsHome, "utun-name"), []byte(tunName), 0600)
+	os.WriteFile(filepath.Join(vsHome, "utun-name"), []byte(tunName), 0644)
 
 	return nil
 }
