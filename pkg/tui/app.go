@@ -248,14 +248,29 @@ func (a *App) View() string {
 }
 
 // tabCapturingInput returns true when the active tab has a focused text input
-// (e.g. Chat, token input, sudo prompt) so the app skips number-key tab switching.
+// (e.g. Chat, token/sudo input, session name, vibespace forms) so the app
+// skips number-key tab switching and overlay toggles.
 func (a *App) tabCapturingInput() bool {
-	if a.activeTab == TabChat {
-		return true
-	}
-	if rt, ok := a.tabs[TabRemote].(*RemoteTab); ok && a.activeTab == TabRemote {
-		if rt.mode == remoteModeTokenInput || rt.mode == remoteModeSudoPrompt {
-			return true
+	switch a.activeTab {
+	case TabChat:
+		if ct, ok := a.tabs[TabChat].(*ChatTab); ok {
+			return ct.inner != nil // only capture when a session is loaded
+		}
+	case TabRemote:
+		if rt, ok := a.tabs[TabRemote].(*RemoteTab); ok {
+			return rt.mode == remoteModeTokenInput || rt.mode == remoteModeSudoPrompt
+		}
+	case TabSessions:
+		if st, ok := a.tabs[TabSessions].(*SessionsTab); ok {
+			return st.mode == sessionsModeNewName
+		}
+	case TabVibespaces:
+		if vt, ok := a.tabs[TabVibespaces].(*VibespacesTab); ok {
+			switch vt.mode {
+			case vibespacesModeCreateForm, vibespacesModeAddAgent,
+				vibespacesModeEditConfig, vibespacesModeForwardManager:
+				return true
+			}
 		}
 	}
 	return false
