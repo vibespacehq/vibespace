@@ -18,8 +18,14 @@ type DiagnosticResult struct {
 }
 
 // RunDiagnostics runs a series of diagnostic checks on the client connection.
-func RunDiagnostics(state *RemoteState) []DiagnosticResult {
+// An optional sudoPassword can be provided to pipe to sudo -S for commands
+// that need root (e.g. wg show). When empty, falls back to sudo -n.
+func RunDiagnostics(state *RemoteState, sudoPassword ...string) []DiagnosticResult {
 	var results []DiagnosticResult
+	pw := ""
+	if len(sudoPassword) > 0 {
+		pw = sudoPassword[0]
+	}
 
 	// 1. WireGuard Interface
 	results = append(results, checkWireGuardInterface())
@@ -30,7 +36,7 @@ func RunDiagnostics(state *RemoteState) []DiagnosticResult {
 	}
 
 	// 3. WireGuard Handshake
-	results = append(results, checkWireGuardHandshake())
+	results = append(results, checkWireGuardHandshake(pw))
 
 	// 4. Management API
 	if state.ServerIP != "" {
@@ -83,7 +89,7 @@ func checkUDPConnectivity(endpoint string) DiagnosticResult {
 	}
 }
 
-func checkWireGuardHandshake() DiagnosticResult {
+func checkWireGuardHandshake(sudoPass string) DiagnosticResult {
 	wg, err := wgBin()
 	if err != nil {
 		return DiagnosticResult{
@@ -95,23 +101,33 @@ func checkWireGuardHandshake() DiagnosticResult {
 
 	ifName := wireguardInterfaceName()
 
-	// Try without sudo first (works on Linux with CAP_NET_ADMIN),
-	// then with sudo -n (non-interactive — won't prompt for password).
+	// Try without sudo first (works on Linux with CAP_NET_ADMIN).
 	var out []byte
-	for _, args := range [][]string{
-		{wg, "show", ifName, "latest-handshakes"},
-		{"sudo", "-n", wg, "show", ifName, "latest-handshakes"},
-	} {
-		if o, err := exec.Command(args[0], args[1:]...).Output(); err == nil {
+	if o, err := exec.Command(wg, "show", ifName, "latest-handshakes").Output(); err == nil {
+		out = o
+	}
+
+	// If that failed and we have a password, use sudo -S (piped stdin).
+	if out == nil && sudoPass != "" {
+		cmd := exec.Command("sudo", "-S", wg, "show", ifName, "latest-handshakes")
+		cmd.Stdin = strings.NewReader(sudoPass + "\n")
+		if o, err := cmd.Output(); err == nil {
 			out = o
-			break
 		}
 	}
+
+	// Last resort: try sudo -n (works if credentials happen to be cached).
+	if out == nil {
+		if o, err := exec.Command("sudo", "-n", wg, "show", ifName, "latest-handshakes").Output(); err == nil {
+			out = o
+		}
+	}
+
 	if out == nil {
 		return DiagnosticResult{
 			Check:   "WireGuard Handshake",
 			Status:  false,
-			Message: "Could not read handshake info (needs sudo credentials cached)",
+			Message: "Could not read handshake info (needs sudo)",
 		}
 	}
 
