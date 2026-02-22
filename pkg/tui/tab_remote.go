@@ -47,7 +47,8 @@ type remoteExecReturnMsg struct {
 }
 
 type remoteSudoResultMsg struct {
-	ok bool
+	ok       bool
+	password string
 }
 
 // RemoteTab shows WireGuard remote connection status.
@@ -68,9 +69,9 @@ type RemoteTab struct {
 	tokenInput textinput.Model
 
 	// Sudo password input (for diagnostics)
-	sudoInput    textinput.Model
-	sudoCached   bool // sudo -n works, no need to prompt
-	sudoDismissed bool // user pressed Esc on sudo prompt, don't auto-prompt again
+	sudoInput     textinput.Model
+	sudoPassword  string // stored in memory, piped via sudo -S
+	sudoDismissed bool   // user pressed Esc on sudo prompt, don't auto-prompt again
 
 	// Confirm disconnect
 	confirmDisconnect bool
@@ -151,8 +152,9 @@ func (t *RemoteTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case remoteSudoResultMsg:
 		if msg.ok {
-			t.sudoCached = true
+			t.sudoPassword = msg.password
 		} else {
+			t.sudoPassword = ""
 			t.err = "sudo authentication failed"
 		}
 		t.mode = t.detectMode()
@@ -589,9 +591,10 @@ func (t *RemoteTab) renderServing() string {
 
 // loadRemoteState returns a tea.Cmd that loads remote and server state.
 // If withDiagnostics is true and the client is connected, diagnostics are also run.
-// When diagnostics need sudo but credentials aren't cached, it returns needsSudo=true
+// When diagnostics need sudo but no password is stored, it returns needsSudo=true
 // so the TUI can prompt for the password inline.
 func (t *RemoteTab) loadRemoteState(withDiagnostics bool) tea.Cmd {
+	sudoPass := t.sudoPassword
 	return func() tea.Msg {
 		rs, err := remote.LoadRemoteState()
 		if err != nil {
@@ -609,10 +612,11 @@ func (t *RemoteTab) loadRemoteState(withDiagnostics bool) tea.Cmd {
 		var diag []remote.DiagnosticResult
 		var needsSudo bool
 		if withDiagnostics && rs.Connected {
-			// Check if sudo credentials are cached (non-interactive)
-			if exec.Command("sudo", "-n", "true").Run() == nil {
-				diag = remote.RunDiagnostics(rs)
+			if sudoPass != "" {
+				// Have password — pipe it via sudo -S to diagnostics
+				diag = remote.RunDiagnostics(rs, sudoPass)
 			} else {
+				// No password yet — ask the TUI to prompt
 				needsSudo = true
 			}
 		}
@@ -677,14 +681,14 @@ func (t *RemoteTab) execGenerateToken() tea.Cmd {
 
 // --- Helpers ---
 
-// cacheSudo pipes the given password to `sudo -S -v` to cache credentials,
-// then returns a remoteSudoResultMsg indicating success or failure.
+// cacheSudo validates the password via `sudo -S true`, then returns
+// a remoteSudoResultMsg with the password on success.
 func (t *RemoteTab) cacheSudo(pw string) tea.Cmd {
 	return func() tea.Msg {
-		cmd := exec.Command("sudo", "-S", "-v")
+		cmd := exec.Command("sudo", "-S", "true")
 		cmd.Stdin = strings.NewReader(pw + "\n")
 		err := cmd.Run()
-		return remoteSudoResultMsg{ok: err == nil}
+		return remoteSudoResultMsg{ok: err == nil, password: pw}
 	}
 }
 
