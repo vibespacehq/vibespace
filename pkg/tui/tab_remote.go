@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
@@ -24,7 +23,8 @@ const (
 	remoteModeDisconnected remoteMode = iota
 	remoteModeConnected
 	remoteModeServing
-	remoteModeTokenInput // user is typing a token to connect
+	remoteModeTokenInput    // user is typing a token to connect
+	remoteModeSudoPrompt   // user is typing sudo password for diagnostics
 )
 
 const remoteRefreshInterval = 10 * time.Second
@@ -32,11 +32,12 @@ const remoteRefreshInterval = 10 * time.Second
 // --- Private message types ---
 
 type remoteStateMsg struct {
-	remoteState  *remote.RemoteState
-	serverState  *remote.ServerState
-	ifaceStatus  string
-	diagnostics  []remote.DiagnosticResult
-	err          error
+	remoteState *remote.RemoteState
+	serverState *remote.ServerState
+	ifaceStatus string
+	diagnostics []remote.DiagnosticResult
+	needsSudo   bool // sudo -n failed; prompt user
+	err         error
 }
 
 type remoteTickMsg struct{}
@@ -45,6 +46,9 @@ type remoteExecReturnMsg struct {
 	err error
 }
 
+type remoteSudoResultMsg struct {
+	ok bool
+}
 
 // RemoteTab shows WireGuard remote connection status.
 type RemoteTab struct {
@@ -63,6 +67,11 @@ type RemoteTab struct {
 	// Token input
 	tokenInput textinput.Model
 
+	// Sudo password input (for diagnostics)
+	sudoInput    textinput.Model
+	sudoCached   bool // sudo -n works, no need to prompt
+	sudoDismissed bool // user pressed Esc on sudo prompt, don't auto-prompt again
+
 	// Confirm disconnect
 	confirmDisconnect bool
 }
@@ -73,9 +82,17 @@ func NewRemoteTab(shared *SharedState) *RemoteTab {
 	ti.CharLimit = 2048
 	ti.Width = 60
 
+	si := textinput.New()
+	si.Placeholder = "password"
+	si.EchoMode = textinput.EchoPassword
+	si.EchoCharacter = '•'
+	si.CharLimit = 256
+	si.Width = 40
+
 	return &RemoteTab{
 		shared:     shared,
 		tokenInput: ti,
+		sudoInput:  si,
 	}
 }
 
@@ -93,9 +110,9 @@ func (t *RemoteTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "generate token")),
 			key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "refresh")),
 		}
-	case remoteModeTokenInput:
+	case remoteModeTokenInput, remoteModeSudoPrompt:
 		return []key.Binding{
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "connect")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "submit")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 		}
 	default:
@@ -121,6 +138,9 @@ func (t *RemoteTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case remoteStateMsg:
 		t.applyState(msg)
+		if t.mode == remoteModeSudoPrompt {
+			return t, t.sudoInput.Cursor.BlinkCmd()
+		}
 		return t, nil
 
 	case remoteTickMsg:
@@ -128,6 +148,15 @@ func (t *RemoteTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, t.loadRemoteState(false))
 		cmds = append(cmds, t.scheduleTick())
 		return t, tea.Batch(cmds...)
+
+	case remoteSudoResultMsg:
+		if msg.ok {
+			t.sudoCached = true
+		} else {
+			t.err = "sudo authentication failed"
+		}
+		t.mode = t.detectMode()
+		return t, t.loadRemoteState(true)
 
 	case remoteExecReturnMsg:
 		if msg.err != nil {
@@ -159,10 +188,19 @@ func (t *RemoteTab) applyState(msg remoteStateMsg) {
 	t.diagnostics = msg.diagnostics
 	t.lastRefresh = time.Now()
 
-	// Determine mode (don't override token input mode)
-	if t.mode == remoteModeTokenInput {
+	// Don't override interactive input modes
+	if t.mode == remoteModeTokenInput || t.mode == remoteModeSudoPrompt {
 		return
 	}
+
+	// If sudo is needed and user hasn't dismissed the prompt, show it
+	if msg.needsSudo && !t.sudoDismissed {
+		t.mode = remoteModeSudoPrompt
+		t.sudoInput.SetValue("")
+		t.sudoInput.Focus()
+		return
+	}
+
 	t.mode = t.detectMode()
 }
 
@@ -180,6 +218,11 @@ func (t *RemoteTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Token input mode — delegate to textinput
 	if t.mode == remoteModeTokenInput {
 		return t.handleTokenInputKey(msg)
+	}
+
+	// Sudo password input mode
+	if t.mode == remoteModeSudoPrompt {
+		return t.handleSudoInputKey(msg)
 	}
 
 	// Disconnect confirmation
@@ -210,6 +253,7 @@ func (t *RemoteTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			t.confirmDisconnect = true
 			return t, nil
 		case "R":
+			t.sudoDismissed = false // allow re-prompt on manual refresh
 			return t, t.loadRemoteState(true)
 		}
 
@@ -246,11 +290,39 @@ func (t *RemoteTab) handleTokenInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return t, cmd
 }
 
+func (t *RemoteTab) handleSudoInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		t.sudoDismissed = true
+		t.mode = t.detectMode()
+		t.sudoInput.Blur()
+		t.sudoInput.SetValue("")
+		return t, nil
+	case "enter":
+		pw := t.sudoInput.Value()
+		t.sudoInput.Blur()
+		t.sudoInput.SetValue("")
+		if pw == "" {
+			t.sudoDismissed = true
+			t.mode = t.detectMode()
+			return t, nil
+		}
+		return t, t.cacheSudo(pw)
+	}
+
+	var cmd tea.Cmd
+	t.sudoInput, cmd = t.sudoInput.Update(msg)
+	return t, cmd
+}
+
 // --- View ---
 
 func (t *RemoteTab) View() string {
 	if t.mode == remoteModeTokenInput {
 		return t.renderTokenInput()
+	}
+	if t.mode == remoteModeSudoPrompt {
+		return t.renderSudoPrompt()
 	}
 	if t.confirmDisconnect {
 		return t.renderDisconnectConfirm()
@@ -517,6 +589,8 @@ func (t *RemoteTab) renderServing() string {
 
 // loadRemoteState returns a tea.Cmd that loads remote and server state.
 // If withDiagnostics is true and the client is connected, diagnostics are also run.
+// When diagnostics need sudo but credentials aren't cached, it returns needsSudo=true
+// so the TUI can prompt for the password inline.
 func (t *RemoteTab) loadRemoteState(withDiagnostics bool) tea.Cmd {
 	return func() tea.Msg {
 		rs, err := remote.LoadRemoteState()
@@ -533,9 +607,14 @@ func (t *RemoteTab) loadRemoteState(withDiagnostics bool) tea.Cmd {
 		ifaceStatus := remote.InterfaceStatus()
 
 		var diag []remote.DiagnosticResult
+		var needsSudo bool
 		if withDiagnostics && rs.Connected {
-			ensureSudoCached()
-			diag = remote.RunDiagnostics(rs)
+			// Check if sudo credentials are cached (non-interactive)
+			if exec.Command("sudo", "-n", "true").Run() == nil {
+				diag = remote.RunDiagnostics(rs)
+			} else {
+				needsSudo = true
+			}
 		}
 
 		return remoteStateMsg{
@@ -543,6 +622,7 @@ func (t *RemoteTab) loadRemoteState(withDiagnostics bool) tea.Cmd {
 			serverState: ss,
 			ifaceStatus: ifaceStatus,
 			diagnostics: diag,
+			needsSudo:   needsSudo,
 		}
 	}
 }
@@ -597,48 +677,29 @@ func (t *RemoteTab) execGenerateToken() tea.Cmd {
 
 // --- Helpers ---
 
-// ensureSudoCached checks if sudo credentials are cached, and if not,
-// prompts the user via a platform-native GUI dialog (osascript on macOS,
-// pkexec/systemd-ask-password on Linux) so background diagnostics can
-// use sudo -n without needing terminal access.
-func ensureSudoCached() {
-	// Already cached? Nothing to do.
-	if exec.Command("sudo", "-n", "true").Run() == nil {
-		return
-	}
-
-	switch runtime.GOOS {
-	case "darwin":
-		// Native macOS password dialog via AppleScript
-		script := `text returned of (display dialog "vibespace needs administrator access for WireGuard diagnostics." default answer "" with hidden answer with title "vibespace" with icon caution)`
-		out, err := exec.Command("osascript", "-e", script).Output()
-		if err != nil {
-			return // user cancelled
-		}
-		pw := strings.TrimSpace(string(out))
-		if pw == "" {
-			return
-		}
+// cacheSudo pipes the given password to `sudo -S -v` to cache credentials,
+// then returns a remoteSudoResultMsg indicating success or failure.
+func (t *RemoteTab) cacheSudo(pw string) tea.Cmd {
+	return func() tea.Msg {
 		cmd := exec.Command("sudo", "-S", "-v")
 		cmd.Stdin = strings.NewReader(pw + "\n")
-		cmd.Run() // best-effort
-
-	case "linux":
-		// Try systemd-ask-password (works on systemd-based distros)
-		if _, err := exec.LookPath("systemd-ask-password"); err == nil {
-			out, err := exec.Command("systemd-ask-password", "--timeout=30", "vibespace needs sudo for WireGuard diagnostics:").Output()
-			if err != nil {
-				return
-			}
-			pw := strings.TrimSpace(string(out))
-			if pw == "" {
-				return
-			}
-			cmd := exec.Command("sudo", "-S", "-v")
-			cmd.Stdin = strings.NewReader(pw + "\n")
-			cmd.Run()
-		}
+		err := cmd.Run()
+		return remoteSudoResultMsg{ok: err == nil}
 	}
+}
+
+func (t *RemoteTab) renderSudoPrompt() string {
+	dim := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	warn := lipgloss.NewStyle().Foreground(ui.ColorWarning)
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString(t.renderHeader("connected"))
+	sb.WriteString("\n\n")
+	sb.WriteString("  " + warn.Render("sudo required") + " " + dim.Render("for WireGuard diagnostics") + "\n\n")
+	sb.WriteString("  " + dim.Render("Password:") + " " + t.sudoInput.View() + "\n\n")
+	sb.WriteString("  " + dim.Render("enter submit  esc skip") + "\n")
+	return sb.String()
 }
 
 // extractHost returns the host part from a "host:port" endpoint string.
