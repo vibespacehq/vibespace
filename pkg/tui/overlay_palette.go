@@ -15,9 +15,9 @@ func NewPaletteOverlay() *PaletteOverlay {
 	return &PaletteOverlay{}
 }
 
-func (p *PaletteOverlay) Toggle() { p.visible = !p.visible }
-func (p *PaletteOverlay) Show()   { p.visible = true }
-func (p *PaletteOverlay) Hide()   { p.visible = false }
+func (p *PaletteOverlay) Toggle()       { p.visible = !p.visible }
+func (p *PaletteOverlay) Show()         { p.visible = true }
+func (p *PaletteOverlay) Hide()         { p.visible = false }
 func (p *PaletteOverlay) Visible() bool { return p.visible }
 
 func (p *PaletteOverlay) SetSize(w, h int) {

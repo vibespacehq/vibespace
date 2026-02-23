@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
-	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
 func TestPrintAgentConfigClaude(t *testing.T) {
@@ -21,7 +20,7 @@ func TestPrintAgentConfigClaude(t *testing.T) {
 	got := captureStdout(t, func() {
 		printAgentConfig("claude-1", agent.TypeClaudeCode, config)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	// Header
 	if !strings.Contains(stripped, "claude-1") {
@@ -60,7 +59,7 @@ func TestPrintAgentConfigCodex(t *testing.T) {
 	got := captureStdout(t, func() {
 		printAgentConfig("codex-1", agent.TypeCodex, config)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	if !strings.Contains(stripped, "codex-1") {
 		t.Error("should contain agent name")
@@ -92,7 +91,7 @@ func TestPrintAgentConfigSkipPermissions(t *testing.T) {
 	got := captureStdout(t, func() {
 		printAgentConfig("claude-1", agent.TypeClaudeCode, config)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	// When skip_permissions is true, allowed_tools should show "all"
 	lines := strings.Split(stripped, "\n")
@@ -117,7 +116,7 @@ func TestPrintAgentConfigCustomTools(t *testing.T) {
 	got := captureStdout(t, func() {
 		printAgentConfig("claude-1", agent.TypeClaudeCode, config)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	if !strings.Contains(stripped, "Bash, Read, Write") {
 		t.Errorf("should contain allowed tools, got:\n%s", stripped)
@@ -135,7 +134,7 @@ func TestPrintAgentConfigDefaultTools(t *testing.T) {
 	got := captureStdout(t, func() {
 		printAgentConfig("claude-1", agent.TypeClaudeCode, config)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	if !strings.Contains(stripped, "(default)") {
 		t.Errorf("should show (default) for default allowed tools, got:\n%s", stripped)
@@ -150,7 +149,7 @@ func TestPrintAgentConfigDefaults(t *testing.T) {
 	got := captureStdout(t, func() {
 		printAgentConfig("claude-1", agent.TypeClaudeCode, config)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	// Default model
 	if !strings.Contains(stripped, "default") {
@@ -172,7 +171,7 @@ func TestPrintAgentConfigSystemPrompt(t *testing.T) {
 	got := captureStdout(t, func() {
 		printAgentConfig("claude-1", agent.TypeClaudeCode, config)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	if !strings.Contains(stripped, "system_prompt") {
 		t.Error("should contain system_prompt label")
@@ -207,7 +206,7 @@ func TestPrintAgentConfigShareCredentials(t *testing.T) {
 	got := captureStdout(t, func() {
 		printAgentConfig("claude-1", agent.TypeClaudeCode, config)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	lines := strings.Split(stripped, "\n")
 	for _, line := range lines {

@@ -18,9 +18,9 @@ func NewHelpOverlay() *HelpOverlay {
 	return &HelpOverlay{}
 }
 
-func (h *HelpOverlay) Toggle() { h.visible = !h.visible }
-func (h *HelpOverlay) Show()   { h.visible = true }
-func (h *HelpOverlay) Hide()   { h.visible = false }
+func (h *HelpOverlay) Toggle()       { h.visible = !h.visible }
+func (h *HelpOverlay) Show()         { h.visible = true }
+func (h *HelpOverlay) Hide()         { h.visible = false }
 func (h *HelpOverlay) Visible() bool { return h.visible }
 
 func (h *HelpOverlay) SetSize(w, height int) {

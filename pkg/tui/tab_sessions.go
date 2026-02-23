@@ -22,11 +22,11 @@ import (
 type sessionsMode int
 
 const (
-	sessionsModeList           sessionsMode = iota
-	sessionsModeDelete                      // inline delete confirmation
-	sessionsModeNewName                     // step 1: name input
-	sessionsModeNewVibespaces               // step 2: vibespace picker
-	sessionsModeNewAgents                   // step 3: agent picker per vibespace
+	sessionsModeList          sessionsMode = iota
+	sessionsModeDelete                     // inline delete confirmation
+	sessionsModeNewName                    // step 1: name input
+	sessionsModeNewVibespaces              // step 2: vibespace picker
+	sessionsModeNewAgents                  // step 3: agent picker per vibespace
 )
 
 // sessionsLoadedMsg delivers session data from the store.
@@ -80,28 +80,28 @@ type agentPickerItem struct {
 
 // SessionsTab manages multi-agent sessions.
 type SessionsTab struct {
-	shared   *SharedState
-	sessions []session.Session
-	selected int
-	width    int
-	height   int
-	mode     sessionsMode
-	nameInput       textinput.Model
-	err             string     // transient error message
-	previewName     string     // session name for cached preview messages
-	previewMsgs     []*Message // last N messages for selected session
-	previewTotal    int        // total message count for selected session
+	shared       *SharedState
+	sessions     []session.Session
+	selected     int
+	width        int
+	height       int
+	mode         sessionsMode
+	nameInput    textinput.Model
+	err          string     // transient error message
+	previewName  string     // session name for cached preview messages
+	previewMsgs  []*Message // last N messages for selected session
+	previewTotal int        // total message count for selected session
 
 	// Multi-step new session creation state
-	newSessionName   string            // stored name from step 1
-	newVibespaces    []vsPickerItem    // available vibespaces for picker
-	newVSSelected    []bool            // toggle state per vibespace
-	newVSCursor      int               // cursor position in vibespace list
-	newAgents        []agentPickerItem // agents for current vibespace
-	newAgentSelected []bool            // toggle state per agent
-	newAgentCursor   int               // cursor position in agent list
-	newAgentVSIndex  int               // which selected vibespace we're picking agents for
-	newSelectedVS    []vsPickerItem    // vibespaces the user toggled on (built when leaving step 2)
+	newSessionName   string              // stored name from step 1
+	newVibespaces    []vsPickerItem      // available vibespaces for picker
+	newVSSelected    []bool              // toggle state per vibespace
+	newVSCursor      int                 // cursor position in vibespace list
+	newAgents        []agentPickerItem   // agents for current vibespace
+	newAgentSelected []bool              // toggle state per agent
+	newAgentCursor   int                 // cursor position in agent list
+	newAgentVSIndex  int                 // which selected vibespace we're picking agents for
+	newSelectedVS    []vsPickerItem      // vibespaces the user toggled on (built when leaving step 2)
 	newVSAgents      map[string][]string // vibespace name → selected agent names (accumulated across step 3)
 }
 
