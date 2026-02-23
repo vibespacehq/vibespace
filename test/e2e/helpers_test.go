@@ -494,6 +494,22 @@ func waitForDaemonReady(t *testing.T, vsName string) {
 	}
 }
 
+// mustSucceedDefault runs a command without --json or --plain (default output mode)
+// and asserts exit code 0 with non-empty stdout.
+func mustSucceedDefault(t *testing.T, args ...string) string {
+	t.Helper()
+	r := run(t, args...)
+	if r.ExitCode != 0 {
+		t.Fatalf("expected exit code 0 for %v (default mode) but got %d\nstdout: %s\nstderr: %s",
+			args, r.ExitCode, r.Stdout, r.Stderr)
+	}
+	if strings.TrimSpace(r.Stdout) == "" {
+		t.Fatalf("expected non-empty stdout for %v (default mode)\nstderr: %s",
+			args, r.Stderr)
+	}
+	return r.Stdout
+}
+
 // mustSucceedPlain runs a command with --plain and asserts exit code 0.
 func mustSucceedPlain(t *testing.T, args ...string) string {
 	t.Helper()
@@ -829,6 +845,64 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		// Just verify exit code 0 — agent count validated by JSON multi-list-agents test.
 		// After agent-delete the daemon may have stale state, so agent list can be empty.
 		mustSucceedPlain(t, "multi", "--vibespaces", vsName, "--list-agents")
+	})
+
+	// === Default output mode subtests (no --json, no --plain) ===
+	// Exercises the colored table/spinner code paths that are otherwise untested.
+
+	t.Run("default/list", func(t *testing.T) {
+		mustSucceedDefault(t, "list")
+	})
+
+	t.Run("default/info", func(t *testing.T) {
+		mustSucceedDefault(t, vsName, "info")
+	})
+
+	t.Run("default/agents", func(t *testing.T) {
+		mustSucceedDefault(t, vsName, "agent", "list")
+	})
+
+	t.Run("default/config-show-all", func(t *testing.T) {
+		mustSucceedDefault(t, vsName, "config", "show")
+	})
+
+	t.Run("default/config-show", func(t *testing.T) {
+		mustSucceedDefault(t, vsName, "config", "show", "claude-1")
+	})
+
+	t.Run("default/session-list", func(t *testing.T) {
+		// May have 0 sessions — just verify exit code 0, don't require non-empty stdout.
+		r := run(t, "session", "list")
+		if r.ExitCode != 0 {
+			t.Fatalf("expected exit code 0 but got %d\nstdout: %s\nstderr: %s",
+				r.ExitCode, r.Stdout, r.Stderr)
+		}
+	})
+
+	t.Run("default/forward-list", func(t *testing.T) {
+		mustSucceedDefault(t, vsName, "forward", "list")
+	})
+
+	t.Run("default/multi-list-sessions", func(t *testing.T) {
+		// May have 0 sessions — just verify exit code 0.
+		r := run(t, "multi", "--list-sessions")
+		if r.ExitCode != 0 {
+			t.Fatalf("expected exit code 0 but got %d\nstdout: %s\nstderr: %s",
+				r.ExitCode, r.Stdout, r.Stderr)
+		}
+	})
+
+	t.Run("default/multi-list-agents", func(t *testing.T) {
+		// After agent-delete the daemon may have stale state, so just verify exit code 0.
+		r := run(t, "multi", "--vibespaces", vsName, "--list-agents")
+		if r.ExitCode != 0 {
+			t.Fatalf("expected exit code 0 but got %d\nstdout: %s\nstderr: %s",
+				r.ExitCode, r.Stdout, r.Stderr)
+		}
+	})
+
+	t.Run("default/status", func(t *testing.T) {
+		mustSucceedDefault(t, "status")
 	})
 
 	// --- stop ---
