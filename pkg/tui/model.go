@@ -395,7 +395,6 @@ var slashCommands = []struct {
 	{"clear", ""},
 	{"quit", ""},
 	{"session", "@agent"},
-	{"ports", ""},
 	{"scroll", "<top|bottom>"},
 }
 

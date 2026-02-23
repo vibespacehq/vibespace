@@ -430,9 +430,6 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			},
 		)
 
-	case "ports":
-		m.statusMsg = m.listPorts()
-
 	case "save":
 		// Sessions are automatically saved on creation with a UUID name
 		// /save allows renaming to a more memorable name
@@ -662,38 +659,6 @@ func (m *Model) listAgents() string {
 	}
 
 	return "Agents: " + strings.Join(parts, ", ")
-}
-
-// listPorts returns a string listing all forwarded ports
-func (m *Model) listPorts() string {
-	if m.daemonClient == nil {
-		return "Daemon not connected"
-	}
-
-	var parts []string
-
-	for _, vs := range m.session.Vibespaces {
-		forwards, err := m.daemonClient.ListForwardsForVibespace(vs.Name)
-		if err != nil {
-			parts = append(parts, fmt.Sprintf("%s: error", vs.Name))
-			continue
-		}
-
-		for _, agentFwd := range forwards.Agents {
-			for _, fwd := range agentFwd.Forwards {
-				parts = append(parts, fmt.Sprintf(
-					"%s@%s: localhost:%d → %d (%s)",
-					agentFwd.Name, vs.Name, fwd.LocalPort, fwd.RemotePort, fwd.Type,
-				))
-			}
-		}
-	}
-
-	if len(parts) == 0 {
-		return "No ports forwarded"
-	}
-
-	return "Ports:\n  " + strings.Join(parts, "\n  ")
 }
 
 // saveSession saves the current ad-hoc session

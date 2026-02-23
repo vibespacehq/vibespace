@@ -210,12 +210,6 @@ Remove a port forward.
 |------|-------|---------|-------------|
 | `--agent` | `-a` | `"claude-1"` | Agent to remove forward from |
 
-### `<name> ports`
-
-Detect listening ports inside agent containers. No command-specific flags.
-
-**Plain columns**: PORT, PROCESS, DETECTED_AT
-
 ---
 
 ## Remote Commands
@@ -327,7 +321,6 @@ Available commands:
   exec       Run command in agent container
   config     View/modify agent configuration
   multi      Multi-agent terminal mode
-  ports      List detected ports
   start      Start agents
   stop       Stop agents
   forward    Manage port-forwards (list, add, remove)

@@ -14,17 +14,7 @@
 | Error path E2E | Invalid args, not found, conflict | Todo |
 | Remote mode E2E | WireGuard tunnel: serve + connect from runners | Todo |
 
-## P1: Port Detection
-
-| Task | Description | Effort |
-|------|-------------|--------|
-| Port detector in container | Daemon that scans for listening ports and writes `/tmp/vibespace-ports.json` | M |
-| Auto-forward detected ports | Optionally forward newly detected ports automatically | S |
-| Ports tab in info TUI | Add a "Ports" tab to the interactive `info` command showing detected ports | S |
-
-CLI reader (`vibespace <name> ports`) already exists but the in-container writer was never built.
-
-## P2: Help & Diagnostics
+## P1: Help & Diagnostics
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -34,7 +24,7 @@ CLI reader (`vibespace <name> ports`) already exists but the in-container writer
 | `vibespace help --json` | Machine-readable command schema | M |
 | Improve `--help` text | Consistent examples, better descriptions | S |
 
-## P3: Declarative Config
+## P2: Declarative Config
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -43,7 +33,7 @@ CLI reader (`vibespace <name> ports`) already exists but the in-container writer
 | `vibespace export <vs>` | Export vibespace to YAML | M |
 | Spec schema | Define YAML schema, validate | M |
 
-## P4: Automation Enhancements
+## P3: Automation Enhancements
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -55,14 +45,14 @@ CLI reader (`vibespace <name> ports`) already exists but the in-container writer
 | `--non-interactive` global flag | Disable all prompts | S |
 | `multi --stream --json` | JSONL streaming output | M |
 
-## P5: Versioning & Releases
+## P4: Versioning & Releases
 
 | Task | Description | Effort |
 |------|-------------|--------|
 | GitHub Actions release | Auto-release on tag | M |
 | Update checker | Notify when new version available | M |
 
-## P6: Distribution
+## P5: Distribution
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -74,7 +64,7 @@ CLI reader (`vibespace <name> ports`) already exists but the in-container writer
 | RPM repository | For RHEL/Fedora | M |
 | AUR package | For Arch Linux | S |
 
-## P7: Feature Flags
+## P6: Feature Flags
 
 | Task | Description | Effort |
 |------|-------------|--------|
@@ -84,7 +74,7 @@ CLI reader (`vibespace <name> ports`) already exists but the in-container writer
 | `vibespace features enable <flag>` | Enable specific flag | S |
 | Feature graduation process | Promote stable features | S |
 
-## P8: JSON Enhancements
+## P7: JSON Enhancements
 
 | Task | Description | Effort |
 |------|-------------|--------|
