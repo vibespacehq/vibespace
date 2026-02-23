@@ -45,6 +45,10 @@ type MonitorTab struct {
 	chartsReady bool
 	cpuHistory  []float64 // keep raw data to rebuild charts on resize
 	memHistory  []float64
+
+	// Tick management
+	active  bool // true when tab is visible, prevents duplicate tick chains
+	tickSeq int  // incremented on activate to invalidate old tick chains
 }
 
 const (
@@ -71,7 +75,7 @@ type monitorVSListMsg struct {
 	vibespaces []*model.Vibespace
 }
 
-type monitorTickMsg struct{}
+type monitorTickMsg struct{ seq int }
 
 func NewMonitorTab(shared *SharedState) *MonitorTab {
 	return &MonitorTab{
@@ -99,9 +103,12 @@ func (t *MonitorTab) Init() tea.Cmd {
 func (t *MonitorTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case TabActivateMsg:
-		return t, tea.Batch(t.loadMetrics(), t.loadVibespaces())
+		t.active = true
+		t.tickSeq++
+		return t, tea.Batch(t.loadMetrics(), t.loadVibespaces(), t.scheduleTick())
 
 	case TabDeactivateMsg:
+		t.active = false
 		return t, nil
 
 	case monitorMetricsMsg:
@@ -121,6 +128,10 @@ func (t *MonitorTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return t, nil
 
 	case monitorTickMsg:
+		// Ignore ticks from old chains (stale after tab switch)
+		if msg.seq != t.tickSeq {
+			return t, nil
+		}
 		var cmds []tea.Cmd
 		if !t.paused {
 			cmds = append(cmds, t.loadMetrics())
@@ -806,7 +817,8 @@ func (t *MonitorTab) loadVibespaces() tea.Cmd {
 }
 
 func (t *MonitorTab) scheduleTick() tea.Cmd {
+	seq := t.tickSeq
 	return tea.Tick(monitorRefreshInterval, func(_ time.Time) tea.Msg {
-		return monitorTickMsg{}
+		return monitorTickMsg{seq: seq}
 	})
 }
