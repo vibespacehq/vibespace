@@ -1,3 +1,4 @@
+# Codecov configuration for vibespacehq/vibespace
 coverage:
   status:
     project:
