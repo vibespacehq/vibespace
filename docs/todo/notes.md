@@ -13,7 +13,7 @@
 
 ## TUI Remaining Phases
 
-All future phases reference `docs/ideas/tui-design-document.md`.
+TUI reference: `docs/reference/tui.md`.
 
 ### Phase 3: Vibespaces Tab (`pkg/tui/tab_vibespaces.go`) — ✅ Complete
 
