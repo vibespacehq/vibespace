@@ -619,43 +619,44 @@ func (m *DeploymentManager) extractConfigFromDeployment(deploy *appsv1.Deploymen
 
 // UpdateAgentConfig updates the agent config (triggers pod restart)
 func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, agentName string, config *agent.Config) error {
-	// Find the deployment for this agent
-	deployments, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list deployments: %w", err)
-	}
-
-	var deploy *appsv1.Deployment
-	for i := range deployments.Items {
-		d := &deployments.Items[i]
-		if name, ok := d.Labels["vibespace.dev/agent-name"]; ok && name == agentName {
-			deploy = d
-			break
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Find the deployment for this agent (re-read on each retry)
+		deployments, err := m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).List(ctx, metav1.ListOptions{
+			LabelSelector: fmt.Sprintf("vibespace.dev/id=%s", vibespaceID),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list deployments: %w", err)
 		}
-	}
 
-	if deploy == nil {
-		return fmt.Errorf("agent '%s' not found: %w", agentName, vserrors.ErrAgentNotFound)
-	}
+		var deploy *appsv1.Deployment
+		for i := range deployments.Items {
+			d := &deployments.Items[i]
+			if name, ok := d.Labels["vibespace.dev/agent-name"]; ok && name == agentName {
+				deploy = d
+				break
+			}
+		}
 
-	// Update environment variables
-	if len(deploy.Spec.Template.Spec.Containers) == 0 {
-		return fmt.Errorf("deployment has no containers")
-	}
+		if deploy == nil {
+			return fmt.Errorf("agent '%s' not found: %w", agentName, vserrors.ErrAgentNotFound)
+		}
 
-	container := &deploy.Spec.Template.Spec.Containers[0]
-	newEnv := m.updateEnvVars(container.Env, config)
-	container.Env = newEnv
+		// Update environment variables
+		if len(deploy.Spec.Template.Spec.Containers) == 0 {
+			return fmt.Errorf("deployment has no containers")
+		}
 
-	// Update the deployment (triggers rolling update)
-	_, err = m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, deploy, metav1.UpdateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to update deployment: %w", err)
-	}
+		container := &deploy.Spec.Template.Spec.Containers[0]
+		container.Env = m.updateEnvVars(container.Env, config)
 
-	return nil
+		// Update the deployment (triggers rolling update)
+		_, err = m.k8sClient.Clientset().AppsV1().Deployments(k8s.VibespaceNamespace).Update(ctx, deploy, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update deployment: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // updateEnvVars updates or adds agent config env vars
