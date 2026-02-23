@@ -1,19 +1,20 @@
 # Ideas
 
 Possible enhancements and features for future consideration.
+Items marked ~~strikethrough~~ are already implemented.
 
 ---
 
 ## Agent Capabilities
 
 - `<vs> logs <agent>` - Stream agent container logs
-- ~~`<vs> exec <agent> <cmd>` - Run arbitrary command in agent container~~ ✅ Implemented
+- ~~`<vs> exec <agent> <cmd>` - Run arbitrary command in agent container~~ ✅
 - `<vs> ssh <agent>` - Direct SSH without daemon (one-off connection)
 - `<vs> snapshot <agent>` - Save agent state to tarball
 - `<vs> restore <agent> <snapshot>` - Restore agent from snapshot
 - `<vs> clone <agent> <new-name>` - Clone an agent with its state
 - `<vs> pause/resume <agent>` - Pause agent without stopping pod
-- Agent resource limits (`--cpu`, `--memory` flags on create)
+- ~~Agent resource limits (`--cpu`, `--memory`, `--storage` flags on create)~~ ✅
 - Agent environment variables (`--env KEY=VALUE`)
 - Agent labels and annotations for organization
 - Agent health checks with custom probes
@@ -40,20 +41,26 @@ Possible enhancements and features for future consideration.
 
 ## TUI Enhancements
 
+- ~~Tab-based navigation with five permanent tabs~~ ✅
+- ~~Mouse support via bubblezone~~ ✅
+- ~~Syntax highlighting in code blocks (Chroma)~~ ✅
+- ~~Command palette with fuzzy search~~ ✅
+- ~~Help overlay with keybinding reference~~ ✅
+- ~~Monitor tab with live resource charts (ntcharts)~~ ✅
+- ~~Animated tab transitions (harmonica spring physics)~~ ✅
 - Split pane view (multiple agents visible)
 - Agent status bar (tokens used, response time)
 - Message search/filter in history
 - Bookmarks for important messages
-- Syntax highlighting in code blocks
 - Image/screenshot display (sixel/kitty)
-- Mouse support for scrolling/selection
 - Customizable keybindings
 - Themes (dark/light/custom)
 
 ## Developer Experience
 
-- ~~`--mount host:container[:ro]` flag on create - Mount host directories into agents~~ ✅ Implemented
-- ~~`<vs> info` - Show vibespace details, mounts, agents with config~~ ✅ Implemented
+- ~~`--mount host:container[:ro]` flag on create~~ ✅
+- ~~`<vs> info` - Show vibespace details, mounts, agents with config~~ ✅
+- ~~Per-agent config: model, skip_permissions, allowed/disallowed tools, system prompt, max turns~~ ✅
 - `vibespace dev` - Auto-create vibespace from current git repo
 - Git integration (auto-mount repo, track branch)
 - `.vibespace.yaml` in repo root for project defaults
@@ -97,7 +104,7 @@ Possible enhancements and features for future consideration.
 - Agent memory/context persistence across sessions
 - RAG integration (agent can search local docs)
 - Tool/MCP server management per agent
-- Custom system prompts per vibespace
+- ~~Custom system prompts per agent~~ ✅
 - Model switching mid-session
 - A/B testing different models
 - Prompt templates library
@@ -105,12 +112,14 @@ Possible enhancements and features for future consideration.
 
 ## Networking
 
-- `--sync local:container` flag - Bidirectional file sync for remote mode (mount local dir into remote cluster)
+- ~~WireGuard remote mode (serve + connect)~~ ✅
+- ~~Embedded DNS server for `.internal` hostnames~~ ✅
+- ~~Port forwarding with optional DNS names~~ ✅
+- `--sync local:container` flag - Bidirectional file sync for remote mode
 - Custom domain per vibespace (with remote mode)
 - mTLS between agents
 - Service mesh integration (Istio/Linkerd)
 - Ingress controller for web access
-- DNS-based agent discovery
 
 ## Data Management
 
@@ -122,7 +131,7 @@ Possible enhancements and features for future consideration.
 
 ## Documentation
 
-- Auto-generate per-command CLI docs using cobra's `doc.GenMarkdownTree` — zero maintenance, always in sync with code
+- Auto-generate per-command CLI docs using cobra's `doc.GenMarkdownTree`
 - Add to build script or Makefile target (`make docs`)
 
 ## Misc
