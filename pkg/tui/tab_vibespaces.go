@@ -392,6 +392,17 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return t, t.loadVibespaces()
 
+	case PaletteNewVibespaceMsg:
+		t.mode = vibespacesModeCreateForm
+		t.createField = createFieldName
+		t.createName = ""
+		t.createAgentType = agent.TypeClaudeCode
+		t.createCPU = "250m"
+		t.createMemory = "512Mi"
+		t.createStorage = "10Gi"
+		t.err = ""
+		return t, nil
+
 	case vibespacesLoadedMsg:
 		if msg.err != nil {
 			t.err = msg.err.Error()
