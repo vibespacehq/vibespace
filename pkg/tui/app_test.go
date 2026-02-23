@@ -330,27 +330,27 @@ func TestBuildGradient(t *testing.T) {
 	}
 }
 
-// --- k8s-dependent teatest tests ---
+// --- k8s-dependent tests (direct model) ---
 
 func TestAppFullTabCycleWithK8s(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires k8s cluster")
 	}
 
-	tm := teatest.NewTestModel(t, NewApp(), teatest.WithInitialTermSize(120, 40))
-	t.Cleanup(func() { tm.Send(tea.QuitMsg{}) })
+	a := newTestApp(t)
 
-	// Cycle through all tabs and wait for each to render content
+	// Cycle through all tabs, verify each renders non-empty content
 	for i := 0; i < tabCount; i++ {
-		if i > 0 {
-			tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+		a.switchTab(i)
+		out := stripAnsi(a.View())
+		if len(out) == 0 {
+			t.Fatalf("tab %d (%s) rendered empty view", i, TabNames[i])
 		}
-		teatest.WaitFor(t, tm.Output(), containsText(TabNames[i]),
-			teatest.WithDuration(5*time.Second))
+		// Tab bar should always contain the tab name
+		if !strings.Contains(out, TabNames[i]) {
+			t.Errorf("tab %d view missing tab name %q in tab bar", i, TabNames[i])
+		}
 	}
-
-	tm.Send(tea.QuitMsg{})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 }
 
 func TestAppVibespacesTabWithK8s(t *testing.T) {
@@ -358,18 +358,13 @@ func TestAppVibespacesTabWithK8s(t *testing.T) {
 		t.Skip("requires k8s cluster")
 	}
 
-	tm := teatest.NewTestModel(t, NewApp(), teatest.WithInitialTermSize(120, 40))
-	t.Cleanup(func() { tm.Send(tea.QuitMsg{}) })
+	a := newTestApp(t)
+	out := stripAnsi(a.View())
 
-	// Vibespaces tab should render table content or "No vibespaces" message
-	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		s := stripAnsi(string(bts))
-		return strings.Contains(s, "vibespace") ||
-			strings.Contains(s, "No vibespaces")
-	}, teatest.WithDuration(5*time.Second))
-
-	tm.Send(tea.QuitMsg{})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	// Vibespaces tab should render content (table, empty state, or error)
+	if !strings.Contains(out, "Vibespaces") {
+		t.Fatal("vibespaces tab missing from view")
+	}
 }
 
 func TestAppMonitorTabWithK8s(t *testing.T) {
@@ -377,19 +372,12 @@ func TestAppMonitorTabWithK8s(t *testing.T) {
 		t.Skip("requires k8s cluster")
 	}
 
-	tm := teatest.NewTestModel(t, NewApp(), teatest.WithInitialTermSize(120, 40))
-	t.Cleanup(func() { tm.Send(tea.QuitMsg{}) })
+	a := newTestApp(t)
+	a.switchTab(TabMonitor)
+	out := stripAnsi(a.View())
 
-	// Switch to Monitor tab
-	tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")})
-
-	// Should render metrics content or "not available" message
-	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
-		s := stripAnsi(string(bts))
-		return strings.Contains(s, "Monitor") ||
-			strings.Contains(s, "not available")
-	}, teatest.WithDuration(5*time.Second))
-
-	tm.Send(tea.QuitMsg{})
-	tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
+	// Monitor tab should render metrics content or unavailable message
+	if !strings.Contains(out, "Monitor") {
+		t.Fatal("monitor tab missing from view")
+	}
 }

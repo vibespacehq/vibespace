@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/vibespacehq/vibespace/pkg/remote"
 
@@ -23,9 +24,11 @@ const (
 
 // Client wraps the Kubernetes client
 type Client struct {
-	clientset  *kubernetes.Clientset
-	config     *rest.Config
-	metricsset metricsv.Interface
+	clientset   *kubernetes.Clientset
+	config      *rest.Config
+	metricsset  metricsv.Interface
+	metricsOnce sync.Once
+	metricsErr  error
 }
 
 // NewClient creates a new Kubernetes client
@@ -104,15 +107,15 @@ func (c *Client) Config() *rest.Config {
 
 // MetricsClientset returns the metrics API clientset, creating it on first call.
 func (c *Client) MetricsClientset() (metricsv.Interface, error) {
-	if c.metricsset != nil {
-		return c.metricsset, nil
-	}
-	mc, err := metricsv.NewForConfig(c.config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create metrics clientset: %w", err)
-	}
-	c.metricsset = mc
-	return c.metricsset, nil
+	c.metricsOnce.Do(func() {
+		mc, err := metricsv.NewForConfig(c.config)
+		if err != nil {
+			c.metricsErr = fmt.Errorf("failed to create metrics clientset: %w", err)
+			return
+		}
+		c.metricsset = mc
+	})
+	return c.metricsset, c.metricsErr
 }
 
 // EnsureNamespace ensures the vibespace namespace exists
