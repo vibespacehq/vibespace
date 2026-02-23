@@ -43,7 +43,6 @@ var knownVibespaceSubcommands = []string{
 	"connect",
 	"exec",
 	"config",
-	"ports",
 	"start",
 	"stop",
 	"forward",

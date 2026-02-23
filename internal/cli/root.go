@@ -250,7 +250,6 @@ func handleVibespaceCommand(args []string) error {
 		fmt.Println("  exec       Run command in agent container")
 		fmt.Println("  config     View/modify agent configuration")
 		fmt.Println("  multi      Multi-agent terminal mode")
-		fmt.Println("  ports      List detected ports")
 		fmt.Println("  start      Start agents")
 		fmt.Println("  stop       Stop agents")
 		fmt.Println("  forward    Manage port-forwards (list, add, remove)")
@@ -271,7 +270,6 @@ func handleVibespaceCommand(args []string) error {
 		fmt.Println("  exec       Run command in agent container")
 		fmt.Println("  config     View/modify agent configuration")
 		fmt.Println("  multi      Multi-agent terminal mode")
-		fmt.Println("  ports      List detected ports")
 		fmt.Println("  start      Start agents")
 		fmt.Println("  stop       Stop agents")
 		fmt.Println("  forward    Manage port-forwards (list, add, remove)")
@@ -284,8 +282,6 @@ func handleVibespaceCommand(args []string) error {
 		return runConnect(vibespace, cmdArgs)
 	case "config":
 		return runConfig(vibespace, cmdArgs)
-	case "ports":
-		return runPorts(vibespace, cmdArgs)
 	case "start":
 		return runStart(vibespace, cmdArgs)
 	case "stop":
