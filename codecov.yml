@@ -20,15 +20,15 @@ flags:
   e2e-baremetal:
     paths:
       - "**/*.go"
-    carryforward: true
+    carryforward: false
   e2e-colima:
     paths:
       - "**/*.go"
-    carryforward: true
+    carryforward: false
   e2e-lima:
     paths:
       - "**/*.go"
-    carryforward: true
+    carryforward: false
 
 comment:
   layout: "reach,diff,flags"
