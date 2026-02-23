@@ -40,9 +40,9 @@ All future phases reference `docs/ideas/tui-design-document.md`.
 
 Connect/disconnect, diagnostics, server management. Three modes: connected, disconnected, serving.
 
-### Phase 5: Command Palette (`pkg/tui/overlay_palette.go`) — 🔲 Stub
+### Phase 5: Command Palette (`pkg/tui/overlay_palette.go`) — ✅ Complete
 
-48-line placeholder. Design doc §9.2 specifies fuzzy-filtered action list with `bubbles/textinput`.
+Fuzzy-filtered action list with `bubbles/textinput`. 9 actions (tab nav, new vibespace, new session, toggle help, quit). Multi-word case-insensitive search, up/down navigation, Enter to execute. Actions emit typed messages handled by App and tabs.
 
 ## Hardcoded Values
 

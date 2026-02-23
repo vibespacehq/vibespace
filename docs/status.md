@@ -10,6 +10,14 @@
 - **Security**: Container SecurityContext with AUDIT_WRITE capability — SSH and browser mode verified
 - **Cluster**: Lima/Colima on macOS verified, Lima/QEMU on Linux verified, bare metal mode E2E tested on VPS
 
+## Recent Work (2026-02-23)
+
+- Implemented command palette (`pkg/tui/overlay_palette.go`) with fuzzy multi-word filtering via `bubbles/textinput`
+- Actions: tab switching, new vibespace, new session, toggle help, quit
+- Palette emits typed messages (`PaletteNewVibespaceMsg`, `PaletteNewSessionMsg`, `PaletteToggleHelpMsg`)
+- Fixed dead code: moved `StripAnsi` from production to test-only files
+- Fixed `gofmt` formatting drift across 7 TUI files
+
 ## Recent Work (2026-02-11)
 
 - Expanded E2E lifecycle tests from 7 to ~37 subtests per platform
