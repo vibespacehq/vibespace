@@ -370,14 +370,3 @@ Picker mode: `j`/`k` navigate, `Enter` select, `Esc` close.
 | 30-40 | CPU chart visible |
 | > 40 | CPU + memory charts visible |
 
-## Not Implemented
-
-Features from the original design that are not yet built:
-
-- `zone.Mark()` click regions on table rows
-- `lipgloss/list` and `lipgloss/tree` rendering
-- Monitor activity table (uptime, messages, tools, tokens, errors, state)
-- Monitor cost tracking section
-- Remote watch mode (`w` key)
-- Sessions `/` search/filter
-- Agent color cycling in chat (indexed palette)

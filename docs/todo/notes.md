@@ -87,4 +87,16 @@ The chain starts in `resolveKubeconfig()` (`internal/cli/errors.go`): if `isRemo
 - CLI-only dual-mode (`--cluster` flag): M (2-3 days)
 - Full TUI dual-mode with visual differentiation: L (1-2 weeks)
 
+## TUI Not Yet Implemented
+
+Features from the original design doc that are not yet built:
+
+- `zone.Mark()` click regions on table rows
+- `lipgloss/list` and `lipgloss/tree` rendering
+- Monitor activity table (uptime, messages, tools, tokens, errors, state)
+- Monitor cost tracking section
+- Remote watch mode (`w` key)
+- Sessions `/` search/filter
+- Agent color cycling in chat (indexed palette)
+
 ## Known Bugs
