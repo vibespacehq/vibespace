@@ -47,6 +47,5 @@
 ## What's Next
 
 1. **Testing coverage** — default output mode E2E, error path E2E, remote mode E2E (see `todo/testing.md`)
-2. **Port detection (P1)** — in-container port detector that writes `/tmp/vibespace-ports.json`
 
 See `todo/roadmap.md` for the full prioritized roadmap.

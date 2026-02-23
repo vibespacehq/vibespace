@@ -393,20 +393,6 @@ type ForwardRemoveData struct {
 	RemotePort int    `json:"remote_port"`
 }
 
-// PortsData is the JSON data from `vibespace <name> ports --json`.
-type PortsData struct {
-	Vibespace string         `json:"vibespace"`
-	Ports     []DetectedPort `json:"ports"`
-	Count     int            `json:"count"`
-}
-
-// DetectedPort represents a detected port.
-type DetectedPort struct {
-	Port       int    `json:"port"`
-	Process    string `json:"process"`
-	DetectedAt string `json:"detected_at"`
-}
-
 // MultiListSessionsData is the JSON data from `vibespace multi --list-sessions --json`.
 type MultiListSessionsData struct {
 	Sessions []MultiSessionItem `json:"sessions"`
@@ -701,18 +687,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		}
 	})
 
-	// --- ports ---
-	t.Run("ports", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "ports")
-		data := parseData[PortsData](t, out)
-
-		if data.Vibespace != vsName {
-			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
-		}
-		// Count may be 0 (no dev server running) — just verify valid JSON
-		t.Logf("ports: count=%d", data.Count)
-	})
-
 	// --- multi list-sessions ---
 	t.Run("multi-list-sessions", func(t *testing.T) {
 		out := mustSucceed(t, "multi", "--list-sessions")
@@ -844,11 +818,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	t.Run("plain/forward-list", func(t *testing.T) {
 		out := mustSucceedPlain(t, vsName, "forward", "list")
 		t.Logf("plain forward list: %d bytes", len(out))
-	})
-
-	t.Run("plain/ports", func(t *testing.T) {
-		// May be empty (no dev server running) — just verify exit code 0
-		mustSucceedPlain(t, vsName, "ports")
 	})
 
 	t.Run("plain/multi-list-sessions", func(t *testing.T) {

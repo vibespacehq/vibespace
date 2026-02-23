@@ -31,8 +31,6 @@ const (
 	TypeTTYD ForwardType = "ttyd"
 	// TypeManual is a manually added forward
 	TypeManual ForwardType = "manual"
-	// TypeDetected is an auto-detected dev server forward
-	TypeDetected ForwardType = "detected"
 	// TypePermission is the permission server forward for TUI permission prompts
 	TypePermission ForwardType = "permission"
 )
