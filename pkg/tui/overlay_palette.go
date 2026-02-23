@@ -185,44 +185,35 @@ func (p *PaletteOverlay) View() string {
 		return ""
 	}
 
-	// Palette width: 50 chars or 60% of terminal, whichever is smaller
-	paletteW := p.width * 60 / 100
-	if paletteW > 50 {
-		paletteW = 50
+	// Content width inside the overlay box (border=2, padding=4)
+	const boxOverhead = 6
+	contentW := p.width*50/100 - boxOverhead
+	if contentW > 48 {
+		contentW = 48
 	}
-	if paletteW < 30 {
-		paletteW = 30
+	if contentW < 24 {
+		contentW = 24
 	}
 
-	// Input width matches content area (minus border+padding: 2+4=6)
-	p.input.Width = paletteW - 6
+	p.input.Width = contentW
 
 	selectedStyle := lipgloss.NewStyle().
 		Foreground(ui.ColorWhite).
 		Background(lipgloss.Color("#333333")).
-		Bold(true)
-	normalStyle := lipgloss.NewStyle().
-		Foreground(ui.ColorWhite)
-	hintStyle := lipgloss.NewStyle().
-		Foreground(ui.ColorDim)
-	selectedHintStyle := lipgloss.NewStyle().
-		Foreground(ui.ColorDim).
-		Background(lipgloss.Color("#333333"))
-	emptyStyle := lipgloss.NewStyle().
-		Foreground(ui.ColorDim).
-		Italic(true)
+		Bold(true).
+		Width(contentW)
+	hintStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	emptyStyle := lipgloss.NewStyle().Foreground(ui.ColorDim).Italic(true)
 
 	var b strings.Builder
 	b.WriteString(p.input.View())
 	b.WriteString("\n")
 
-	// Max visible items
 	maxVisible := 10
 	if len(p.filtered) == 0 {
 		b.WriteString("\n")
 		b.WriteString(emptyStyle.Render("No matches"))
 	} else {
-		// Scroll window around cursor
 		start := 0
 		if p.cursor >= maxVisible {
 			start = p.cursor - maxVisible + 1
@@ -232,58 +223,34 @@ func (p *PaletteOverlay) View() string {
 			end = len(p.filtered)
 		}
 
-		contentW := paletteW - 6 // usable width inside border+padding
 		for vi := start; vi < end; vi++ {
-			idx := p.filtered[vi]
-			a := p.actions[idx]
+			a := p.actions[p.filtered[vi]]
 
-			label := a.label
-			hint := a.hint
-
-			// Truncate label if needed, leaving room for hint + spacing
-			maxLabel := contentW - len(hint) - 3 // 2 space gap + 1 for indicator
-			if maxLabel < 10 {
-				maxLabel = 10
-			}
-			if len(label) > maxLabel {
-				label = label[:maxLabel-1] + "…"
-			}
-
-			// Pad to fill width
-			padding := contentW - len(label) - len(hint) - 1 // 1 char for indicator
-			if padding < 1 {
-				padding = 1
-			}
-
-			indicator := " "
+			indicator := "  "
 			if vi == p.cursor {
-				indicator = "▸"
+				indicator = "> "
 			}
 
-			row := indicator + label + strings.Repeat(" ", padding) + hint
+			// Build plain row: "> Label          hint"
+			gap := contentW - len(indicator) - len(a.label) - len(a.hint)
+			if gap < 1 {
+				gap = 1
+			}
+			row := indicator + a.label + strings.Repeat(" ", gap) + a.hint
 
 			b.WriteString("\n")
 			if vi == p.cursor {
-				b.WriteString(selectedStyle.Render(row[:1]))
-				b.WriteString(selectedStyle.Render(row[1 : len(row)-len(hint)]))
-				b.WriteString(selectedHintStyle.Render(hint))
+				b.WriteString(selectedStyle.Render(row))
 			} else {
-				b.WriteString(hintStyle.Render(indicator))
-				b.WriteString(normalStyle.Render(row[1 : len(row)-len(hint)]))
-				b.WriteString(hintStyle.Render(hint))
+				// Dim indicator + white label + dim hint
+				b.WriteString(hintStyle.Render(indicator) + a.label +
+					strings.Repeat(" ", gap) + hintStyle.Render(a.hint))
 			}
 		}
 	}
 
-	content := b.String()
-	box := overlayBorderStyle.
-		Width(paletteW - 4). // subtract border width (2 sides)
-		Render(content)
-
-	return lipgloss.Place(p.width, p.height,
-		lipgloss.Center, lipgloss.Center, box,
-		lipgloss.WithWhitespaceChars(" "),
-	)
+	box := overlayBorderStyle.Render(b.String())
+	return lipgloss.Place(p.width, p.height, lipgloss.Center, lipgloss.Center, box)
 }
 
 // --- Messages emitted by palette actions ---
