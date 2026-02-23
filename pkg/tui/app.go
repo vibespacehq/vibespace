@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/harmonica"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/harmonica"
 	"github.com/charmbracelet/lipgloss"
-	colorful "github.com/lucasb-eyer/go-colorful"
 	zone "github.com/lrstanley/bubblezone"
+	colorful "github.com/lucasb-eyer/go-colorful"
 	"github.com/vibespacehq/vibespace/pkg/session"
 	"github.com/vibespacehq/vibespace/pkg/ui"
 	"golang.org/x/term"
