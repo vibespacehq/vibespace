@@ -8,28 +8,6 @@ coverage:
       default:
         target: auto
 
-flags:
-  unit:
-    paths:
-      - "**/*.go"
-    carryforward: true
-  integration:
-    paths:
-      - "**/*.go"
-    carryforward: true
-  e2e-baremetal:
-    paths:
-      - "**/*.go"
-    carryforward: true
-  e2e-colima:
-    paths:
-      - "**/*.go"
-    carryforward: true
-  e2e-lima:
-    paths:
-      - "**/*.go"
-    carryforward: true
-
 comment:
-  layout: "reach,diff,flags"
+  layout: "reach,diff"
   behavior: default

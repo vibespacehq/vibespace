@@ -35,7 +35,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: coverage-e2e-baremetal.out
-          flags: e2e-baremetal
+
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
@@ -76,7 +76,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: coverage-e2e-colima.out
-          flags: e2e-colima
+
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
@@ -122,7 +122,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           files: coverage-e2e-lima.out
-          flags: e2e-lima
+
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
 
