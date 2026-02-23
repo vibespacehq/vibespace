@@ -6,10 +6,6 @@
 - VPS integration test for SHA256 verification (Linux path: Lima, kubectl, QEMU)
 - SecurityContext in-container verification — `capsh --print` to confirm effective caps, test sudo/apt/pip still work, test mount/mknod/ptrace are blocked
 
-## Stubs
-
-- `vibespace <name> ports` — CLI reader exists and is E2E tested, but no in-container port detector writes `/tmp/vibespace-ports.json` yet (always returns empty list)
-
 ## CI Notes
 
 - Lima runner (`linux-hub`) has a pre-test cleanup step to remove stale `.vibespace`/`.lima` state — needed because `t.Cleanup` doesn't run when Go panics on test timeout
@@ -19,40 +15,76 @@
 
 All future phases reference `docs/ideas/tui-design-document.md`.
 
-### Phase 3: Vibespaces Tab (`pkg/tui/tab_vibespaces.go`)
+### Phase 3: Vibespaces Tab (`pkg/tui/tab_vibespaces.go`) — ✅ Complete
 
-**Design doc §4-5 (lines 64-380)**. Most complex tab — implement in sub-phases.
+3,174 lines. All sub-phases implemented:
 
-| Sub-phase | Scope | Design doc ref |
-|-----------|-------|----------------|
-| 3a | Table view: NAME, STATUS, AGENTS, CPU, MEM, STORAGE, AGE. `j/k` nav, status colors, responsive column hiding | §4.1 (lines 64-130) |
-| 3b | Agent view: `Enter` navigates to full-screen agent view (stack nav). Agent tree, resources, mounts, forwards, logs. `Esc`/`Backspace` returns to list | §4.2 (lines 131-200) |
-| 3c | Session list: `Enter` on agent → session table (SSH + parse `history.jsonl`), `Enter` resumes via `tea.ExecProcess`. Claude-code done, codex pending. Also: `x` SSH shell, `b` browser via ttyd | §4.3 (lines 168-215) |
-| 3d | Inline forms: `n` create, `d` delete, `a` add agent, `S` start/stop | §5.1-5.2 (lines 241-320) |
-| 3e | Inline editors: `e` config editor, `f` forward manager | §5.3-5.4 (lines 321-380) |
+| Sub-phase | Status |
+|-----------|--------|
+| 3a — Table view (responsive columns, gradient selected row, detail panel) | ✅ |
+| 3b — Agent view (3-level stack nav, per-agent config/forwards/resources) | ✅ |
+| 3c — Sessions (SSH `history.jsonl` parsing, `tea.ExecProcess` resume, `x` SSH, `b` browser) | ✅ |
+| 3d — Inline forms (create, delete, add-agent with 8 fields, start/stop) | ✅ |
+| 3e — Config editor (`e`) and forward manager (`f`) with add/remove | ✅ |
 
-Depends on: `pkg/vibespace/service.go` (List, ListAgents, Create, Delete, Start, Stop), `pkg/daemon/client.go` (ListForwardsForVibespace), k8s cluster access.
+### Phase 4a: Monitor Tab (`pkg/tui/tab_monitor.go`) — ✅ Mostly Complete
 
-### Phase 4a: Monitor Tab (`pkg/tui/tab_monitor.go`) — ✅ Implemented
+812 lines. Resource tables + ntcharts streaming line charts + Unicode bar rendering + vibespace picker + pause/resume.
 
-Core implemented. Remaining improvements:
+**Missing from design doc:**
+- Activity table (Uptime, Messages, Tools, Tokens, Errors, State columns) — not implemented
+- Viewport scrolling for overflow
+- Agent table overflow (top 5 + "and N more...")
 
-- **Viewport scrolling**: Wrap dashboard in `bubbles/viewport` for arrow/j/k/pgup/pgdn/mouse wheel scrolling when content overflows
-- **Agent table overflow**: Sort agents by CPU descending, show top 5, "and N more..." for the rest
-- **Scrollable agent list**: When scrolled down, reveal remaining agents beyond the top 5
+### Phase 4b: Remote Tab (`pkg/tui/tab_remote.go`) — ✅ Complete
 
-### Phase 4b: Remote Tab (`pkg/tui/tab_remote.go`)
+Connect/disconnect, diagnostics, server management. Three modes: connected, disconnected, serving.
 
-**Design doc §8 (lines 578-648)**. Three modes: connected (`lipgloss/list` + `lipgloss/table` + sparkline), disconnected (token text input + connect flow), serving (client table + token generation).
+### Phase 5: Command Palette (`pkg/tui/overlay_palette.go`) — 🔲 Stub
 
-Depends on: `pkg/remote/` state files (remote.json, serve.json), WireGuard status.
-
-### Phase 5: Command Palette (`pkg/tui/overlay_palette.go`)
-
-**Design doc §9.2 (lines 691-730)**. Replace stub with fuzzy-filtered action list. `bubbles/textinput` for filter, action list below. Actions: switch tab, chat with vibespace, new session, connect, start/stop, etc.
+48-line placeholder. Design doc §9.2 specifies fuzzy-filtered action list with `bubbles/textinput`.
 
 ## Hardcoded Values
 
 - Agent container images in `pkg/tui/tab_vibespaces.go` (`agentImage()`) are hardcoded per agent type (`claude-code` → `ghcr.io/vibespacehq/vibespace/claude-code:latest`, `codex` → `ghcr.io/vibespacehq/vibespace/codex:latest`). Should be resolved from the deployment/k8s layer instead — `vibespace.AgentInfo` doesn't carry an image field.
+
+## Simultaneous Local + Remote Mode
+
+Currently the system assumes one active cluster per session — remote OR local, never both. When remote is connected, local is completely ignored. This needs to change so users can see and manage vibespaces from both clusters simultaneously, with clear visual differentiation.
+
+### Current bottleneck: single-cluster assumption
+
+The chain starts in `resolveKubeconfig()` (`internal/cli/errors.go`): if `isRemoteConnected()` returns true, it returns the remote kubeconfig and the local kubeconfig is never consulted. This cascades through every layer:
+
+| Layer | Current | Needed |
+|-------|---------|--------|
+| `resolveKubeconfig()` | Returns one path (remote > local) | Return map of cluster name → kubeconfig path |
+| `k8s.NewClient()` | Reads `KUBECONFIG` env var | Accept kubeconfig path as parameter |
+| `vibespace.Service` | One instance, one cluster | Multiple instances keyed by cluster |
+| Daemon | One socket (`daemon.sock`), one reconciler | Multi-cluster aware or separate daemons |
+| TUI `SharedState` | One `*vibespace.Service`, one `*daemon.Client` | `map[string]*vibespace.Service` |
+| CLI commands | `getVibespaceService()` → single cluster | Accept `--cluster` flag or infer from vibespace name |
+
+### What changes
+
+**Core:**
+- `resolveKubeconfig()` → detect both local and remote kubeconfigs, return both when available
+- `k8s.NewClient(kubeconfigPath)` → pass path explicitly instead of relying on env var
+- `SharedState` → hold multiple services, track which cluster each vibespace belongs to
+- State files → `remote.json` becomes one of N cluster configs, not a binary toggle
+
+**CLI:**
+- Add `--cluster` flag to commands (or infer from vibespace name)
+- `getVibespaceService()` → accept cluster context
+
+**TUI:**
+- Vibespaces tab → show vibespaces from both clusters with "Local" / "Remote" badge
+- Monitor tab → cluster selector or merged view
+- All tabs need cluster context awareness
+
+### Effort
+
+- CLI-only dual-mode (`--cluster` flag): M (2-3 days)
+- Full TUI dual-mode with visual differentiation: L (1-2 weeks)
 
 ## Known Bugs
