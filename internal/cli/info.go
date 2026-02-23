@@ -91,6 +91,7 @@ func runInfo(vibespaceNameOrID string, args []string) error {
 						Status:     fwd.Status,
 						Error:      fwd.Error,
 						Reconnects: fwd.Reconnects,
+						DNSName:    fwd.DNSName,
 					}
 				}
 				forwardAgents = append(forwardAgents, agentFwd)

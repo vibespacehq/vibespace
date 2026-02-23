@@ -133,6 +133,7 @@ type ForwardInfo struct {
 	Status     string `json:"status"`
 	Error      string `json:"error,omitempty"`
 	Reconnects int    `json:"reconnects,omitempty"`
+	DNSName    string `json:"dns_name,omitempty"`
 }
 
 // SessionListOutput is the JSON output for session list command
@@ -264,13 +265,6 @@ type ForwardRemoveOutput struct {
 	Vibespace  string `json:"vibespace"`
 	Agent      string `json:"agent"`
 	RemotePort int    `json:"remote_port"`
-}
-
-// PortsOutput is the JSON output for ports command
-type PortsOutput struct {
-	Vibespace string         `json:"vibespace"`
-	Ports     []DetectedPort `json:"ports"`
-	Count     int            `json:"count"`
 }
 
 // SessionDeleteOutput is the JSON output for session delete command

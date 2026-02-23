@@ -111,6 +111,7 @@ func runForwardList(vibespace string) error {
 					Status:     fwd.Status,
 					Error:      fwd.Error,
 					Reconnects: fwd.Reconnects,
+					DNSName:    fwd.DNSName,
 				}
 			}
 		}

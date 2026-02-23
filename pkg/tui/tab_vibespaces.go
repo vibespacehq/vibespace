@@ -209,9 +209,11 @@ const (
 type fwdManagerAddField int
 
 const (
-	fwdManagerAddFieldRemote fwdManagerAddField = iota // text input (remote port)
-	fwdManagerAddFieldLocal                            // text input (local port, 0 = auto)
-	fwdManagerAddFieldCount                            // sentinel
+	fwdManagerAddFieldRemote  fwdManagerAddField = iota // text input (remote port)
+	fwdManagerAddFieldLocal                             // text input (local port, 0 = auto)
+	fwdManagerAddFieldDNS                               // bool toggle (enable DNS)
+	fwdManagerAddFieldDNSName                           // text input (custom DNS name, optional)
+	fwdManagerAddFieldCount                             // sentinel
 )
 
 // VibespacesTab displays the vibespace list with inline expansion.
@@ -280,11 +282,13 @@ type VibespacesTab struct {
 	editConfigToolsCursor   int             // cursor within tools list for multi-select
 
 	// Forward manager state (agent view)
-	fwdManagerCursor    int
-	fwdManagerAdding    bool               // true when add forward sub-form is active
-	fwdManagerAddRemote string             // remote port input
-	fwdManagerAddLocal  string             // local port input
-	fwdManagerAddField  fwdManagerAddField // which add-form field is active
+	fwdManagerCursor     int
+	fwdManagerAdding     bool               // true when add forward sub-form is active
+	fwdManagerAddRemote  string             // remote port input
+	fwdManagerAddLocal   string             // local port input
+	fwdManagerAddDNS     bool               // enable DNS resolution
+	fwdManagerAddDNSName string             // custom DNS name (optional)
+	fwdManagerAddField   fwdManagerAddField // which add-form field is active
 }
 
 func NewVibespacesTab(shared *SharedState) *VibespacesTab {
@@ -2381,6 +2385,8 @@ func (t *VibespacesTab) handleForwardManagerKey(msg tea.KeyMsg) (tea.Model, tea.
 		t.fwdManagerAdding = true
 		t.fwdManagerAddRemote = ""
 		t.fwdManagerAddLocal = ""
+		t.fwdManagerAddDNS = false
+		t.fwdManagerAddDNSName = ""
 		t.fwdManagerAddField = fwdManagerAddFieldRemote
 		t.err = ""
 	case "d":
@@ -2409,9 +2415,30 @@ func (t *VibespacesTab) handleFwdManagerAddKey(msg tea.KeyMsg) (tea.Model, tea.C
 		return t, t.submitAddForward()
 
 	case k == "enter", k == "tab":
+		// On the DNS toggle field, Enter/Tab advances without toggling
+		if t.fwdManagerAddField == fwdManagerAddFieldDNS {
+			t.fwdManagerAddField++
+			// Skip DNS name field if DNS is disabled
+			if !t.fwdManagerAddDNS && t.fwdManagerAddField == fwdManagerAddFieldDNSName {
+				return t, t.submitAddForward()
+			}
+			return t, nil
+		}
 		t.fwdManagerAddField++
+		// Skip DNS name field if DNS is disabled
+		if t.fwdManagerAddField == fwdManagerAddFieldDNSName && !t.fwdManagerAddDNS {
+			t.fwdManagerAddField++
+		}
 		if t.fwdManagerAddField >= fwdManagerAddFieldCount {
 			return t, t.submitAddForward()
+		}
+		return t, nil
+
+	case k == " ":
+		// Space toggles the DNS bool field
+		if t.fwdManagerAddField == fwdManagerAddFieldDNS {
+			t.fwdManagerAddDNS = !t.fwdManagerAddDNS
+			return t, nil
 		}
 		return t, nil
 
@@ -2425,6 +2452,10 @@ func (t *VibespacesTab) handleFwdManagerAddKey(msg tea.KeyMsg) (tea.Model, tea.C
 			if len(t.fwdManagerAddLocal) > 0 {
 				t.fwdManagerAddLocal = t.fwdManagerAddLocal[:len(t.fwdManagerAddLocal)-1]
 			}
+		case fwdManagerAddFieldDNSName:
+			if len(t.fwdManagerAddDNSName) > 0 {
+				t.fwdManagerAddDNSName = t.fwdManagerAddDNSName[:len(t.fwdManagerAddDNSName)-1]
+			}
 		}
 		return t, nil
 
@@ -2435,6 +2466,8 @@ func (t *VibespacesTab) handleFwdManagerAddKey(msg tea.KeyMsg) (tea.Model, tea.C
 				t.fwdManagerAddRemote += k
 			case fwdManagerAddFieldLocal:
 				t.fwdManagerAddLocal += k
+			case fwdManagerAddFieldDNSName:
+				t.fwdManagerAddDNSName += k
 			}
 		}
 		return t, nil
@@ -2792,6 +2825,9 @@ func (t *VibespacesTab) viewForwardManager() string {
 				maxLocal, local,
 				maxType, fwd.Type,
 				fwd.Status)
+			if fwd.DNSName != "" {
+				line += "  " + fwd.DNSName + ".vibespace.internal:" + fmt.Sprintf("%d", fwd.LocalPort)
+			}
 
 			if i == t.fwdManagerCursor {
 				lines = append(lines, "  "+activeStyle.Render("› "+line))
@@ -2834,6 +2870,40 @@ func (t *VibespacesTab) viewForwardManager() string {
 			lines = append(lines, fmt.Sprintf("  %s %s",
 				labelStyle.Render(localLabel),
 				dimStyle.Render(display)))
+		}
+
+		dnsLabel := fmt.Sprintf("  %-14s", "DNS")
+		dnsNameLabel := fmt.Sprintf("  %-14s", "DNS name")
+		dnsToggle := "[ ]"
+		if t.fwdManagerAddDNS {
+			dnsToggle = "[x]"
+		}
+		if t.fwdManagerAddField == fwdManagerAddFieldDNS {
+			lines = append(lines, fmt.Sprintf("  %s %s  %s",
+				labelStyle.Render(dnsLabel),
+				activeStyle.Render(dnsToggle),
+				dimStyle.Render("Space to toggle")))
+		} else {
+			lines = append(lines, fmt.Sprintf("  %s %s",
+				labelStyle.Render(dnsLabel),
+				dimStyle.Render(dnsToggle)))
+		}
+
+		if t.fwdManagerAddDNS {
+			if t.fwdManagerAddField == fwdManagerAddFieldDNSName {
+				lines = append(lines, fmt.Sprintf("  %s %s  %s",
+					labelStyle.Render(dnsNameLabel),
+					activeStyle.Render(t.fwdManagerAddDNSName+"█"),
+					dimStyle.Render("blank = agent.vibespace")))
+			} else {
+				display := t.fwdManagerAddDNSName
+				if display == "" {
+					display = "(default)"
+				}
+				lines = append(lines, fmt.Sprintf("  %s %s",
+					labelStyle.Render(dnsNameLabel),
+					dimStyle.Render(display)))
+			}
 		}
 	}
 
@@ -3020,6 +3090,8 @@ func (t *VibespacesTab) submitAddForward() tea.Cmd {
 	agentName := t.viewAgents[t.agentCursor].AgentName
 	remoteStr := t.fwdManagerAddRemote
 	localStr := t.fwdManagerAddLocal
+	enableDNS := t.fwdManagerAddDNS
+	dnsName := t.fwdManagerAddDNSName
 
 	return func() tea.Msg {
 		if dc == nil {
@@ -3037,7 +3109,7 @@ func (t *VibespacesTab) submitAddForward() tea.Cmd {
 			}
 		}
 
-		_, err = dc.AddForwardForVibespace(vsName, agentName, remotePort, localPort, false, "")
+		_, err = dc.AddForwardForVibespace(vsName, agentName, remotePort, localPort, enableDNS, dnsName)
 		return vsAddForwardDoneMsg{err: err}
 	}
 }

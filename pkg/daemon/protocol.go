@@ -88,6 +88,7 @@ type ForwardInfo struct {
 	Status     string `json:"status"`
 	Error      string `json:"error,omitempty"`
 	Reconnects int    `json:"reconnects"`
+	DNSName    string `json:"dns_name,omitempty"`
 }
 
 // ListForwardsResponse is the data for a list_forwards request
