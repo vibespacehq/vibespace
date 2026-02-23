@@ -132,6 +132,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case SharedStateRefreshedMsg:
 		return a, nil
 
+	case PaletteToggleHelpMsg:
+		a.help.Toggle()
+		return a, nil
+
 	case SwitchTabMsg:
 		return a, a.switchTab(msg.Tab)
 

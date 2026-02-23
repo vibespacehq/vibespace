@@ -166,6 +166,13 @@ func (t *SessionsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case TabActivateMsg:
 		return t, t.loadSessions()
 
+	case PaletteNewSessionMsg:
+		t.mode = sessionsModeNewName
+		t.nameInput.SetValue("")
+		t.nameInput.Focus()
+		t.err = ""
+		return t, t.nameInput.Cursor.BlinkCmd()
+
 	case sessionsLoadedMsg:
 		if msg.err != nil {
 			t.err = msg.err.Error()
