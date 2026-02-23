@@ -166,6 +166,7 @@ type ForwardState struct {
 	Status     portforward.ForwardStatus `json:"status"`
 	Error      string                    `json:"error,omitempty"`
 	Reconnects int                       `json:"reconnects"`
+	DNSName    string                    `json:"dns_name,omitempty"`
 }
 
 // EnsureDaemonDir ensures the daemon directory exists

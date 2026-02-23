@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 
 	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
@@ -323,12 +324,14 @@ func (s *Server) buildAgentStatusList(vibespace string) []AgentStatus {
 		var fwdInfos []ForwardInfo
 		if forwards, ok := allForwards[key]; ok {
 			for _, fwd := range forwards {
-				// Look up type from daemon state by matching remote port
+				// Look up type and DNS name from daemon state by matching remote port
 				fwdType := ""
+				dnsName := ""
 				if agentState != nil {
 					for _, fs := range agentState.Forwards {
 						if fs.RemotePort == fwd.RemotePort {
 							fwdType = string(fs.Type)
+							dnsName = fs.DNSName
 							break
 						}
 					}
@@ -340,6 +343,7 @@ func (s *Server) buildAgentStatusList(vibespace string) []AgentStatus {
 					Type:       fwdType,
 					Status:     string(fwd.Status),
 					Reconnects: fwd.Reconnects,
+					DNSName:    dnsName,
 				}
 				if fwd.Error != nil {
 					info.Error = fwd.Error.Error()
@@ -385,15 +389,6 @@ func (s *Server) handleAddForward(req Request) Response {
 	})
 	s.desiredMgr.Save(req.Vibespace)
 
-	// Update runtime state (uses simple agent name)
-	vsState := s.state.GetOrCreateVibespace(req.Vibespace)
-	vsState.AddForward(req.Agent, &ForwardState{
-		LocalPort:  localPort,
-		RemotePort: req.Port,
-		Type:       portforward.TypeManual,
-		Status:     portforward.StatusActive,
-	})
-
 	// Register DNS record if requested
 	var dnsName string
 	if req.DNS && s.dnsServer != nil {
@@ -404,6 +399,16 @@ func (s *Server) handleAddForward(req Request) Response {
 		}
 		s.dnsServer.AddRecord(dnsName, "127.0.0.1")
 	}
+
+	// Update runtime state (uses simple agent name)
+	vsState := s.state.GetOrCreateVibespace(req.Vibespace)
+	vsState.AddForward(req.Agent, &ForwardState{
+		LocalPort:  localPort,
+		RemotePort: req.Port,
+		Type:       portforward.TypeManual,
+		Status:     portforward.StatusActive,
+		DNSName:    dnsName,
+	})
 
 	return NewSuccessResponse(AddForwardResponse{
 		LocalPort:  localPort,
@@ -475,10 +480,15 @@ func (s *Server) handleShutdown() Response {
 	// Stop all forwards
 	s.manager.StopAll()
 
-	// Schedule server stop (after sending response)
+	// Schedule server stop then signal the process to exit
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		s.Stop()
+		// Signal ourselves so the main goroutine's select on sigChan unblocks
+		p, err := os.FindProcess(os.Getpid())
+		if err == nil {
+			p.Signal(syscall.SIGTERM)
+		}
 	}()
 
 	return NewSuccessResponse(nil)
