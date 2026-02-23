@@ -1,19 +1,10 @@
 package ui
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
-
-// ansiRegex matches ANSI SGR escape sequences for width measurement.
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-// stripAnsi removes ANSI escape sequences from a string.
-func StripAnsi(s string) string {
-	return ansiRegex.ReplaceAllString(s, "")
-}
 
 // TableOptions configures table rendering.
 type TableOptions struct {

@@ -7,7 +7,6 @@ import (
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	"github.com/vibespacehq/vibespace/pkg/model"
-	"github.com/vibespacehq/vibespace/pkg/ui"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
@@ -87,7 +86,7 @@ func TestRenderInfoRich(t *testing.T) {
 	got := captureStdout(t, func() {
 		renderInfoRich(info, vs, agents, agentConfigs, nil, true)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	// Check key fields are present
 	for _, want := range []string{"test", "e27ed7c0", "running", "250m", "512Mi", "10Gi", "Created"} {
@@ -127,7 +126,7 @@ func TestRenderInfoRichWithMounts(t *testing.T) {
 	got := captureStdout(t, func() {
 		renderInfoRich(info, vs, nil, nil, nil, true)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	if !strings.Contains(stripped, "Mounts") {
 		t.Error("output should contain Mounts section")
@@ -172,7 +171,7 @@ func TestRenderInfoRichWithForwards(t *testing.T) {
 	got := captureStdout(t, func() {
 		renderInfoRich(info, vs, nil, nil, forwards, true)
 	})
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	if !strings.Contains(stripped, "Forwards") {
 		t.Error("output should contain Forwards section")

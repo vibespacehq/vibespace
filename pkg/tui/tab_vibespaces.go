@@ -29,14 +29,14 @@ import (
 type vibespacesMode int
 
 const (
-	vibespacesModeList          vibespacesMode = iota // table view
-	vibespacesModeAgentView                           // full-screen agent detail
-	vibespacesModeSessionList                         // session list for an agent
-	vibespacesModeCreateForm                          // inline create form
-	vibespacesModeDeleteConfirm                       // inline delete confirmation
-	vibespacesModeAddAgent                            // inline add agent form (in agent view)
-	vibespacesModeEditConfig                          // inline edit config form (in agent view)
-	vibespacesModeForwardManager                      // inline forward manager (in agent view)
+	vibespacesModeList           vibespacesMode = iota // table view
+	vibespacesModeAgentView                            // full-screen agent detail
+	vibespacesModeSessionList                          // session list for an agent
+	vibespacesModeCreateForm                           // inline create form
+	vibespacesModeDeleteConfirm                        // inline delete confirmation
+	vibespacesModeAddAgent                             // inline add agent form (in agent view)
+	vibespacesModeEditConfig                           // inline edit config form (in agent view)
+	vibespacesModeForwardManager                       // inline forward manager (in agent view)
 )
 
 // vsConnectMode distinguishes connect action types.
@@ -171,7 +171,7 @@ type createFormField int
 
 const (
 	createFieldName      createFormField = iota
-	createFieldAgentType                        // selector (j/k)
+	createFieldAgentType                 // selector (j/k)
 	createFieldCPU
 	createFieldMemory
 	createFieldStorage
@@ -197,12 +197,12 @@ const (
 type editConfigFormField int
 
 const (
-	editConfigFieldModel          editConfigFormField = iota // text input
-	editConfigFieldMaxTurns                                  // text input
-	editConfigFieldSkipPerms                                 // toggle (j/k)
-	editConfigFieldAllowedTools                              // multi-select
-	editConfigFieldDisallowedTools                           // multi-select
-	editConfigFieldCount                                     // sentinel
+	editConfigFieldModel           editConfigFormField = iota // text input
+	editConfigFieldMaxTurns                                   // text input
+	editConfigFieldSkipPerms                                  // toggle (j/k)
+	editConfigFieldAllowedTools                               // multi-select
+	editConfigFieldDisallowedTools                            // multi-select
+	editConfigFieldCount                                      // sentinel
 )
 
 // fwdManagerAddField identifies which field is active in the add forward sub-form.
@@ -233,11 +233,11 @@ type VibespacesTab struct {
 	logsLines []string // cached recent log lines
 
 	// Agent view state
-	selectedVS   *model.Vibespace             // vibespace being viewed
-	viewAgents   []vibespace.AgentInfo         // agents for the selected vibespace
-	agentConfigs map[string]*agent.Config      // agent name → config
-	forwards     []daemon.AgentStatus          // forward info from daemon
-	agentCursor  int                           // cursor position within agents list
+	selectedVS   *model.Vibespace         // vibespace being viewed
+	viewAgents   []vibespace.AgentInfo    // agents for the selected vibespace
+	agentConfigs map[string]*agent.Config // agent name → config
+	forwards     []daemon.AgentStatus     // forward info from daemon
+	agentCursor  int                      // cursor position within agents list
 
 	// Session list state
 	sessions         []vsSessionInfo // sessions for the selected agent
@@ -258,17 +258,17 @@ type VibespacesTab struct {
 	deleteInput string
 
 	// Add agent form state (agent view)
-	addAgentField           addAgentFormField
-	addAgentType            agent.Type
-	addAgentName            string
-	addAgentModel           string
-	addAgentMaxTurns        string
-	addAgentShareCreds      bool
-	addAgentSkipPerms       bool
-	addAgentToolsList       []string        // available tools for current agent type
-	addAgentAllowedSet      map[string]bool // selected allowed tools
-	addAgentDisallowedSet   map[string]bool // selected disallowed tools
-	addAgentToolsCursor     int             // cursor within tools list for multi-select
+	addAgentField         addAgentFormField
+	addAgentType          agent.Type
+	addAgentName          string
+	addAgentModel         string
+	addAgentMaxTurns      string
+	addAgentShareCreds    bool
+	addAgentSkipPerms     bool
+	addAgentToolsList     []string        // available tools for current agent type
+	addAgentAllowedSet    map[string]bool // selected allowed tools
+	addAgentDisallowedSet map[string]bool // selected disallowed tools
+	addAgentToolsCursor   int             // cursor within tools list for multi-select
 
 	// Edit config form state (agent view)
 	editConfigField         editConfigFormField
@@ -2519,7 +2519,7 @@ func (t *VibespacesTab) viewCreateForm() string {
 			if f.isSelect {
 				val = activeStyle.Render("["+f.value+"]") + "  " + dimStyle.Render("j/k to change")
 			} else {
-				val = activeStyle.Render(f.value+"█")
+				val = activeStyle.Render(f.value + "█")
 			}
 		} else {
 			val = dimStyle.Render(f.value)
@@ -2590,15 +2590,15 @@ func (t *VibespacesTab) viewAddAgentForm() string {
 	}
 
 	type formEntry struct {
-		label       string
-		field       addAgentFormField
-		value       string
-		hint        string
-		isSelect    bool        // j/k toggle (single value)
-		isMulti     bool        // multi-select (j/k + space)
-		multiSet    map[string]bool
-		isEmpty     func() bool
-		emptyVal    string
+		label    string
+		field    addAgentFormField
+		value    string
+		hint     string
+		isSelect bool // j/k toggle (single value)
+		isMulti  bool // multi-select (j/k + space)
+		multiSet map[string]bool
+		isEmpty  func() bool
+		emptyVal string
 	}
 
 	allowedSummary := selectedTools(t.addAgentAllowedSet)

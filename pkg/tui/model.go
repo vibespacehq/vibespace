@@ -830,4 +830,3 @@ func (m *Model) Close() {
 		conn.Close()
 	}
 }
-

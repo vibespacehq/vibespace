@@ -23,8 +23,8 @@ const (
 	remoteModeDisconnected remoteMode = iota
 	remoteModeConnected
 	remoteModeServing
-	remoteModeTokenInput    // user is typing a token to connect
-	remoteModeSudoPrompt   // user is typing sudo password for diagnostics
+	remoteModeTokenInput // user is typing a token to connect
+	remoteModeSudoPrompt // user is typing sudo password for diagnostics
 )
 
 const remoteRefreshInterval = 10 * time.Second

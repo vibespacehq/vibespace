@@ -109,7 +109,7 @@ func TestOutputColorHelpersWithColor(t *testing.T) {
 				t.Errorf("%s(\"hello\") with color should contain ANSI codes, got %q", tt.name, got)
 			}
 			// Should still contain the original text
-			stripped := ui.StripAnsi(got)
+			stripped := stripAnsi(got)
 			if stripped != "hello" {
 				t.Errorf("%s(\"hello\") stripped = %q, want \"hello\"", tt.name, stripped)
 			}
@@ -122,7 +122,7 @@ func TestOutputTableDefaultMode(t *testing.T) {
 	rows := [][]string{{"test", "running"}}
 
 	got := ui.NewTable(headers, rows, false)
-	stripped := ui.StripAnsi(got)
+	stripped := stripAnsi(got)
 
 	if !strings.Contains(stripped, "NAME") {
 		t.Error("table should contain header NAME")
