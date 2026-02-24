@@ -5,6 +5,10 @@ on:
     branches-ignore:
       - "dependabot/**"
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
