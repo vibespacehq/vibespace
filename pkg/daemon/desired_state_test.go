@@ -265,7 +265,7 @@ func TestManagerLoadAll(t *testing.T) {
 	dir := t.TempDir()
 
 	// Write a state file manually
-	state := DesiredState{
+	state := &DesiredState{
 		Agents: map[string][]DesiredForward{
 			"claude-1": {{ContainerPort: 8080, LocalPort: 3000}},
 		},
