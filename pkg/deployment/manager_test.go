@@ -2,7 +2,9 @@ package deployment
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -14,14 +16,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if testing.Short() {
+		os.Exit(0)
+	}
+	if _, err := k8s.NewClient(); err != nil {
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
 func newTestDeploymentManager(t *testing.T) *DeploymentManager {
 	t.Helper()
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
 	client, err := k8s.NewClient()
 	if err != nil {
-		t.Skip("k8s not available:", err)
+		t.Fatalf("k8s client: %v", err)
 	}
 	ctx := context.Background()
 	if err := client.EnsureNamespace(ctx); err != nil {
