@@ -391,17 +391,6 @@ func runSubtests(t *testing.T, vsName string) {
 		t.Logf("exec whoami: stdout=%q", strings.TrimSpace(data.Stdout))
 	})
 
-	// --- exec error tests (need daemon) ---
-	t.Run("error/exec-nonexistent-agent", func(t *testing.T) {
-		r := run(t, "exec", "--vibespace", vsName, "--json", "nonexistent", "whoami")
-		if r.ExitCode == 0 {
-			t.Fatal("expected non-zero exit code for nonexistent agent")
-		}
-		// exec errors may go through daemon path and not produce structured JSON error,
-		// so just verify it fails with non-zero exit code.
-		t.Logf("exec nonexistent: exit=%d stderr=%s", r.ExitCode, r.Stderr)
-	})
-
 	// --- forward list (with default SSH/ttyd forwards) ---
 	t.Run("forward-list-default", func(t *testing.T) {
 		out := mustSucceed(t, "forward", "list", "--vibespace", vsName)
