@@ -28,7 +28,7 @@ type Reconciler struct {
 	desiredMgr *DesiredStateManager
 	state      *DaemonState
 	manager    *portforward.Manager
-	clientset  *kubernetes.Clientset
+	clientset  kubernetes.Interface
 	mu         sync.Mutex
 }
 
@@ -37,7 +37,7 @@ type ReconcilerConfig struct {
 	DesiredMgr *DesiredStateManager
 	State      *DaemonState
 	Manager    *portforward.Manager
-	Clientset  *kubernetes.Clientset
+	Clientset  kubernetes.Interface
 }
 
 // NewReconciler creates a new reconciler

@@ -24,7 +24,7 @@ const (
 
 // Client wraps the Kubernetes client
 type Client struct {
-	clientset   *kubernetes.Clientset
+	clientset   kubernetes.Interface
 	config      *rest.Config
 	metricsset  metricsv.Interface
 	metricsOnce sync.Once
@@ -96,8 +96,13 @@ func getBundledKubeconfigPath() (string, error) {
 }
 
 // Clientset returns the underlying Kubernetes clientset
-func (c *Client) Clientset() *kubernetes.Clientset {
+func (c *Client) Clientset() kubernetes.Interface {
 	return c.clientset
+}
+
+// NewClientFromClientset creates a Client from an existing clientset (for testing).
+func NewClientFromClientset(cs kubernetes.Interface) *Client {
+	return &Client{clientset: cs}
 }
 
 // Config returns the underlying Kubernetes REST config
