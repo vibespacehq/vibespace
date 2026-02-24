@@ -48,15 +48,15 @@ func TestConfigIsEmptyWithDisallowedTools(t *testing.T) {
 
 func TestConfigCloneDeepCopy(t *testing.T) {
 	c := &Config{
-		Model:           "opus",
-		SkipPermissions: true,
-		AllowedTools:    []string{"Bash", "Read"},
-		DisallowedTools: []string{"Write"},
-		MaxTurns:        10,
-		SystemPrompt:    "test prompt",
-		ReasoningEffort: "high",
+		Model:            "opus",
+		SkipPermissions:  true,
+		AllowedTools:     []string{"Bash", "Read"},
+		DisallowedTools:  []string{"Write"},
+		MaxTurns:         10,
+		SystemPrompt:     "test prompt",
+		ReasoningEffort:  "high",
 		ShareCredentials: true,
-		Extra:           map[string]interface{}{"key": "value"},
+		Extra:            map[string]interface{}{"key": "value"},
 	}
 
 	cloned := c.Clone()
