@@ -10,7 +10,7 @@ import (
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
-	"github.com/vibespacehq/vibespace/pkg/model"
+	modelPkg "github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
 
 	"github.com/spf13/cobra"
@@ -97,69 +97,79 @@ func init() {
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
+	return doCreate(nil, args[0], createAgentType, createRepo, createAgentName, createCPU, createCPULimit,
+		createMemory, createMemoryLimit, createStorage, createShareCredentials, createMounts,
+		createSkipPermissions, createAllowedTools, createDisallowedTools, createModel, createMaxTurns)
+}
+
+func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, cpuLimit,
+	memory, memoryLimit, storage string, shareCredentials bool, mounts []string,
+	skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int) error {
 	ctx := context.Background()
 
-	name := args[0]
-	slog.Info("create command started", "name", name, "repo", createRepo, "agent_type", createAgentType)
+	slog.Info("create command started", "name", name, "repo", repo, "agent_type", agentTypeStr)
 
 	// Parse and validate agent type
-	agentType := agent.ParseType(createAgentType)
+	agentType := agent.ParseType(agentTypeStr)
 	if !agentType.IsValid() {
-		return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", createAgentType)
+		return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", agentTypeStr)
 	}
 
 	// Get vibespace service
-	svc, err := getVibespaceService()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceService()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	// Build AgentConfig if any config flags are set
 	var agentConfig *agent.Config
-	if createSkipPermissions || createAllowedTools != "" || createDisallowedTools != "" || createModel != "" || createMaxTurns > 0 {
+	if skipPermissions || allowedTools != "" || disallowedTools != "" || model != "" || maxTurns > 0 {
 		agentConfig = &agent.Config{
-			SkipPermissions: createSkipPermissions,
-			Model:           createModel,
-			MaxTurns:        createMaxTurns,
+			SkipPermissions: skipPermissions,
+			Model:           model,
+			MaxTurns:        maxTurns,
 		}
-		if createAllowedTools != "" {
-			agentConfig.AllowedTools = strings.Split(createAllowedTools, ",")
+		if allowedTools != "" {
+			agentConfig.AllowedTools = strings.Split(allowedTools, ",")
 		}
-		if createDisallowedTools != "" {
-			agentConfig.DisallowedTools = strings.Split(createDisallowedTools, ",")
+		if disallowedTools != "" {
+			agentConfig.DisallowedTools = strings.Split(disallowedTools, ",")
 		}
 	}
 
 	// Parse and validate mounts
-	var mounts []model.Mount
-	for _, mountStr := range createMounts {
+	var parsedMounts []modelPkg.Mount
+	for _, mountStr := range mounts {
 		mount, err := parseMount(mountStr)
 		if err != nil {
 			return fmt.Errorf("invalid mount '%s': %w", mountStr, err)
 		}
-		mounts = append(mounts, mount)
+		parsedMounts = append(parsedMounts, mount)
 	}
 
 	// Build create request
-	req := &model.CreateVibespaceRequest{
+	req := &modelPkg.CreateVibespaceRequest{
 		Name:             name,
 		Persistent:       true, // Always use persistent storage for shared filesystem between agents
-		ShareCredentials: createShareCredentials,
+		ShareCredentials: shareCredentials,
 		AgentType:        agentType,
-		AgentName:        createAgentName,
+		AgentName:        agentName,
 		AgentConfig:      agentConfig,
-		Mounts:           mounts,
-		Resources: &model.Resources{
-			CPU:         createCPU,
-			CPULimit:    createCPULimit,
-			Memory:      createMemory,
-			MemoryLimit: createMemoryLimit,
-			Storage:     createStorage,
+		Mounts:           parsedMounts,
+		Resources: &modelPkg.Resources{
+			CPU:         cpu,
+			CPULimit:    cpuLimit,
+			Memory:      memory,
+			MemoryLimit: memoryLimit,
+			Storage:     storage,
 		},
 	}
-	if createRepo != "" {
-		req.GithubRepo = createRepo
+	if repo != "" {
+		req.GithubRepo = repo
 	}
 
 	spinner := NewSpinner("Creating vibespace...")
@@ -193,10 +203,10 @@ func runCreate(cmd *cobra.Command, args []string) error {
 }
 
 // parseMount parses a mount string in the format host:container[:ro]
-func parseMount(mountStr string) (model.Mount, error) {
+func parseMount(mountStr string) (modelPkg.Mount, error) {
 	parts := strings.Split(mountStr, ":")
 	if len(parts) < 2 || len(parts) > 3 {
-		return model.Mount{}, fmt.Errorf("format must be host:container[:ro]")
+		return modelPkg.Mount{}, fmt.Errorf("format must be host:container[:ro]")
 	}
 
 	hostPath := parts[0]
@@ -206,7 +216,7 @@ func parseMount(mountStr string) (model.Mount, error) {
 	// Check for :ro suffix
 	if len(parts) == 3 {
 		if parts[2] != "ro" {
-			return model.Mount{}, fmt.Errorf("third part must be 'ro' for read-only mount")
+			return modelPkg.Mount{}, fmt.Errorf("third part must be 'ro' for read-only mount")
 		}
 		readOnly = true
 	}
@@ -215,13 +225,13 @@ func parseMount(mountStr string) (model.Mount, error) {
 	if strings.HasPrefix(hostPath, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return model.Mount{}, fmt.Errorf("failed to expand ~: %w", err)
+			return modelPkg.Mount{}, fmt.Errorf("failed to expand ~: %w", err)
 		}
 		hostPath = filepath.Join(home, hostPath[2:])
 	} else if hostPath == "~" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return model.Mount{}, fmt.Errorf("failed to expand ~: %w", err)
+			return modelPkg.Mount{}, fmt.Errorf("failed to expand ~: %w", err)
 		}
 		hostPath = home
 	}
@@ -229,7 +239,7 @@ func parseMount(mountStr string) (model.Mount, error) {
 	// Convert to absolute path
 	absPath, err := filepath.Abs(hostPath)
 	if err != nil {
-		return model.Mount{}, fmt.Errorf("invalid host path: %w", err)
+		return modelPkg.Mount{}, fmt.Errorf("invalid host path: %w", err)
 	}
 	hostPath = absPath
 
@@ -237,20 +247,20 @@ func parseMount(mountStr string) (model.Mount, error) {
 	info, err := os.Stat(hostPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return model.Mount{}, fmt.Errorf("host path does not exist: %s", hostPath)
+			return modelPkg.Mount{}, fmt.Errorf("host path does not exist: %s", hostPath)
 		}
-		return model.Mount{}, fmt.Errorf("cannot access host path: %w", err)
+		return modelPkg.Mount{}, fmt.Errorf("cannot access host path: %w", err)
 	}
 	if !info.IsDir() {
-		return model.Mount{}, fmt.Errorf("host path must be a directory: %s", hostPath)
+		return modelPkg.Mount{}, fmt.Errorf("host path must be a directory: %s", hostPath)
 	}
 
 	// Validate container path is absolute
 	if !filepath.IsAbs(containerPath) {
-		return model.Mount{}, fmt.Errorf("container path must be absolute: %s", containerPath)
+		return modelPkg.Mount{}, fmt.Errorf("container path must be absolute: %s", containerPath)
 	}
 
-	return model.Mount{
+	return modelPkg.Mount{
 		HostPath:      hostPath,
 		ContainerPath: containerPath,
 		ReadOnly:      readOnly,
