@@ -39,12 +39,9 @@ func levenshtein(a, b string) int {
 
 // knownVibespaceSubcommands is the list of known subcommands for a vibespace
 var knownVibespaceSubcommands = []string{
-	"agent",
 	"connect",
 	"exec",
 	"config",
-	"start",
-	"stop",
 	"forward",
 }
 

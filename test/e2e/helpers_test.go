@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vibespacehq/vibespace/pkg/agent"
 	"github.com/vibespacehq/vibespace/pkg/jsonapi"
 )
 
@@ -159,8 +161,6 @@ func parseData[T any](t *testing.T, out jsonapi.RawJSONOutput) T {
 // --- Helpers ---
 
 // waitForReady polls `vibespace list --json` until the vibespace status is "running".
-// Polls every 5 seconds with a 5-minute timeout (Lima VMs on slower runners need
-// extra time for initial image pulls).
 func waitForReady(t *testing.T, vsName string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Minute)
@@ -185,11 +185,8 @@ func waitForReady(t *testing.T, vsName string) {
 	}
 }
 
-// waitForDaemonReady polls `vibespace <name> forward list --json` until the daemon
-// returns at least 1 agent with an active SSH forward. The daemon auto-starts on
-// first forward command but needs time to: spawn → reconcile pods → set up kubectl
-// port-forwards for SSH. On slow CI runners this can take 10-20 seconds.
-// Polls every 3 seconds with a 60-second timeout.
+// waitForDaemonReady polls `vibespace forward list --vibespace <name> --json` until the daemon
+// returns at least 1 agent with an active SSH forward.
 func waitForDaemonReady(t *testing.T, vsName string) {
 	t.Helper()
 	deadline := time.Now().Add(60 * time.Second)
@@ -246,9 +243,9 @@ func mustSucceedPlain(t *testing.T, args ...string) string {
 
 // --- Expanded subtests ---
 
-// runExpandedSubtests runs all expanded E2E subtests between the initial "agents"
-// check and the final "delete" step. Called from all 3 platform test files.
-func runExpandedSubtests(t *testing.T, vsName string) {
+// runSubtests runs all E2E subtests between the initial "agents" check and the
+// final "delete" step. Called from all 3 platform test files.
+func runSubtests(t *testing.T, vsName string) {
 	// === Pre-ready tests (k8s metadata only, pods may still be starting) ===
 
 	// --- info ---
@@ -325,7 +322,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- session list ---
 	t.Run("session-list", func(t *testing.T) {
 		out := mustSucceed(t, "session", "list")
-		// Just verify valid JSON with count field — may be 0 sessions
 		data := parseData[jsonapi.SessionListOutput](t, out)
 		t.Logf("sessions: count=%d", data.Count)
 	})
@@ -337,18 +333,9 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	// === Post-ready tests (needs Running pods) ===
-	// NOTE: Forward/multi tests run BEFORE agent CRUD to avoid daemon stale-state
-	// issues. On colima, deleting claude-2 leaves the daemon with stale SSH tunnels
-	// and the portforward manager may not re-register claude-1 before forward-add
-	// runs (~30s reconciliation interval). Running forward/multi first ensures the
-	// daemon has clean state with only claude-1 registered.
 
 	// --- wait for daemon (SSH tunnel ready) ---
 	t.Run("wait-for-daemon", func(t *testing.T) {
-		// The daemon auto-starts on first forward command. It needs time to:
-		// spawn process → reconcile (discover pods) → create kubectl port-forward
-		// for SSH (port 2222) → tunnel becomes active. On slow CI runners this
-		// takes 10-20+ seconds. We poll until the SSH forward is active.
 		waitForDaemonReady(t, vsName)
 	})
 
@@ -430,7 +417,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		out := mustSucceed(t, "multi", "--list-sessions")
 		data := parseData[jsonapi.MultiListSessionsOutput](t, out)
 
-		// May be 0 sessions — just verify valid JSON structure
 		t.Logf("multi list-sessions: count=%d", data.Count)
 	})
 
@@ -447,11 +433,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 
 	// --- multi message ---
 	t.Run("multi-message", func(t *testing.T) {
-		// Use runJSON (not mustSucceed) — response may have success=false
-		// (e.g., auth error for Claude API) but valid JSON proves the pipeline works.
 		out := runJSON(t, "multi", "--vibespaces", vsName, "hello")
-		// Valid JSON was parsed — that's the assertion.
-		// Log whether it succeeded or what error occurred.
 		if out.Success {
 			t.Log("multi message: success=true")
 		} else {
@@ -463,46 +445,63 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		}
 	})
 
-	// === Agent CRUD tests ===
-	// These run after forward/multi tests to avoid daemon stale-state issues.
+	// === Agent CRUD tests (parameterized over all agent types) ===
 
-	// --- agent create (second agent) ---
-	t.Run("agent-create", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "agent", "create", "-t", "claude-code")
-		data := parseData[jsonapi.AgentCreateOutput](t, out)
+	for _, agentType := range agent.AllTypes() {
+		agentType := agentType // capture
+		typeName := agentType.String()
+		testAgentName := fmt.Sprintf("%s-test", typeName)
 
-		if data.Vibespace != vsName {
-			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
-		}
-		if data.Agent != "claude-2" {
-			t.Errorf("expected agent=claude-2, got %s", data.Agent)
-		}
-		t.Logf("created agent: %s (type=%s)", data.Agent, data.Type)
-	})
+		t.Run(fmt.Sprintf("agent-crud/%s", typeName), func(t *testing.T) {
+			// create
+			t.Run("create", func(t *testing.T) {
+				out := mustSucceed(t, "agent", "create", "--vibespace", vsName,
+					"--agent-type", typeName, "--name", testAgentName)
+				data := parseData[jsonapi.AgentCreateOutput](t, out)
 
-	// --- agent list (verify 2 agents) ---
-	t.Run("agent-list-two", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "agent")
-		data := parseData[jsonapi.AgentsOutput](t, out)
+				if data.Vibespace != vsName {
+					t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
+				}
+				if data.Agent != testAgentName {
+					t.Errorf("expected agent=%s, got %s", testAgentName, data.Agent)
+				}
+				if data.Type != typeName {
+					t.Errorf("expected type=%s, got %s", typeName, data.Type)
+				}
+				t.Logf("created agent: %s (type=%s)", data.Agent, data.Type)
+			})
 
-		if data.Count != 2 {
-			t.Errorf("expected 2 agents, got %d", data.Count)
-		}
-	})
+			// list — verify agent appears with correct type
+			t.Run("list", func(t *testing.T) {
+				out := mustSucceed(t, "agent", "list", "--vibespace", vsName)
+				data := parseData[jsonapi.AgentsOutput](t, out)
 
-	// --- agent delete (remove claude-2) ---
-	t.Run("agent-delete", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "agent", "delete", "claude-2")
-		data := parseData[jsonapi.AgentDeleteOutput](t, out)
+				found := false
+				for _, a := range data.Agents {
+					if a.Name == testAgentName && a.Type == typeName {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("expected %s with type=%s in list, got: %+v", testAgentName, typeName, data.Agents)
+				}
+			})
 
-		if data.Agent != "claude-2" {
-			t.Errorf("expected agent=claude-2, got %s", data.Agent)
-		}
-	})
+			// delete
+			t.Run("delete", func(t *testing.T) {
+				out := mustSucceed(t, "agent", "delete", testAgentName, "--vibespace", vsName)
+				data := parseData[jsonapi.AgentDeleteOutput](t, out)
 
-	// --- agent list (verify back to 1) ---
-	t.Run("agent-list-one", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "agent")
+				if data.Agent != testAgentName {
+					t.Errorf("expected agent=%s, got %s", testAgentName, data.Agent)
+				}
+			})
+		})
+	}
+
+	// --- verify back to 1 agent after type tests ---
+	t.Run("agent-list-after-crud", func(t *testing.T) {
+		out := mustSucceed(t, "agent", "list", "--vibespace", vsName)
 		data := parseData[jsonapi.AgentsOutput](t, out)
 
 		if data.Count != 1 {
@@ -510,7 +509,66 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		}
 	})
 
-	// === Plain mode subtests (run while pods are still Running, before stop/start) ===
+	// === Agent create with config flags ===
+
+	t.Run("agent-create-with-flags", func(t *testing.T) {
+		out := mustSucceed(t, "agent", "create", "--vibespace", vsName,
+			"--agent-type", "claude-code",
+			"--name", "flagtest",
+			"--skip-permissions",
+			"--model", "sonnet",
+			"--max-turns", "10",
+		)
+		data := parseData[jsonapi.AgentCreateOutput](t, out)
+
+		if data.Agent != "flagtest" {
+			t.Errorf("expected agent=flagtest, got %s", data.Agent)
+		}
+	})
+
+	t.Run("agent-verify-create-flags", func(t *testing.T) {
+		out := mustSucceed(t, vsName, "config", "show", "flagtest")
+		data := parseData[jsonapi.ConfigShowOutput](t, out)
+
+		if data.Config.Model != "sonnet" {
+			t.Errorf("expected model=sonnet, got %s", data.Config.Model)
+		}
+		if !data.Config.SkipPermissions {
+			t.Error("expected skip_permissions=true")
+		}
+		if data.Config.MaxTurns != 10 {
+			t.Errorf("expected max_turns=10, got %d", data.Config.MaxTurns)
+		}
+	})
+
+	t.Run("agent-delete-flagtest", func(t *testing.T) {
+		mustSucceed(t, "agent", "delete", "flagtest", "--vibespace", vsName)
+	})
+
+	// === Agent start/stop specific agent ===
+
+	t.Run("agent-stop-specific", func(t *testing.T) {
+		out := mustSucceed(t, "agent", "stop", "claude-1", "--vibespace", vsName)
+		data := parseData[jsonapi.StopOutput](t, out)
+
+		if !data.Stopped {
+			t.Error("expected stopped=true")
+		}
+		if data.Target != "claude-1" {
+			t.Errorf("expected target=claude-1, got %s", data.Target)
+		}
+	})
+
+	t.Run("agent-start-specific", func(t *testing.T) {
+		out := mustSucceed(t, "agent", "start", "claude-1", "--vibespace", vsName)
+		data := parseData[jsonapi.StartOutput](t, out)
+
+		if data.Agent != "claude-1" {
+			t.Errorf("expected agent=claude-1, got %s", data.Agent)
+		}
+	})
+
+	// === Plain mode subtests ===
 
 	t.Run("plain/list", func(t *testing.T) {
 		out := mustSucceedPlain(t, "list")
@@ -528,7 +586,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("plain/agents", func(t *testing.T) {
-		out := mustSucceedPlain(t, vsName, "agent", "list")
+		out := mustSucceedPlain(t, "agent", "list", "--vibespace", vsName)
 		if strings.TrimSpace(out) == "" {
 			t.Error("expected non-empty plain output")
 		}
@@ -549,7 +607,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("plain/session-list", func(t *testing.T) {
-		// May be empty (no sessions) — just verify exit code 0
 		mustSucceedPlain(t, "session", "list")
 	})
 
@@ -559,18 +616,14 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("plain/multi-list-sessions", func(t *testing.T) {
-		// May be empty — just verify exit code 0
 		mustSucceedPlain(t, "multi", "--list-sessions")
 	})
 
 	t.Run("plain/multi-list-agents", func(t *testing.T) {
-		// Just verify exit code 0 — agent count validated by JSON multi-list-agents test.
-		// After agent-delete the daemon may have stale state, so agent list can be empty.
 		mustSucceedPlain(t, "multi", "--vibespaces", vsName, "--list-agents")
 	})
 
-	// === Default output mode subtests (no --json, no --plain) ===
-	// Exercises the colored table/spinner code paths that are otherwise untested.
+	// === Default output mode subtests ===
 
 	t.Run("default/list", func(t *testing.T) {
 		mustSucceedDefault(t, "list")
@@ -581,7 +634,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("default/agents", func(t *testing.T) {
-		mustSucceedDefault(t, vsName, "agent", "list")
+		mustSucceedDefault(t, "agent", "list", "--vibespace", vsName)
 	})
 
 	t.Run("default/config-show-all", func(t *testing.T) {
@@ -593,7 +646,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("default/session-list", func(t *testing.T) {
-		// May have 0 sessions — just verify exit code 0, don't require non-empty stdout.
 		r := run(t, "session", "list")
 		if r.ExitCode != 0 {
 			t.Fatalf("expected exit code 0 but got %d\nstdout: %s\nstderr: %s",
@@ -606,7 +658,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("default/multi-list-sessions", func(t *testing.T) {
-		// May have 0 sessions — just verify exit code 0.
 		r := run(t, "multi", "--list-sessions")
 		if r.ExitCode != 0 {
 			t.Fatalf("expected exit code 0 but got %d\nstdout: %s\nstderr: %s",
@@ -615,7 +666,6 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("default/multi-list-agents", func(t *testing.T) {
-		// After agent-delete the daemon may have stale state, so just verify exit code 0.
 		r := run(t, "multi", "--vibespaces", vsName, "--list-agents")
 		if r.ExitCode != 0 {
 			t.Fatalf("expected exit code 0 but got %d\nstdout: %s\nstderr: %s",
@@ -627,9 +677,9 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		mustSucceedDefault(t, "status")
 	})
 
-	// --- stop ---
+	// --- stop all ---
 	t.Run("stop", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "stop")
+		out := mustSucceed(t, "agent", "stop", "--vibespace", vsName)
 		data := parseData[jsonapi.StopOutput](t, out)
 
 		if !data.Stopped {
@@ -637,9 +687,9 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 		}
 	})
 
-	// --- start ---
+	// --- start all ---
 	t.Run("start", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "start")
+		out := mustSucceed(t, "agent", "start", "--vibespace", vsName)
 		data := parseData[jsonapi.StartOutput](t, out)
 
 		if data.Vibespace != vsName {

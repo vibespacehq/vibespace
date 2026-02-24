@@ -91,7 +91,7 @@ func TestColimaLifecycle(t *testing.T) {
 
 	// --- agents ---
 	t.Run("agents", func(t *testing.T) {
-		out := mustSucceed(t, "e2e-test", "agent")
+		out := mustSucceed(t, "agent", "list", "--vibespace", "e2e-test")
 		data := parseData[jsonapi.AgentsOutput](t, out)
 
 		if data.Count < 1 {
@@ -110,7 +110,7 @@ func TestColimaLifecycle(t *testing.T) {
 	})
 
 	// --- expanded subtests (info, config, exec, forward, ports, multi, agent CRUD, plain, stop, start) ---
-	runExpandedSubtests(t, "e2e-test")
+	runSubtests(t, "e2e-test")
 
 	// --- delete ---
 	t.Run("delete", func(t *testing.T) {

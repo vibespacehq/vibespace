@@ -5,56 +5,146 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
-	"strconv"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	vspkg "github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
-// runAgent routes to agent subcommands
-// Usage: vibespace <name> agent {list,create,delete}
-func runAgent(vibespace string, args []string) error {
-	if len(args) == 0 {
-		// Default to list
-		return runAgentList(vibespace, args)
-	}
-
-	subCmd := args[0]
-	subArgs := args[1:]
-
-	switch subCmd {
-	case "list":
-		return runAgentList(vibespace, subArgs)
-	case "create":
-		return runAgentCreate(vibespace, subArgs)
-	case "delete":
-		return runAgentDelete(vibespace, subArgs)
-	case "--help", "-h":
-		fmt.Printf(`Manage agents in a vibespace
-
-Usage:
-  vibespace %s agent [command]
-
-Available Commands:
-  list        List all agents (default)
-  create      Create a new agent
-  delete      Delete an agent
-
-Examples:
-  vibespace %s agent
-  vibespace %s agent list
-  vibespace %s agent create
-  vibespace %s agent create --agent-type codex
-  vibespace %s agent delete claude-2
-`, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace)
-		return nil
-	default:
-		return fmt.Errorf("unknown agent subcommand: %s", subCmd)
-	}
+var agentCmd = &cobra.Command{
+	Use:   "agent",
+	Short: "Manage agents in a vibespace",
+	Long:  `Manage agents in a vibespace. Requires --vibespace flag or VIBESPACE_NAME env var.`,
+	Example: `  vibespace agent list --vibespace myproject
+  vibespace agent create --vibespace myproject --agent-type codex
+  vibespace agent delete claude-2 --vibespace myproject
+  vibespace agent start --vibespace myproject
+  vibespace agent stop claude-2 --vibespace myproject`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vsName, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		return doAgentList(vsName)
+	},
 }
 
-func runAgentList(vibespace string, args []string) error {
+var agentListCmd = &cobra.Command{
+	Use:     "list",
+	Short:   "List all agents",
+	Aliases: []string{"ls"},
+	Example: `  vibespace agent list --vibespace myproject
+  vibespace agent list --vibespace myproject --json`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vsName, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		return doAgentList(vsName)
+	},
+}
+
+var agentCreateCmd = &cobra.Command{
+	Use:   "create",
+	Short: "Create a new agent",
+	Example: `  vibespace agent create --vibespace myproject
+  vibespace agent create --vibespace myproject --agent-type codex
+  vibespace agent create --vibespace myproject --name researcher --share-credentials
+  vibespace agent create --vibespace myproject --skip-permissions --model opus
+  vibespace agent create --vibespace myproject --allowed-tools "Bash,Read,Write"`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vsName, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+
+		name, _ := cmd.Flags().GetString("name")
+		agentTypeStr, _ := cmd.Flags().GetString("agent-type")
+		shareCredentials, _ := cmd.Flags().GetBool("share-credentials")
+		skipPermissions, _ := cmd.Flags().GetBool("skip-permissions")
+		allowedTools, _ := cmd.Flags().GetString("allowed-tools")
+		disallowedTools, _ := cmd.Flags().GetString("disallowed-tools")
+		model, _ := cmd.Flags().GetString("model")
+		maxTurns, _ := cmd.Flags().GetInt("max-turns")
+
+		return doAgentCreate(vsName, name, agentTypeStr, shareCredentials, skipPermissions, allowedTools, disallowedTools, model, maxTurns)
+	},
+}
+
+var agentDeleteCmd = &cobra.Command{
+	Use:   "delete <agent>",
+	Short: "Delete an agent",
+	Args:  cobra.ExactArgs(1),
+	Example: `  vibespace agent delete claude-2 --vibespace myproject
+  vibespace agent delete codex-1 --vibespace myproject`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vsName, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		return doAgentDelete(vsName, args[0])
+	},
+}
+
+var agentStartCmd = &cobra.Command{
+	Use:   "start [agent]",
+	Short: "Start agents in a vibespace",
+	Args:  cobra.MaximumNArgs(1),
+	Example: `  vibespace agent start --vibespace myproject
+  vibespace agent start claude-2 --vibespace myproject`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vsName, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		agentName := ""
+		if len(args) > 0 {
+			agentName = args[0]
+		}
+		return doAgentStart(vsName, agentName)
+	},
+}
+
+var agentStopCmd = &cobra.Command{
+	Use:   "stop [agent]",
+	Short: "Stop agents in a vibespace",
+	Args:  cobra.MaximumNArgs(1),
+	Example: `  vibespace agent stop --vibespace myproject
+  vibespace agent stop claude-2 --vibespace myproject`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vsName, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		agentName := ""
+		if len(args) > 0 {
+			agentName = args[0]
+		}
+		return doAgentStop(vsName, agentName)
+	},
+}
+
+func init() {
+	agentCmd.AddCommand(agentListCmd)
+	agentCmd.AddCommand(agentCreateCmd)
+	agentCmd.AddCommand(agentDeleteCmd)
+	agentCmd.AddCommand(agentStartCmd)
+	agentCmd.AddCommand(agentStopCmd)
+
+	agentCreateCmd.Flags().StringP("name", "n", "", "Custom name for the agent (default: <type>-N)")
+	agentCreateCmd.Flags().StringP("agent-type", "t", "", "Agent type: claude-code, codex (default: inherit from primary)")
+	agentCreateCmd.Flags().BoolP("share-credentials", "s", false, "Share credentials across all agents")
+	agentCreateCmd.Flags().Bool("skip-permissions", false, "Enable --dangerously-skip-permissions")
+	agentCreateCmd.Flags().String("allowed-tools", "", "Comma-separated allowed tools (replaces default)")
+	agentCreateCmd.Flags().String("disallowed-tools", "", "Comma-separated disallowed tools")
+	agentCreateCmd.Flags().String("model", "", "Model to use (e.g., opus, sonnet)")
+	agentCreateCmd.Flags().Int("max-turns", 0, "Maximum conversation turns")
+}
+
+// --- Business logic ---
+
+func doAgentList(vibespace string) error {
 	ctx := context.Background()
 	out := getOutput()
 
@@ -66,19 +156,16 @@ func runAgentList(vibespace string, args []string) error {
 		return err
 	}
 
-	// List agents using the service method
 	agents, err := svc.ListAgents(ctx, vibespace)
 	if err != nil {
 		slog.Error("failed to list agents", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to list agents: %w", err)
 	}
 
-	// Sort agents by agent number
 	sort.Slice(agents, func(i, j int) bool {
 		return agents[i].AgentNum < agents[j].AgentNum
 	})
 
-	// JSON output mode
 	if out.IsJSONMode() {
 		items := make([]AgentListItem, len(agents))
 		for i, agent := range agents {
@@ -97,17 +184,15 @@ func runAgentList(vibespace string, args []string) error {
 	}
 
 	if len(agents) == 0 {
-		// Plain mode - no output for empty result
 		if out.IsPlainMode() {
 			return nil
 		}
 		fmt.Printf("No agents in vibespace '%s'\n", vibespace)
 		fmt.Println()
-		fmt.Printf("Create one with: vibespace %s agent create\n", vibespace)
+		fmt.Printf("Create one with: vibespace agent create --vibespace %s\n", vibespace)
 		return nil
 	}
 
-	// Build table rows
 	headers := []string{"AGENT", "TYPE", "VIBESPACE", "STATUS"}
 	rows := make([][]string, len(agents))
 	for i, a := range agents {
@@ -131,96 +216,10 @@ func runAgentList(vibespace string, args []string) error {
 	return nil
 }
 
-func runAgentCreate(vibespace string, args []string) error {
-	// Handle help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Printf(`Create a new agent in a vibespace
-
-Usage:
-  vibespace %s agent create [flags]
-
-Flags:
-  -n, --name string            Custom name for the agent (default: <type>-N)
-  -t, --agent-type string      Agent type: claude-code, codex (default: inherit from primary)
-  -s, --share-credentials      Share credentials across all agents
-      --skip-permissions       Enable --dangerously-skip-permissions
-      --allowed-tools string   Comma-separated allowed tools (replaces default)
-      --disallowed-tools string Comma-separated disallowed tools
-      --model string           Model to use (e.g., opus, sonnet)
-      --max-turns int          Maximum conversation turns
-  -h, --help                   Help for create
-
-Examples:
-  vibespace %s agent create                        # Inherits type from primary agent
-  vibespace %s agent create --agent-type codex     # Explicit codex type
-  vibespace %s agent create --name researcher
-  vibespace %s agent create --share-credentials
-  vibespace %s agent create --skip-permissions
-  vibespace %s agent create --allowed-tools "Bash,Read,Write"
-`, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace)
-			return nil
-		}
-	}
-
+func doAgentCreate(vibespace, customName, agentTypeStr string, shareCredentials, skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int) error {
 	ctx := context.Background()
 	out := getOutput()
 
-	// Parse flags
-	shareCredentials := false
-	customName := ""
-	agentTypeStr := "" // Empty means inherit from primary agent
-	skipPermissions := false
-	allowedTools := ""
-	disallowedTools := ""
-	modelName := ""
-	maxTurns := 0
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--share-credentials" || arg == "-s":
-			shareCredentials = true
-		case arg == "--skip-permissions":
-			skipPermissions = true
-		case (arg == "--name" || arg == "-n") && i+1 < len(args):
-			customName = args[i+1]
-			i++
-		case strings.HasPrefix(arg, "--name="):
-			customName = arg[7:]
-		case strings.HasPrefix(arg, "-n="):
-			customName = arg[3:]
-		case (arg == "--agent-type" || arg == "-t") && i+1 < len(args):
-			agentTypeStr = args[i+1]
-			i++
-		case strings.HasPrefix(arg, "--agent-type="):
-			agentTypeStr = arg[13:]
-		case strings.HasPrefix(arg, "-t="):
-			agentTypeStr = arg[3:]
-		case arg == "--allowed-tools" && i+1 < len(args):
-			allowedTools = args[i+1]
-			i++
-		case strings.HasPrefix(arg, "--allowed-tools="):
-			allowedTools = arg[16:]
-		case arg == "--disallowed-tools" && i+1 < len(args):
-			disallowedTools = args[i+1]
-			i++
-		case strings.HasPrefix(arg, "--disallowed-tools="):
-			disallowedTools = arg[19:]
-		case arg == "--model" && i+1 < len(args):
-			modelName = args[i+1]
-			i++
-		case strings.HasPrefix(arg, "--model="):
-			modelName = arg[8:]
-		case arg == "--max-turns" && i+1 < len(args):
-			maxTurns, _ = strconv.Atoi(args[i+1])
-			i++
-		case strings.HasPrefix(arg, "--max-turns="):
-			maxTurns, _ = strconv.Atoi(arg[12:])
-		}
-	}
-
-	// Parse and validate agent type (only if explicitly specified)
 	var agentType agent.Type
 	if agentTypeStr != "" {
 		agentType = agent.ParseType(agentTypeStr)
@@ -229,7 +228,6 @@ Examples:
 		}
 	}
 
-	// Validate tools against supported tools for the agent type (when type is explicit)
 	if agentType != "" && (allowedTools != "" || disallowedTools != "") {
 		impl, implErr := agent.Get(agentType)
 		if implErr == nil {
@@ -265,7 +263,6 @@ Examples:
 		return err
 	}
 
-	// Verify vibespace exists and is running
 	vs, err := checkVibespaceRunning(ctx, svc, vibespace)
 	if err != nil {
 		slog.Error("vibespace not running", "vibespace", vibespace, "error", err)
@@ -280,12 +277,11 @@ Examples:
 		printStep("Creating new agent in '%s'...", vibespace)
 	}
 
-	// Build AgentConfig if any config flags are set
 	var agentConfig *agent.Config
-	if skipPermissions || allowedTools != "" || disallowedTools != "" || modelName != "" || maxTurns > 0 {
+	if skipPermissions || allowedTools != "" || disallowedTools != "" || model != "" || maxTurns > 0 {
 		agentConfig = &agent.Config{
 			SkipPermissions: skipPermissions,
-			Model:           modelName,
+			Model:           model,
 			MaxTurns:        maxTurns,
 		}
 		if allowedTools != "" {
@@ -296,7 +292,6 @@ Examples:
 		}
 	}
 
-	// Spawn the agent with options
 	opts := &vspkg.SpawnAgentOptions{
 		Name:             customName,
 		AgentType:        agentType,
@@ -309,7 +304,6 @@ Examples:
 		return fmt.Errorf("failed to create agent: %w", err)
 	}
 
-	// JSON output
 	if out.IsJSONMode() {
 		agentTypeOutput := agentType.String()
 		if agentTypeOutput == "" {
@@ -333,7 +327,6 @@ Examples:
 		}
 		if len(agentConfig.AllowedTools) > 0 {
 			fmt.Printf("  Allowed tools: %s\n", strings.Join(agentConfig.AllowedTools, ","))
-			// Show excluded tools (supported but not in allowed list)
 			if resolvedType := agentType; resolvedType != "" {
 				if impl, err := agent.Get(resolvedType); err == nil {
 					excluded := excludedToolsFromAllowed(impl.SupportedTools(), agentConfig.AllowedTools)
@@ -355,31 +348,7 @@ Examples:
 	return nil
 }
 
-func runAgentDelete(vibespace string, args []string) error {
-	// Handle help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Printf(`Delete an agent from a vibespace
-
-Usage:
-  vibespace %s agent delete <agent>
-
-Arguments:
-  agent    Name of the agent to delete
-
-Examples:
-  vibespace %s agent delete claude-2
-  vibespace %s agent delete codex-1
-`, vibespace, vibespace, vibespace)
-			return nil
-		}
-	}
-
-	if len(args) == 0 {
-		return fmt.Errorf("agent name required. Usage: vibespace %s agent delete <agent>", vibespace)
-	}
-
-	agentID := args[0]
+func doAgentDelete(vibespace, agentID string) error {
 	ctx := context.Background()
 	out := getOutput()
 
@@ -391,7 +360,6 @@ Examples:
 		return err
 	}
 
-	// Verify vibespace exists
 	vs, err := checkVibespaceExists(ctx, svc, vibespace)
 	if err != nil {
 		slog.Error("vibespace not found", "vibespace", vibespace, "error", err)
@@ -400,13 +368,11 @@ Examples:
 
 	printStep("Deleting agent '%s' from '%s'...", agentID, vibespace)
 
-	// Kill the agent
 	if err := svc.KillAgent(ctx, vs.ID, agentID); err != nil {
 		slog.Error("failed to delete agent", "vibespace", vibespace, "agent", agentID, "error", err)
 		return fmt.Errorf("failed to delete agent: %w", err)
 	}
 
-	// JSON output
 	if out.IsJSONMode() {
 		return out.JSON(NewJSONOutput(true, AgentDeleteOutput{
 			Vibespace: vibespace,
@@ -420,38 +386,11 @@ Examples:
 	return nil
 }
 
-// runStart scales up agents in a vibespace
-// Usage:
-//
-//	vibespace foo start           # scale all agents to 1
-//	vibespace foo start claude-2  # scale specific agent to 1
-func runStart(vibespace string, args []string) error {
+func doAgentStart(vibespace, agentName string) error {
 	ctx := context.Background()
 	out := getOutput()
 
-	// Handle help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Printf(`Start agents in a vibespace
-
-Usage:
-  vibespace %s start [agent] [flags]
-
-Arguments:
-  agent    Optional agent name to start (default: all agents)
-
-Flags:
-  -h, --help   Help for start
-
-Examples:
-  vibespace %s start           # Start all agents
-  vibespace %s start claude-2  # Start specific agent
-`, vibespace, vibespace, vibespace)
-			return nil
-		}
-	}
-
-	slog.Info("start command started", "vibespace", vibespace, "args", args)
+	slog.Info("start command started", "vibespace", vibespace, "agent", agentName)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -459,17 +398,13 @@ Examples:
 		return err
 	}
 
-	// Check vibespace exists
 	vs, err := checkVibespaceExists(ctx, svc, vibespace)
 	if err != nil {
 		slog.Error("vibespace not found", "vibespace", vibespace, "error", err)
 		return err
 	}
 
-	var agentName string
-	if len(args) > 0 {
-		// Start specific agent
-		agentName = args[0]
+	if agentName != "" {
 		printStep("Starting agent '%s' in '%s'...", agentName, vibespace)
 
 		if err := svc.StartAgent(ctx, vs.ID, agentName); err != nil {
@@ -477,7 +412,6 @@ Examples:
 			return fmt.Errorf("failed to start agent: %w", err)
 		}
 
-		// JSON output
 		if out.IsJSONMode() {
 			return out.JSON(NewJSONOutput(true, StartOutput{
 				Vibespace: vibespace,
@@ -488,7 +422,6 @@ Examples:
 		slog.Info("start command completed", "vibespace", vibespace, "agent", agentName)
 		printSuccess("Agent '%s' started", agentName)
 	} else {
-		// Start all agents
 		printStep("Starting all agents in '%s'...", vibespace)
 
 		if err := svc.Start(ctx, vs.ID); err != nil {
@@ -496,7 +429,6 @@ Examples:
 			return fmt.Errorf("failed to start vibespace: %w", err)
 		}
 
-		// JSON output
 		if out.IsJSONMode() {
 			return out.JSON(NewJSONOutput(true, StartOutput{
 				Vibespace: vibespace,
@@ -510,38 +442,11 @@ Examples:
 	return nil
 }
 
-// runStop scales down agents in a vibespace
-// Usage:
-//
-//	vibespace foo stop           # scale all agents to 0
-//	vibespace foo stop claude-2  # scale specific agent to 0
-func runStop(vibespace string, args []string) error {
+func doAgentStop(vibespace, agentName string) error {
 	ctx := context.Background()
 	out := getOutput()
 
-	// Handle help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Printf(`Stop agents in a vibespace
-
-Usage:
-  vibespace %s stop [agent] [flags]
-
-Arguments:
-  agent    Optional agent name to stop (default: all agents)
-
-Flags:
-  -h, --help   Help for stop
-
-Examples:
-  vibespace %s stop           # Stop all agents
-  vibespace %s stop claude-2  # Stop specific agent
-`, vibespace, vibespace, vibespace)
-			return nil
-		}
-	}
-
-	slog.Info("stop command started", "vibespace", vibespace, "args", args)
+	slog.Info("stop command started", "vibespace", vibespace, "agent", agentName)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -549,17 +454,13 @@ Examples:
 		return err
 	}
 
-	// Check vibespace exists
 	vs, err := checkVibespaceExists(ctx, svc, vibespace)
 	if err != nil {
 		slog.Error("vibespace not found", "vibespace", vibespace, "error", err)
 		return err
 	}
 
-	var agentName string
-	if len(args) > 0 {
-		// Stop specific agent
-		agentName = args[0]
+	if agentName != "" {
 		printStep("Stopping agent '%s' in '%s'...", agentName, vibespace)
 
 		if err := svc.StopAgent(ctx, vs.ID, agentName); err != nil {
@@ -567,7 +468,6 @@ Examples:
 			return fmt.Errorf("failed to stop agent: %w", err)
 		}
 
-		// JSON output
 		if out.IsJSONMode() {
 			return out.JSON(NewJSONOutput(true, StopOutput{
 				Stopped: true,
@@ -578,7 +478,6 @@ Examples:
 		slog.Info("stop command completed", "vibespace", vibespace, "agent", agentName)
 		printSuccess("Agent '%s' stopped", agentName)
 	} else {
-		// Stop all agents
 		printStep("Stopping all agents in '%s'...", vibespace)
 
 		if err := svc.Stop(ctx, vs.ID); err != nil {
@@ -586,7 +485,6 @@ Examples:
 			return fmt.Errorf("failed to stop vibespace: %w", err)
 		}
 
-		// JSON output
 		if out.IsJSONMode() {
 			return out.JSON(NewJSONOutput(true, StopOutput{
 				Stopped: true,
@@ -601,11 +499,9 @@ Examples:
 	return nil
 }
 
-// excludedToolsFromAllowed returns tools from supported that are not in the allowed list.
 func excludedToolsFromAllowed(supported, allowed []string) []string {
 	allowedBase := make(map[string]bool, len(allowed))
 	for _, t := range allowed {
-		// Strip tool params like "Bash(read_only:true)" → "Bash"
 		base := t
 		if idx := strings.Index(t, "("); idx >= 0 {
 			base = t[:idx]
