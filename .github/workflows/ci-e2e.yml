@@ -8,6 +8,7 @@ on:
 
 jobs:
   baremetal:
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -47,6 +48,7 @@ jobs:
           if-no-files-found: ignore
 
   colima:
+    if: github.actor != 'dependabot[bot]'
     runs-on: macos-m2
     timeout-minutes: 20
     steps:
@@ -87,6 +89,7 @@ jobs:
           if-no-files-found: ignore
 
   lima:
+    if: github.actor != 'dependabot[bot]'
     runs-on: linux-hub
     timeout-minutes: 15
     steps:
