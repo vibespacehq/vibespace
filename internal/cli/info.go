@@ -31,18 +31,21 @@ var infoCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return doInfo(vs)
+		return doInfo(nil, vs)
 	},
 }
 
-func doInfo(vibespaceNameOrID string) error {
+func doInfo(svc *vibespace.Service, vibespaceNameOrID string) error {
 	ctx := context.Background()
 	out := getOutput()
 
 	// Get vibespace service
-	svc, err := getVibespaceService()
-	if err != nil {
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceService()
+		if err != nil {
+			return err
+		}
 	}
 
 	// Get vibespace details

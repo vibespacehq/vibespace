@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 var listCmd = &cobra.Command{
@@ -19,12 +20,19 @@ var listCmd = &cobra.Command{
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	return doList(nil)
+}
+
+func doList(svc *vibespace.Service) error {
 	ctx := context.Background()
 	out := getOutput()
 
-	svc, err := getVibespaceService()
-	if err != nil {
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceService()
+		if err != nil {
+			return err
+		}
 	}
 
 	vibespaces, err := svc.List(ctx)
