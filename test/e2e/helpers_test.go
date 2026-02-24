@@ -118,6 +118,22 @@ func mustSucceed(t *testing.T, args ...string) jsonapi.RawJSONOutput {
 	return out
 }
 
+// mustFail runs a JSON command and asserts success=false with an error containing expectedErr.
+func mustFail(t *testing.T, expectedErr string, args ...string) jsonapi.RawJSONOutput {
+	t.Helper()
+	out := runJSON(t, args...)
+	if out.Success {
+		t.Fatalf("expected failure for %v but got success", args)
+	}
+	if out.Error == nil {
+		t.Fatalf("expected error field in JSON output for %v", args)
+	}
+	if expectedErr != "" && !strings.Contains(out.Error.Message, expectedErr) {
+		t.Errorf("expected error containing %q, got: %s", expectedErr, out.Error.Message)
+	}
+	return out
+}
+
 // parseData unmarshals RawJSONOutput.Data into the given type.
 func parseData[T any](t *testing.T, out jsonapi.RawJSONOutput) T {
 	t.Helper()
@@ -296,6 +312,48 @@ func runSubtests(t *testing.T, vsName string) {
 		t.Logf("sessions: count=%d", data.Count)
 	})
 
+	// === Error tests (don't need running pods) ===
+
+	t.Run("error/delete-nonexistent", func(t *testing.T) {
+		mustFail(t, "not found", "delete", "nonexistent-vs", "-f")
+	})
+
+	t.Run("error/create-duplicate", func(t *testing.T) {
+		mustFail(t, "already exists", "create", vsName, "-t", "claude-code")
+	})
+
+	t.Run("error/create-invalid-mount", func(t *testing.T) {
+		mustFail(t, "invalid mount", "create", "tempvs", "-t", "claude-code", "--mount", "badformat")
+	})
+
+	t.Run("error/info-nonexistent", func(t *testing.T) {
+		mustFail(t, "not found", "info", "--vibespace", "nonexistent")
+	})
+
+	t.Run("error/agent-delete-nonexistent", func(t *testing.T) {
+		mustFail(t, "not found", "agent", "delete", "fake", "--vibespace", vsName)
+	})
+
+	t.Run("error/config-show-nonexistent-agent", func(t *testing.T) {
+		mustFail(t, "not found", "config", "show", "fake", "--vibespace", vsName)
+	})
+
+	t.Run("error/config-set-nonexistent-agent", func(t *testing.T) {
+		mustFail(t, "not found", "config", "set", "fake", "--model", "opus", "--vibespace", vsName)
+	})
+
+	t.Run("error/config-set-reasoning-claude", func(t *testing.T) {
+		mustFail(t, "only supported for Codex", "config", "set", "claude-1", "--reasoning-effort", "high", "--vibespace", vsName)
+	})
+
+	t.Run("error/forward-add-invalid-port", func(t *testing.T) {
+		mustFail(t, "invalid", "forward", "add", "abc", "--vibespace", vsName)
+	})
+
+	t.Run("error/forward-remove-invalid-port", func(t *testing.T) {
+		mustFail(t, "invalid", "forward", "remove", "abc", "--vibespace", vsName)
+	})
+
 	// === Wait for pods to become Running ===
 
 	t.Run("wait-for-ready", func(t *testing.T) {
@@ -331,6 +389,22 @@ func runSubtests(t *testing.T, vsName string) {
 			t.Error("expected non-empty stdout from whoami")
 		}
 		t.Logf("exec whoami: stdout=%q", strings.TrimSpace(data.Stdout))
+	})
+
+	// --- exec error tests (need daemon) ---
+	t.Run("error/exec-nonexistent-agent", func(t *testing.T) {
+		r := run(t, "exec", "--vibespace", vsName, "--json", "nonexistent", "whoami")
+		var out jsonapi.RawJSONOutput
+		if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
+			t.Fatalf("failed to parse JSON output:\nstdout: %s\nstderr: %s\nerror: %v",
+				r.Stdout, r.Stderr, err)
+		}
+		if out.Success {
+			t.Fatal("expected failure but got success")
+		}
+		if out.Error == nil || !strings.Contains(out.Error.Message, "not found") {
+			t.Errorf("expected 'not found' error, got: %+v", out.Error)
+		}
 	})
 
 	// --- forward list (with default SSH/ttyd forwards) ---
@@ -517,6 +591,25 @@ func runSubtests(t *testing.T, vsName string) {
 					}
 				}
 			})
+
+			// config error tests — type-specific restrictions
+			if agentType == agent.TypeCodex {
+				t.Run("error/config-set-skip-perms", func(t *testing.T) {
+					mustFail(t, "not supported for Codex", "config", "set", testAgentName, "--skip-permissions", "--vibespace", vsName)
+				})
+				t.Run("error/config-set-no-skip-perms", func(t *testing.T) {
+					mustFail(t, "not supported for Codex", "config", "set", testAgentName, "--no-skip-permissions", "--vibespace", vsName)
+				})
+				t.Run("error/config-set-allowed-tools", func(t *testing.T) {
+					mustFail(t, "not supported for Codex", "config", "set", testAgentName, "--allowed-tools", "Bash", "--vibespace", vsName)
+				})
+				t.Run("error/config-set-disallowed-tools", func(t *testing.T) {
+					mustFail(t, "not supported for Codex", "config", "set", testAgentName, "--disallowed-tools", "Bash", "--vibespace", vsName)
+				})
+				t.Run("error/config-set-bad-reasoning", func(t *testing.T) {
+					mustFail(t, "invalid reasoning effort", "config", "set", testAgentName, "--reasoning-effort", "banana", "--vibespace", vsName)
+				})
+			}
 
 			// delete
 			t.Run("delete", func(t *testing.T) {
@@ -716,6 +809,11 @@ func runSubtests(t *testing.T, vsName string) {
 		if !data.Stopped {
 			t.Error("expected stopped=true")
 		}
+	})
+
+	// --- error: agent create on stopped vibespace ---
+	t.Run("error/agent-create-stopped-vs", func(t *testing.T) {
+		mustFail(t, "stopped", "agent", "create", "--vibespace", vsName, "-t", "claude-code")
 	})
 
 	// --- start all ---
