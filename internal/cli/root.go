@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 	"github.com/vibespacehq/vibespace/pkg/tui"
@@ -20,13 +19,13 @@ var (
 
 // Global flags
 var (
-	globalJSON       bool
-	globalVerbose    bool
-	globalQuiet      bool
-	globalNoColor    bool
-	globalPlain      bool
-	globalHeader     bool
-	globalVibespace  string
+	globalJSON      bool
+	globalVerbose   bool
+	globalQuiet     bool
+	globalNoColor   bool
+	globalPlain     bool
+	globalHeader    bool
+	globalVibespace string
 )
 
 var rootCmd = &cobra.Command{
@@ -41,7 +40,7 @@ Get started:
   vibespace init                                    Initialize the cluster
   vibespace create myproject -t claude-code         Create a new vibespace
   vibespace agent list --vibespace myproject        List agents
-  vibespace agent create --vibespace myproject      Add another agent
+  vibespace connect --vibespace myproject           Connect to an agent
 
 Tip: set VIBESPACE_NAME to avoid typing --vibespace every time:
   export VIBESPACE_NAME=myproject
@@ -61,22 +60,14 @@ Environment Variables:
   VIBESPACE_DEFAULT_MEMORY    Default vibespace memory (default: 1Gi)
   VIBESPACE_DEFAULT_STORAGE   Default vibespace storage (default: 10Gi)
   NO_COLOR                    Disable colored output`,
-	SilenceUsage:       true,
-	SilenceErrors:      true,
-	Args:               cobra.ArbitraryArgs,
-	DisableFlagParsing: true, // Let subcommands handle their own flags
-	// PersistentPreRunE initializes output after flags are parsed
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		initOutputFromFlags()
 		return nil
 	},
-	// Handle unknown commands as vibespace names
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) == 0 {
-			return tui.RunApp()
-		}
-		// Treat first argument as a vibespace name
-		return handleVibespaceCommand(args)
+		return tui.RunApp()
 	},
 }
 
@@ -97,75 +88,7 @@ func initOutputFromFlags() {
 	})
 }
 
-// parseGlobalFlags extracts global flags from os.Args and returns the remaining args
-// This is needed because DisableFlagParsing is true on root command
-func parseGlobalFlags() {
-	var newArgs []string
-	args := os.Args[1:] // Skip program name
-
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch arg {
-		case "--json":
-			globalJSON = true
-		case "--verbose", "-v":
-			globalVerbose = true
-		case "--quiet", "-q":
-			globalQuiet = true
-		case "--no-color":
-			globalNoColor = true
-		case "--plain":
-			globalPlain = true
-		case "--header":
-			globalHeader = true
-		case "--help", "-h":
-			// Keep help flags for cobra to handle
-			newArgs = append(newArgs, arg)
-		default:
-			// Check for --flag=value format
-			if strings.HasPrefix(arg, "--json=") ||
-				strings.HasPrefix(arg, "--verbose=") ||
-				strings.HasPrefix(arg, "--quiet=") ||
-				strings.HasPrefix(arg, "--no-color=") ||
-				strings.HasPrefix(arg, "--plain=") ||
-				strings.HasPrefix(arg, "--header=") {
-				// Parse boolean flag with value (--flag=true/false)
-				parts := strings.SplitN(arg, "=", 2)
-				flag := parts[0]
-				value := strings.ToLower(parts[1])
-				isTrue := value == "true" || value == "1" || value == "yes"
-				switch flag {
-				case "--json":
-					globalJSON = isTrue
-				case "--verbose":
-					globalVerbose = isTrue
-				case "--quiet":
-					globalQuiet = isTrue
-				case "--no-color":
-					globalNoColor = isTrue
-				case "--plain":
-					globalPlain = isTrue
-				case "--header":
-					globalHeader = isTrue
-				}
-			} else {
-				newArgs = append(newArgs, arg)
-			}
-		}
-	}
-
-	// Replace os.Args with filtered args
-	os.Args = append([]string{os.Args[0]}, newArgs...)
-}
-
 func Execute() error {
-	// Parse global flags before cobra processes commands
-	// This handles flags for dynamic vibespace commands (e.g., vibespace myproject agents --json)
-	parseGlobalFlags()
-
-	// Initialize output with global flags (for dynamic commands that bypass PersistentPreRunE)
-	initOutputFromFlags()
-
 	cleanup := setupLogging(LogConfig{Mode: LogModeCLI})
 	defer cleanup()
 
@@ -200,14 +123,19 @@ func init() {
 	rootCmd.AddCommand(createCmd)
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(deleteCmd)
-	rootCmd.AddCommand(daemonCmd)  // Hidden daemon command
-	rootCmd.AddCommand(sessionCmd) // Multi-agent session management
-	rootCmd.AddCommand(multiCmd)   // Quick ad-hoc multi-agent sessions
-	rootCmd.AddCommand(serveCmd)   // Remote mode server
-	rootCmd.AddCommand(remoteCmd)  // Remote mode client
-	rootCmd.AddCommand(agentCmd)   // Agent management (standard cobra)
+	rootCmd.AddCommand(daemonCmd)
+	rootCmd.AddCommand(sessionCmd)
+	rootCmd.AddCommand(multiCmd)
+	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(remoteCmd)
+	rootCmd.AddCommand(agentCmd)
+	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(connectCmd)
+	rootCmd.AddCommand(configCmd)
+	rootCmd.AddCommand(execCmd)
+	rootCmd.AddCommand(forwardCmd)
 
-	// Global flags - registered here so subcommands can parse them
+	// Global flags
 	rootCmd.PersistentFlags().BoolVar(&globalJSON, "json", false, "Output in JSON format")
 	rootCmd.PersistentFlags().BoolVarP(&globalVerbose, "verbose", "v", false, "Enable verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&globalQuiet, "quiet", "q", false, "Suppress non-essential output")
@@ -215,7 +143,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&globalPlain, "plain", false, "Plain output for scripting")
 	rootCmd.PersistentFlags().BoolVar(&globalHeader, "header", false, "Include headers in plain output")
 
-	// Vibespace flag - identifies which vibespace to operate on
+	// Vibespace flag
 	defaultVS := os.Getenv("VIBESPACE_NAME")
 	rootCmd.PersistentFlags().StringVar(&globalVibespace, "vibespace", defaultVS, "Vibespace name (env: VIBESPACE_NAME)")
 }
@@ -246,39 +174,4 @@ func requireVibespace(cmd *cobra.Command) (string, error) {
 		return "", fmt.Errorf("vibespace name required: use --vibespace flag or set VIBESPACE_NAME environment variable")
 	}
 	return globalVibespace, nil
-}
-
-// handleVibespaceCommand handles commands not yet migrated to cobra subcommands.
-func handleVibespaceCommand(args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("vibespace name required")
-	}
-
-	vibespace := args[0]
-	subArgs := args[1:]
-
-	if len(subArgs) == 0 {
-		return fmt.Errorf("subcommand required for vibespace '%s'", vibespace)
-	}
-
-	subCmd := subArgs[0]
-	cmdArgs := subArgs[1:]
-
-	switch subCmd {
-	case "info":
-		return runInfo(vibespace, cmdArgs)
-	case "connect":
-		return runConnect(vibespace, cmdArgs)
-	case "config":
-		return runConfig(vibespace, cmdArgs)
-	case "forward":
-		return runForwardCmd(vibespace, cmdArgs)
-	case "exec":
-		return runExec(vibespace, cmdArgs)
-	default:
-		if suggestion := suggestVibespaceCommand(subCmd); suggestion != "" {
-			return fmt.Errorf("unknown command: %s\n\nDid you mean: vibespace %s %s", subCmd, vibespace, suggestion)
-		}
-		return fmt.Errorf("unknown command: %s", subCmd)
-	}
 }

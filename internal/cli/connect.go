@@ -9,65 +9,50 @@ import (
 	"runtime"
 	"strconv"
 
+	"github.com/spf13/cobra"
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
-// browserFlag tracks whether to open browser instead of terminal
-var connectBrowserFlag bool
-
-func runConnect(vsName string, args []string) error {
-	ctx := context.Background()
-
-	// Parse flags from args
-	browser := false
-	agentName := "" // Will be determined from vibespace if not specified
-	runAgent := false
-
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--help", "-h":
-			fmt.Printf(`Connect to an agent in a vibespace
-
-Usage:
-  vibespace %s connect [agent] [flags]
-
-Arguments:
-  agent    Optional agent name (uses primary agent if not specified)
-
-Flags:
-  -b, --browser   Open in web browser instead of terminal
-  -a, --agent     Specify agent name
-  -h, --help      Help for connect
-
-Examples:
-  vibespace %s connect              # Connect to primary agent
-  vibespace %s connect claude-2     # Connect to specific agent
-  vibespace %s connect --browser    # Open in web browser
-`, vsName, vsName, vsName, vsName)
-			return nil
-		case "--browser", "-b":
-			browser = true
-		case "--agent", "-a":
-			if i+1 < len(args) {
-				agentName = args[i+1]
-				runAgent = true
-				i++
-			}
-		default:
-			// If arg doesn't start with -, treat as agent name
-			if len(args[i]) > 0 && args[i][0] != '-' {
-				agentName = args[i]
-				runAgent = true
-			}
+var connectCmd = &cobra.Command{
+	Use:   "connect [agent]",
+	Short: "Connect to an agent",
+	Long:  `Connect to an agent in a vibespace via SSH (terminal) or browser (ttyd).`,
+	Example: `  vibespace connect --vibespace myproject
+  vibespace connect claude-2 --vibespace myproject
+  vibespace connect --browser --vibespace myproject`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
 		}
-	}
 
-	// Also check global flag if set
-	if connectBrowserFlag {
-		browser = true
-	}
+		browser, _ := cmd.Flags().GetBool("browser")
+		agentFlag, _ := cmd.Flags().GetString("agent")
+
+		agentName := ""
+		runAgent := false
+		if agentFlag != "" {
+			agentName = agentFlag
+			runAgent = true
+		} else if len(args) > 0 {
+			agentName = args[0]
+			runAgent = true
+		}
+
+		return doConnect(vs, agentName, runAgent, browser)
+	},
+}
+
+func init() {
+	connectCmd.Flags().BoolP("browser", "b", false, "Open in web browser instead of terminal")
+	connectCmd.Flags().StringP("agent", "a", "", "Specify agent name")
+}
+
+func doConnect(vsName, agentName string, runAgent, browser bool) error {
+	ctx := context.Background()
 
 	// Get the vibespace service to look up agent info
 	svc, err := getVibespaceService()

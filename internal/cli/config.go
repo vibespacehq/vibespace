@@ -7,70 +7,94 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 	vspkg "github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
-// runConfig routes to config subcommands
-func runConfig(vibespace string, args []string) error {
-	if len(args) == 0 {
-		// Default to show
-		return runConfigShow(vibespace, args)
-	}
-
-	subCmd := args[0]
-	subArgs := args[1:]
-
-	switch subCmd {
-	case "show":
-		return runConfigShow(vibespace, subArgs)
-	case "set":
-		return runConfigSet(vibespace, subArgs)
-	case "--help", "-h":
-		fmt.Println(`Manage agent configuration
-
-Usage:
-  vibespace <name> config [command]
-
-Available Commands:
-  show        Show agent configuration (default)
-  set         Set agent configuration
-
-Examples:
-  vibespace myproject config
-  vibespace myproject config show claude-1
-  vibespace myproject config set claude-1 --skip-permissions`)
-		return nil
-	default:
-		// If not a subcommand, treat as agent name for show
-		return runConfigShow(vibespace, args)
-	}
+var configCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Manage agent configuration",
+	Example: `  vibespace config --vibespace myproject
+  vibespace config show claude-1 --vibespace myproject
+  vibespace config set claude-1 --skip-permissions --vibespace myproject`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		return doConfigShow(vs, "")
+	},
 }
 
-func runConfigShow(vibespace string, args []string) error {
+var configShowCmd = &cobra.Command{
+	Use:   "show [agent]",
+	Short: "Show agent configuration",
+	Example: `  vibespace config show --vibespace myproject
+  vibespace config show claude-1 --vibespace myproject`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		agentName := ""
+		if len(args) > 0 {
+			agentName = args[0]
+		}
+		return doConfigShow(vs, agentName)
+	},
+}
+
+var configSetCmd = &cobra.Command{
+	Use:   "set <agent>",
+	Short: "Set agent configuration",
+	Long: `Set agent configuration.
+
+Claude Models:
+  sonnet      Latest Sonnet (4.5) for daily coding tasks
+  opus        Opus 4.5 for complex reasoning
+  haiku       Fast and efficient for simple tasks
+  opusplan    Opus for planning, Sonnet for execution
+
+Codex Models:
+  gpt-5.2-codex       Most advanced agentic coding model (recommended)
+  gpt-5.1-codex-mini  Smaller, cost-effective
+  gpt-5.1-codex-max   Optimized for long-horizon tasks
+  gpt-5.2             General agentic model`,
+	Example: `  vibespace config set claude-1 --skip-permissions --vibespace myproject
+  vibespace config set claude-1 --model opus --vibespace myproject
+  vibespace config set codex-1 --reasoning-effort high --vibespace myproject`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		return doConfigSet(vs, args[0], cmd)
+	},
+}
+
+func init() {
+	configCmd.AddCommand(configShowCmd)
+	configCmd.AddCommand(configSetCmd)
+
+	configSetCmd.Flags().Bool("skip-permissions", false, "Enable --dangerously-skip-permissions (Claude only)")
+	configSetCmd.Flags().Bool("no-skip-permissions", false, "Disable --dangerously-skip-permissions (Claude only)")
+	configSetCmd.Flags().String("allowed-tools", "", "Comma-separated allowed tools (Claude only)")
+	configSetCmd.Flags().String("disallowed-tools", "", "Comma-separated disallowed tools (Claude only)")
+	configSetCmd.Flags().String("model", "", "Model to use")
+	configSetCmd.Flags().Int("max-turns", 0, "Maximum conversation turns (0 = unlimited)")
+	configSetCmd.Flags().String("system-prompt", "", "Custom system prompt")
+	configSetCmd.Flags().String("reasoning-effort", "", "Reasoning effort: low, medium, high, xhigh (Codex only)")
+}
+
+func doConfigShow(vibespace string, agentName string) error {
 	ctx := context.Background()
 	out := getOutput()
 
-	// Check for help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Println(`Show agent configuration
-
-Usage:
-  vibespace <name> config show [agent]
-
-Arguments:
-  agent     Optional agent name (shows all if not specified)
-
-Examples:
-  vibespace myproject config show
-  vibespace myproject config show claude-1`)
-			return nil
-		}
-	}
-
-	slog.Debug("config show command started", "vibespace", vibespace, "args", args)
+	slog.Debug("config show command started", "vibespace", vibespace, "agent", agentName)
 
 	svc, err := getVibespaceServiceWithCheck()
 	if err != nil {
@@ -83,12 +107,6 @@ Examples:
 	if err != nil {
 		slog.Error("vibespace not found", "vibespace", vibespace, "error", err)
 		return err
-	}
-
-	// Get specific agent or all agents
-	var agentName string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		agentName = args[0]
 	}
 
 	// Always get agents list to find agent type
@@ -319,54 +337,8 @@ func printAgentConfig(agentName string, agentType agent.Type, config *agent.Conf
 	}
 }
 
-func runConfigSet(vibespace string, args []string) error {
+func doConfigSet(vibespace string, agentName string, cmd *cobra.Command) error {
 	ctx := context.Background()
-
-	// Check for help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Println(`Set agent configuration
-
-Usage:
-  vibespace <name> config set <agent> [flags]
-
-Flags:
-      --skip-permissions         Enable --dangerously-skip-permissions (Claude only)
-      --no-skip-permissions      Disable --dangerously-skip-permissions (Claude only)
-      --allowed-tools string     Comma-separated allowed tools (Claude only)
-      --disallowed-tools string  Comma-separated disallowed tools (Claude only)
-      --model string             Model to use (see below)
-      --max-turns int            Maximum conversation turns (0 = unlimited)
-      --reasoning-effort string  Reasoning effort: low, medium, high, xhigh (Codex only)
-  -h, --help                     Help for config set
-
-Claude Models:
-  sonnet      Latest Sonnet (4.5) for daily coding tasks
-  opus        Opus 4.5 for complex reasoning
-  haiku       Fast and efficient for simple tasks
-  opusplan    Opus for planning, Sonnet for execution
-
-Codex Models:
-  gpt-5.2-codex       Most advanced agentic coding model (recommended)
-  gpt-5.1-codex-mini  Smaller, cost-effective
-  gpt-5.1-codex-max   Optimized for long-horizon tasks
-  gpt-5.2             General agentic model
-
-Examples:
-  vibespace myproject config set claude-1 --skip-permissions
-  vibespace myproject config set claude-1 --model opus
-  vibespace myproject config set codex-1 --model gpt-5.2-codex
-  vibespace myproject config set codex-1 --reasoning-effort high`)
-			return nil
-		}
-	}
-
-	if len(args) == 0 {
-		return fmt.Errorf("agent name required. Usage: vibespace %s config set <agent> [flags]", vibespace)
-	}
-
-	agentName := args[0]
-	args = args[1:]
 
 	slog.Info("config set command started", "vibespace", vibespace, "agent", agentName)
 
@@ -403,77 +375,52 @@ Examples:
 		return fmt.Errorf("failed to get agent config: %w", err)
 	}
 
-	// Parse flags and update config
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case arg == "--skip-permissions":
-			if isCodex {
-				return fmt.Errorf("--skip-permissions is not supported for Codex agents (always runs in --yolo mode)")
-			}
-			config.SkipPermissions = true
-		case arg == "--no-skip-permissions":
-			if isCodex {
-				return fmt.Errorf("--no-skip-permissions is not supported for Codex agents (always runs in --yolo mode)")
-			}
-			config.SkipPermissions = false
-		case arg == "--allowed-tools" && i+1 < len(args):
-			if isCodex {
-				return fmt.Errorf("--allowed-tools is not supported for Codex agents")
-			}
-			config.AllowedTools = strings.Split(args[i+1], ",")
-			i++
-		case strings.HasPrefix(arg, "--allowed-tools="):
-			if isCodex {
-				return fmt.Errorf("--allowed-tools is not supported for Codex agents")
-			}
-			config.AllowedTools = strings.Split(arg[16:], ",")
-		case arg == "--disallowed-tools" && i+1 < len(args):
-			if isCodex {
-				return fmt.Errorf("--disallowed-tools is not supported for Codex agents")
-			}
-			config.DisallowedTools = strings.Split(args[i+1], ",")
-			i++
-		case strings.HasPrefix(arg, "--disallowed-tools="):
-			if isCodex {
-				return fmt.Errorf("--disallowed-tools is not supported for Codex agents")
-			}
-			config.DisallowedTools = strings.Split(arg[19:], ",")
-		case arg == "--model" && i+1 < len(args):
-			config.Model = args[i+1]
-			i++
-		case strings.HasPrefix(arg, "--model="):
-			config.Model = arg[8:]
-		case arg == "--max-turns" && i+1 < len(args):
-			config.MaxTurns, _ = strconv.Atoi(args[i+1])
-			i++
-		case strings.HasPrefix(arg, "--max-turns="):
-			config.MaxTurns, _ = strconv.Atoi(arg[12:])
-		case arg == "--system-prompt" && i+1 < len(args):
-			config.SystemPrompt = args[i+1]
-			i++
-		case strings.HasPrefix(arg, "--system-prompt="):
-			config.SystemPrompt = arg[16:]
-		case arg == "--reasoning-effort" && i+1 < len(args):
-			if !isCodex {
-				return fmt.Errorf("--reasoning-effort is only supported for Codex agents")
-			}
-			effort := strings.ToLower(args[i+1])
-			if effort != "low" && effort != "medium" && effort != "high" && effort != "xhigh" {
-				return fmt.Errorf("invalid reasoning effort: %s (must be low, medium, high, or xhigh)", effort)
-			}
-			config.ReasoningEffort = effort
-			i++
-		case strings.HasPrefix(arg, "--reasoning-effort="):
-			if !isCodex {
-				return fmt.Errorf("--reasoning-effort is only supported for Codex agents")
-			}
-			effort := strings.ToLower(arg[19:])
-			if effort != "low" && effort != "medium" && effort != "high" && effort != "xhigh" {
-				return fmt.Errorf("invalid reasoning effort: %s (must be low, medium, high, or xhigh)", effort)
-			}
-			config.ReasoningEffort = effort
+	// Apply flag changes
+	if cmd.Flags().Changed("skip-permissions") {
+		if isCodex {
+			return fmt.Errorf("--skip-permissions is not supported for Codex agents (always runs in --yolo mode)")
 		}
+		config.SkipPermissions = true
+	}
+	if cmd.Flags().Changed("no-skip-permissions") {
+		if isCodex {
+			return fmt.Errorf("--no-skip-permissions is not supported for Codex agents (always runs in --yolo mode)")
+		}
+		config.SkipPermissions = false
+	}
+	if cmd.Flags().Changed("allowed-tools") {
+		if isCodex {
+			return fmt.Errorf("--allowed-tools is not supported for Codex agents")
+		}
+		v, _ := cmd.Flags().GetString("allowed-tools")
+		config.AllowedTools = strings.Split(v, ",")
+	}
+	if cmd.Flags().Changed("disallowed-tools") {
+		if isCodex {
+			return fmt.Errorf("--disallowed-tools is not supported for Codex agents")
+		}
+		v, _ := cmd.Flags().GetString("disallowed-tools")
+		config.DisallowedTools = strings.Split(v, ",")
+	}
+	if cmd.Flags().Changed("model") {
+		config.Model, _ = cmd.Flags().GetString("model")
+	}
+	if cmd.Flags().Changed("max-turns") {
+		config.MaxTurns, _ = cmd.Flags().GetInt("max-turns")
+	}
+	if cmd.Flags().Changed("system-prompt") {
+		config.SystemPrompt, _ = cmd.Flags().GetString("system-prompt")
+	}
+	if cmd.Flags().Changed("reasoning-effort") {
+		if !isCodex {
+			return fmt.Errorf("--reasoning-effort is only supported for Codex agents")
+		}
+		effort, _ := cmd.Flags().GetString("reasoning-effort")
+		effort = strings.ToLower(effort)
+		if effort != "low" && effort != "medium" && effort != "high" && effort != "xhigh" {
+			return fmt.Errorf("invalid reasoning effort: %s (must be low, medium, high, or xhigh)", effort)
+		}
+		config.ReasoningEffort = effort
 	}
 
 	printStep("Updating config for '%s' in '%s'...", agentName, vibespace)
@@ -485,7 +432,6 @@ Examples:
 	// JSON output
 	out := getOutput()
 	if out.IsJSONMode() {
-		// Convert config to output format
 		allowedTools := config.AllowedTools
 		if allowedTools == nil {
 			allowedTools = []string{}

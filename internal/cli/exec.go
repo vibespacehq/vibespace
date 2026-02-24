@@ -8,40 +8,38 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
-// runExec runs a command in an agent's container
-func runExec(vsName string, args []string) error {
+var execCmd = &cobra.Command{
+	Use:   "exec [agent] -- <command>",
+	Short: "Run a command in an agent's container",
+	Long: `Run a command in an agent's container via SSH.
+
+All flags (--vibespace, --json, etc.) must appear before the command arguments.
+Use -- to explicitly separate flags from the command.`,
+	Example: `  vibespace exec --vibespace myproject whoami
+  vibespace exec --vibespace myproject claude-1 whoami
+  vibespace exec --vibespace myproject -- ls -la /workspace
+  vibespace exec --vibespace myproject claude-2 -- cat /etc/os-release`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		return doExec(vs, args)
+	},
+}
+
+func init() {
+	execCmd.Flags().SetInterspersed(false)
+}
+
+func doExec(vsName string, args []string) error {
 	ctx := context.Background()
 	out := getOutput()
-
-	// Check for help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Printf(`Run a command in an agent's container
-
-Usage:
-  vibespace %s exec [agent] <command>
-
-Arguments:
-  agent     Optional agent name (uses primary agent if not specified)
-  command   Command to execute in the container
-
-Examples:
-  vibespace %s exec whoami
-  vibespace %s exec claude-1 whoami
-  vibespace %s exec ls -la /workspace
-  vibespace %s exec claude-2 -- cat /etc/os-release
-`, vsName, vsName, vsName, vsName, vsName)
-			return nil
-		}
-	}
-
-	// Parse args: exec [agent] <command...>
-	if len(args) < 1 {
-		return fmt.Errorf("usage: vibespace %s exec [agent] <command>", vsName)
-	}
 
 	// Get vibespace service to look up agents
 	svc, err := getVibespaceServiceWithCheck()
