@@ -8,39 +8,17 @@ import (
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
+	"github.com/vibespacehq/vibespace/pkg/jsonapi"
 	"github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
-// InfoOutput is the JSON output for the info command
-type InfoOutput struct {
-	Name      string             `json:"name"`
-	ID        string             `json:"id"`
-	Status    string             `json:"status"`
-	PVC       string             `json:"pvc"`
-	CPU       string             `json:"cpu"`
-	Memory    string             `json:"memory"`
-	Storage   string             `json:"storage"`
-	Mounts    []MountInfo        `json:"mounts,omitempty"`
-	Agents    []AgentInfoOutput  `json:"agents"`
-	Forwards  []AgentForwardInfo `json:"forwards,omitempty"`
-	CreatedAt string             `json:"created_at"`
-}
-
-// MountInfo represents a mount in JSON output
-type MountInfo struct {
-	HostPath      string `json:"host_path"`
-	ContainerPath string `json:"container_path"`
-	ReadOnly      bool   `json:"read_only"`
-}
-
-// AgentInfoOutput represents an agent with config in JSON output
-type AgentInfoOutput struct {
-	Name   string            `json:"name"`
-	Type   string            `json:"type"`
-	Status string            `json:"status"`
-	Config AgentConfigOutput `json:"config"`
-}
+// Type aliases for info-specific types that live in pkg/jsonapi.
+type (
+	InfoOutput      = jsonapi.InfoOutput
+	MountInfo       = jsonapi.MountInfo
+	AgentInfoOutput = jsonapi.AgentInfoOutput
+)
 
 func runInfo(vibespaceNameOrID string, args []string) error {
 	ctx := context.Background()

@@ -4,6 +4,8 @@ package e2e
 
 import (
 	"testing"
+
+	"github.com/vibespacehq/vibespace/pkg/jsonapi"
 )
 
 // TestLimaLifecycle runs a full lifecycle test of the vibespace binary
@@ -38,7 +40,7 @@ func TestLimaLifecycle(t *testing.T) {
 	// --- status ---
 	t.Run("status", func(t *testing.T) {
 		out := mustSucceed(t, "status")
-		data := parseData[StatusData](t, out)
+		data := parseData[jsonapi.StatusOutput](t, out)
 
 		if !data.Cluster.Installed {
 			t.Error("expected cluster.installed=true")
@@ -55,7 +57,7 @@ func TestLimaLifecycle(t *testing.T) {
 	var vibespaceID string
 	t.Run("create", func(t *testing.T) {
 		out := mustSucceed(t, "create", "e2e-test", "-t", "claude-code")
-		data := parseData[CreateData](t, out)
+		data := parseData[jsonapi.CreateOutput](t, out)
 
 		if data.Name != "e2e-test" {
 			t.Errorf("expected name=e2e-test, got %s", data.Name)
@@ -74,7 +76,7 @@ func TestLimaLifecycle(t *testing.T) {
 	// --- list ---
 	t.Run("list", func(t *testing.T) {
 		out := mustSucceed(t, "list")
-		data := parseData[ListData](t, out)
+		data := parseData[jsonapi.ListOutput](t, out)
 
 		found := false
 		for _, vs := range data.Vibespaces {
@@ -93,7 +95,7 @@ func TestLimaLifecycle(t *testing.T) {
 	// --- agents ---
 	t.Run("agents", func(t *testing.T) {
 		out := mustSucceed(t, "e2e-test", "agent")
-		data := parseData[AgentsData](t, out)
+		data := parseData[jsonapi.AgentsOutput](t, out)
 
 		if data.Count < 1 {
 			t.Fatalf("expected at least 1 agent, got %d", data.Count)
@@ -116,7 +118,7 @@ func TestLimaLifecycle(t *testing.T) {
 	// --- delete ---
 	t.Run("delete", func(t *testing.T) {
 		out := mustSucceed(t, "delete", "e2e-test", "-f")
-		data := parseData[DeleteData](t, out)
+		data := parseData[jsonapi.DeleteOutput](t, out)
 
 		if data.Name != "e2e-test" {
 			t.Errorf("expected name=e2e-test, got %s", data.Name)
@@ -126,7 +128,7 @@ func TestLimaLifecycle(t *testing.T) {
 	// --- verify deletion ---
 	t.Run("verify-deleted", func(t *testing.T) {
 		out := mustSucceed(t, "list")
-		data := parseData[ListData](t, out)
+		data := parseData[jsonapi.ListOutput](t, out)
 
 		for _, vs := range data.Vibespaces {
 			if vs.Name == "e2e-test" {

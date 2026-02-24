@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vibespacehq/vibespace/pkg/jsonapi"
 )
 
 // --- Binary runner ---
@@ -117,12 +119,12 @@ func runWithStdin(t *testing.T, stdin string, args ...string) RunResult {
 }
 
 // runJSON executes the vibespace binary with --json appended and parses the output.
-func runJSON(t *testing.T, args ...string) JSONOutput {
+func runJSON(t *testing.T, args ...string) jsonapi.RawJSONOutput {
 	t.Helper()
 	args = append(args, "--json")
 	r := run(t, args...)
 
-	var out JSONOutput
+	var out jsonapi.RawJSONOutput
 	if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
 		t.Fatalf("failed to parse JSON output from %v:\nstdout: %s\nstderr: %s\nerror: %v",
 			args, r.Stdout, r.Stderr, err)
@@ -131,7 +133,7 @@ func runJSON(t *testing.T, args ...string) JSONOutput {
 }
 
 // mustSucceed runs a JSON command and asserts success=true.
-func mustSucceed(t *testing.T, args ...string) JSONOutput {
+func mustSucceed(t *testing.T, args ...string) jsonapi.RawJSONOutput {
 	t.Helper()
 	out := runJSON(t, args...)
 	if !out.Success {
@@ -144,295 +146,14 @@ func mustSucceed(t *testing.T, args ...string) JSONOutput {
 	return out
 }
 
-// parseData unmarshals JSONOutput.Data into the given type.
-func parseData[T any](t *testing.T, out JSONOutput) T {
+// parseData unmarshals RawJSONOutput.Data into the given type.
+func parseData[T any](t *testing.T, out jsonapi.RawJSONOutput) T {
 	t.Helper()
-	raw, err := json.Marshal(out.Data)
+	v, err := jsonapi.ParseData[T](out.Data)
 	if err != nil {
-		t.Fatalf("failed to re-marshal data: %v", err)
-	}
-	var v T
-	if err := json.Unmarshal(raw, &v); err != nil {
-		t.Fatalf("failed to unmarshal data into %T: %v\nraw: %s", v, err, string(raw))
+		t.Fatalf("failed to unmarshal data into %T: %v\nraw: %s", *new(T), err, string(out.Data))
 	}
 	return v
-}
-
-// --- JSON types (mirrored from internal/cli, cannot import internal) ---
-
-// JSONOutput is the standard wrapper for all JSON output.
-type JSONOutput struct {
-	Success bool            `json:"success"`
-	Data    json.RawMessage `json:"data,omitempty"`
-	Error   *JSONError      `json:"error,omitempty"`
-	Meta    JSONMeta        `json:"meta"`
-}
-
-// JSONError represents an error in JSON output.
-type JSONError struct {
-	Message  string `json:"message"`
-	Code     string `json:"code,omitempty"`
-	ExitCode int    `json:"exit_code,omitempty"`
-	Hint     string `json:"hint,omitempty"`
-}
-
-// JSONMeta contains metadata about the CLI response.
-type JSONMeta struct {
-	SchemaVersion string `json:"schema_version"`
-	CLIVersion    string `json:"cli_version"`
-	Timestamp     string `json:"timestamp"`
-}
-
-// StatusData is the JSON data from `vibespace status --json`.
-type StatusData struct {
-	Cluster struct {
-		Installed bool   `json:"installed"`
-		Running   bool   `json:"running"`
-		Platform  string `json:"platform"`
-	} `json:"cluster"`
-}
-
-// CreateData is the JSON data from `vibespace create --json`.
-type CreateData struct {
-	Name string `json:"name"`
-	ID   string `json:"id"`
-}
-
-// ListData is the JSON data from `vibespace list --json`.
-type ListData struct {
-	Vibespaces []VibespaceItem `json:"vibespaces"`
-	Count      int             `json:"count"`
-}
-
-// VibespaceItem represents a vibespace in list output.
-type VibespaceItem struct {
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	Agents    int    `json:"agents"`
-	CPU       string `json:"cpu"`
-	Memory    string `json:"memory"`
-	Storage   string `json:"storage"`
-	CreatedAt string `json:"created_at"`
-}
-
-// AgentsData is the JSON data from `vibespace <name> agent --json`.
-type AgentsData struct {
-	Vibespace string      `json:"vibespace"`
-	Agents    []AgentItem `json:"agents"`
-	Count     int         `json:"count"`
-}
-
-// AgentItem represents an agent in the agents list.
-type AgentItem struct {
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	Vibespace string `json:"vibespace"`
-	Status    string `json:"status"`
-}
-
-// DeleteData is the JSON data from `vibespace delete --json`.
-type DeleteData struct {
-	Name     string `json:"name"`
-	KeepData bool   `json:"keep_data"`
-}
-
-// InfoData is the JSON data from `vibespace <name> info --json`.
-type InfoData struct {
-	Name      string          `json:"name"`
-	ID        string          `json:"id"`
-	Status    string          `json:"status"`
-	PVC       string          `json:"pvc"`
-	CPU       string          `json:"cpu"`
-	Memory    string          `json:"memory"`
-	Storage   string          `json:"storage"`
-	Mounts    []MountData     `json:"mounts,omitempty"`
-	Agents    []InfoAgentData `json:"agents"`
-	Forwards  []ForwardAgent  `json:"forwards,omitempty"`
-	CreatedAt string          `json:"created_at"`
-}
-
-// MountData represents a mount in info output.
-type MountData struct {
-	HostPath      string `json:"host_path"`
-	ContainerPath string `json:"container_path"`
-	ReadOnly      bool   `json:"read_only"`
-}
-
-// InfoAgentData represents an agent with config in info output.
-type InfoAgentData struct {
-	Name   string          `json:"name"`
-	Type   string          `json:"type"`
-	Status string          `json:"status"`
-	Config AgentConfigData `json:"config"`
-}
-
-// AgentConfigData represents agent configuration fields.
-type AgentConfigData struct {
-	SkipPermissions  bool     `json:"skip_permissions"`
-	ShareCredentials bool     `json:"share_credentials"`
-	AllowedTools     []string `json:"allowed_tools"`
-	DisallowedTools  []string `json:"disallowed_tools"`
-	Model            string   `json:"model"`
-	MaxTurns         int      `json:"max_turns"`
-	SystemPrompt     string   `json:"system_prompt"`
-	ReasoningEffort  string   `json:"reasoning_effort,omitempty"`
-}
-
-// ConfigShowData is the JSON data from `vibespace <name> config show <agent> --json`.
-type ConfigShowData struct {
-	Vibespace string          `json:"vibespace"`
-	Agent     string          `json:"agent"`
-	Type      string          `json:"type"`
-	Config    AgentConfigData `json:"config"`
-}
-
-// ConfigShowAllData is the JSON data from `vibespace <name> config show --json` (all agents).
-type ConfigShowAllData struct {
-	Vibespace string            `json:"vibespace"`
-	Agents    []ConfigAgentItem `json:"agents"`
-}
-
-// ConfigAgentItem represents an agent with its config in config show all output.
-type ConfigAgentItem struct {
-	Agent  string          `json:"agent"`
-	Type   string          `json:"type"`
-	Config AgentConfigData `json:"config"`
-}
-
-// ConfigSetData is the JSON data from `vibespace <name> config set --json`.
-type ConfigSetData struct {
-	Vibespace string          `json:"vibespace"`
-	Agent     string          `json:"agent"`
-	Config    AgentConfigData `json:"config"`
-}
-
-// AgentCreateData is the JSON data from `vibespace <name> agent create --json`.
-type AgentCreateData struct {
-	Vibespace string `json:"vibespace"`
-	Agent     string `json:"agent"`
-	Type      string `json:"type"`
-}
-
-// AgentDeleteData is the JSON data from `vibespace <name> agent delete --json`.
-type AgentDeleteData struct {
-	Vibespace string `json:"vibespace"`
-	Agent     string `json:"agent"`
-}
-
-// StartData is the JSON data from `vibespace <name> start --json`.
-type StartData struct {
-	Vibespace string `json:"vibespace"`
-	Agent     string `json:"agent,omitempty"`
-}
-
-// StopData is the JSON data from `vibespace <name> stop --json`.
-type StopData struct {
-	Stopped bool   `json:"stopped"`
-	Target  string `json:"target,omitempty"`
-}
-
-// SessionListData is the JSON data from `vibespace session list --json`.
-type SessionListData struct {
-	Sessions []SessionListItem `json:"sessions"`
-	Count    int               `json:"count"`
-}
-
-// SessionListItem represents a session in session list output.
-type SessionListItem struct {
-	Name       string `json:"name"`
-	Vibespaces int    `json:"vibespaces"`
-	LastUsed   string `json:"last_used"`
-}
-
-// ExecData is the JSON data from `vibespace <name> exec --json`.
-type ExecData struct {
-	Vibespace string `json:"vibespace"`
-	Agent     string `json:"agent"`
-	Command   string `json:"command"`
-	Stdout    string `json:"stdout"`
-	Stderr    string `json:"stderr"`
-	ExitCode  int    `json:"exit_code"`
-}
-
-// ForwardsData is the JSON data from `vibespace <name> forward list --json`.
-type ForwardsData struct {
-	Vibespace string         `json:"vibespace"`
-	Agents    []ForwardAgent `json:"agents"`
-}
-
-// ForwardAgent represents an agent with its forwards.
-type ForwardAgent struct {
-	Name     string        `json:"name"`
-	PodName  string        `json:"pod_name,omitempty"`
-	Forwards []ForwardInfo `json:"forwards"`
-}
-
-// ForwardInfo represents a port forward.
-type ForwardInfo struct {
-	LocalPort  int    `json:"local_port"`
-	RemotePort int    `json:"remote_port"`
-	Type       string `json:"type"`
-	Status     string `json:"status"`
-	Error      string `json:"error,omitempty"`
-	Reconnects int    `json:"reconnects,omitempty"`
-}
-
-// ForwardAddData is the JSON data from `vibespace <name> forward add --json`.
-type ForwardAddData struct {
-	Vibespace  string `json:"vibespace"`
-	Agent      string `json:"agent"`
-	LocalPort  int    `json:"local_port"`
-	RemotePort int    `json:"remote_port"`
-	DNSName    string `json:"dns_name,omitempty"`
-}
-
-// ForwardRemoveData is the JSON data from `vibespace <name> forward remove --json`.
-type ForwardRemoveData struct {
-	Vibespace  string `json:"vibespace"`
-	Agent      string `json:"agent"`
-	RemotePort int    `json:"remote_port"`
-}
-
-// MultiListSessionsData is the JSON data from `vibespace multi --list-sessions --json`.
-type MultiListSessionsData struct {
-	Sessions []MultiSessionItem `json:"sessions"`
-	Count    int                `json:"count"`
-}
-
-// MultiSessionItem represents a session in multi list output.
-type MultiSessionItem struct {
-	Name       string   `json:"name"`
-	Vibespaces []string `json:"vibespaces"`
-	CreatedAt  string   `json:"created_at"`
-	LastUsed   string   `json:"last_used"`
-}
-
-// MultiListAgentsData is the JSON data from `vibespace multi --list-agents --json`.
-type MultiListAgentsData struct {
-	Session string   `json:"session"`
-	Agents  []string `json:"agents"`
-	Count   int      `json:"count"`
-}
-
-// MultiMessageData is the JSON data from `vibespace multi --json "message"`.
-type MultiMessageData struct {
-	Session   string               `json:"session"`
-	Request   MultiRequestInfo     `json:"request"`
-	Responses []MultiAgentResponse `json:"responses"`
-}
-
-// MultiRequestInfo contains request details.
-type MultiRequestInfo struct {
-	Target  string `json:"target"`
-	Message string `json:"message"`
-}
-
-// MultiAgentResponse represents a response from a single agent.
-type MultiAgentResponse struct {
-	Agent     string `json:"agent"`
-	Timestamp string `json:"timestamp"`
-	Content   string `json:"content"`
-	Error     string `json:"error,omitempty"`
 }
 
 // --- Helpers ---
@@ -449,7 +170,7 @@ func waitForReady(t *testing.T, vsName string) {
 
 		out := runJSON(t, "list")
 		if out.Success {
-			data := parseData[ListData](t, out)
+			data := parseData[jsonapi.ListOutput](t, out)
 			for _, vs := range data.Vibespaces {
 				if vs.Name == vsName && vs.Status == "running" {
 					t.Logf("vibespace '%s' is running", vsName)
@@ -478,7 +199,7 @@ func waitForDaemonReady(t *testing.T, vsName string) {
 
 		out := runJSON(t, vsName, "forward", "list")
 		if out.Success {
-			data := parseData[ForwardsData](t, out)
+			data := parseData[jsonapi.ForwardsOutput](t, out)
 			for _, agent := range data.Agents {
 				for _, fwd := range agent.Forwards {
 					if fwd.Type == "ssh" && fwd.Status == "active" {
@@ -532,7 +253,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- info ---
 	t.Run("info", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "info")
-		data := parseData[InfoData](t, out)
+		data := parseData[jsonapi.InfoOutput](t, out)
 
 		if data.Name != vsName {
 			t.Errorf("expected name=%s, got %s", vsName, data.Name)
@@ -548,7 +269,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- config show all ---
 	t.Run("config-show-all", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "config")
-		data := parseData[ConfigShowAllData](t, out)
+		data := parseData[jsonapi.ConfigShowAllOutput](t, out)
 
 		if data.Vibespace != vsName {
 			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
@@ -561,7 +282,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- config show (single agent) ---
 	t.Run("config-show", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "config", "show", "claude-1")
-		data := parseData[ConfigShowData](t, out)
+		data := parseData[jsonapi.ConfigShowOutput](t, out)
 
 		if data.Agent != "claude-1" {
 			t.Errorf("expected agent=claude-1, got %s", data.Agent)
@@ -574,7 +295,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- config set ---
 	t.Run("config-set", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "config", "set", "claude-1", "--model", "opus", "--skip-permissions")
-		data := parseData[ConfigSetData](t, out)
+		data := parseData[jsonapi.ConfigSetOutput](t, out)
 
 		if data.Agent != "claude-1" {
 			t.Errorf("expected agent=claude-1, got %s", data.Agent)
@@ -590,7 +311,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- config verify (re-show after set) ---
 	t.Run("config-verify", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "config", "show", "claude-1")
-		data := parseData[ConfigShowData](t, out)
+		data := parseData[jsonapi.ConfigShowOutput](t, out)
 
 		if data.Config.Model != "opus" {
 			t.Errorf("expected persisted model=opus, got %s", data.Config.Model)
@@ -604,7 +325,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	t.Run("session-list", func(t *testing.T) {
 		out := mustSucceed(t, "session", "list")
 		// Just verify valid JSON with count field — may be 0 sessions
-		data := parseData[SessionListData](t, out)
+		data := parseData[jsonapi.SessionListOutput](t, out)
 		t.Logf("sessions: count=%d", data.Count)
 	})
 
@@ -633,7 +354,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- exec ---
 	t.Run("exec", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "exec", "whoami")
-		data := parseData[ExecData](t, out)
+		data := parseData[jsonapi.ExecOutput](t, out)
 
 		if data.Vibespace != vsName {
 			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
@@ -647,7 +368,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- forward list (with default SSH/ttyd forwards) ---
 	t.Run("forward-list-default", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "forward", "list")
-		data := parseData[ForwardsData](t, out)
+		data := parseData[jsonapi.ForwardsOutput](t, out)
 
 		if data.Vibespace != vsName {
 			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
@@ -661,7 +382,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- forward add ---
 	t.Run("forward-add", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "forward", "add", "8080")
-		data := parseData[ForwardAddData](t, out)
+		data := parseData[jsonapi.ForwardAddOutput](t, out)
 
 		if data.Vibespace != vsName {
 			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
@@ -678,7 +399,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- forward list (active) ---
 	t.Run("forward-list-active", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "forward", "list")
-		data := parseData[ForwardsData](t, out)
+		data := parseData[jsonapi.ForwardsOutput](t, out)
 
 		found := false
 		for _, agent := range data.Agents {
@@ -696,7 +417,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- forward remove ---
 	t.Run("forward-remove", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "forward", "remove", "8080")
-		data := parseData[ForwardRemoveData](t, out)
+		data := parseData[jsonapi.ForwardRemoveOutput](t, out)
 
 		if data.RemotePort != 8080 {
 			t.Errorf("expected remote_port=8080, got %d", data.RemotePort)
@@ -706,7 +427,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- multi list-sessions ---
 	t.Run("multi-list-sessions", func(t *testing.T) {
 		out := mustSucceed(t, "multi", "--list-sessions")
-		data := parseData[MultiListSessionsData](t, out)
+		data := parseData[jsonapi.MultiListSessionsOutput](t, out)
 
 		// May be 0 sessions — just verify valid JSON structure
 		t.Logf("multi list-sessions: count=%d", data.Count)
@@ -715,7 +436,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- multi list-agents ---
 	t.Run("multi-list-agents", func(t *testing.T) {
 		out := mustSucceed(t, "multi", "--vibespaces", vsName, "--list-agents")
-		data := parseData[MultiListAgentsData](t, out)
+		data := parseData[jsonapi.MultiListAgentsOutput](t, out)
 
 		if len(data.Agents) < 1 {
 			t.Errorf("expected at least 1 agent, got %d", len(data.Agents))
@@ -747,7 +468,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- agent create (second agent) ---
 	t.Run("agent-create", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "agent", "create", "-t", "claude-code")
-		data := parseData[AgentCreateData](t, out)
+		data := parseData[jsonapi.AgentCreateOutput](t, out)
 
 		if data.Vibespace != vsName {
 			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
@@ -761,7 +482,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- agent list (verify 2 agents) ---
 	t.Run("agent-list-two", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "agent")
-		data := parseData[AgentsData](t, out)
+		data := parseData[jsonapi.AgentsOutput](t, out)
 
 		if data.Count != 2 {
 			t.Errorf("expected 2 agents, got %d", data.Count)
@@ -771,7 +492,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- agent delete (remove claude-2) ---
 	t.Run("agent-delete", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "agent", "delete", "claude-2")
-		data := parseData[AgentDeleteData](t, out)
+		data := parseData[jsonapi.AgentDeleteOutput](t, out)
 
 		if data.Agent != "claude-2" {
 			t.Errorf("expected agent=claude-2, got %s", data.Agent)
@@ -781,7 +502,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- agent list (verify back to 1) ---
 	t.Run("agent-list-one", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "agent")
-		data := parseData[AgentsData](t, out)
+		data := parseData[jsonapi.AgentsOutput](t, out)
 
 		if data.Count != 1 {
 			t.Errorf("expected 1 agent, got %d", data.Count)
@@ -908,7 +629,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- stop ---
 	t.Run("stop", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "stop")
-		data := parseData[StopData](t, out)
+		data := parseData[jsonapi.StopOutput](t, out)
 
 		if !data.Stopped {
 			t.Error("expected stopped=true")
@@ -918,7 +639,7 @@ func runExpandedSubtests(t *testing.T, vsName string) {
 	// --- start ---
 	t.Run("start", func(t *testing.T) {
 		out := mustSucceed(t, vsName, "start")
-		data := parseData[StartData](t, out)
+		data := parseData[jsonapi.StartOutput](t, out)
 
 		if data.Vibespace != vsName {
 			t.Errorf("expected vibespace=%s, got %s", vsName, data.Vibespace)
