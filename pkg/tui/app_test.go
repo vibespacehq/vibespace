@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
+	zone "github.com/lrstanley/bubblezone"
 	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
@@ -30,6 +31,8 @@ func containsText(target string) func([]byte) bool {
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	a := NewApp()
+	// Initialize the zone manager (normally done in Init()) so View() works.
+	zone.NewGlobal()
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	return a
 }
