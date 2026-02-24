@@ -99,17 +99,19 @@ Delete a vibespace.
 | `--keep-data` | | `false` | Preserve persistent storage (PVC) |
 | `--dry-run` | `-n` | `false` | Show what would be deleted |
 
-### `vibespace <name> info`
+---
+
+## Vibespace-scoped Commands
+
+All commands below require `--vibespace <name>` flag or `VIBESPACE_NAME` environment variable.
+
+### `vibespace info`
 
 Show vibespace details, mounts, and agents with config. No command-specific flags.
 
 **Plain columns**: KEY, VALUE
 
----
-
 ## Agent Commands
-
-All require `--vibespace <name>` flag or `VIBESPACE_NAME` environment variable.
 
 ### `vibespace agent list`
 
@@ -144,13 +146,7 @@ Start all agents or a specific agent. No command-specific flags.
 
 Stop all agents or a specific agent. No command-specific flags.
 
----
-
-## Vibespace-scoped Commands (not yet migrated)
-
-These still use the `vibespace <name> <subcommand>` pattern.
-
-### `<name> connect [agent]`
+### `vibespace connect [agent]`
 
 Connect to an agent (interactive terminal). Requires TTY.
 
@@ -159,21 +155,21 @@ Connect to an agent (interactive terminal). Requires TTY.
 | `--browser` | `-b` | `false` | Open in web browser instead of terminal |
 | `--agent` | `-a` | `""` | Specify agent name |
 
-### `<name> exec [agent] <command>`
+### `vibespace exec [agent] -- <command>`
 
-Execute a command in an agent container via SSH. No command-specific flags.
+Execute a command in an agent container via SSH. Flags must appear before the command arguments.
 
 ---
 
 ## Config Commands
 
-### `<name> config show [agent]`
+### `vibespace config show [agent]`
 
-Show agent configuration. No command-specific flags.
+Show agent configuration. No command-specific flags. Default when running `vibespace config` with no subcommand.
 
 **Plain columns**: AGENT, TYPE, SKIP_PERMISSIONS, MODEL, MAX_TURNS, REASONING_EFFORT
 
-### `<name> config set <agent>`
+### `vibespace config set <agent>`
 
 Update agent configuration.
 
@@ -192,13 +188,13 @@ Update agent configuration.
 
 ## Port Forwarding Commands
 
-### `<name> forward list`
+### `vibespace forward list`
 
-List active port forwards. Default when running `<name> forward` with no subcommand.
+List active port forwards. Default when running `vibespace forward` with no subcommand.
 
 **Plain columns**: AGENT, LOCAL, REMOTE, TYPE, STATUS
 
-### `<name> forward add <port>`
+### `vibespace forward add <port>`
 
 Add a port forward.
 
@@ -209,7 +205,7 @@ Add a port forward.
 | `--dns` | | `false` | Enable DNS resolution (requires sudo for resolver setup) |
 | `--dns-name` | | auto | Custom DNS name (default: `agent.vibespace`) |
 
-### `<name> forward remove <port>`
+### `vibespace forward remove <port>`
 
 Remove a port forward.
 
@@ -311,25 +307,6 @@ Generate shell completion script (bash, zsh, fish, powershell). No flags.
 ### `vibespace daemon`
 
 Hidden. Runs the port-forward daemon (spawned by `vibespace init`). Manages port forwarding, DNS resolution, pod watching, and reconciliation. Not intended for direct use.
-
----
-
-## Dynamic Vibespace Help
-
-Running `vibespace <name>` or `vibespace <name> --help` shows available subcommands:
-
-```
-Vibespace: <name>
-
-Available commands:
-  info       Show vibespace details
-  connect    Connect to an agent
-  exec       Run command in agent container
-  config     View/modify agent configuration
-  forward    Manage port-forwards (list, add, remove)
-```
-
-Unknown subcommands trigger a "Did you mean?" suggestion.
 
 ---
 
