@@ -159,10 +159,11 @@ func parseData[T any](t *testing.T, out jsonapi.RawJSONOutput) T {
 // --- Helpers ---
 
 // waitForReady polls `vibespace list --json` until the vibespace status is "running".
-// Polls every 5 seconds with a 3-minute timeout.
+// Polls every 5 seconds with a 5-minute timeout (Lima VMs on slower runners need
+// extra time for initial image pulls).
 func waitForReady(t *testing.T, vsName string) {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Minute)
+	deadline := time.Now().Add(5 * time.Minute)
 	for {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for vibespace '%s' to become running", vsName)
