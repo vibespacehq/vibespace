@@ -24,7 +24,7 @@ var configCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return doConfigShow(vs, "")
+		return doConfigShow(nil, vs, "")
 	},
 }
 
@@ -43,7 +43,7 @@ var configShowCmd = &cobra.Command{
 		if len(args) > 0 {
 			agentName = args[0]
 		}
-		return doConfigShow(vs, agentName)
+		return doConfigShow(nil, vs, agentName)
 	},
 }
 
@@ -72,7 +72,7 @@ Codex Models:
 		if err != nil {
 			return err
 		}
-		return doConfigSet(vs, args[0], cmd)
+		return doConfigSet(nil, vs, args[0], cmd)
 	},
 }
 
@@ -90,16 +90,19 @@ func init() {
 	configSetCmd.Flags().String("reasoning-effort", "", "Reasoning effort: low, medium, high, xhigh (Codex only)")
 }
 
-func doConfigShow(vibespace string, agentName string) error {
+func doConfigShow(svc *vspkg.Service, vibespace string, agentName string) error {
 	ctx := context.Background()
 	out := getOutput()
 
 	slog.Debug("config show command started", "vibespace", vibespace, "agent", agentName)
 
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceServiceWithCheck()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	// Verify vibespace exists
@@ -337,15 +340,18 @@ func printAgentConfig(agentName string, agentType agent.Type, config *agent.Conf
 	}
 }
 
-func doConfigSet(vibespace string, agentName string, cmd *cobra.Command) error {
+func doConfigSet(svc *vspkg.Service, vibespace string, agentName string, cmd *cobra.Command) error {
 	ctx := context.Background()
 
 	slog.Info("config set command started", "vibespace", vibespace, "agent", agentName)
 
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceServiceWithCheck()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	// Verify vibespace exists
