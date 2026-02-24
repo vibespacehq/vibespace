@@ -90,36 +90,6 @@ func run(t *testing.T, args ...string) RunResult {
 	return result
 }
 
-// runWithStdin executes the vibespace binary with the given stdin and arguments.
-func runWithStdin(t *testing.T, stdin string, args ...string) RunResult {
-	t.Helper()
-	bin := binaryPath(t)
-	cmd := exec.Command(bin, args...)
-	cmd.Env = append(os.Environ(), "NO_COLOR=1", "VIBESPACE_DEBUG=1")
-	cmd.Stdin = strings.NewReader(stdin)
-
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-
-	result := RunResult{
-		Stdout: stdout.String(),
-		Stderr: stderr.String(),
-	}
-
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			result.ExitCode = exitErr.ExitCode()
-		} else {
-			t.Fatalf("failed to run %v: %v", args, err)
-		}
-	}
-
-	return result
-}
-
 // runJSON executes the vibespace binary with --json appended and parses the output.
 func runJSON(t *testing.T, args ...string) jsonapi.RawJSONOutput {
 	t.Helper()
@@ -195,7 +165,7 @@ func waitForDaemonReady(t *testing.T, vsName string) {
 			t.Fatalf("timed out waiting for daemon to have agent with active SSH forward for '%s'", vsName)
 		}
 
-		out := runJSON(t, vsName, "forward", "list")
+		out := runJSON(t, "forward", "list", "--vibespace", vsName)
 		if out.Success {
 			data := parseData[jsonapi.ForwardsOutput](t, out)
 			for _, agent := range data.Agents {
@@ -250,7 +220,7 @@ func runSubtests(t *testing.T, vsName string) {
 
 	// --- info ---
 	t.Run("info", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "info")
+		out := mustSucceed(t, "info", "--vibespace", vsName)
 		data := parseData[jsonapi.InfoOutput](t, out)
 
 		if data.Name != vsName {
@@ -266,7 +236,7 @@ func runSubtests(t *testing.T, vsName string) {
 
 	// --- config show all ---
 	t.Run("config-show-all", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "config")
+		out := mustSucceed(t, "config", "--vibespace", vsName)
 		data := parseData[jsonapi.ConfigShowAllOutput](t, out)
 
 		if data.Vibespace != vsName {
@@ -279,7 +249,7 @@ func runSubtests(t *testing.T, vsName string) {
 
 	// --- config show (single agent) ---
 	t.Run("config-show", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "config", "show", "claude-1")
+		out := mustSucceed(t, "config", "show", "claude-1", "--vibespace", vsName)
 		data := parseData[jsonapi.ConfigShowOutput](t, out)
 
 		if data.Agent != "claude-1" {
@@ -290,9 +260,9 @@ func runSubtests(t *testing.T, vsName string) {
 		}
 	})
 
-	// --- config set ---
-	t.Run("config-set", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "config", "set", "claude-1", "--model", "opus", "--skip-permissions")
+	// --- config set (claude-code: --skip-permissions, --model) ---
+	t.Run("config-set/claude-code", func(t *testing.T) {
+		out := mustSucceed(t, "config", "set", "claude-1", "--model", "opus", "--skip-permissions", "--vibespace", vsName)
 		data := parseData[jsonapi.ConfigSetOutput](t, out)
 
 		if data.Agent != "claude-1" {
@@ -307,8 +277,8 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	// --- config verify (re-show after set) ---
-	t.Run("config-verify", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "config", "show", "claude-1")
+	t.Run("config-verify/claude-code", func(t *testing.T) {
+		out := mustSucceed(t, "config", "show", "claude-1", "--vibespace", vsName)
 		data := parseData[jsonapi.ConfigShowOutput](t, out)
 
 		if data.Config.Model != "opus" {
@@ -341,7 +311,7 @@ func runSubtests(t *testing.T, vsName string) {
 
 	// --- exec ---
 	t.Run("exec", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "exec", "whoami")
+		out := mustSucceed(t, "exec", "--vibespace", vsName, "whoami")
 		data := parseData[jsonapi.ExecOutput](t, out)
 
 		if data.Vibespace != vsName {
@@ -355,7 +325,7 @@ func runSubtests(t *testing.T, vsName string) {
 
 	// --- forward list (with default SSH/ttyd forwards) ---
 	t.Run("forward-list-default", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "forward", "list")
+		out := mustSucceed(t, "forward", "list", "--vibespace", vsName)
 		data := parseData[jsonapi.ForwardsOutput](t, out)
 
 		if data.Vibespace != vsName {
@@ -369,7 +339,7 @@ func runSubtests(t *testing.T, vsName string) {
 
 	// --- forward add ---
 	t.Run("forward-add", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "forward", "add", "8080")
+		out := mustSucceed(t, "forward", "add", "8080", "--vibespace", vsName)
 		data := parseData[jsonapi.ForwardAddOutput](t, out)
 
 		if data.Vibespace != vsName {
@@ -386,7 +356,7 @@ func runSubtests(t *testing.T, vsName string) {
 
 	// --- forward list (active) ---
 	t.Run("forward-list-active", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "forward", "list")
+		out := mustSucceed(t, "forward", "list", "--vibespace", vsName)
 		data := parseData[jsonapi.ForwardsOutput](t, out)
 
 		found := false
@@ -404,7 +374,7 @@ func runSubtests(t *testing.T, vsName string) {
 
 	// --- forward remove ---
 	t.Run("forward-remove", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "forward", "remove", "8080")
+		out := mustSucceed(t, "forward", "remove", "8080", "--vibespace", vsName)
 		data := parseData[jsonapi.ForwardRemoveOutput](t, out)
 
 		if data.RemotePort != 8080 {
@@ -445,7 +415,7 @@ func runSubtests(t *testing.T, vsName string) {
 		}
 	})
 
-	// === Agent CRUD tests (parameterized over all agent types) ===
+	// === Agent CRUD + config set tests (parameterized over all agent types) ===
 
 	for _, agentType := range agent.AllTypes() {
 		agentType := agentType // capture
@@ -484,6 +454,57 @@ func runSubtests(t *testing.T, vsName string) {
 				}
 				if !found {
 					t.Errorf("expected %s with type=%s in list, got: %+v", testAgentName, typeName, data.Agents)
+				}
+			})
+
+			// config set — type-specific flags
+			t.Run("config-set", func(t *testing.T) {
+				var setArgs []string
+				switch agentType {
+				case agent.TypeClaudeCode:
+					setArgs = []string{"config", "set", testAgentName,
+						"--model", "sonnet", "--skip-permissions", "--max-turns", "5",
+						"--vibespace", vsName}
+				case agent.TypeCodex:
+					setArgs = []string{"config", "set", testAgentName,
+						"--model", "gpt-5.2-codex", "--reasoning-effort", "high", "--max-turns", "8",
+						"--vibespace", vsName}
+				}
+
+				out := mustSucceed(t, setArgs...)
+				data := parseData[jsonapi.ConfigSetOutput](t, out)
+
+				if data.Agent != testAgentName {
+					t.Errorf("expected agent=%s, got %s", testAgentName, data.Agent)
+				}
+			})
+
+			// config verify — check persisted values
+			t.Run("config-verify", func(t *testing.T) {
+				out := mustSucceed(t, "config", "show", testAgentName, "--vibespace", vsName)
+				data := parseData[jsonapi.ConfigShowOutput](t, out)
+
+				switch agentType {
+				case agent.TypeClaudeCode:
+					if data.Config.Model != "sonnet" {
+						t.Errorf("expected model=sonnet, got %s", data.Config.Model)
+					}
+					if !data.Config.SkipPermissions {
+						t.Error("expected skip_permissions=true")
+					}
+					if data.Config.MaxTurns != 5 {
+						t.Errorf("expected max_turns=5, got %d", data.Config.MaxTurns)
+					}
+				case agent.TypeCodex:
+					if data.Config.Model != "gpt-5.2-codex" {
+						t.Errorf("expected model=gpt-5.2-codex, got %s", data.Config.Model)
+					}
+					if data.Config.ReasoningEffort != "high" {
+						t.Errorf("expected reasoning_effort=high, got %s", data.Config.ReasoningEffort)
+					}
+					if data.Config.MaxTurns != 8 {
+						t.Errorf("expected max_turns=8, got %d", data.Config.MaxTurns)
+					}
 				}
 			})
 
@@ -527,7 +548,7 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("agent-verify-create-flags", func(t *testing.T) {
-		out := mustSucceed(t, vsName, "config", "show", "flagtest")
+		out := mustSucceed(t, "config", "show", "flagtest", "--vibespace", vsName)
 		data := parseData[jsonapi.ConfigShowOutput](t, out)
 
 		if data.Config.Model != "sonnet" {
@@ -579,7 +600,7 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("plain/info", func(t *testing.T) {
-		out := mustSucceedPlain(t, vsName, "info")
+		out := mustSucceedPlain(t, "info", "--vibespace", vsName)
 		if strings.TrimSpace(out) == "" {
 			t.Error("expected non-empty plain output")
 		}
@@ -593,14 +614,14 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("plain/config-show-all", func(t *testing.T) {
-		out := mustSucceedPlain(t, vsName, "config", "show")
+		out := mustSucceedPlain(t, "config", "show", "--vibespace", vsName)
 		if strings.TrimSpace(out) == "" {
 			t.Error("expected non-empty plain output")
 		}
 	})
 
 	t.Run("plain/config-show", func(t *testing.T) {
-		out := mustSucceedPlain(t, vsName, "config", "show", "claude-1")
+		out := mustSucceedPlain(t, "config", "show", "claude-1", "--vibespace", vsName)
 		if strings.TrimSpace(out) == "" {
 			t.Error("expected non-empty plain output")
 		}
@@ -611,7 +632,7 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("plain/forward-list", func(t *testing.T) {
-		out := mustSucceedPlain(t, vsName, "forward", "list")
+		out := mustSucceedPlain(t, "forward", "list", "--vibespace", vsName)
 		t.Logf("plain forward list: %d bytes", len(out))
 	})
 
@@ -630,7 +651,7 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("default/info", func(t *testing.T) {
-		mustSucceedDefault(t, vsName, "info")
+		mustSucceedDefault(t, "info", "--vibespace", vsName)
 	})
 
 	t.Run("default/agents", func(t *testing.T) {
@@ -638,11 +659,11 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("default/config-show-all", func(t *testing.T) {
-		mustSucceedDefault(t, vsName, "config", "show")
+		mustSucceedDefault(t, "config", "show", "--vibespace", vsName)
 	})
 
 	t.Run("default/config-show", func(t *testing.T) {
-		mustSucceedDefault(t, vsName, "config", "show", "claude-1")
+		mustSucceedDefault(t, "config", "show", "claude-1", "--vibespace", vsName)
 	})
 
 	t.Run("default/session-list", func(t *testing.T) {
@@ -654,7 +675,7 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	t.Run("default/forward-list", func(t *testing.T) {
-		mustSucceedDefault(t, vsName, "forward", "list")
+		mustSucceedDefault(t, "forward", "list", "--vibespace", vsName)
 	})
 
 	t.Run("default/multi-list-sessions", func(t *testing.T) {

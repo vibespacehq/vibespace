@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/spf13/cobra"
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
 	"github.com/vibespacehq/vibespace/pkg/jsonapi"
@@ -20,7 +21,21 @@ type (
 	AgentInfoOutput = jsonapi.AgentInfoOutput
 )
 
-func runInfo(vibespaceNameOrID string, args []string) error {
+var infoCmd = &cobra.Command{
+	Use:   "info",
+	Short: "Show vibespace details",
+	Example: `  vibespace info --vibespace myproject
+  vibespace info --vibespace myproject --json`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		return doInfo(vs)
+	},
+}
+
+func doInfo(vibespaceNameOrID string) error {
 	ctx := context.Background()
 	out := getOutput()
 

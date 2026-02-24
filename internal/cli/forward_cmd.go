@@ -7,67 +7,109 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/spf13/cobra"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
 	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 )
 
-// runForwardCmd handles the forward subcommands
-// Usage: vibespace <name> forward {list,add,remove}
-func runForwardCmd(vibespace string, args []string) error {
-	if len(args) == 0 {
-		return runForwardList(vibespace)
-	}
-
-	subCmd := args[0]
-	subArgs := args[1:]
-
-	switch subCmd {
-	case "--help", "-h":
-		printForwardHelp(vibespace)
-		return nil
-	case "list":
-		return runForwardList(vibespace)
-	case "add":
-		return runForwardAdd(vibespace, subArgs)
-	case "remove":
-		return runForwardRemove(vibespace, subArgs)
-	default:
-		// If the argument looks like a port number, treat it as 'add'
-		if _, err := strconv.Atoi(subCmd); err == nil {
-			return runForwardAdd(vibespace, args)
+var forwardCmd = &cobra.Command{
+	Use:   "forward",
+	Short: "Manage port-forwards",
+	Example: `  vibespace forward --vibespace myproject
+  vibespace forward list --vibespace myproject
+  vibespace forward add 3000 --vibespace myproject
+  vibespace forward remove 3000 --vibespace myproject`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
 		}
-		return fmt.Errorf("unknown forward subcommand: %s", subCmd)
-	}
+		return doForwardList(vs)
+	},
 }
 
-// printForwardHelp prints help for the forward command
-func printForwardHelp(vibespace string) {
-	fmt.Printf(`Manage port-forwards for a vibespace
-
-Usage:
-  vibespace %s forward [command]
-
-Available Commands:
-  list        List all port-forwards (default)
-  add         Add a new port-forward
-  remove      Remove a port-forward
-
-Flags:
-  -h, --help  Help for forward
-
-Examples:
-  vibespace %s forward                    # List all forwards
-  vibespace %s forward list               # List all forwards
-  vibespace %s forward add 3000           # Forward port 3000 for claude-1
-  vibespace %s forward add 8080 --agent claude-2 --local 9090
-  vibespace %s forward remove 3000        # Remove port 3000 forward
-
-Use "vibespace %s forward [command] --help" for more information about a command.
-`, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace)
+var forwardListCmd = &cobra.Command{
+	Use:     "list",
+	Short:   "List all port-forwards",
+	Aliases: []string{"ls"},
+	Example: `  vibespace forward list --vibespace myproject
+  vibespace forward list --vibespace myproject --json`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+		return doForwardList(vs)
+	},
 }
 
-// runForwardList lists all port-forwards
-func runForwardList(vibespace string) error {
+var forwardAddCmd = &cobra.Command{
+	Use:   "add <port>",
+	Short: "Add a new port-forward",
+	Example: `  vibespace forward add 3000 --vibespace myproject
+  vibespace forward add 8080 --agent claude-2 --vibespace myproject
+  vibespace forward add 5432 --local 15432 --vibespace myproject
+  vibespace forward add 3000 --dns --vibespace myproject`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+
+		remotePort, err := strconv.Atoi(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid port number: %s", args[0])
+		}
+
+		agent, _ := cmd.Flags().GetString("agent")
+		localPort, _ := cmd.Flags().GetInt("local")
+		enableDNS, _ := cmd.Flags().GetBool("dns")
+		dnsName, _ := cmd.Flags().GetString("dns-name")
+		if cmd.Flags().Changed("dns-name") {
+			enableDNS = true
+		}
+
+		return doForwardAdd(vs, agent, remotePort, localPort, enableDNS, dnsName)
+	},
+}
+
+var forwardRemoveCmd = &cobra.Command{
+	Use:   "remove <port>",
+	Short: "Remove a port-forward",
+	Example: `  vibespace forward remove 3000 --vibespace myproject
+  vibespace forward remove 8080 --agent claude-2 --vibespace myproject`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		vs, err := requireVibespace(cmd)
+		if err != nil {
+			return err
+		}
+
+		remotePort, err := strconv.Atoi(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid port number: %s", args[0])
+		}
+
+		agent, _ := cmd.Flags().GetString("agent")
+		return doForwardRemove(vs, agent, remotePort)
+	},
+}
+
+func init() {
+	forwardCmd.AddCommand(forwardListCmd)
+	forwardCmd.AddCommand(forwardAddCmd)
+	forwardCmd.AddCommand(forwardRemoveCmd)
+
+	forwardAddCmd.Flags().StringP("agent", "a", "claude-1", "Agent to forward from")
+	forwardAddCmd.Flags().IntP("local", "l", 0, "Local port to use (default: auto-allocate)")
+	forwardAddCmd.Flags().Bool("dns", false, "Enable DNS resolution (requires sudo)")
+	forwardAddCmd.Flags().String("dns-name", "", "Custom DNS name (default: agent.vibespace)")
+
+	forwardRemoveCmd.Flags().StringP("agent", "a", "claude-1", "Agent to remove forward from")
+}
+
+func doForwardList(vibespace string) error {
 	ctx := context.Background()
 	out := getOutput()
 
@@ -155,77 +197,8 @@ func runForwardList(vibespace string) error {
 	return nil
 }
 
-// runForwardAdd adds a new port-forward
-func runForwardAdd(vibespace string, args []string) error {
+func doForwardAdd(vibespace, agent string, remotePort, localPort int, enableDNS bool, dnsName string) error {
 	out := getOutput()
-
-	// Handle help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Printf(`Add a new port-forward
-
-Usage:
-  vibespace %s forward add PORT [flags]
-
-Arguments:
-  PORT    Remote port in the container to forward
-
-Flags:
-  -a, --agent string      Agent to forward from (default: claude-1)
-  -l, --local int         Local port to use (default: auto-allocate)
-      --dns               Enable DNS resolution (requires sudo for resolver setup)
-      --dns-name string   Custom DNS name (default: agent.vibespace)
-  -h, --help              Help for add
-
-Examples:
-  vibespace %s forward add 3000
-  vibespace %s forward add 8080 --agent claude-2
-  vibespace %s forward add 5432 --local 15432 --agent trusted
-  vibespace %s forward add 3000 --dns
-  vibespace %s forward add 3000 --dns --dns-name myapp
-`, vibespace, vibespace, vibespace, vibespace, vibespace, vibespace)
-			return nil
-		}
-	}
-
-	if len(args) == 0 {
-		return fmt.Errorf("remote port required. Usage: vibespace %s forward add PORT [--agent AGENT] [--local LOCAL_PORT]", vibespace)
-	}
-
-	// Parse port
-	remotePort, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("invalid port number: %s", args[0])
-	}
-
-	// Parse optional flags
-	agent := "claude-1" // Default agent
-	localPort := 0      // Auto-allocate
-	enableDNS := false
-	dnsName := ""
-
-	for i := 1; i < len(args); i++ {
-		switch args[i] {
-		case "--agent", "-a":
-			if i+1 < len(args) {
-				agent = args[i+1]
-				i++
-			}
-		case "--local", "-l":
-			if i+1 < len(args) {
-				localPort, _ = strconv.Atoi(args[i+1])
-				i++
-			}
-		case "--dns":
-			enableDNS = true
-		case "--dns-name":
-			if i+1 < len(args) {
-				dnsName = args[i+1]
-				enableDNS = true
-				i++
-			}
-		}
-	}
 
 	slog.Info("forward add command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "local_port", localPort, "dns", enableDNS)
 
@@ -255,7 +228,7 @@ Examples:
 	result, err := client.AddForwardForVibespace(vibespace, agent, remotePort, localPort, enableDNS, dnsName)
 	if err != nil {
 		slog.Error("failed to add forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
-		return fmt.Errorf("failed to add forward: %w\nCheck daemon status: vibespace %s forward list", err, vibespace)
+		return fmt.Errorf("failed to add forward: %w", err)
 	}
 
 	// JSON output
@@ -277,49 +250,8 @@ Examples:
 	return nil
 }
 
-// runForwardRemove removes a port-forward
-func runForwardRemove(vibespace string, args []string) error {
+func doForwardRemove(vibespace, agent string, remotePort int) error {
 	out := getOutput()
-
-	// Handle help flag
-	for _, arg := range args {
-		if arg == "--help" || arg == "-h" {
-			fmt.Printf(`Remove a port-forward
-
-Usage:
-  vibespace %s forward remove PORT [flags]
-
-Arguments:
-  PORT    Remote port to stop forwarding
-
-Flags:
-  -a, --agent string   Agent to remove forward from (default: claude-1)
-  -h, --help           Help for remove
-
-Examples:
-  vibespace %s forward remove 3000
-  vibespace %s forward remove 8080 --agent claude-2
-`, vibespace, vibespace, vibespace)
-			return nil
-		}
-	}
-
-	if len(args) == 0 {
-		return fmt.Errorf("remote port required. Usage: vibespace %s forward remove PORT [--agent AGENT]", vibespace)
-	}
-
-	remotePort, err := strconv.Atoi(args[0])
-	if err != nil {
-		return fmt.Errorf("invalid port number: %s", args[0])
-	}
-
-	agent := "claude-1"
-	for i := 1; i < len(args); i++ {
-		if (args[i] == "--agent" || args[i] == "-a") && i+1 < len(args) {
-			agent = args[i+1]
-			break
-		}
-	}
 
 	slog.Info("forward remove command started", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
 
