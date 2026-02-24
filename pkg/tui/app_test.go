@@ -3,29 +3,26 @@ package tui
 import (
 	"bytes"
 	"math"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
+	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
 // --- helpers ---
 
-// ansiCSI matches all ANSI CSI escape sequences (SGR, cursor movement, erase, etc.).
-var ansiCSI = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
-
 // stripAnsi removes ANSI escape sequences for text matching in rendered output.
 func stripAnsi(s string) string {
-	return ansiCSI.ReplaceAllString(s, "")
+	return ui.StripAnsi(s)
 }
 
 // containsText returns a WaitFor matcher that strips ANSI codes before checking.
 func containsText(target string) func([]byte) bool {
 	return func(bts []byte) bool {
-		return strings.Contains(stripAnsi(string(bts)), target)
+		return strings.Contains(ui.StripAnsi(string(bts)), target)
 	}
 }
 
