@@ -16,6 +16,7 @@
 
 | Variable | Description |
 |----------|-------------|
+| `VIBESPACE_NAME` | Default vibespace for `--vibespace` flag |
 | `VIBESPACE_DEBUG=1` | Enable debug logging to `~/.vibespace/debug.log` |
 | `VIBESPACE_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` |
 | `VIBESPACE_CLUSTER_CPU` | Default cluster CPU cores (default: 4) |
@@ -108,21 +109,21 @@ Show vibespace details, mounts, and agents with config. No command-specific flag
 
 ## Agent Commands
 
-All prefixed with `vibespace <name>`.
+All require `--vibespace <name>` flag or `VIBESPACE_NAME` environment variable.
 
-### `<name> agent list`
+### `vibespace agent list`
 
-List agents. Default when running `<name> agent` with no subcommand.
+List agents. Default when running `vibespace agent` with no subcommand.
 
 **Plain columns**: AGENT, TYPE, VIBESPACE, STATUS
 
-### `<name> agent create`
+### `vibespace agent create`
 
 Create a new agent in the vibespace.
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--agent-type` | `-t` | (required) | Agent type: `claude-code`, `codex` |
+| `--agent-type` | `-t` | `""` | Agent type: `claude-code`, `codex` (default: inherit from primary) |
 | `--name` | `-n` | `""` | Custom agent name |
 | `--share-credentials` | `-s` | `false` | Share credentials across agents |
 | `--skip-permissions` | | `false` | Enable `--dangerously-skip-permissions` |
@@ -131,17 +132,23 @@ Create a new agent in the vibespace.
 | `--model` | | `""` | Model to use |
 | `--max-turns` | | `0` | Maximum conversation turns |
 
-### `<name> agent delete <agent>`
+### `vibespace agent delete <agent>`
 
-Delete an agent. No flags.
+Delete an agent. No command-specific flags.
 
-### `<name> start [agent]`
+### `vibespace agent start [agent]`
 
-Start all agents or a specific agent. No flags.
+Start all agents or a specific agent. No command-specific flags.
 
-### `<name> stop [agent]`
+### `vibespace agent stop [agent]`
 
-Stop all agents or a specific agent. No flags.
+Stop all agents or a specific agent. No command-specific flags.
+
+---
+
+## Vibespace-scoped Commands (not yet migrated)
+
+These still use the `vibespace <name> <subcommand>` pattern.
 
 ### `<name> connect [agent]`
 
@@ -316,13 +323,9 @@ Vibespace: <name>
 
 Available commands:
   info       Show vibespace details
-  agent      Manage agents (list, create, delete)
   connect    Connect to an agent
   exec       Run command in agent container
   config     View/modify agent configuration
-  multi      Multi-agent terminal mode
-  start      Start agents
-  stop       Stop agents
   forward    Manage port-forwards (list, add, remove)
 ```
 
