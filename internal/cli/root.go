@@ -20,12 +20,13 @@ var (
 
 // Global flags
 var (
-	globalJSON    bool
-	globalVerbose bool
-	globalQuiet   bool
-	globalNoColor bool
-	globalPlain   bool
-	globalHeader  bool
+	globalJSON       bool
+	globalVerbose    bool
+	globalQuiet      bool
+	globalNoColor    bool
+	globalPlain      bool
+	globalHeader     bool
+	globalVibespace  string
 )
 
 var rootCmd = &cobra.Command{
@@ -37,15 +38,20 @@ Create isolated development environments with multiple Claude Code instances
 that can collaborate on your codebase.
 
 Get started:
-  vibespace init              Initialize the cluster
-  vibespace create myproject  Create a new vibespace
-  vibespace myproject agents  List Claude instances
-  vibespace myproject connect Connect to a Claude instance
+  vibespace init                                    Initialize the cluster
+  vibespace create myproject -t claude-code         Create a new vibespace
+  vibespace agent list --vibespace myproject        List agents
+  vibespace agent create --vibespace myproject      Add another agent
+
+Tip: set VIBESPACE_NAME to avoid typing --vibespace every time:
+  export VIBESPACE_NAME=myproject
+  vibespace agent list
 
 Documentation: https://github.com/vibespace/vibespace
 Report issues: https://github.com/vibespace/vibespace/issues
 
 Environment Variables:
+  VIBESPACE_NAME              Default vibespace for --vibespace flag
   VIBESPACE_DEBUG=1           Enable debug logging to ~/.vibespace/debug.log
   VIBESPACE_LOG_LEVEL         Log level: debug, info, warn, error
   VIBESPACE_CLUSTER_CPU       Default cluster CPU cores (default: 4)
@@ -199,6 +205,7 @@ func init() {
 	rootCmd.AddCommand(multiCmd)   // Quick ad-hoc multi-agent sessions
 	rootCmd.AddCommand(serveCmd)   // Remote mode server
 	rootCmd.AddCommand(remoteCmd)  // Remote mode client
+	rootCmd.AddCommand(agentCmd)   // Agent management (standard cobra)
 
 	// Global flags - registered here so subcommands can parse them
 	rootCmd.PersistentFlags().BoolVar(&globalJSON, "json", false, "Output in JSON format")
@@ -207,6 +214,10 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&globalNoColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&globalPlain, "plain", false, "Plain output for scripting")
 	rootCmd.PersistentFlags().BoolVar(&globalHeader, "header", false, "Include headers in plain output")
+
+	// Vibespace flag - identifies which vibespace to operate on
+	defaultVS := os.Getenv("VIBESPACE_NAME")
+	rootCmd.PersistentFlags().StringVar(&globalVibespace, "vibespace", defaultVS, "Vibespace name (env: VIBESPACE_NAME)")
 }
 
 var versionCmd = &cobra.Command{
@@ -230,8 +241,14 @@ var versionCmd = &cobra.Command{
 	},
 }
 
-// handleVibespaceCommand handles commands for a specific vibespace
-// Usage: vibespace <name> <subcommand> [args]
+func requireVibespace(cmd *cobra.Command) (string, error) {
+	if globalVibespace == "" {
+		return "", fmt.Errorf("vibespace name required: use --vibespace flag or set VIBESPACE_NAME environment variable")
+	}
+	return globalVibespace, nil
+}
+
+// handleVibespaceCommand handles commands not yet migrated to cobra subcommands.
 func handleVibespaceCommand(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("vibespace name required")
@@ -241,51 +258,19 @@ func handleVibespaceCommand(args []string) error {
 	subArgs := args[1:]
 
 	if len(subArgs) == 0 {
-		// Show help for this vibespace
-		fmt.Printf("Vibespace: %s\n\n", vibespace)
-		fmt.Println("Available commands:")
-		fmt.Println("  info       Show vibespace details")
-		fmt.Println("  agent      Manage agents (list, create, delete)")
-		fmt.Println("  connect    Connect to an agent")
-		fmt.Println("  exec       Run command in agent container")
-		fmt.Println("  config     View/modify agent configuration")
-		fmt.Println("  multi      Multi-agent terminal mode")
-		fmt.Println("  start      Start agents")
-		fmt.Println("  stop       Stop agents")
-		fmt.Println("  forward    Manage port-forwards (list, add, remove)")
-		return nil
+		return fmt.Errorf("subcommand required for vibespace '%s'", vibespace)
 	}
 
 	subCmd := subArgs[0]
 	cmdArgs := subArgs[1:]
 
 	switch subCmd {
-	case "--help", "-h", "help":
-		// Show help for this vibespace
-		fmt.Printf("Vibespace: %s\n\n", vibespace)
-		fmt.Println("Available commands:")
-		fmt.Println("  info       Show vibespace details")
-		fmt.Println("  agent      Manage agents (list, create, delete)")
-		fmt.Println("  connect    Connect to an agent")
-		fmt.Println("  exec       Run command in agent container")
-		fmt.Println("  config     View/modify agent configuration")
-		fmt.Println("  multi      Multi-agent terminal mode")
-		fmt.Println("  start      Start agents")
-		fmt.Println("  stop       Stop agents")
-		fmt.Println("  forward    Manage port-forwards (list, add, remove)")
-		return nil
 	case "info":
 		return runInfo(vibespace, cmdArgs)
-	case "agent":
-		return runAgent(vibespace, cmdArgs)
 	case "connect":
 		return runConnect(vibespace, cmdArgs)
 	case "config":
 		return runConfig(vibespace, cmdArgs)
-	case "start":
-		return runStart(vibespace, cmdArgs)
-	case "stop":
-		return runStop(vibespace, cmdArgs)
 	case "forward":
 		return runForwardCmd(vibespace, cmdArgs)
 	case "exec":

@@ -18,6 +18,11 @@ const (
 	TypeCodex Type = "codex"
 )
 
+// AllTypes returns all valid agent types.
+func AllTypes() []Type {
+	return []Type{TypeClaudeCode, TypeCodex}
+}
+
 // ParseType parses a string into an agent Type.
 // Returns TypeClaudeCode if the string is empty or unrecognized.
 func ParseType(s string) Type {

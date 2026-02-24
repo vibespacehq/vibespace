@@ -48,20 +48,18 @@ func TestLevenshteinSymmetric(t *testing.T) {
 }
 
 func TestSuggestCommand(t *testing.T) {
-	commands := []string{"agent", "connect", "exec", "config", "start", "stop", "forward"}
+	commands := []string{"connect", "exec", "config", "forward"}
 
 	tests := []struct {
 		name  string
 		input string
 		want  string
 	}{
-		{"exact match", "agent", "agent"},
-		{"close typo", "agnet", "agent"},
-		{"off by one", "agen", "agent"},
-		{"added char", "agents", "agent"},
+		{"exact match", "connect", "connect"},
+		{"close typo", "conect", "connect"},
 		{"config typo", "confg", "config"},
-		{"start typo", "strat", "start"},
 		{"forward typo", "froward", "forward"},
+		{"exec typo", "exce", "exec"},
 		{"too far", "xyzabc", ""},
 		{"empty input", "", ""},
 		{"completely different", "kubernetes", ""},
@@ -89,12 +87,9 @@ func TestSuggestVibespaceCommand(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"agnet", "agent"},
 		{"conect", "connect"},
 		{"exce", "exec"},
 		{"confg", "config"},
-		{"strat", "start"},
-		{"sotp", "stop"},
 		{"forwrd", "forward"},
 		{"xyzabc", ""},
 	}
