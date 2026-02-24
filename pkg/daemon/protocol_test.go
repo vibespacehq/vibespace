@@ -3,6 +3,7 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -33,26 +34,8 @@ func TestRequestMarshal(t *testing.T) {
 				t.Fatalf("Unmarshal error: %v", err)
 			}
 
-			if decoded.Type != tt.req.Type {
-				t.Errorf("Type = %q, want %q", decoded.Type, tt.req.Type)
-			}
-			if decoded.Vibespace != tt.req.Vibespace {
-				t.Errorf("Vibespace = %q, want %q", decoded.Vibespace, tt.req.Vibespace)
-			}
-			if decoded.Agent != tt.req.Agent {
-				t.Errorf("Agent = %q, want %q", decoded.Agent, tt.req.Agent)
-			}
-			if decoded.Port != tt.req.Port {
-				t.Errorf("Port = %d, want %d", decoded.Port, tt.req.Port)
-			}
-			if decoded.Local != tt.req.Local {
-				t.Errorf("Local = %d, want %d", decoded.Local, tt.req.Local)
-			}
-			if decoded.DNS != tt.req.DNS {
-				t.Errorf("DNS = %v, want %v", decoded.DNS, tt.req.DNS)
-			}
-			if decoded.DNSName != tt.req.DNSName {
-				t.Errorf("DNSName = %q, want %q", decoded.DNSName, tt.req.DNSName)
+			if !reflect.DeepEqual(decoded, tt.req) {
+				t.Errorf("roundtrip mismatch:\n got: %+v\nwant: %+v", decoded, tt.req)
 			}
 		})
 	}
@@ -144,28 +127,7 @@ func TestStatusResponseMarshal(t *testing.T) {
 		t.Fatalf("Unmarshal error: %v", err)
 	}
 
-	if decoded.Vibespace != "myproject" {
-		t.Errorf("Vibespace = %q, want %q", decoded.Vibespace, "myproject")
-	}
-	if !decoded.Running {
-		t.Error("Running should be true")
-	}
-	if decoded.TotalPorts != 5 {
-		t.Errorf("TotalPorts = %d, want %d", decoded.TotalPorts, 5)
-	}
-	if decoded.ActivePorts != 3 {
-		t.Errorf("ActivePorts = %d, want %d", decoded.ActivePorts, 3)
-	}
-	if len(decoded.Agents) != 1 {
-		t.Fatalf("Agents length = %d, want 1", len(decoded.Agents))
-	}
-	if decoded.Agents[0].Name != "claude-1" {
-		t.Errorf("Agent Name = %q, want %q", decoded.Agents[0].Name, "claude-1")
-	}
-	if len(decoded.Agents[0].Forwards) != 1 {
-		t.Fatalf("Forwards length = %d, want 1", len(decoded.Agents[0].Forwards))
-	}
-	if decoded.Agents[0].Forwards[0].LocalPort != 3000 {
-		t.Errorf("LocalPort = %d, want %d", decoded.Agents[0].Forwards[0].LocalPort, 3000)
+	if !reflect.DeepEqual(decoded, status) {
+		t.Errorf("roundtrip mismatch:\n got: %+v\nwant: %+v", decoded, status)
 	}
 }
