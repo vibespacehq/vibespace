@@ -310,8 +310,18 @@ func runSubtests(t *testing.T, vsName string) {
 	})
 
 	// --- exec ---
+	// Note: exec uses SetInterspersed(false), so --json must come before the
+	// command args. We can't use mustSucceed/runJSON which append --json at the end.
 	t.Run("exec", func(t *testing.T) {
-		out := mustSucceed(t, "exec", "--vibespace", vsName, "whoami")
+		r := run(t, "exec", "--vibespace", vsName, "--json", "whoami")
+		var out jsonapi.RawJSONOutput
+		if err := json.Unmarshal([]byte(r.Stdout), &out); err != nil {
+			t.Fatalf("failed to parse JSON output:\nstdout: %s\nstderr: %s\nerror: %v",
+				r.Stdout, r.Stderr, err)
+		}
+		if !out.Success {
+			t.Fatalf("expected success but got error: %+v", out.Error)
+		}
 		data := parseData[jsonapi.ExecOutput](t, out)
 
 		if data.Vibespace != vsName {
@@ -566,29 +576,6 @@ func runSubtests(t *testing.T, vsName string) {
 		mustSucceed(t, "agent", "delete", "flagtest", "--vibespace", vsName)
 	})
 
-	// === Agent start/stop specific agent ===
-
-	t.Run("agent-stop-specific", func(t *testing.T) {
-		out := mustSucceed(t, "agent", "stop", "claude-1", "--vibespace", vsName)
-		data := parseData[jsonapi.StopOutput](t, out)
-
-		if !data.Stopped {
-			t.Error("expected stopped=true")
-		}
-		if data.Target != "claude-1" {
-			t.Errorf("expected target=claude-1, got %s", data.Target)
-		}
-	})
-
-	t.Run("agent-start-specific", func(t *testing.T) {
-		out := mustSucceed(t, "agent", "start", "claude-1", "--vibespace", vsName)
-		data := parseData[jsonapi.StartOutput](t, out)
-
-		if data.Agent != "claude-1" {
-			t.Errorf("expected agent=claude-1, got %s", data.Agent)
-		}
-	})
-
 	// === Plain mode subtests ===
 
 	t.Run("plain/list", func(t *testing.T) {
@@ -696,6 +683,29 @@ func runSubtests(t *testing.T, vsName string) {
 
 	t.Run("default/status", func(t *testing.T) {
 		mustSucceedDefault(t, "status")
+	})
+
+	// === Agent start/stop specific agent (last — restarts pods) ===
+
+	t.Run("agent-stop-specific", func(t *testing.T) {
+		out := mustSucceed(t, "agent", "stop", "claude-1", "--vibespace", vsName)
+		data := parseData[jsonapi.StopOutput](t, out)
+
+		if !data.Stopped {
+			t.Error("expected stopped=true")
+		}
+		if data.Target != "claude-1" {
+			t.Errorf("expected target=claude-1, got %s", data.Target)
+		}
+	})
+
+	t.Run("agent-start-specific", func(t *testing.T) {
+		out := mustSucceed(t, "agent", "start", "claude-1", "--vibespace", vsName)
+		data := parseData[jsonapi.StartOutput](t, out)
+
+		if data.Agent != "claude-1" {
+			t.Errorf("expected agent=claude-1, got %s", data.Agent)
+		}
 	})
 
 	// --- stop all ---
