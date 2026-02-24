@@ -25,7 +25,7 @@ type PodEvent struct {
 
 // PodWatcher watches all vibespace pods for changes
 type PodWatcher struct {
-	clientset *kubernetes.Clientset
+	clientset kubernetes.Interface
 	eventCh   chan PodEvent
 	stopCh    chan struct{}
 
@@ -34,7 +34,7 @@ type PodWatcher struct {
 }
 
 // NewPodWatcher creates a new pod watcher
-func NewPodWatcher(clientset *kubernetes.Clientset) *PodWatcher {
+func NewPodWatcher(clientset kubernetes.Interface) *PodWatcher {
 	return &PodWatcher{
 		clientset:      clientset,
 		eventCh:        make(chan PodEvent, 100),
