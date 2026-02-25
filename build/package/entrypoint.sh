@@ -97,15 +97,14 @@ fi
 chown user:user "$USER_HOME/.bashrc"
 
 # ============================================================================
-# Claude Code settings (permission hooks)
+# Claude Code settings
 # ============================================================================
 CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
 mkdir -p "$CLAUDE_CONFIG_DIR"
-# Always update settings to ensure PreToolUse hooks are configured
-# User customizations should go in project-level .claude/settings.json
-cp /etc/vibespace/claude-settings.json "$CLAUDE_CONFIG_DIR/settings.json"
+# Note: permission hook settings are injected per-session by the TUI
+# into project-level /vibespace/.claude/settings.json, not global settings.
+# This ensures direct SSH sessions aren't blocked by the hook.
 chown -R user:user "$CLAUDE_CONFIG_DIR"
-log "Claude Code permission hooks configured"
 
 # ============================================================================
 # Startup
