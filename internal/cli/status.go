@@ -9,6 +9,7 @@ import (
 
 	"github.com/vibespacehq/vibespace/internal/platform"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 	"github.com/vibespacehq/vibespace/pkg/remote"
 
 	"github.com/spf13/cobra"
@@ -321,6 +322,11 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 
 	// Remove WireGuard config from /etc/wireguard (requires sudo)
 	remote.CleanupWireGuardConfig()
+
+	// Remove all vibespace DNS entries from /etc/hosts
+	if err := vsdns.RemoveAllHostEntries(""); err != nil {
+		slog.Warn("failed to remove DNS host entries", "error", err)
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
