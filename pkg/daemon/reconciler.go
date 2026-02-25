@@ -279,7 +279,14 @@ func (r *Reconciler) ensureForward(vibespace, agentName string, fwd DesiredForwa
 	if forwards, ok := allForwards[key]; ok {
 		for _, existing := range forwards {
 			if existing.RemotePort == fwd.ContainerPort {
-				return // Already exists
+				if existing.Status != portforward.StatusError {
+					return // Already exists and healthy
+				}
+				// Dead forward — remove so we can recreate
+				slog.Info("removing dead forward for recreation",
+					"agent", key, "port", fwd.ContainerPort)
+				r.manager.RemoveForward(key, fwd.ContainerPort)
+				break
 			}
 		}
 	}
@@ -325,10 +332,20 @@ func (r *Reconciler) ensureDefaultForwards(vibespace, agentName string) {
 	hasTTYD := false
 	for _, fwd := range existingForwards {
 		if fwd.RemotePort == portforward.DefaultSSHPort {
-			hasSSH = true
+			if fwd.Status == portforward.StatusError {
+				slog.Info("removing dead SSH forward for recreation", "agent", key)
+				r.manager.RemoveForward(key, portforward.DefaultSSHPort)
+			} else {
+				hasSSH = true
+			}
 		}
 		if fwd.RemotePort == portforward.DefaultTTYDPort {
-			hasTTYD = true
+			if fwd.Status == portforward.StatusError {
+				slog.Info("removing dead ttyd forward for recreation", "agent", key)
+				r.manager.RemoveForward(key, portforward.DefaultTTYDPort)
+			} else {
+				hasTTYD = true
+			}
 		}
 	}
 
