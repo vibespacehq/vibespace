@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/zero-bugs-and-minor-enhancements
     paths:
       - 'build/**'
       - '.github/workflows/release-agent-images.yml'
