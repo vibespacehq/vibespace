@@ -231,7 +231,9 @@ func (a *Agent) ParseStreamLine(line string) (*agent.StreamMessage, bool) {
 // SupportedTools returns the list of tools Claude Code supports.
 func (a *Agent) SupportedTools() []string {
 	return []string{
-		"Read", "Write", "Edit", "Bash", "Glob", "Grep",
+		"Read", "Write", "Edit",
+		"Bash", "Bash(read_only:true)",
+		"Glob", "Grep",
 		"Task", "WebFetch", "WebSearch", "NotebookEdit",
 	}
 }

@@ -37,6 +37,7 @@ const (
 	vibespacesModeCreateForm                           // inline create form
 	vibespacesModeDeleteConfirm                        // inline delete confirmation
 	vibespacesModeAddAgent                             // inline add agent form (in agent view)
+	vibespacesModeDeleteAgentConfirm                   // inline delete agent confirmation (in agent view)
 	vibespacesModeEditConfig                           // inline edit config form (in agent view)
 	vibespacesModeForwardManager                       // inline forward manager (in agent view)
 )
@@ -170,6 +171,30 @@ type vsRemoveForwardDoneMsg struct {
 	dnsName string // non-empty if DNS hosts entry removal still needed
 }
 
+// vsToggleDNSDoneMsg signals completion of toggling DNS on a forward.
+type vsToggleDNSDoneMsg struct {
+	err     error
+	dnsName string // non-empty = DNS was added (needs AddHostEntry); empty = DNS was removed
+	oldDNS  string // non-empty = DNS was removed (needs RemoveHostEntry)
+}
+
+// vsDeleteAgentDoneMsg signals completion of an agent deletion (kill).
+type vsDeleteAgentDoneMsg struct {
+	err error
+}
+
+// vsAgentStartStopDoneMsg signals completion of an agent start/stop operation.
+type vsAgentStartStopDoneMsg struct {
+	action string
+	err    error
+}
+
+// vsAgentStatusClearMsg clears the transient agent status message after a delay.
+type vsAgentStatusClearMsg struct{}
+
+// vsAgentRefreshTickMsg triggers a periodic agent list reload after start/stop.
+type vsAgentRefreshTickMsg struct{}
+
 // vsSudoDoneMsg signals completion of sudo password validation.
 type vsSudoDoneMsg struct {
 	ok       bool
@@ -267,6 +292,14 @@ type VibespacesTab struct {
 	deleteName  string
 	deleteInput string
 
+	// Delete agent confirm state (agent view)
+	deleteAgentName  string
+	deleteAgentInput string
+
+	// Agent status feedback (transient message shown in agent view)
+	agentStatusMsg      string
+	agentRefreshPending int // remaining refresh ticks after start/stop
+
 	// Add agent form state (agent view)
 	addAgentField         addAgentFormField
 	addAgentType          agent.Type
@@ -327,7 +360,7 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "skip")),
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "submit")),
 		}
-	case vibespacesModeDeleteConfirm:
+	case vibespacesModeDeleteConfirm, vibespacesModeDeleteAgentConfirm:
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
@@ -352,6 +385,7 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add")),
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "remove")),
+			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "dns")),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		}
 	case vibespacesModeSessionList:
@@ -366,8 +400,10 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate agents")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "sessions")),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add agent")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 			key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit config")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forwards")),
+			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "start/stop")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "connect")),
 			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "browser")),
 		}
@@ -549,8 +585,7 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return t, t.loadVibespaces()
 
-	case vsAddAgentDoneMsg:
-		t.mode = vibespacesModeAgentView
+	case vsDeleteAgentDoneMsg:
 		if msg.err != nil {
 			t.err = msg.err.Error()
 		}
@@ -562,6 +597,66 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 		return t, nil
+
+	case vsAgentStartStopDoneMsg:
+		if msg.err != nil {
+			t.agentStatusMsg = ""
+			t.agentRefreshPending = 0
+			t.err = msg.err.Error()
+		} else if msg.action == "stop" {
+			t.agentStatusMsg = "Agent stopped"
+		} else {
+			t.agentStatusMsg = "Agent started"
+		}
+		t.agentRefreshPending = 5
+		refreshTick := tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return vsAgentRefreshTickMsg{}
+		})
+		clearTick := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return vsAgentStatusClearMsg{}
+		})
+		if t.selectedVS != nil {
+			return t, tea.Batch(t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name), refreshTick, clearTick)
+		}
+		return t, tea.Batch(refreshTick, clearTick)
+
+	case vsAgentStatusClearMsg:
+		t.agentStatusMsg = ""
+		return t, nil
+
+	case vsAgentRefreshTickMsg:
+		t.agentRefreshPending--
+		if t.agentRefreshPending <= 0 || t.mode != vibespacesModeAgentView {
+			t.agentRefreshPending = 0
+			return t, nil
+		}
+		var cmds []tea.Cmd
+		if t.selectedVS != nil {
+			cmds = append(cmds, t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name))
+		}
+		cmds = append(cmds, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return vsAgentRefreshTickMsg{}
+		}))
+		return t, tea.Batch(cmds...)
+
+	case vsAddAgentDoneMsg:
+		t.mode = vibespacesModeAgentView
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		t.agentRefreshPending = 5
+		refreshTick := tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return vsAgentRefreshTickMsg{}
+		})
+		if t.selectedVS != nil {
+			return t, tea.Batch(
+				t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+				refreshTick,
+			)
+		}
+		return t, refreshTick
 
 	case vsEditConfigDoneMsg:
 		t.mode = vibespacesModeAgentView
@@ -596,6 +691,27 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.sudoPromptActive = true
 			t.sudoInput = ""
 			t.sudoPendingDNS = msg.dnsName
+			t.sudoPendingOp = "remove"
+		}
+		if t.selectedVS != nil {
+			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
+		}
+		return t, nil
+
+	case vsToggleDNSDoneMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		} else if msg.dnsName != "" {
+			// DNS was added — need to add /etc/hosts entry
+			t.sudoPromptActive = true
+			t.sudoInput = ""
+			t.sudoPendingDNS = msg.dnsName
+			t.sudoPendingOp = "add"
+		} else if msg.oldDNS != "" {
+			// DNS was removed — need to remove /etc/hosts entry
+			t.sudoPromptActive = true
+			t.sudoInput = ""
+			t.sudoPendingDNS = msg.oldDNS
 			t.sudoPendingOp = "remove"
 		}
 		if t.selectedVS != nil {
@@ -787,6 +903,27 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				t.err = ""
 				return t, nil
 			}
+		case "d":
+			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+				ag := t.viewAgents[t.agentCursor]
+				if !ag.IsPrimary {
+					t.mode = vibespacesModeDeleteAgentConfirm
+					t.deleteAgentName = ag.AgentName
+					t.deleteAgentInput = ""
+					t.err = ""
+					return t, nil
+				}
+			}
+		case "S":
+			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+				ag := t.viewAgents[t.agentCursor]
+				if ag.Status == "running" {
+					t.agentStatusMsg = fmt.Sprintf("Stopping %s…", ag.AgentName)
+				} else {
+					t.agentStatusMsg = fmt.Sprintf("Starting %s…", ag.AgentName)
+				}
+				return t, t.toggleAgentStartStop(t.selectedVS.Name, ag.AgentName, ag.Status)
+			}
 		}
 		return t, nil
 
@@ -795,6 +932,9 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case vibespacesModeDeleteConfirm:
 		return t.handleDeleteConfirmKey(msg)
+
+	case vibespacesModeDeleteAgentConfirm:
+		return t.handleDeleteAgentConfirmKey(msg)
 
 	case vibespacesModeAddAgent:
 		return t.handleAddAgentKey(msg)
@@ -887,7 +1027,7 @@ func (t *VibespacesTab) View() string {
 	}
 
 	switch t.mode {
-	case vibespacesModeAgentView, vibespacesModeAddAgent, vibespacesModeEditConfig, vibespacesModeForwardManager:
+	case vibespacesModeAgentView, vibespacesModeAddAgent, vibespacesModeDeleteAgentConfirm, vibespacesModeEditConfig, vibespacesModeForwardManager:
 		return t.viewAgentView()
 	case vibespacesModeSessionList:
 		return t.viewSessionList()
@@ -1180,6 +1320,8 @@ func (t *VibespacesTab) viewAgentView() string {
 	switch t.mode {
 	case vibespacesModeAddAgent:
 		bottom = t.viewAddAgentForm()
+	case vibespacesModeDeleteAgentConfirm:
+		bottom = t.viewDeleteAgentConfirm()
 	case vibespacesModeEditConfig:
 		bottom = t.viewEditConfigForm()
 	case vibespacesModeForwardManager:
@@ -1305,7 +1447,27 @@ func (t *VibespacesTab) viewAgentDetail() string {
 		} else if len(cfg.AllowedTools) > 0 {
 			allowedStr = strings.Join(cfg.AllowedTools, ", ")
 		} else {
-			allowedStr = strings.Join(agent.DefaultAllowedTools(), ", ") + " (default)"
+			// Show defaults minus any disallowed tools
+			defaults := agent.DefaultAllowedTools()
+			if len(cfg.DisallowedTools) > 0 {
+				disallowed := make(map[string]bool, len(cfg.DisallowedTools))
+				for _, t := range cfg.DisallowedTools {
+					disallowed[t] = true
+				}
+				var filtered []string
+				for _, t := range defaults {
+					if !disallowed[t] {
+						filtered = append(filtered, t)
+					}
+				}
+				if len(filtered) == 0 {
+					allowedStr = "none (all defaults disallowed)"
+				} else {
+					allowedStr = strings.Join(filtered, ", ") + " (default)"
+				}
+			} else {
+				allowedStr = strings.Join(defaults, ", ") + " (default)"
+			}
 		}
 		cfgLines = append(cfgLines, fmt.Sprintf("%s  %s",
 			labelStyle.Render("allowed_tools"),
@@ -1378,13 +1540,22 @@ func (t *VibespacesTab) viewAgentDetail() string {
 				dimStyle.Render(fmt.Sprintf("→ %-*s", maxLocal, local)),
 				dimStyle.Render(fmt.Sprintf("%-*s", maxType, fwd.Type)),
 				dimStyle.Render(fwd.Status))
+			if fwd.DNSName != "" {
+				line += "  " + dimStyle.Render(fmt.Sprintf("%s.vibespace.internal:%d", fwd.DNSName, fwd.LocalPort))
+			}
 			fwdLines = append(fwdLines, line)
 		}
 		fwdBlock = "\n\n" + fwdHeader + "\n" + mutedLine + "\n" +
 			strings.Join(fwdLines, "\n") + "\n" + mutedLine
 	}
 
-	fullBlock := detailsBlock + "\n\n" + cfgBlock + fwdBlock
+	var statusLine string
+	if t.agentStatusMsg != "" {
+		statusLine = "\n\n" + lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
+			Render(t.agentStatusMsg)
+	}
+
+	fullBlock := detailsBlock + "\n\n" + cfgBlock + fwdBlock + statusLine
 	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
 }
 
@@ -2260,6 +2431,35 @@ func (t *VibespacesTab) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.C
 	}
 }
 
+func (t *VibespacesTab) handleDeleteAgentConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+
+	switch {
+	case k == "esc":
+		t.mode = vibespacesModeAgentView
+		return t, nil
+
+	case k == "enter":
+		if t.deleteAgentInput == t.deleteAgentName {
+			t.mode = vibespacesModeAgentView
+			return t, t.deleteAgent(t.selectedVS.Name, t.deleteAgentName)
+		}
+		return t, nil
+
+	case k == "backspace":
+		if len(t.deleteAgentInput) > 0 {
+			t.deleteAgentInput = t.deleteAgentInput[:len(t.deleteAgentInput)-1]
+		}
+		return t, nil
+
+	default:
+		if len(k) == 1 {
+			t.deleteAgentInput += k
+		}
+		return t, nil
+	}
+}
+
 func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 
@@ -2316,9 +2516,9 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Multi-select fields: j/k navigate, space toggles
 		case addAgentFieldAllowedTools:
-			return t, t.handleToolsMultiSelect(k, t.addAgentAllowedSet)
+			return t, t.handleToolsMultiSelect(k, t.addAgentAllowedSet, t.addAgentDisallowedSet)
 		case addAgentFieldDisallowedTools:
-			return t, t.handleToolsMultiSelect(k, t.addAgentDisallowedSet)
+			return t, t.handleToolsMultiSelect(k, t.addAgentDisallowedSet, t.addAgentAllowedSet)
 		}
 
 		// Text fields
@@ -2337,12 +2537,13 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleToolsMultiSelect handles j/k navigation and space toggle for tool multi-select fields (add agent).
-func (t *VibespacesTab) handleToolsMultiSelect(k string, set map[string]bool) tea.Cmd {
-	return t.handleToolsMultiSelectWith(k, t.addAgentToolsList, &t.addAgentToolsCursor, set)
+func (t *VibespacesTab) handleToolsMultiSelect(k string, set, oppositeSet map[string]bool) tea.Cmd {
+	return t.handleToolsMultiSelectWith(k, t.addAgentToolsList, &t.addAgentToolsCursor, set, oppositeSet)
 }
 
 // handleToolsMultiSelectWith is the generic helper for tool multi-select navigation.
-func (t *VibespacesTab) handleToolsMultiSelectWith(k string, toolsList []string, cursor *int, set map[string]bool) tea.Cmd {
+// oppositeSet is the mutually exclusive set — toggling a tool on removes it from the opposite set.
+func (t *VibespacesTab) handleToolsMultiSelectWith(k string, toolsList []string, cursor *int, set, oppositeSet map[string]bool) tea.Cmd {
 	n := len(toolsList)
 	if n == 0 {
 		return nil
@@ -2358,6 +2559,7 @@ func (t *VibespacesTab) handleToolsMultiSelectWith(k string, toolsList []string,
 			delete(set, tool)
 		} else {
 			set[tool] = true
+			delete(oppositeSet, tool)
 		}
 	}
 	return nil
@@ -2423,9 +2625,9 @@ func (t *VibespacesTab) handleEditConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			}
 			return t, nil
 		case editConfigFieldAllowedTools:
-			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigAllowedSet)
+			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigAllowedSet, t.editConfigDisallowedSet)
 		case editConfigFieldDisallowedTools:
-			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigDisallowedSet)
+			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigDisallowedSet, t.editConfigAllowedSet)
 		}
 
 		// Text fields
@@ -2473,6 +2675,12 @@ func (t *VibespacesTab) handleForwardManagerKey(msg tea.KeyMsg) (tea.Model, tea.
 		if t.fwdManagerCursor < len(fwds) {
 			fwd := fwds[t.fwdManagerCursor]
 			return t, t.submitRemoveForward(fwd.RemotePort)
+		}
+	case "n":
+		fwds := t.currentAgentForwards()
+		if t.fwdManagerCursor < len(fwds) {
+			fwd := fwds[t.fwdManagerCursor]
+			return t, t.submitToggleDNS(fwd.RemotePort, fwd.DNSName)
 		}
 	case "r":
 		if t.selectedVS != nil {
@@ -2627,6 +2835,28 @@ func (t *VibespacesTab) viewDeleteConfirm() string {
 	prompt := fmt.Sprintf("  Type %s to confirm: %s",
 		dimStyle.Render(t.deleteName),
 		activeStyle.Render(t.deleteInput+"█"))
+
+	var errLine string
+	if t.err != "" {
+		errLine = "\n" + lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err)
+	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + prompt + errLine + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
+func (t *VibespacesTab) viewDeleteAgentConfirm() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.ColorError).
+		Render(fmt.Sprintf("Delete agent \"%s\"?", t.deleteAgentName))
+
+	prompt := fmt.Sprintf("  Type %s to confirm: %s",
+		dimStyle.Render(t.deleteAgentName),
+		activeStyle.Render(t.deleteAgentInput+"█"))
 
 	var errLine string
 	if t.err != "" {
@@ -2904,14 +3134,20 @@ func (t *VibespacesTab) viewForwardManager() string {
 				maxLocal, local,
 				maxType, fwd.Type,
 				fwd.Status)
+
+			// Build clickable DNS hyperlink (OSC 8)
+			var dnsSuffix string
 			if fwd.DNSName != "" {
-				line += "  " + fwd.DNSName + ".vibespace.internal:" + fmt.Sprintf("%d", fwd.LocalPort)
+				host := fwd.DNSName + ".vibespace.internal"
+				display := fmt.Sprintf("%s:%d", host, fwd.LocalPort)
+				url := "http://" + display
+				dnsSuffix = "  " + fmt.Sprintf("\x1b]8;;%s\x07%s\x1b]8;;\x07", url, display)
 			}
 
 			if i == t.fwdManagerCursor {
-				lines = append(lines, "  "+activeStyle.Render("› "+line))
+				lines = append(lines, "  "+activeStyle.Render("› "+line)+dnsSuffix)
 			} else {
-				lines = append(lines, "  "+dimStyle.Render("  "+line))
+				lines = append(lines, "  "+dimStyle.Render("  "+line)+dnsSuffix)
 			}
 		}
 	}
@@ -3069,6 +3305,38 @@ func (t *VibespacesTab) toggleStartStop(name, status string) tea.Cmd {
 			return vsStartStopDoneMsg{action: "stop", err: svc.Stop(ctx, name)}
 		}
 		return vsStartStopDoneMsg{action: "start", err: svc.Start(ctx, name)}
+	}
+}
+
+func (t *VibespacesTab) deleteAgent(vsName, agentName string) tea.Cmd {
+	svc := t.shared.Vibespace
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsDeleteAgentDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err := svc.KillAgent(ctx, vsName, agentName)
+		return vsDeleteAgentDoneMsg{err: err}
+	}
+}
+
+func (t *VibespacesTab) toggleAgentStartStop(vsName, agentName, status string) tea.Cmd {
+	svc := t.shared.Vibespace
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsAgentStartStopDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if status == "running" {
+			return vsAgentStartStopDoneMsg{action: "stop", err: svc.StopAgent(ctx, vsName, agentName)}
+		}
+		return vsAgentStartStopDoneMsg{action: "start", err: svc.StartAgent(ctx, vsName, agentName)}
 	}
 }
 
@@ -3252,6 +3520,41 @@ func (t *VibespacesTab) submitRemoveForward(remotePort int) tea.Cmd {
 	}
 }
 
+// submitToggleDNS toggles DNS on/off for an existing forward.
+func (t *VibespacesTab) submitToggleDNS(remotePort int, currentDNS string) tea.Cmd {
+	dc := t.shared.Daemon
+	if t.selectedVS == nil || t.agentCursor >= len(t.viewAgents) {
+		return nil
+	}
+	vsName := t.selectedVS.Name
+	agentName := t.viewAgents[t.agentCursor].AgentName
+	sudoPass := t.sudoPassword
+
+	return func() tea.Msg {
+		if dc == nil {
+			return vsToggleDNSDoneMsg{err: fmt.Errorf("daemon not available")}
+		}
+		result, err := dc.UpdateForwardDNS(vsName, agentName, remotePort, "")
+		if err != nil {
+			return vsToggleDNSDoneMsg{err: err}
+		}
+		if result.DNSName != "" {
+			// DNS was added — update /etc/hosts
+			if hostErr := vsdns.AddHostEntry(result.DNSName, sudoPass); errors.Is(hostErr, vsdns.ErrSudoRequired) {
+				return vsToggleDNSDoneMsg{dnsName: result.DNSName}
+			}
+			return vsToggleDNSDoneMsg{}
+		}
+		// DNS was removed — clean up /etc/hosts
+		if currentDNS != "" {
+			if hostErr := vsdns.RemoveHostEntry(currentDNS, sudoPass); errors.Is(hostErr, vsdns.ErrSudoRequired) {
+				return vsToggleDNSDoneMsg{oldDNS: currentDNS}
+			}
+		}
+		return vsToggleDNSDoneMsg{}
+	}
+}
+
 // validateSudo validates a sudo password and returns a vsSudoDoneMsg.
 func (t *VibespacesTab) validateSudo(pw string) tea.Cmd {
 	return func() tea.Msg {
@@ -3316,7 +3619,11 @@ func excludedTools(agentType agent.Type, allowed []string) []string {
 	}
 	var excluded []string
 	for _, t := range supported {
-		if !allowedBase[t] {
+		base := t
+		if idx := strings.Index(t, "("); idx >= 0 {
+			base = t[:idx]
+		}
+		if !allowedBase[base] {
 			excluded = append(excluded, t)
 		}
 	}
