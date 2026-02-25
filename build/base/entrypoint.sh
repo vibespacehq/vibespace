@@ -109,11 +109,9 @@ case "$VIBESPACE_AGENT_TYPE" in
     claude-code)
         CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
         mkdir -p "$CLAUDE_CONFIG_DIR"
-        # Copy Claude settings if the file exists (from claude-code image layer)
-        if [ -f /etc/vibespace/claude-settings.json ]; then
-            cp /etc/vibespace/claude-settings.json "$CLAUDE_CONFIG_DIR/settings.json"
-            log "Claude Code permission hooks configured"
-        fi
+        # Note: permission hook settings are injected per-session by the TUI
+        # into project-level /vibespace/.claude/settings.json, not global settings.
+        # This ensures direct SSH sessions aren't blocked by the hook.
         chown -R user:user "$CLAUDE_CONFIG_DIR"
         ;;
     codex)
