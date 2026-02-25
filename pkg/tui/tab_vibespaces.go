@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -20,6 +21,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 	"github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/ui"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
@@ -158,12 +160,20 @@ type vsEditConfigDoneMsg struct {
 
 // vsAddForwardDoneMsg signals completion of adding a forward.
 type vsAddForwardDoneMsg struct {
-	err error
+	err     error
+	dnsName string // non-empty if DNS hosts entry still needed
 }
 
 // vsRemoveForwardDoneMsg signals completion of removing a forward.
 type vsRemoveForwardDoneMsg struct {
-	err error
+	err     error
+	dnsName string // non-empty if DNS hosts entry removal still needed
+}
+
+// vsSudoDoneMsg signals completion of sudo password validation.
+type vsSudoDoneMsg struct {
+	ok       bool
+	password string
 }
 
 // createFormField identifies which field is active in the create form.
@@ -289,6 +299,13 @@ type VibespacesTab struct {
 	fwdManagerAddDNS     bool               // enable DNS resolution
 	fwdManagerAddDNSName string             // custom DNS name (optional)
 	fwdManagerAddField   fwdManagerAddField // which add-form field is active
+
+	// Sudo state for DNS hosts entry management
+	sudoPassword     string // cached sudo password for sudo -S
+	sudoPromptActive bool   // true when showing password prompt
+	sudoInput        string // password input buffer
+	sudoPendingDNS   string // DNS name waiting for sudo to complete
+	sudoPendingOp    string // "add" or "remove"
 }
 
 func NewVibespacesTab(shared *SharedState) *VibespacesTab {
@@ -560,6 +577,12 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.fwdManagerAdding = false
 		if msg.err != nil {
 			t.err = msg.err.Error()
+		} else if msg.dnsName != "" {
+			// sudo needed for /etc/hosts entry
+			t.sudoPromptActive = true
+			t.sudoInput = ""
+			t.sudoPendingDNS = msg.dnsName
+			t.sudoPendingOp = "add"
 		}
 		if t.selectedVS != nil {
 			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
@@ -569,10 +592,25 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case vsRemoveForwardDoneMsg:
 		if msg.err != nil {
 			t.err = msg.err.Error()
+		} else if msg.dnsName != "" {
+			t.sudoPromptActive = true
+			t.sudoInput = ""
+			t.sudoPendingDNS = msg.dnsName
+			t.sudoPendingOp = "remove"
 		}
 		if t.selectedVS != nil {
 			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
 		}
+		return t, nil
+
+	case vsSudoDoneMsg:
+		t.sudoPromptActive = false
+		if msg.ok {
+			t.sudoPassword = msg.password
+			// Retry the pending DNS operation with the password
+			return t, t.retryDNSHostEntry()
+		}
+		t.err = "sudo authentication failed"
 		return t, nil
 
 	case tea.KeyMsg:
@@ -583,6 +621,36 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle sudo password prompt input
+	if t.sudoPromptActive {
+		switch msg.String() {
+		case "esc":
+			t.sudoPromptActive = false
+			t.sudoInput = ""
+			t.sudoPendingDNS = ""
+			t.sudoPendingOp = ""
+			return t, nil
+		case "enter":
+			pw := t.sudoInput
+			t.sudoInput = ""
+			if pw == "" {
+				t.sudoPromptActive = false
+				return t, nil
+			}
+			return t, t.validateSudo(pw)
+		case "backspace":
+			if len(t.sudoInput) > 0 {
+				t.sudoInput = t.sudoInput[:len(t.sudoInput)-1]
+			}
+			return t, nil
+		default:
+			if len(msg.String()) == 1 {
+				t.sudoInput += msg.String()
+			}
+			return t, nil
+		}
+	}
+
 	switch t.mode {
 	case vibespacesModeSessionList:
 		switch msg.String() {
@@ -2918,6 +2986,16 @@ func (t *VibespacesTab) viewForwardManager() string {
 		}
 	}
 
+	// Sudo password prompt for DNS host entry
+	if t.sudoPromptActive {
+		warnStyle := lipgloss.NewStyle().Foreground(ui.ColorWarning).Bold(true)
+		lines = append(lines, "")
+		lines = append(lines, "  "+warnStyle.Render("sudo required")+" "+dimStyle.Render("for /etc/hosts DNS entry"))
+		mask := strings.Repeat("•", len(t.sudoInput))
+		lines = append(lines, "  "+dimStyle.Render("Password:")+" "+activeStyle.Render(mask+"█"))
+		lines = append(lines, "  "+dimStyle.Render("enter submit  esc skip"))
+	}
+
 	if t.err != "" {
 		lines = append(lines, "", lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err))
 	}
@@ -3104,6 +3182,8 @@ func (t *VibespacesTab) submitAddForward() tea.Cmd {
 	enableDNS := t.fwdManagerAddDNS
 	dnsName := t.fwdManagerAddDNSName
 
+	sudoPass := t.sudoPassword
+
 	return func() tea.Msg {
 		if dc == nil {
 			return vsAddForwardDoneMsg{err: fmt.Errorf("daemon not available")}
@@ -3120,8 +3200,16 @@ func (t *VibespacesTab) submitAddForward() tea.Cmd {
 			}
 		}
 
-		_, err = dc.AddForwardForVibespace(vsName, agentName, remotePort, localPort, enableDNS, dnsName)
-		return vsAddForwardDoneMsg{err: err}
+		result, err := dc.AddForwardForVibespace(vsName, agentName, remotePort, localPort, enableDNS, dnsName)
+		if err != nil {
+			return vsAddForwardDoneMsg{err: err}
+		}
+		if result != nil && result.DNSName != "" {
+			if hostErr := vsdns.AddHostEntry(result.DNSName, sudoPass); errors.Is(hostErr, vsdns.ErrSudoRequired) {
+				return vsAddForwardDoneMsg{dnsName: result.DNSName}
+			}
+		}
+		return vsAddForwardDoneMsg{}
 	}
 }
 
@@ -3132,13 +3220,64 @@ func (t *VibespacesTab) submitRemoveForward(remotePort int) tea.Cmd {
 	}
 	vsName := t.selectedVS.Name
 	agentName := t.viewAgents[t.agentCursor].AgentName
+	sudoPass := t.sudoPassword
 
 	return func() tea.Msg {
 		if dc == nil {
 			return vsRemoveForwardDoneMsg{err: fmt.Errorf("daemon not available")}
 		}
+		// Look up DNS name before removing so we can clean up /etc/hosts
+		var dnsName string
+		if list, err := dc.ListForwardsForVibespace(vsName); err == nil {
+			for _, a := range list.Agents {
+				if a.Name == agentName {
+					for _, fwd := range a.Forwards {
+						if fwd.RemotePort == remotePort && fwd.DNSName != "" {
+							dnsName = fwd.DNSName
+						}
+					}
+				}
+			}
+		}
 		err := dc.RemoveForwardForVibespace(vsName, agentName, remotePort)
-		return vsRemoveForwardDoneMsg{err: err}
+		if err != nil {
+			return vsRemoveForwardDoneMsg{err: err}
+		}
+		if dnsName != "" {
+			if hostErr := vsdns.RemoveHostEntry(dnsName, sudoPass); errors.Is(hostErr, vsdns.ErrSudoRequired) {
+				return vsRemoveForwardDoneMsg{dnsName: dnsName}
+			}
+		}
+		return vsRemoveForwardDoneMsg{}
+	}
+}
+
+// validateSudo validates a sudo password and returns a vsSudoDoneMsg.
+func (t *VibespacesTab) validateSudo(pw string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("sudo", "-S", "true")
+		cmd.Stdin = strings.NewReader(pw + "\n")
+		err := cmd.Run()
+		return vsSudoDoneMsg{ok: err == nil, password: pw}
+	}
+}
+
+// retryDNSHostEntry retries the pending DNS host entry operation with the cached password.
+func (t *VibespacesTab) retryDNSHostEntry() tea.Cmd {
+	op := t.sudoPendingOp
+	name := t.sudoPendingDNS
+	pass := t.sudoPassword
+	t.sudoPendingDNS = ""
+	t.sudoPendingOp = ""
+
+	return func() tea.Msg {
+		switch op {
+		case "add":
+			vsdns.AddHostEntry(name, pass)
+		case "remove":
+			vsdns.RemoveHostEntry(name, pass)
+		}
+		return nil
 	}
 }
 
