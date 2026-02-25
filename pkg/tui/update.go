@@ -26,40 +26,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// If permission prompt is showing, handle its input first
-		if m.permissionPrompt != nil {
-			switch msg.Type {
-			case tea.KeyCtrlC:
-				// Deny and close prompt
-				return m, m.handlePermissionDecision(permission.DecisionDeny)
-
-			case tea.KeyEnter:
-				// Confirm current selection
-				return m, m.handlePermissionDecision(m.permissionPrompt.GetDecision())
-
-			case tea.KeyLeft:
-				m.permissionPrompt.MoveLeft()
-				return m, nil
-
-			case tea.KeyRight:
-				m.permissionPrompt.MoveRight()
-				return m, nil
-
-			case tea.KeyEsc:
-				// Deny on escape
-				return m, m.handlePermissionDecision(permission.DecisionDeny)
-			}
-
-			// Handle 'a' for allow, 'd' for deny
+		// If permission prompt is showing and input is empty, handle permission keys
+		if m.permissionPrompt != nil && m.input.Value() == "" {
 			switch msg.String() {
 			case "a", "A":
 				return m, m.handlePermissionDecision(permission.DecisionAllow)
 			case "d", "D":
 				return m, m.handlePermissionDecision(permission.DecisionDeny)
 			}
-
-			// Ignore other keys while prompt is showing
-			return m, nil
 		}
 
 		// Handle special keys
