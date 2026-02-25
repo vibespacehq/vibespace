@@ -272,7 +272,8 @@ func (a *App) tabCapturingInput() bool {
 		if vt, ok := a.tabs[TabVibespaces].(*VibespacesTab); ok {
 			switch vt.mode {
 			case vibespacesModeCreateForm, vibespacesModeAddAgent,
-				vibespacesModeEditConfig, vibespacesModeForwardManager:
+				vibespacesModeEditConfig, vibespacesModeForwardManager,
+				vibespacesModeDeleteConfirm, vibespacesModeDeleteAgentConfirm:
 				return true
 			}
 		}
