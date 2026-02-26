@@ -19,6 +19,11 @@ type SharedState struct {
 	Vibespace    *vibespace.Service
 	Metrics      *metrics.Fetcher
 
+	// Version info (set at build time)
+	Version   string
+	Commit    string
+	BuildDate string
+
 	// Cached status (refreshed async via Refresh)
 	DaemonRunning bool
 	DaemonPid     int
@@ -27,8 +32,12 @@ type SharedState struct {
 
 // NewSharedState creates clients for shared services.
 // Failures are non-fatal — tabs degrade gracefully.
-func NewSharedState() *SharedState {
-	s := &SharedState{}
+func NewSharedState(version, commit, buildDate string) *SharedState {
+	s := &SharedState{
+		Version:   version,
+		Commit:    commit,
+		BuildDate: buildDate,
+	}
 
 	if store, err := session.NewStore(); err == nil {
 		s.SessionStore = store

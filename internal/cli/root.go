@@ -79,7 +79,7 @@ Environment Variables:
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return tui.RunApp()
+		return tui.RunApp(Version, Commit, BuildDate)
 	},
 }
 

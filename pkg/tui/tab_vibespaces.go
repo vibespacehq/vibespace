@@ -340,6 +340,11 @@ type VibespacesTab struct {
 	sudoInput        string // password input buffer
 	sudoPendingDNS   string // DNS name waiting for sudo to complete
 	sudoPendingOp    string // "add" or "remove"
+
+	// Welcome screen state
+	welcomeClusterStatus clusterStatus
+	welcomeClusterMode   string
+	welcomeLoaded        bool
 }
 
 func NewVibespacesTab(shared *SharedState) *VibespacesTab {
@@ -409,6 +414,15 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "browser")),
 		}
 	default:
+		if len(t.vibespaces) == 0 {
+			return []key.Binding{
+				key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "init")),
+				key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "create")),
+				key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+				key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+				key.NewBinding(key.WithKeys(":"), key.WithHelp(":", "palette")),
+			}
+		}
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "view")),
@@ -424,7 +438,7 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 func (t *VibespacesTab) SetSize(w, h int) { t.width = w; t.height = h }
 
 func (t *VibespacesTab) Init() tea.Cmd {
-	return t.loadVibespaces()
+	return tea.Batch(t.loadVibespaces(), detectClusterStatus())
 }
 
 func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -585,6 +599,20 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.err = msg.err.Error()
 		}
 		return t, t.loadVibespaces()
+
+	case welcomeClusterStatusMsg:
+		t.welcomeClusterStatus = msg.status
+		if msg.clusterMode != "" {
+			t.welcomeClusterMode = msg.clusterMode
+		}
+		t.welcomeLoaded = true
+		return t, nil
+
+	case vsInitDoneMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		return t, tea.Batch(t.loadVibespaces(), detectClusterStatus(), refreshSharedState(t.shared))
 
 	case vsDeleteAgentDoneMsg:
 		if msg.err != nil {
@@ -1011,6 +1039,12 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				vs := t.vibespaces[t.selected]
 				return t, t.toggleStartStop(vs.Name, vs.Status)
 			}
+		case "i":
+			if len(t.vibespaces) == 0 {
+				return t, execInit()
+			}
+		case "r":
+			return t, tea.Batch(t.loadVibespaces(), detectClusterStatus(), refreshSharedState(t.shared))
 		}
 		if t.selected != prev {
 			return t, t.loadLogsForSelected()
@@ -1063,17 +1097,13 @@ func (t *VibespacesTab) View() string {
 // --- View helpers ---
 
 func (t *VibespacesTab) viewEmpty() string {
+	// This is a fallback — the App renders the full-screen welcome cover
+	// when no vibespaces exist, bypassing this method entirely.
 	msg := lipgloss.NewStyle().
 		Foreground(ui.ColorDim).
 		Padding(2, 0).
-		Render("No vibespaces found.")
-
-	hint := lipgloss.NewStyle().
-		Foreground(ui.ColorDim).
-		Render("Create one with: vibespace create <name>")
-
-	block := lipgloss.JoinVertical(lipgloss.Center, msg, hint)
-	return lipgloss.Place(t.width, t.height, lipgloss.Center, lipgloss.Center, block)
+		Render("No vibespaces found. Press n to create one.")
+	return lipgloss.Place(t.width, t.height, lipgloss.Center, lipgloss.Center, msg)
 }
 
 func (t *VibespacesTab) viewTable() string {
