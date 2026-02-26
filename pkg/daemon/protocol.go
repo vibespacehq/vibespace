@@ -22,6 +22,8 @@ const (
 	RequestPing RequestType = "ping"
 	// RequestRefresh triggers reconciliation
 	RequestRefresh RequestType = "refresh"
+	// RequestUpdateForwardDNS toggles DNS on an existing forward
+	RequestUpdateForwardDNS RequestType = "update_forward_dns"
 )
 
 // Request is an IPC request from client to daemon
@@ -102,6 +104,11 @@ type AddForwardResponse struct {
 	RemotePort int    `json:"remote_port"`
 	Status     string `json:"status"`
 	DNSName    string `json:"dns_name,omitempty"` // Registered DNS name (if DNS was requested)
+}
+
+// UpdateForwardDNSResponse is the data for an update_forward_dns request
+type UpdateForwardDNSResponse struct {
+	DNSName string `json:"dns_name"` // empty = removed, non-empty = added/updated
 }
 
 // DaemonStatusResponse is the data for a daemon status request

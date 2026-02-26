@@ -203,6 +203,31 @@ func (c *Client) AddForwardForVibespace(vibespace, agent string, remotePort, loc
 	return &result, nil
 }
 
+// UpdateForwardDNS toggles DNS on an existing forward
+func (c *Client) UpdateForwardDNS(vibespace, agent string, remotePort int, dnsName string) (*UpdateForwardDNSResponse, error) {
+	resp, err := c.sendRequest(Request{
+		Type:      RequestUpdateForwardDNS,
+		Vibespace: vibespace,
+		Agent:     agent,
+		Port:      remotePort,
+		DNSName:   dnsName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("update forward DNS failed: %s", resp.Error)
+	}
+
+	var result UpdateForwardDNSResponse
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse update forward DNS response: %w", err)
+	}
+
+	return &result, nil
+}
+
 // RemoveForwardForVibespace removes a forward for a specific vibespace
 func (c *Client) RemoveForwardForVibespace(vibespace, agent string, remotePort int) error {
 	resp, err := c.sendRequest(Request{
