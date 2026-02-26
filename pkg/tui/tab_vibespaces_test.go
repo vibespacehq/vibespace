@@ -111,9 +111,11 @@ func TestVibespacesTabEmptyListView(t *testing.T) {
 	tab := newTestVibespacesTab()
 	tab.vibespaces = nil
 
+	// Tab's viewEmpty is a simple fallback; the full welcome cover is
+	// rendered at the App level via showWelcomeCover().
 	view := stripAnsi(tab.View())
-	if !strings.Contains(view, "No vibespaces") {
-		t.Errorf("empty view should contain 'No vibespaces', got: %s", view)
+	if !strings.Contains(view, "No vibespaces found") {
+		t.Errorf("empty view should contain fallback message, got: %s", view)
 	}
 }
 
