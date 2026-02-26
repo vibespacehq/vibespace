@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	vsconfig "github.com/vibespacehq/vibespace/pkg/config"
 )
 
 func init() {
@@ -33,12 +34,12 @@ func (a *Agent) DisplayName() string {
 
 // DefaultAgentPrefix returns the prefix used for agent naming.
 func (a *Agent) DefaultAgentPrefix() string {
-	return "codex"
+	return vsconfig.Global().Agent.Prefixes.Codex
 }
 
 // ContainerImage returns the Docker image for Codex.
 func (a *Agent) ContainerImage() string {
-	return "ghcr.io/vibespacehq/vibespace/codex:latest"
+	return vsconfig.Global().Images.Codex
 }
 
 // ConfigDirectory returns the config directory inside the container.

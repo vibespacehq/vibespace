@@ -58,7 +58,7 @@ func init() {
 	serveCmd.Flags().BoolVar(&serveGenerateToken, "generate-token", false, "Generate an invite token for a client")
 	serveCmd.Flags().StringVar(&serveEndpoint, "endpoint", "", "Public endpoint for clients (override auto-detection)")
 	serveCmd.Flags().BoolVar(&serveForeground, "foreground", false, "Run in foreground (don't daemonize)")
-	serveCmd.Flags().DurationVar(&serveTokenTTL, "token-ttl", remote.DefaultInviteTokenTTL, "Invite token time-to-live (e.g. 15m, 1h)")
+	serveCmd.Flags().DurationVar(&serveTokenTTL, "token-ttl", 30*time.Minute, "Invite token time-to-live (e.g. 15m, 1h)")
 	serveCmd.Flags().BoolVar(&serveListClients, "list-clients", false, "List all registered clients")
 	serveCmd.Flags().StringVar(&serveRemoveClient, "remove-client", "", "Remove a client by name, hostname, or public key")
 }
@@ -151,7 +151,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 
 		// Add default port if not specified
-		endpoint = ensureEndpointPort(endpoint, remote.DefaultWireGuardPort)
+		endpoint = ensureEndpointPort(endpoint, remote.DefaultWireGuardPort())
 		if endpoint == "" {
 			return fmt.Errorf("invalid endpoint")
 		}
@@ -195,15 +195,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if out.IsJSONMode() {
 			return out.JSON(NewJSONOutput(true, ServeOutput{
 				Running:    true,
-				ListenPort: remote.DefaultWireGuardPort,
-				ServerIP:   remote.DefaultServerIP,
+				ListenPort: remote.DefaultWireGuardPort(),
+				ServerIP:   remote.DefaultServerIP(),
 			}, nil))
 		}
 
 		printSuccess("Remote server started")
-		fmt.Printf("WireGuard:        %s\n", out.Teal(fmt.Sprintf("0.0.0.0:%d/udp", remote.DefaultWireGuardPort)))
-		fmt.Printf("Management API:   %s\n", out.Teal(fmt.Sprintf("%s:%d (HTTPS)", remote.DefaultServerIP, remote.DefaultManagementPort)))
-		fmt.Printf("Registration API: %s\n", out.Teal(fmt.Sprintf("0.0.0.0:%d (HTTPS)", remote.DefaultRegistrationPort)))
+		fmt.Printf("WireGuard:        %s\n", out.Teal(fmt.Sprintf("0.0.0.0:%d/udp", remote.DefaultWireGuardPort())))
+		fmt.Printf("Management API:   %s\n", out.Teal(fmt.Sprintf("%s:%d (HTTPS)", remote.DefaultServerIP(), remote.DefaultManagementPort())))
+		fmt.Printf("Registration API: %s\n", out.Teal(fmt.Sprintf("0.0.0.0:%d (HTTPS)", remote.DefaultRegistrationPort())))
 		if fp := server.CertFingerprint(); fp != "" {
 			fmt.Printf("Cert fingerprint: %s\n", out.Dim(fp))
 		}
@@ -237,8 +237,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 		if out.IsJSONMode() {
 			return out.JSON(NewJSONOutput(true, ServeOutput{
 				Running:    true,
-				ListenPort: remote.DefaultWireGuardPort,
-				ServerIP:   remote.DefaultServerIP,
+				ListenPort: remote.DefaultWireGuardPort(),
+				ServerIP:   remote.DefaultServerIP(),
 			}, nil))
 		}
 
@@ -288,8 +288,8 @@ func maybeGenerateFirstToken(server *remote.Server, out *Output) {
 		return
 	}
 
-	endpoint := ensureEndpointPort(detectedIP, remote.DefaultWireGuardPort)
-	token, err := server.GenerateInviteToken(endpoint, remote.DefaultInviteTokenTTL)
+	endpoint := ensureEndpointPort(detectedIP, remote.DefaultWireGuardPort())
+	token, err := server.GenerateInviteToken(endpoint, remote.DefaultInviteTokenTTL())
 	if err != nil {
 		fmt.Println("Generate a token for clients:")
 		fmt.Printf("  vibespace serve --generate-token\n")
@@ -297,7 +297,7 @@ func maybeGenerateFirstToken(server *remote.Server, out *Output) {
 		return
 	}
 
-	expiresAt := time.Now().Add(remote.DefaultInviteTokenTTL).Format("2006-01-02 15:04:05")
+	expiresAt := time.Now().Add(remote.DefaultInviteTokenTTL()).Format("2006-01-02 15:04:05")
 	fmt.Printf("Invite token (auto-generated, no clients yet):\n")
 	fmt.Printf("  %s\n", out.Teal(token))
 	fmt.Printf("  Expires at: %s\n", out.Dim(expiresAt))

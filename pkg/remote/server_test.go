@@ -17,7 +17,7 @@ func TestServerWGIP(t *testing.T) {
 	}{
 		{"with CIDR", "10.100.0.1/24", "10.100.0.1"},
 		{"plain IP", "10.100.0.1", "10.100.0.1"},
-		{"empty uses default", "", DefaultServerIP},
+		{"empty uses default", "", DefaultServerIP()},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

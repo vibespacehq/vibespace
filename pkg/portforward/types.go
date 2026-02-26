@@ -3,6 +3,8 @@ package portforward
 import (
 	"fmt"
 	"time"
+
+	"github.com/vibespacehq/vibespace/pkg/config"
 )
 
 // ForwardStatus represents the status of a port-forward
@@ -63,22 +65,19 @@ type AgentState struct {
 	Forwards []ForwardState `json:"forwards"`
 }
 
-// DefaultSSHPort is the default port for SSH
-const DefaultSSHPort = 22
+// DefaultSSHPort returns the default port for SSH.
+func DefaultSSHPort() int { return config.Global().Ports.SSH }
 
-// DefaultTTYDPort is the default port for ttyd (browser fallback)
-const DefaultTTYDPort = 7681
+// DefaultTTYDPort returns the default port for ttyd (browser fallback).
+func DefaultTTYDPort() int { return config.Global().Ports.TTYD }
 
-// DefaultPermissionPort is the default port for the permission server
-const DefaultPermissionPort = 18080
+// DefaultPermissionPort returns the default port for the permission server.
+func DefaultPermissionPort() int { return config.Global().Ports.Permission }
 
-// CalculateLocalPort calculates the local port based on agent number and remote port
-// Formula: (agentNum - 1) * 10000 + remotePort
-// Agent 1: ports 7681, 3000, etc. (no offset)
-// Agent 2: ports 17681, 13000, etc.
-// Agent 3: ports 27681, 23000, etc.
+// CalculateLocalPort calculates the local port based on agent number and remote port.
+// Formula: (agentNum - 1) * multiplier + remotePort
 func CalculateLocalPort(agentNum int, remotePort int) int {
-	return (agentNum-1)*10000 + remotePort
+	return (agentNum-1)*config.Global().Ports.LocalPortMultiplier + remotePort
 }
 
 // ParseAgentNumber extracts the agent number from agent name (e.g., "claude-1" -> 1)

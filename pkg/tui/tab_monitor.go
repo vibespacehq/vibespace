@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/vibespacehq/vibespace/pkg/config"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/metrics"
 	"github.com/vibespacehq/vibespace/pkg/model"
@@ -51,10 +52,13 @@ type MonitorTab struct {
 	tickSeq int  // incremented on activate to invalidate old tick chains
 }
 
-const (
-	monitorRefreshInterval = 5 * time.Second
-	monitorMaxHistory      = 60 // 5min at 5s refresh
-)
+func monitorRefreshInterval() time.Duration {
+	return config.Global().TUI.Monitor.RefreshInterval.Duration
+}
+
+func monitorMaxHistory() int {
+	return config.Global().TUI.Monitor.HistoryLength
+}
 
 var monitorHeaderStyle = lipgloss.NewStyle().
 	Foreground(ui.ColorDim).
@@ -238,7 +242,7 @@ func (t *MonitorTab) renderPicker() string {
 
 	var sb strings.Builder
 	sb.WriteString("\n")
-	sb.WriteString("  " + renderGradientText("Select Vibespace", brandGradient))
+	sb.WriteString("  " + renderGradientText("Select Vibespace", getBrandGradient()))
 	sb.WriteString("\n\n")
 
 	for i, item := range t.pickerItems {
@@ -308,7 +312,7 @@ func (t *MonitorTab) renderHeader() string {
 	if t.filterVS != "" {
 		vsLabel = t.filterVS
 	}
-	left := bold.Render("  Vibespace: ") + renderGradientText(vsLabel+" ▾", brandGradient)
+	left := bold.Render("  Vibespace: ") + renderGradientText(vsLabel+" ▾", getBrandGradient())
 
 	var right string
 	if t.paused {
@@ -514,11 +518,11 @@ func (t *MonitorTab) appendHistory() {
 	cpuPct, memPct := t.computePercentages()
 	t.cpuHistory = append(t.cpuHistory, cpuPct)
 	t.memHistory = append(t.memHistory, memPct)
-	if len(t.cpuHistory) > monitorMaxHistory {
-		t.cpuHistory = t.cpuHistory[len(t.cpuHistory)-monitorMaxHistory:]
+	if len(t.cpuHistory) > monitorMaxHistory() {
+		t.cpuHistory = t.cpuHistory[len(t.cpuHistory)-monitorMaxHistory():]
 	}
-	if len(t.memHistory) > monitorMaxHistory {
-		t.memHistory = t.memHistory[len(t.memHistory)-monitorMaxHistory:]
+	if len(t.memHistory) > monitorMaxHistory() {
+		t.memHistory = t.memHistory[len(t.memHistory)-monitorMaxHistory():]
 	}
 
 	// Push to charts
@@ -634,7 +638,7 @@ func applyChartGradient(chart *streamlinechart.Model) {
 		return
 	}
 
-	gradColors := buildGradient(w, brandGradient)
+	gradColors := buildGradient(w, getBrandGradient())
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -736,7 +740,7 @@ func monitorBar(used, total int64, width int, detail string) string {
 	emptyStyle := lipgloss.NewStyle().Foreground(ui.ColorMuted)
 
 	// Gradient across full bar width: teal→pink
-	gradColors := buildGradient(width, brandGradient)
+	gradColors := buildGradient(width, getBrandGradient())
 	var b strings.Builder
 	for i := 0; i < filled; i++ {
 		b.WriteString(lipgloss.NewStyle().Foreground(gradColors[i]).Render("█"))
@@ -818,7 +822,7 @@ func (t *MonitorTab) loadVibespaces() tea.Cmd {
 
 func (t *MonitorTab) scheduleTick() tea.Cmd {
 	seq := t.tickSeq
-	return tea.Tick(monitorRefreshInterval, func(_ time.Time) tea.Msg {
+	return tea.Tick(monitorRefreshInterval(), func(_ time.Time) tea.Msg {
 		return monitorTickMsg{seq: seq}
 	})
 }

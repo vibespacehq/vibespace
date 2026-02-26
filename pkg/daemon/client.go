@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/vibespacehq/vibespace/pkg/config"
 )
 
 // Client is a client for communicating with the daemon via Unix socket
@@ -23,7 +25,7 @@ func NewClient() (*Client, error) {
 
 	return &Client{
 		sockPath: paths.SockFile,
-		timeout:  10 * time.Second,
+		timeout:  config.Global().Timeouts.DaemonSocket.Duration,
 	}, nil
 }
 

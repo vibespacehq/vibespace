@@ -75,7 +75,7 @@ func (s *Server) GenerateInviteToken(publicEndpoint string, ttl time.Duration) (
 	}
 
 	if ttl <= 0 {
-		ttl = DefaultInviteTokenTTL
+		ttl = DefaultInviteTokenTTL()
 	}
 
 	// Extract host (without port) for registration URL
@@ -331,7 +331,7 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	mux.HandleFunc("/kubeconfig", s.handleKubeconfig)
 	mux.HandleFunc("/disconnect", s.handleDisconnect)
 
-	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort)
+	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort())
 	s.mgmtServer = &http.Server{
 		Addr:    mgmtAddr,
 		Handler: securityHeaders(mux),
@@ -563,7 +563,7 @@ func (s *Server) startRegistrationAPI() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/register", s.handleRegister)
 
-	addr := fmt.Sprintf("0.0.0.0:%d", DefaultRegistrationPort)
+	addr := fmt.Sprintf("0.0.0.0:%d", DefaultRegistrationPort())
 	s.registrationServer = &http.Server{
 		Addr:    addr,
 		Handler: securityHeaders(mux),
@@ -709,7 +709,7 @@ func newTokenNonce() string {
 
 func serverWGIP(serverIP string) string {
 	if serverIP == "" {
-		return DefaultServerIP
+		return DefaultServerIP()
 	}
 	return strings.Split(serverIP, "/")[0]
 }
@@ -896,7 +896,7 @@ func CleanupStaleServe() {
 
 // FetchKubeconfigFromServer fetches the kubeconfig from the server's management API.
 func FetchKubeconfigFromServer(serverIP string) ([]byte, error) {
-	url := fmt.Sprintf("https://%s:%d/kubeconfig", serverIP, DefaultManagementPort)
+	url := fmt.Sprintf("https://%s:%d/kubeconfig", serverIP, DefaultManagementPort())
 
 	// Use cert pinning if fingerprint is available, skip-verify otherwise
 	var tlsCfg *tls.Config

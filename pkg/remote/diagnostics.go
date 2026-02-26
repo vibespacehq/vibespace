@@ -165,12 +165,12 @@ func checkWireGuardHandshake(sudoPass string) DiagnosticResult {
 
 func checkManagementAPI(state *RemoteState) DiagnosticResult {
 	client := mgmtHTTPClient(3 * time.Second)
-	resp, err := client.Get(fmt.Sprintf("https://%s:%d/health", state.ServerIP, DefaultManagementPort))
+	resp, err := client.Get(fmt.Sprintf("https://%s:%d/health", state.ServerIP, DefaultManagementPort()))
 	if err != nil {
 		return DiagnosticResult{
 			Check:   "Management API",
 			Status:  false,
-			Message: fmt.Sprintf("Cannot reach management API at %s:%d: %v", state.ServerIP, DefaultManagementPort, err),
+			Message: fmt.Sprintf("Cannot reach management API at %s:%d: %v", state.ServerIP, DefaultManagementPort(), err),
 		}
 	}
 	resp.Body.Close()
@@ -232,7 +232,7 @@ func CheckFirewall() []DiagnosticResult {
 	results = append(results, checkPortBindable("udp", 51820, "WireGuard"))
 
 	// Check TCP 7781 (Registration API)
-	results = append(results, checkPortBindable("tcp", DefaultRegistrationPort, "Registration API"))
+	results = append(results, checkPortBindable("tcp", DefaultRegistrationPort(), "Registration API"))
 
 	// On Linux, check firewall rules for required ports
 	if runtime.GOOS == "linux" {
@@ -253,7 +253,7 @@ func checkFirewallRules() []DiagnosticResult {
 			status := string(out)
 			if strings.Contains(status, "Status: active") {
 				wgOpen := strings.Contains(status, "51820") || strings.Contains(status, "WireGuard")
-				regOpen := strings.Contains(status, fmt.Sprintf("%d", DefaultRegistrationPort))
+				regOpen := strings.Contains(status, fmt.Sprintf("%d", DefaultRegistrationPort()))
 				if !wgOpen {
 					results = append(results, DiagnosticResult{
 						Check:   "UFW: WireGuard",
@@ -265,7 +265,7 @@ func checkFirewallRules() []DiagnosticResult {
 					results = append(results, DiagnosticResult{
 						Check:   "UFW: Registration",
 						Status:  false,
-						Message: fmt.Sprintf("ufw is active but port %d/tcp not found. Run: sudo ufw allow %d/tcp", DefaultRegistrationPort, DefaultRegistrationPort),
+						Message: fmt.Sprintf("ufw is active but port %d/tcp not found. Run: sudo ufw allow %d/tcp", DefaultRegistrationPort(), DefaultRegistrationPort()),
 					})
 				}
 			}
