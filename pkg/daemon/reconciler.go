@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/portforward"
 
@@ -29,6 +30,7 @@ type Reconciler struct {
 	state      *DaemonState
 	manager    *portforward.Manager
 	clientset  kubernetes.Interface
+	dnsServer  *vsdns.Server
 	mu         sync.Mutex
 }
 
@@ -38,6 +40,11 @@ type ReconcilerConfig struct {
 	State      *DaemonState
 	Manager    *portforward.Manager
 	Clientset  kubernetes.Interface
+}
+
+// SetDNSServer sets the DNS server on the reconciler (called after server starts)
+func (r *Reconciler) SetDNSServer(dns *vsdns.Server) {
+	r.dnsServer = dns
 }
 
 // NewReconciler creates a new reconciler
@@ -262,10 +269,9 @@ func (r *Reconciler) cleanupEmptyVibespaces(currentVibespaces map[string][]PodIn
 				}
 			}
 			r.state.RemoveVibespace(vibespace)
-			// Clean up desired state file
-			if err := r.desiredMgr.Remove(vibespace); err != nil {
-				slog.Warn("failed to remove desired state", "vibespace", vibespace, "error", err)
-			}
+			// Keep desired state — pods may return after a restart.
+			// Desired state is only removed when the user explicitly
+			// removes forwards or deletes the vibespace.
 		}
 	}
 }
@@ -302,6 +308,11 @@ func (r *Reconciler) ensureForward(vibespace, agentName string, fwd DesiredForwa
 		return
 	}
 
+	// Restore DNS record if one was persisted
+	if fwd.DNSName != "" && r.dnsServer != nil {
+		r.dnsServer.AddRecord(fwd.DNSName, "127.0.0.1")
+	}
+
 	// Update state
 	vsState := r.state.GetVibespace(vibespace)
 	if vsState != nil {
@@ -310,6 +321,7 @@ func (r *Reconciler) ensureForward(vibespace, agentName string, fwd DesiredForwa
 			RemotePort: fwd.ContainerPort,
 			Type:       portforward.TypeManual,
 			Status:     portforward.StatusActive,
+			DNSName:    fwd.DNSName,
 		})
 	}
 
