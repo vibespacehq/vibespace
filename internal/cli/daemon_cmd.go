@@ -107,6 +107,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start server: %w", err)
 	}
 
+	// Wire DNS server into reconciler now that it's started
+	reconciler.SetDNSServer(server.DNSServer())
+
 	slog.Info("daemon ready")
 
 	// Wait for shutdown signal with double Ctrl-C support
