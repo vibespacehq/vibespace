@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/config"
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/model"
@@ -122,7 +123,7 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Strategy: appsv1.DeploymentStrategy{
-				Type: appsv1.RecreateDeploymentStrategyType,
+				Type: appsv1.DeploymentStrategyType(config.Global().Kubernetes.DeploymentStrategy),
 			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
@@ -297,7 +298,7 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Strategy: appsv1.DeploymentStrategy{
-				Type: appsv1.RecreateDeploymentStrategyType,
+				Type: appsv1.DeploymentStrategyType(config.Global().Kubernetes.DeploymentStrategy),
 			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
@@ -865,12 +866,16 @@ func (m *DeploymentManager) buildInitContainers(persistent bool) []corev1.Contai
 		return nil
 	}
 
+	cfg := config.Global()
+	uid := cfg.Kubernetes.InitContainerUID
+	mode := cfg.Kubernetes.InitContainerMode
+
 	return []corev1.Container{
 		{
 			Name:    "fix-permissions",
-			Image:   "busybox:latest",
+			Image:   cfg.Images.Init,
 			Command: []string{"sh", "-c"},
-			Args:    []string{"chown -R 1000:1000 /vibespace && chmod -R 755 /vibespace"},
+			Args:    []string{fmt.Sprintf("chown -R %d:%d /vibespace && chmod -R %d /vibespace", uid, uid, mode)},
 			VolumeMounts: []corev1.VolumeMount{
 				{
 					Name:      "vibespace-data",
@@ -904,20 +909,15 @@ func deploymentStatusToString(deploy *appsv1.Deployment) string {
 // limit what root can actually do — preventing container escapes and host-level
 // damage while still allowing agents to install packages freely.
 func containerSecurityContext() *corev1.SecurityContext {
+	caps := config.Global().Kubernetes.Capabilities
+	addCaps := make([]corev1.Capability, len(caps))
+	for i, c := range caps {
+		addCaps[i] = corev1.Capability(c)
+	}
 	return &corev1.SecurityContext{
 		Capabilities: &corev1.Capabilities{
 			Drop: []corev1.Capability{"ALL"},
-			Add: []corev1.Capability{
-				"CHOWN",            // chown files (package installs)
-				"DAC_OVERRIDE",     // bypass file permission checks (sudo)
-				"FOWNER",           // bypass ownership checks (package installs)
-				"SETUID",           // su/sudo
-				"SETGID",           // su/sudo
-				"NET_BIND_SERVICE", // bind ports < 1024 (sshd on 22)
-				"KILL",             // kill processes (supervisord, agent management)
-				"SYS_CHROOT",       // chroot (some package installs)
-				"AUDIT_WRITE",      // PAM loginuid for sshd privilege separation
-			},
+			Add:  addCaps,
 		},
 	}
 }

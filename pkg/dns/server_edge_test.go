@@ -23,7 +23,7 @@ func TestDefaultFallbackForUnknownSubdomain(t *testing.T) {
 
 	c := new(mdns.Client)
 	m := new(mdns.Msg)
-	m.SetQuestion(mdns.Fqdn("unknown-app."+Domain), mdns.TypeA)
+	m.SetQuestion(mdns.Fqdn("unknown-app."+Domain()), mdns.TypeA)
 
 	r, _, err := c.Exchange(m, fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
@@ -70,7 +70,7 @@ func TestConcurrentAddAndLookup(t *testing.T) {
 			defer wg.Done()
 			c := new(mdns.Client)
 			m := new(mdns.Msg)
-			m.SetQuestion(mdns.Fqdn("concurrent-app."+Domain), mdns.TypeA)
+			m.SetQuestion(mdns.Fqdn("concurrent-app."+Domain()), mdns.TypeA)
 			c.Exchange(m, fmt.Sprintf("127.0.0.1:%d", port))
 		}()
 	}
@@ -92,7 +92,7 @@ func TestRemoveRecordThenFallback(t *testing.T) {
 	// Verify record resolves to explicit IP
 	c := new(mdns.Client)
 	m := new(mdns.Msg)
-	m.SetQuestion(mdns.Fqdn("temp-app."+Domain), mdns.TypeA)
+	m.SetQuestion(mdns.Fqdn("temp-app."+Domain()), mdns.TypeA)
 
 	r, _, err := c.Exchange(m, fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
@@ -110,7 +110,7 @@ func TestRemoveRecordThenFallback(t *testing.T) {
 	s.RemoveRecord("temp-app")
 
 	m2 := new(mdns.Msg)
-	m2.SetQuestion(mdns.Fqdn("temp-app."+Domain), mdns.TypeA)
+	m2.SetQuestion(mdns.Fqdn("temp-app."+Domain()), mdns.TypeA)
 	r2, _, err := c.Exchange(m2, fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		t.Fatalf("Exchange error after remove: %v", err)
@@ -157,11 +157,11 @@ func TestToFQDN(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"myapp", "myapp." + Domain + "."},
-		{"myapp.", "myapp." + Domain + "."},
-		{"MYAPP", "myapp." + Domain + "."},
-		{"sub.myapp", "sub.myapp." + Domain + "."},
-		{"myapp." + Domain, "myapp." + Domain + "."},
+		{"myapp", "myapp." + Domain() + "."},
+		{"myapp.", "myapp." + Domain() + "."},
+		{"MYAPP", "myapp." + Domain() + "."},
+		{"sub.myapp", "sub.myapp." + Domain() + "."},
+		{"myapp." + Domain(), "myapp." + Domain() + "."},
 	}
 
 	for _, tt := range tests {

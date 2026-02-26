@@ -9,6 +9,7 @@ import (
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/vibespacehq/vibespace/pkg/config"
 )
 
 // Highlighter provides syntax highlighting for code blocks
@@ -19,8 +20,9 @@ type Highlighter struct {
 
 // NewHighlighter creates a new syntax highlighter
 func NewHighlighter() *Highlighter {
-	// Use a dark theme that works well in terminal
-	style := styles.Get("monokai")
+	// Use configured syntax theme (default: monokai)
+	themeName := config.Global().TUI.SyntaxTheme
+	style := styles.Get(themeName)
 	if style == nil {
 		style = styles.Fallback
 	}

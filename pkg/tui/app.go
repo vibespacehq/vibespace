@@ -411,7 +411,7 @@ func (a *App) renderTabBar() string {
 	segLen := hlEnd - hlStart
 	var gradColors []lipgloss.Color
 	if segLen > 0 {
-		gradColors = buildGradient(segLen, brandGradient)
+		gradColors = buildGradient(segLen, getBrandGradient())
 	}
 
 	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
@@ -546,7 +546,7 @@ func (a *App) renderStatusBar() string {
 	for _, k := range keys {
 		totalKeyRunes += len([]rune(k))
 	}
-	gradColors := buildGradient(totalKeyRunes, brandGradient)
+	gradColors := buildGradient(totalKeyRunes, getBrandGradient())
 
 	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
 	var parts []string

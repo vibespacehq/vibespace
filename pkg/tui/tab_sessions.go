@@ -506,7 +506,7 @@ func (t *SessionsTab) viewTable() string {
 
 		if i == t.selected {
 			cells := []string{"› " + sess.Name, vs, agents, lastUsed}
-			colored := renderGradientRow(cells, brandGradient)
+			colored := renderGradientRow(cells, getBrandGradient())
 			rows[i] = colored
 		} else {
 			rows[i] = []string{name, vs, agents, lastUsed}
@@ -672,7 +672,7 @@ func (t *SessionsTab) viewPrompt() string {
 			for i, vs := range t.newVibespaces {
 				cursor := "  "
 				if i == t.newVSCursor {
-					cursor = renderGradientText("› ", brandGradient)
+					cursor = renderGradientText("› ", getBrandGradient())
 				}
 				check := "[ ]"
 				if t.newVSSelected[i] {
@@ -709,7 +709,7 @@ func (t *SessionsTab) viewPrompt() string {
 			for i, a := range t.newAgents {
 				cursor := "  "
 				if i == t.newAgentCursor {
-					cursor = renderGradientText("› ", brandGradient)
+					cursor = renderGradientText("› ", getBrandGradient())
 				}
 				check := "[ ]"
 				if t.newAgentSelected[i] {

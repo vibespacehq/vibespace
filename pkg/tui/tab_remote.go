@@ -344,7 +344,7 @@ func (t *RemoteTab) renderHeader(modeLabel string) string {
 	bold := lipgloss.NewStyle().Bold(true)
 	dim := lipgloss.NewStyle().Foreground(ui.ColorDim)
 
-	left := bold.Render("  Remote Mode  ") + renderGradientText(modeLabel, brandGradient)
+	left := bold.Render("  Remote Mode  ") + renderGradientText(modeLabel, getBrandGradient())
 
 	right := dim.Render(fmt.Sprintf("↻ %ds", int(remoteRefreshInterval.Seconds())))
 
@@ -430,7 +430,7 @@ func (t *RemoteTab) renderDisconnected() string {
 	sb.WriteString("\n")
 
 	bold := lipgloss.NewStyle().Bold(true)
-	sb.WriteString(bold.Render("  Remote Mode  ") + renderGradientText("disconnected", brandGradient))
+	sb.WriteString(bold.Render("  Remote Mode  ") + renderGradientText("disconnected", getBrandGradient()))
 	sb.WriteString("\n\n")
 
 	sb.WriteString("  " + dim.Render("Not connected to any remote server.") + "\n")
@@ -465,7 +465,7 @@ func (t *RemoteTab) renderTokenInput() string {
 	sb.WriteString("\n")
 
 	bold := lipgloss.NewStyle().Bold(true)
-	sb.WriteString(bold.Render("  Remote Mode  ") + renderGradientText("connect", brandGradient))
+	sb.WriteString(bold.Render("  Remote Mode  ") + renderGradientText("connect", getBrandGradient()))
 	sb.WriteString("\n\n")
 
 	sb.WriteString("  " + dim.Render("Paste an invite token to connect:") + "\n\n")
