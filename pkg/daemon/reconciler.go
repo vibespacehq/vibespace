@@ -343,18 +343,18 @@ func (r *Reconciler) ensureDefaultForwards(vibespace, agentName string) {
 	hasSSH := false
 	hasTTYD := false
 	for _, fwd := range existingForwards {
-		if fwd.RemotePort == portforward.DefaultSSHPort {
+		if fwd.RemotePort == portforward.DefaultSSHPort() {
 			if fwd.Status == portforward.StatusError {
 				slog.Info("removing dead SSH forward for recreation", "agent", key)
-				r.manager.RemoveForward(key, portforward.DefaultSSHPort)
+				r.manager.RemoveForward(key, portforward.DefaultSSHPort())
 			} else {
 				hasSSH = true
 			}
 		}
-		if fwd.RemotePort == portforward.DefaultTTYDPort {
+		if fwd.RemotePort == portforward.DefaultTTYDPort() {
 			if fwd.Status == portforward.StatusError {
 				slog.Info("removing dead ttyd forward for recreation", "agent", key)
-				r.manager.RemoveForward(key, portforward.DefaultTTYDPort)
+				r.manager.RemoveForward(key, portforward.DefaultTTYDPort())
 			} else {
 				hasTTYD = true
 			}
@@ -368,13 +368,13 @@ func (r *Reconciler) ensureDefaultForwards(vibespace, agentName string) {
 
 	// Create SSH forward if missing
 	if !hasSSH {
-		sshLocalPort, err := r.manager.AddForward(key, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
+		sshLocalPort, err := r.manager.AddForward(key, portforward.DefaultSSHPort(), portforward.TypeSSH, 0)
 		if err != nil {
 			slog.Error("failed to create SSH forward", "agent", agentName, "error", err)
 		} else {
 			vsState.AddForward(agentName, &ForwardState{
 				LocalPort:  sshLocalPort,
-				RemotePort: portforward.DefaultSSHPort,
+				RemotePort: portforward.DefaultSSHPort(),
 				Type:       portforward.TypeSSH,
 				Status:     portforward.StatusActive,
 			})
@@ -384,13 +384,13 @@ func (r *Reconciler) ensureDefaultForwards(vibespace, agentName string) {
 
 	// Create ttyd forward if missing
 	if !hasTTYD {
-		ttydLocalPort, err := r.manager.AddForward(key, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
+		ttydLocalPort, err := r.manager.AddForward(key, portforward.DefaultTTYDPort(), portforward.TypeTTYD, 0)
 		if err != nil {
 			slog.Error("failed to create ttyd forward", "agent", agentName, "error", err)
 		} else {
 			vsState.AddForward(agentName, &ForwardState{
 				LocalPort:  ttydLocalPort,
-				RemotePort: portforward.DefaultTTYDPort,
+				RemotePort: portforward.DefaultTTYDPort(),
 				Type:       portforward.TypeTTYD,
 				Status:     portforward.StatusActive,
 			})

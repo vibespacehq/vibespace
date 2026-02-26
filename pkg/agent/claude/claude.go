@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	vsconfig "github.com/vibespacehq/vibespace/pkg/config"
 )
 
 func init() {
@@ -33,12 +34,12 @@ func (a *Agent) DisplayName() string {
 
 // DefaultAgentPrefix returns the prefix used for agent naming.
 func (a *Agent) DefaultAgentPrefix() string {
-	return "claude"
+	return vsconfig.Global().Agent.Prefixes.Claude
 }
 
 // ContainerImage returns the Docker image for Claude Code.
 func (a *Agent) ContainerImage() string {
-	return "ghcr.io/vibespacehq/vibespace/claude-code:latest"
+	return vsconfig.Global().Images.Claude
 }
 
 // ConfigDirectory returns the config directory inside the container.
@@ -64,10 +65,11 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 	// Inject permission hook settings into project-level .claude/settings.json
 	// so the hook only runs when the TUI permission server is reachable via reverse tunnel.
 	// Clean up on exit so direct SSH sessions aren't affected.
-	setupHook := `mkdir -p /vibespace/.claude && cat > /vibespace/.claude/settings.json << 'HOOKEOF'
-{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"/home/user/.local/bin/vibespace-permission-hook","timeout":300000}]}]}}
+	hookTimeout := int(vsconfig.Global().Timeouts.PermissionHook.Duration.Milliseconds())
+	setupHook := fmt.Sprintf(`mkdir -p /vibespace/.claude && cat > /vibespace/.claude/settings.json << 'HOOKEOF'
+{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"/home/user/.local/bin/vibespace-permission-hook","timeout":%d}]}]}}
 HOOKEOF
-`
+`, hookTimeout)
 	cleanupHook := `rm -f /vibespace/.claude/settings.json`
 	claudeCmd := strings.Join(args, " ")
 	return fmt.Sprintf(`bash -l -c '%s trap "%s" EXIT; cd /vibespace && %s'`, setupHook, cleanupHook, claudeCmd)

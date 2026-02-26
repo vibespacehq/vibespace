@@ -357,15 +357,31 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Remove entire ~/.vibespace/ directory
+	// Remove ~/.vibespace/ directory but preserve config.yaml
 	spinner := NewSpinner("Removing vibespace data...")
 	spinner.Start()
 	slog.Info("removing vibespace home directory", "path", vibespaceHome)
+
+	// Back up config.yaml if it exists
+	configPath := filepath.Join(vibespaceHome, "config.yaml")
+	var configBackup []byte
+	if data, err := os.ReadFile(configPath); err == nil {
+		configBackup = data
+	}
+
 	if err := os.RemoveAll(vibespaceHome); err != nil {
 		spinner.Fail("Failed to remove vibespace data")
 		slog.Error("failed to remove vibespace home", "error", err)
 		return fmt.Errorf("failed to remove %s: %w", vibespaceHome, err)
 	}
+
+	// Restore config.yaml
+	if configBackup != nil {
+		os.MkdirAll(vibespaceHome, 0755)
+		os.WriteFile(configPath, configBackup, 0644)
+		slog.Info("preserved config.yaml")
+	}
+
 	spinner.Success("Vibespace data removed")
 
 	slog.Info("uninstall completed successfully")

@@ -24,7 +24,7 @@ func AddHostEntry(name, sudoPass string) error {
 	if HasHostEntry(name) {
 		return nil
 	}
-	fqdn := name + "." + Domain
+	fqdn := name + "." + Domain()
 	line := fmt.Sprintf("127.0.0.1 %s %s", fqdn, hostsMarker)
 
 	if err := runSudo(sudoPass, "bash", "-c", fmt.Sprintf("echo '%s' >> /etc/hosts", line)); err != nil {
@@ -39,7 +39,7 @@ func RemoveHostEntry(name, sudoPass string) error {
 	if !HasHostEntry(name) {
 		return nil
 	}
-	fqdn := name + "." + Domain
+	fqdn := name + "." + Domain()
 
 	if err := runSudo(sudoPass, "sed", "-i", "", fmt.Sprintf("/%s.*%s/d", fqdn, hostsMarker), "/etc/hosts"); err != nil {
 		return err
@@ -62,7 +62,7 @@ func RemoveAllHostEntries(sudoPass string) error {
 
 // HasHostEntry checks if a vibespace-managed entry exists for the given name.
 func HasHostEntry(name string) bool {
-	fqdn := name + "." + Domain
+	fqdn := name + "." + Domain()
 	data, err := os.ReadFile("/etc/hosts")
 	if err != nil {
 		return false

@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/config"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
 	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 	"github.com/vibespacehq/vibespace/pkg/model"
@@ -31,15 +32,15 @@ import (
 type vibespacesMode int
 
 const (
-	vibespacesModeList           vibespacesMode = iota // table view
-	vibespacesModeAgentView                            // full-screen agent detail
-	vibespacesModeSessionList                          // session list for an agent
-	vibespacesModeCreateForm                           // inline create form
-	vibespacesModeDeleteConfirm                        // inline delete confirmation
-	vibespacesModeAddAgent                             // inline add agent form (in agent view)
-	vibespacesModeDeleteAgentConfirm                   // inline delete agent confirmation (in agent view)
-	vibespacesModeEditConfig                           // inline edit config form (in agent view)
-	vibespacesModeForwardManager                       // inline forward manager (in agent view)
+	vibespacesModeList               vibespacesMode = iota // table view
+	vibespacesModeAgentView                                // full-screen agent detail
+	vibespacesModeSessionList                              // session list for an agent
+	vibespacesModeCreateForm                               // inline create form
+	vibespacesModeDeleteConfirm                            // inline delete confirmation
+	vibespacesModeAddAgent                                 // inline add agent form (in agent view)
+	vibespacesModeDeleteAgentConfirm                       // inline delete agent confirmation (in agent view)
+	vibespacesModeEditConfig                               // inline edit config form (in agent view)
+	vibespacesModeForwardManager                           // inline forward manager (in agent view)
 )
 
 // vsConnectMode distinguishes connect action types.
@@ -450,9 +451,9 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.createField = createFieldName
 		t.createName = ""
 		t.createAgentType = agent.TypeClaudeCode
-		t.createCPU = "250m"
-		t.createMemory = "512Mi"
-		t.createStorage = "10Gi"
+		t.createCPU = config.Global().Resources.CPU
+		t.createMemory = config.Global().Resources.Memory
+		t.createStorage = config.Global().Resources.Storage
 		t.err = ""
 		return t, nil
 
@@ -992,9 +993,9 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			t.createField = createFieldName
 			t.createName = ""
 			t.createAgentType = agent.TypeClaudeCode
-			t.createCPU = "250m"
-			t.createMemory = "512Mi"
-			t.createStorage = "10Gi"
+			t.createCPU = config.Global().Resources.CPU
+			t.createMemory = config.Global().Resources.Memory
+			t.createStorage = config.Global().Resources.Storage
 			t.err = ""
 			return t, nil
 		case "d":
@@ -1156,7 +1157,7 @@ func (t *VibespacesTab) buildTableData() ([]string, [][]string) {
 			if showAge {
 				cells = append(cells, vsTimeAgo(vs.CreatedAt))
 			}
-			rows[i] = renderGradientRow(cells, brandGradient)
+			rows[i] = renderGradientRow(cells, getBrandGradient())
 		} else {
 			cells := []string{"  " + vs.Name, vsStatusStyled(vs.Status), agentCount}
 			if showCPU {
@@ -1292,7 +1293,7 @@ func (t *VibespacesTab) viewAgentView() string {
 	var topParts []string
 
 	// Header: ← name                                          status
-	backArrow := renderGradientText("← ", brandGradient)
+	backArrow := renderGradientText("← ", getBrandGradient())
 	nameText := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorText).Render(vs.Name)
 	statusText := vsStatusStyled(vs.Status)
 
@@ -1574,7 +1575,7 @@ func (t *VibespacesTab) viewAgentTable() string {
 
 		if i == t.agentCursor {
 			cells := []string{"› " + ag.AgentName, agentType, modelStr, status}
-			rows[i] = renderGradientRow(cells, brandGradient)
+			rows[i] = renderGradientRow(cells, getBrandGradient())
 		} else {
 			rows[i] = []string{name, agentType, modelStr, vsStatusStyled(status)}
 		}
@@ -1635,7 +1636,7 @@ func (t *VibespacesTab) viewSessionList() string {
 		Render(strings.Repeat("─", t.width-4))
 
 	// Header: ← agent-name sessions
-	backArrow := renderGradientText("← ", brandGradient)
+	backArrow := renderGradientText("← ", getBrandGradient())
 	nameText := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorText).
 		Render(t.sessionAgent + " sessions")
 	header := backArrow + nameText
@@ -1678,7 +1679,7 @@ func (t *VibespacesTab) viewSessionTable() string {
 
 		if i == t.sessionCursor {
 			cells := []string{"› " + idShort, ago, prompts, title}
-			rows[i] = renderGradientRow(cells, brandGradient)
+			rows[i] = renderGradientRow(cells, getBrandGradient())
 		} else {
 			rows[i] = []string{"  " + idShort, ago, prompts, title}
 		}
@@ -3257,17 +3258,27 @@ func (t *VibespacesTab) submitCreateForm() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
+		cfg := config.Global()
 		req := &model.CreateVibespaceRequest{
-			Name:       name,
-			Persistent: true,
-			AgentType:  agentType,
+			Name:             name,
+			Persistent:       true,
+			AgentType:        agentType,
+			ShareCredentials: cfg.Agent.ShareCredentials,
 			Resources: &model.Resources{
 				CPU:         cpu,
-				CPULimit:    "1000m",
+				CPULimit:    cfg.Resources.CPULimit,
 				Memory:      memory,
-				MemoryLimit: "1Gi",
+				MemoryLimit: cfg.Resources.MemoryLimit,
 				Storage:     storage,
 			},
+		}
+		agentCfg := &agent.Config{
+			SkipPermissions: cfg.Agent.SkipPermissions,
+			Model:           cfg.Agent.Model,
+			MaxTurns:        cfg.Agent.MaxTurns,
+		}
+		if !agentCfg.IsEmpty() {
+			req.AgentConfig = agentCfg
 		}
 
 		_, err := svc.Create(ctx, req)

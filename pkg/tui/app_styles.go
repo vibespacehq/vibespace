@@ -22,8 +22,11 @@ var appBorderStyle = lipgloss.NewStyle().
 
 // --- Tab bar ---
 
-// brandGradient defines the colors for the animated tab underline.
-var brandGradient = []lipgloss.Color{ui.Teal, ui.Pink}
+// getBrandGradient returns the colors for the animated tab underline,
+// reading live ui.Teal/ui.Pink values so theme changes are picked up.
+func getBrandGradient() []lipgloss.Color {
+	return []lipgloss.Color{ui.Teal, ui.Pink}
+}
 
 // --- Overlay ---
 

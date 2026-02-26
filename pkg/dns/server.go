@@ -10,11 +10,12 @@ import (
 	"sync"
 
 	"github.com/miekg/dns"
+	"github.com/vibespacehq/vibespace/pkg/config"
 )
 
-// Domain is the TLD used for vibespace DNS resolution.
+// Domain returns the TLD used for vibespace DNS resolution.
 // We use .internal instead of .local to avoid conflicts with mDNS/Bonjour on macOS.
-const Domain = "vibespace.internal"
+func Domain() string { return config.Global().DNS.Domain }
 
 // Server is an embedded DNS server that resolves *.vibespace.internal records.
 type Server struct {
@@ -56,7 +57,7 @@ func (s *Server) RemoveRecord(name string) {
 // Start starts the DNS server.
 func (s *Server) Start() error {
 	mux := dns.NewServeMux()
-	mux.HandleFunc(Domain+".", s.handleQuery)
+	mux.HandleFunc(Domain()+".", s.handleQuery)
 
 	s.server = &dns.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", s.port),
@@ -64,7 +65,7 @@ func (s *Server) Start() error {
 		Handler: mux,
 	}
 
-	slog.Info("starting DNS server", "addr", s.server.Addr, "domain", Domain)
+	slog.Info("starting DNS server", "addr", s.server.Addr, "domain", Domain())
 
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil {
@@ -125,8 +126,8 @@ func (s *Server) handleQuery(w dns.ResponseWriter, r *dns.Msg) {
 // toFQDN converts a short name to a fully qualified domain name under vibespace.internal.
 func toFQDN(name string) string {
 	name = strings.ToLower(strings.TrimSuffix(name, "."))
-	if strings.HasSuffix(name, "."+Domain) {
+	if strings.HasSuffix(name, "."+Domain()) {
 		return name + "."
 	}
-	return name + "." + Domain + "."
+	return name + "." + Domain() + "."
 }

@@ -1,7 +1,10 @@
 // Package ui provides shared UI components and styling for CLI and TUI.
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+	"github.com/vibespacehq/vibespace/pkg/config"
+)
 
 // Brand colors - vibespace brand identity
 var (
@@ -48,4 +51,71 @@ var AgentColors = []lipgloss.Color{
 // GetAgentColor returns a color for an agent based on index (cycles through palette).
 func GetAgentColor(index int) lipgloss.Color {
 	return AgentColors[index%len(AgentColors)]
+}
+
+// ApplyTheme sets all package-level color vars from a ThemeConfig.
+// Must be called before NewStyles() to take effect.
+func ApplyTheme(theme config.ThemeConfig) {
+	// Brand colors
+	if theme.Brand.Teal != "" {
+		Teal = lipgloss.Color(theme.Brand.Teal)
+	}
+	if theme.Brand.Pink != "" {
+		Pink = lipgloss.Color(theme.Brand.Pink)
+	}
+	if theme.Brand.Orange != "" {
+		Orange = lipgloss.Color(theme.Brand.Orange)
+	}
+	if theme.Brand.Yellow != "" {
+		Yellow = lipgloss.Color(theme.Brand.Yellow)
+	}
+
+	// Semantic colors
+	if theme.Semantic.Success != "" {
+		ColorSuccess = lipgloss.Color(theme.Semantic.Success)
+	}
+	if theme.Semantic.Error != "" {
+		ColorError = lipgloss.Color(theme.Semantic.Error)
+	}
+	if theme.Semantic.Warning != "" {
+		ColorWarning = lipgloss.Color(theme.Semantic.Warning)
+	}
+	if theme.Semantic.Dim != "" {
+		ColorDim = lipgloss.Color(theme.Semantic.Dim)
+	}
+	if theme.Semantic.Muted != "" {
+		ColorMuted = lipgloss.Color(theme.Semantic.Muted)
+	}
+	if theme.Semantic.TextLight != "" && theme.Semantic.TextDark != "" {
+		ColorText = lipgloss.AdaptiveColor{Light: theme.Semantic.TextLight, Dark: theme.Semantic.TextDark}
+	}
+
+	// TUI colors
+	if theme.TUIColors.User != "" {
+		ColorUser = lipgloss.Color(theme.TUIColors.User)
+	}
+	if theme.TUIColors.Tool != "" {
+		ColorTool = lipgloss.Color(theme.TUIColors.Tool)
+	}
+	if theme.TUIColors.Timestamp != "" {
+		ColorTimestamp = lipgloss.Color(theme.TUIColors.Timestamp)
+	}
+	if theme.TUIColors.CodeBg != "" {
+		ColorCodeBg = lipgloss.Color(theme.TUIColors.CodeBg)
+	}
+	if theme.TUIColors.CodeFg != "" {
+		ColorCodeFg = lipgloss.Color(theme.TUIColors.CodeFg)
+	}
+	if theme.TUIColors.Thinking != "" {
+		ColorThinking = lipgloss.Color(theme.TUIColors.Thinking)
+	}
+
+	// Agent palette
+	if len(theme.AgentPalette) > 0 {
+		palette := make([]lipgloss.Color, len(theme.AgentPalette))
+		for i, c := range theme.AgentPalette {
+			palette[i] = lipgloss.Color(c)
+		}
+		AgentColors = palette
+	}
 }

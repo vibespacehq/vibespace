@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/vibespacehq/vibespace/pkg/config"
 )
 
-// DefaultPermissionPort is the default port for the permission server.
-const DefaultPermissionPort = 18080
+// DefaultPermissionPort returns the default port for the permission server.
+func DefaultPermissionPort() int { return config.Global().Ports.Permission }
 
 // RequestTimeout is the maximum time to wait for a permission decision.
 const RequestTimeout = 5 * time.Minute

@@ -252,7 +252,7 @@ func doForwardAdd(vibespace, agent string, remotePort, localPort int, enableDNS 
 	slog.Info("forward add command completed", "vibespace", vibespace, "agent", agent, "local_port", result.LocalPort, "remote_port", result.RemotePort, "dns_name", result.DNSName)
 	printSuccess("Forward added: localhost:%d -> %d", result.LocalPort, result.RemotePort)
 	if result.DNSName != "" {
-		fmt.Printf("  DNS: %s.%s:%d\n", result.DNSName, vsdns.Domain, result.LocalPort)
+		fmt.Printf("  DNS: %s.%s:%d\n", result.DNSName, vsdns.Domain(), result.LocalPort)
 	}
 	return nil
 }

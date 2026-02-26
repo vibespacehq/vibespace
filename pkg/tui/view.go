@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
 // View implements tea.Model
@@ -134,10 +135,10 @@ func (m *Model) renderColoredInput() string {
 	pos := m.input.Position()
 
 	// Style definitions
-	cmdStyle := lipgloss.NewStyle().Foreground(warningColor).Bold(true)
-	mentionStyle := lipgloss.NewStyle().Foreground(successColor).Bold(true)
+	cmdStyle := lipgloss.NewStyle().Foreground(ui.Orange).Bold(true)
+	mentionStyle := lipgloss.NewStyle().Foreground(ui.Teal).Bold(true)
 	cursorStyle := lipgloss.NewStyle().Reverse(true)
-	suggestionStyle := lipgloss.NewStyle().Foreground(dimColor)
+	suggestionStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
 
 	// Get suggestion if any
 	suggestion := ""
@@ -265,12 +266,12 @@ func (m *Model) renderColoredInput() string {
 func (m *Model) renderPermissionBar() string {
 	req := m.permissionPrompt.Request()
 
-	labelStyle := lipgloss.NewStyle().Foreground(warningColor).Bold(true)
-	agentStyle := lipgloss.NewStyle().Foreground(secondaryColor)
-	toolStyle := lipgloss.NewStyle().Foreground(whiteColor).Bold(true)
-	inputStyle := lipgloss.NewStyle().Foreground(dimColor)
-	allowStyle := lipgloss.NewStyle().Foreground(successColor).Bold(true)
-	denyStyle := lipgloss.NewStyle().Foreground(errorColor).Bold(true)
+	labelStyle := lipgloss.NewStyle().Foreground(ui.Orange).Bold(true)
+	agentStyle := lipgloss.NewStyle().Foreground(ui.Pink)
+	toolStyle := lipgloss.NewStyle().Foreground(ui.ColorWhite).Bold(true)
+	inputStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	allowStyle := lipgloss.NewStyle().Foreground(ui.Teal).Bold(true)
+	denyStyle := lipgloss.NewStyle().Foreground(ui.ColorError).Bold(true)
 
 	// Format tool input
 	toolInput := m.permissionPrompt.formatToolInput()
@@ -288,7 +289,7 @@ func (m *Model) renderPermissionBar() string {
 
 	queueInfo := ""
 	if len(m.pendingPerms) > 1 {
-		queueInfo = lipgloss.NewStyle().Foreground(dimColor).Render(
+		queueInfo = lipgloss.NewStyle().Foreground(ui.ColorDim).Render(
 			fmt.Sprintf(" (+%d)", len(m.pendingPerms)-1))
 	}
 
@@ -307,9 +308,9 @@ func (m *Model) renderPermissionBar() string {
 // renderHelp renders the help text in a compact multi-line format for the status area
 func (m *Model) renderHelp() string {
 	// Use different colors for different categories
-	msgStyle := lipgloss.NewStyle().Foreground(successColor).Bold(true)
-	cmdStyle := lipgloss.NewStyle().Foreground(warningColor).Bold(true)
-	sessionStyle := lipgloss.NewStyle().Foreground(secondaryColor).Bold(true)
+	msgStyle := lipgloss.NewStyle().Foreground(ui.Teal).Bold(true)
+	cmdStyle := lipgloss.NewStyle().Foreground(ui.Orange).Bold(true)
+	sessionStyle := lipgloss.NewStyle().Foreground(ui.Pink).Bold(true)
 	descStyle := m.styles.HelpDesc
 
 	// Line 1: Messaging

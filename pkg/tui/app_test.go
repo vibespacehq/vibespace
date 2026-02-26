@@ -295,7 +295,7 @@ func TestComputeTabLayout(t *testing.T) {
 }
 
 func TestBuildGradient(t *testing.T) {
-	stops := brandGradient
+	stops := getBrandGradient()
 
 	// n=0 → nil
 	if got := buildGradient(0, stops); got != nil {

@@ -5,25 +5,8 @@ import (
 	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
-// Colors - imported from shared ui package with TUI-specific additions
-var (
-	// Brand colors from ui package
-	secondaryColor = ui.Pink   // #F102F3
-	successColor   = ui.Teal   // Use brand teal for success
-	warningColor   = ui.Orange // #FF7D4B
-	errorColor     = ui.ColorError
-	dimColor       = ui.ColorDim
-	whiteColor     = ui.ColorWhite
-	blackColor     = ui.ColorBlack
-
-	// TUI-specific colors
-	userColor      = ui.ColorUser      // Green for user messages
-	toolColor      = ui.ColorTool      // Tool use highlights
-	timestampColor = ui.ColorTimestamp // Subtle timestamps
-	codeBlockBg    = ui.ColorCodeBg    // Code block background
-	codeBlockFg    = ui.ColorCodeFg    // Code block text
-	thinkingColor  = ui.ColorThinking  // Pink for thinking indicator
-)
+// No intermediate color vars — reference ui.* directly in NewStyles() so that
+// ui.ApplyTheme() changes are picked up at runtime.
 
 // Styles contains all TUI styles
 type Styles struct {
@@ -72,7 +55,7 @@ func NewStyles() Styles {
 		Header: lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderBottom(true).
-			BorderForeground(dimColor).
+			BorderForeground(ui.ColorDim).
 			Padding(0, 1).
 			MarginBottom(1),
 
@@ -82,11 +65,11 @@ func NewStyles() Styles {
 		InputArea: lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
 			BorderTop(true).
-			BorderForeground(dimColor).
+			BorderForeground(ui.ColorDim).
 			Padding(0, 1),
 
 		StatusBar: lipgloss.NewStyle().
-			Foreground(dimColor).
+			Foreground(ui.ColorDim).
 			Padding(0, 1),
 
 		AgentSection: lipgloss.NewStyle().
@@ -98,65 +81,65 @@ func NewStyles() Styles {
 			Foreground(ui.ColorText),
 
 		Subtitle: lipgloss.NewStyle().
-			Foreground(dimColor),
+			Foreground(ui.ColorDim),
 
 		Prompt: lipgloss.NewStyle().
-			Foreground(secondaryColor).
+			Foreground(ui.Pink).
 			Bold(true),
 
 		Dim: lipgloss.NewStyle().
-			Foreground(dimColor),
+			Foreground(ui.ColorDim),
 
 		Bold: lipgloss.NewStyle().
 			Bold(true),
 
 		Success: lipgloss.NewStyle().
-			Foreground(successColor),
+			Foreground(ui.Teal),
 
 		Warning: lipgloss.NewStyle().
-			Foreground(warningColor),
+			Foreground(ui.Orange),
 
 		Error: lipgloss.NewStyle().
-			Foreground(errorColor),
+			Foreground(ui.ColorError),
 
 		AgentLabel: lipgloss.NewStyle().
 			Bold(true),
 
 		// Chat view specific
 		UserLabel: lipgloss.NewStyle().
-			Foreground(userColor).
+			Foreground(ui.ColorUser).
 			Bold(true),
 
 		ToolLabel: lipgloss.NewStyle().
-			Foreground(toolColor).
+			Foreground(ui.ColorTool).
 			Italic(true),
 
 		Timestamp: lipgloss.NewStyle().
-			Foreground(timestampColor),
+			Foreground(ui.ColorTimestamp),
 
 		CodeBlock: lipgloss.NewStyle().
-			Foreground(codeBlockFg).
-			Background(codeBlockBg).
+			Foreground(ui.ColorCodeFg).
+			Background(ui.ColorCodeBg).
 			Padding(0, 1),
 
 		Thinking: lipgloss.NewStyle().
-			Foreground(thinkingColor).
+			Foreground(ui.ColorThinking).
 			Italic(true),
 
 		// Input
 		Input: lipgloss.NewStyle().
-			Foreground(whiteColor),
+			Foreground(ui.ColorWhite),
 
 		InputCursor: lipgloss.NewStyle().
-			Foreground(secondaryColor),
+			Foreground(ui.Pink),
 
 		// Help
 		HelpKey: lipgloss.NewStyle().
-			Foreground(secondaryColor).
+			Foreground(ui.Pink).
 			Bold(true),
 
 		HelpDesc: lipgloss.NewStyle().
-			Foreground(dimColor),
+			Foreground(ui.ColorDim),
 	}
 }
 

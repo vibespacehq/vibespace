@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/config"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	modelPkg "github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
@@ -49,39 +50,16 @@ var (
 	createMaxTurns        int
 )
 
-// Default resource values - can be overridden via environment variables
-// Requests are low to allow more agents to be scheduled via overcommit
-// Limits are high to allow agents to burst when actively processing
-const (
-	DefaultCPU         = "250m"  // CPU request for k8s scheduling
-	DefaultCPULimit    = "1000m" // CPU limit for burst capacity
-	DefaultMemory      = "512Mi" // Memory request for k8s scheduling
-	DefaultMemoryLimit = "1Gi"   // Memory limit for burst capacity
-	DefaultStorage     = "10Gi"
-)
-
-// getEnvOrDefault returns the environment variable value or a default
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
 func init() {
-	// Read defaults from environment variables, falling back to constants
-	cpuDefault := getEnvOrDefault("VIBESPACE_DEFAULT_CPU", DefaultCPU)
-	cpuLimitDefault := getEnvOrDefault("VIBESPACE_DEFAULT_CPU_LIMIT", DefaultCPULimit)
-	memoryDefault := getEnvOrDefault("VIBESPACE_DEFAULT_MEMORY", DefaultMemory)
-	memoryLimitDefault := getEnvOrDefault("VIBESPACE_DEFAULT_MEMORY_LIMIT", DefaultMemoryLimit)
-	storageDefault := getEnvOrDefault("VIBESPACE_DEFAULT_STORAGE", DefaultStorage)
-
+	// Flag defaults use hardcoded values matching config.Default().
+	// At runtime, runCreate checks cmd.Flags().Changed() and falls back to config.Global()
+	// which has file + env overrides applied.
 	createCmd.Flags().StringVar(&createRepo, "repo", "", "GitHub repository to clone")
-	createCmd.Flags().StringVar(&createCPU, "cpu", cpuDefault, "CPU request for scheduling (e.g., 250m, 500m)")
-	createCmd.Flags().StringVar(&createCPULimit, "cpu-limit", cpuLimitDefault, "CPU limit for burst (e.g., 1000m, 2000m)")
-	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request for scheduling (e.g., 256Mi, 512Mi)")
-	createCmd.Flags().StringVar(&createMemoryLimit, "memory-limit", memoryLimitDefault, "Memory limit for burst (e.g., 1Gi, 2Gi)")
-	createCmd.Flags().StringVar(&createStorage, "storage", storageDefault, "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
+	createCmd.Flags().StringVar(&createCPU, "cpu", "250m", "CPU request for scheduling (e.g., 250m, 500m)")
+	createCmd.Flags().StringVar(&createCPULimit, "cpu-limit", "1000m", "CPU limit for burst (e.g., 1000m, 2000m)")
+	createCmd.Flags().StringVar(&createMemory, "memory", "512Mi", "Memory request for scheduling (e.g., 256Mi, 512Mi)")
+	createCmd.Flags().StringVar(&createMemoryLimit, "memory-limit", "1Gi", "Memory limit for burst (e.g., 1Gi, 2Gi)")
+	createCmd.Flags().StringVar(&createStorage, "storage", "10Gi", "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
 	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share credentials across all agents")
 	createCmd.Flags().StringVarP(&createAgentType, "agent-type", "t", "", "Agent type: claude-code, codex (required)")
 	createCmd.MarkFlagRequired("agent-type")
@@ -97,6 +75,35 @@ func init() {
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
+	// Apply config.Global() for flags not explicitly set by user
+	cfg := config.Global()
+	if !cmd.Flags().Changed("cpu") {
+		createCPU = cfg.Resources.CPU
+	}
+	if !cmd.Flags().Changed("cpu-limit") {
+		createCPULimit = cfg.Resources.CPULimit
+	}
+	if !cmd.Flags().Changed("memory") {
+		createMemory = cfg.Resources.Memory
+	}
+	if !cmd.Flags().Changed("memory-limit") {
+		createMemoryLimit = cfg.Resources.MemoryLimit
+	}
+	if !cmd.Flags().Changed("storage") {
+		createStorage = cfg.Resources.Storage
+	}
+	if !cmd.Flags().Changed("share-credentials") {
+		createShareCredentials = cfg.Agent.ShareCredentials
+	}
+	if !cmd.Flags().Changed("skip-permissions") {
+		createSkipPermissions = cfg.Agent.SkipPermissions
+	}
+	if !cmd.Flags().Changed("model") && cfg.Agent.Model != "" {
+		createModel = cfg.Agent.Model
+	}
+	if !cmd.Flags().Changed("max-turns") && cfg.Agent.MaxTurns > 0 {
+		createMaxTurns = cfg.Agent.MaxTurns
+	}
 	return doCreate(nil, args[0], createAgentType, createRepo, createAgentName, createCPU, createCPULimit,
 		createMemory, createMemoryLimit, createStorage, createShareCredentials, createMounts,
 		createSkipPermissions, createAllowedTools, createDisallowedTools, createModel, createMaxTurns)
