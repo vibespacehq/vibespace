@@ -37,20 +37,26 @@ type App struct {
 	animating    bool
 	tabOffsets   []int // left X offset of each tab label
 	tabWidths    []int // rendered width of each tab label
+
+	// Welcome screen blink
+	blinkOn bool
 }
 
 // springTickMsg drives the animation loop.
 type springTickMsg struct{}
 
+// blinkTickMsg toggles the blink state for status dots.
+type blinkTickMsg struct{}
+
 // NewApp creates an App starting on the Vibespaces tab.
-func NewApp() *App {
-	shared := NewSharedState()
+func NewApp(version, commit, buildDate string) *App {
+	shared := NewSharedState(version, commit, buildDate)
 	return newApp(shared, TabVibespaces, nil, false)
 }
 
 // NewAppWithChat creates an App starting on the Chat tab with a session.
-func NewAppWithChat(sess *session.Session, resume bool) *App {
-	shared := NewSharedState()
+func NewAppWithChat(sess *session.Session, resume bool, version, commit, buildDate string) *App {
+	shared := NewSharedState(version, commit, buildDate)
 	return newApp(shared, TabChat, sess, resume)
 }
 
@@ -77,7 +83,8 @@ func newApp(shared *SharedState, startTab int, sess *session.Session, resume boo
 
 func (a *App) Init() tea.Cmd {
 	zone.NewGlobal()
-	cmds := []tea.Cmd{refreshSharedState(a.shared)}
+	a.blinkOn = true
+	cmds := []tea.Cmd{refreshSharedState(a.shared), a.blinkTick()}
 
 	// Init the starting tab.
 	cmd := a.tabs[a.activeTab].Init()
@@ -128,6 +135,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 		return a, a.springTick()
+
+	case blinkTickMsg:
+		a.blinkOn = !a.blinkOn
+		return a, a.blinkTick()
 
 	case SharedStateRefreshedMsg:
 		return a, nil
@@ -218,9 +229,32 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+// showWelcomeCover returns true when the welcome screen should take over the
+// entire terminal — no tab bar, no border, no status bar.
+func (a *App) showWelcomeCover() bool {
+	if a.activeTab != TabVibespaces {
+		return false
+	}
+	if vt, ok := a.tabs[TabVibespaces].(*VibespacesTab); ok {
+		return len(vt.vibespaces) == 0 && vt.mode == vibespacesModeList
+	}
+	return false
+}
+
 func (a *App) View() string {
 	if !a.ready {
 		return "\n  Loading..."
+	}
+
+	// Full-screen welcome cover when no vibespaces exist
+	if a.showWelcomeCover() {
+		base := a.renderWelcomeCover()
+		if a.help.Visible() {
+			base = a.help.View()
+		} else if a.palette.Visible() {
+			base = a.palette.View()
+		}
+		return zone.Scan(base)
 	}
 
 	tabBar := a.renderTabBar()
@@ -249,6 +283,48 @@ func (a *App) View() string {
 	}
 
 	return zone.Scan(base)
+}
+
+// renderWelcomeCover renders the full-screen welcome cover with a thin
+// shortcut bar at the bottom.
+func (a *App) renderWelcomeCover() string {
+	vt := a.tabs[TabVibespaces].(*VibespacesTab)
+
+	// Shortcut bar at the bottom (same gradient style as normal status bar)
+	shortcutBar := a.renderStatusBar()
+	barH := lipgloss.Height(shortcutBar)
+
+	// Welcome content fills everything inside the border, above the shortcut bar.
+	// Use PaddingTop(1) to match the normal tab view which has a tab bar
+	// occupying the top rows, preventing the border from being clipped.
+	innerW := a.innerWidth()
+	contentH := a.height - borderH - barH - 1 // -1 version line
+	if contentH < 1 {
+		contentH = 1
+	}
+
+	// Version line right-aligned under the top border
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	versionStr := a.shared.Version
+	if versionStr != "" && versionStr[0] != 'v' {
+		versionStr = "v" + versionStr
+	}
+	versionLine := lipgloss.PlaceHorizontal(innerW-1, lipgloss.Right, dimStyle.Render(versionStr))
+
+	welcome := renderWelcome(
+		innerW, contentH,
+		vt.welcomeClusterStatus,
+		a.shared.DaemonRunning,
+		a.blinkOn,
+	)
+
+	inner := lipgloss.JoinVertical(lipgloss.Left, versionLine, welcome, shortcutBar)
+
+	return appBorderStyle.
+		Width(innerW).
+		Height(a.height - borderH).
+		PaddingTop(0).
+		Render(inner)
 }
 
 // tabCapturingInput returns true when the active tab has a focused text input
@@ -341,6 +417,12 @@ func (a *App) switchTab(idx int) tea.Cmd {
 func (a *App) springTick() tea.Cmd {
 	return tea.Tick(time.Second/60, func(time.Time) tea.Msg {
 		return springTickMsg{}
+	})
+}
+
+func (a *App) blinkTick() tea.Cmd {
+	return tea.Tick(800*time.Millisecond, func(time.Time) tea.Msg {
+		return blinkTickMsg{}
 	})
 }
 
@@ -576,7 +658,7 @@ func (a *App) renderStatusBar() string {
 // --- Public entry points ---
 
 // RunApp starts the tab-based TUI on the Vibespaces tab.
-func RunApp() error {
+func RunApp(version, commit, buildDate string) error {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return fmt.Errorf("TUI requires an interactive terminal (stdin is not a TTY); use --json for non-interactive mode")
 	}
@@ -584,14 +666,14 @@ func RunApp() error {
 		return fmt.Errorf("TUI requires an interactive terminal (stdout is not a TTY); use --json for non-interactive mode")
 	}
 
-	a := NewApp()
+	a := NewApp(version, commit, buildDate)
 	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }
 
 // RunAppWithChat starts the tab-based TUI on the Chat tab with a session.
-func RunAppWithChat(sess *session.Session, resume bool) error {
+func RunAppWithChat(sess *session.Session, resume bool, version, commit, buildDate string) error {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return fmt.Errorf("TUI requires an interactive terminal (stdin is not a TTY); use --json for non-interactive mode")
 	}
@@ -599,7 +681,7 @@ func RunAppWithChat(sess *session.Session, resume bool) error {
 		return fmt.Errorf("TUI requires an interactive terminal (stdout is not a TTY); use --json for non-interactive mode")
 	}
 
-	a := NewAppWithChat(sess, resume)
+	a := NewAppWithChat(sess, resume, version, commit, buildDate)
 	p := tea.NewProgram(a, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
