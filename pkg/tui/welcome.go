@@ -105,7 +105,7 @@ func renderLogoArt() string {
 			Render("")
 	}
 
-	tealBox := makeBox(ui.Teal, 7, 4)    // 6 rows (big)
+	tealBox := makeBox(ui.Teal, 7, 4)     // 6 rows (big)
 	orangeBox := makeBox(ui.Orange, 7, 2) // 4 rows (small)
 	yellowBox := makeBox(ui.Yellow, 7, 1) // 3 rows (small)
 	pinkBox := makeBox(ui.Pink, 7, 3)     // 5 rows (big)
@@ -119,7 +119,6 @@ func renderLogoArt() string {
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, " ", rightCol)
 }
-
 
 // renderWelcome produces the complete welcome screen layout.
 // Pure function: all state is passed in as parameters.
@@ -155,31 +154,36 @@ func renderWelcome(width, height int, cluster clusterStatus,
 	}
 	offDot := mutedStyle.Render("○")
 
+	// Status line helper: fixed-width columns so lines form a uniform block.
+	statusLine := func(label string, dot string, status string) string {
+		return fmt.Sprintf("%-10s %s %-15s", label, dot, status)
+	}
+
 	var clusterText string
 	switch cluster {
 	case clusterStatusRunning:
-		clusterText = fmt.Sprintf("  Cluster   %s Running", activeDot(ui.ColorSuccess))
+		clusterText = statusLine("Cluster", activeDot(ui.ColorSuccess), "Running")
 	case clusterStatusStopped:
-		clusterText = fmt.Sprintf("  Cluster   %s Stopped", activeDot(ui.Yellow))
+		clusterText = statusLine("Cluster", activeDot(ui.Yellow), "Stopped")
 	case clusterStatusNotInstalled:
-		clusterText = fmt.Sprintf("  Cluster   %s Not installed", offDot)
+		clusterText = statusLine("Cluster", offDot, "Not installed")
 	default:
-		clusterText = fmt.Sprintf("  Cluster   %s Checking…", offDot)
+		clusterText = statusLine("Cluster", offDot, "Checking…")
 	}
 
 	var daemonText string
 	if daemonRunning {
-		daemonText = fmt.Sprintf("  Daemon    %s Running", activeDot(ui.ColorSuccess))
+		daemonText = statusLine("Daemon", activeDot(ui.ColorSuccess), "Running")
 	} else {
-		daemonText = fmt.Sprintf("  Daemon    %s Not running", offDot)
+		daemonText = statusLine("Daemon", offDot, "Not running")
 	}
 
 	remoteConnected := remote.IsConnected()
 	var remoteText string
 	if remoteConnected {
-		remoteText = fmt.Sprintf("  Remote    %s Connected", activeDot(ui.ColorSuccess))
+		remoteText = statusLine("Remote", activeDot(ui.ColorSuccess), "Connected")
 	} else {
-		remoteText = fmt.Sprintf("  Remote    %s Not connected", offDot)
+		remoteText = statusLine("Remote", offDot, "Not connected")
 	}
 
 	systemLines := strings.Join([]string{clusterText, daemonText, remoteText}, "\n")
@@ -195,9 +199,10 @@ func renderWelcome(width, height int, cluster clusterStatus,
 	}
 
 	// --- Quick Start steps ---
-	clusterDone := cluster == clusterStatusRunning
+	// A cluster is available if running locally OR connected via remote.
+	clusterReady := cluster == clusterStatusRunning || remoteConnected
 	var step1Prefix, step2Prefix, step3Prefix string
-	if clusterDone {
+	if clusterReady {
 		step1Prefix = greenStyle.Render("✓")
 		step2Prefix = lipgloss.NewStyle().Foreground(ui.Teal).Render("→")
 		step3Prefix = dimStyle.Render(" ")
@@ -206,14 +211,15 @@ func renderWelcome(width, height int, cluster clusterStatus,
 		step2Prefix = dimStyle.Render(" ")
 		step3Prefix = dimStyle.Render(" ")
 	}
-	step1Cmd := dimStyle.Render("vibespace init")
-	step2Cmd := dimStyle.Render("press n")
-	step3Cmd := dimStyle.Render("press enter → a / x")
+	// Step line helper: fixed-width columns so lines form a uniform block.
+	stepLine := func(prefix, desc, hint string) string {
+		return fmt.Sprintf(" %s %-25s %s", prefix, desc, dimStyle.Render(fmt.Sprintf("%-32s", hint)))
+	}
 
 	quickStartLines := strings.Join([]string{
-		fmt.Sprintf("  %s 1. Initialize cluster      %s", step1Prefix, step1Cmd),
-		fmt.Sprintf("  %s 2. Create a vibespace      %s", step2Prefix, step2Cmd),
-		fmt.Sprintf("  %s 3. Add agents & connect    %s", step3Prefix, step3Cmd),
+		stepLine(step1Prefix, "1. Connect to a cluster", "press i to init · 5 for remote"),
+		stepLine(step2Prefix, "2. Create a vibespace", "press n"),
+		stepLine(step3Prefix, "3. Add agents & connect", "press enter → a / x"),
 	}, "\n")
 
 	// --- Compact mode: hero + system + quick start (no cards) ---
@@ -232,45 +238,57 @@ func renderWelcome(width, height int, cluster clusterStatus,
 
 	// Cards: system and quick start stacked vertically
 	cardW := width - 4
-	if cardW > 60 {
-		cardW = 60
+	if cardW > 72 {
+		cardW = 72
 	}
 
-	cardBorder := lipgloss.NewStyle().
+	systemCardBorder := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(ui.ColorMuted).
+		BorderForeground(ui.Teal).
 		Padding(1, 2)
 
-	systemCardContent := lipgloss.JoinVertical(lipgloss.Left,
-		sectionTitle.Render("System"),
-		clusterText,
-		daemonText,
-		remoteText,
-	)
-	systemCard := cardBorder.Width(cardW).Render(systemCardContent)
+	qsCardBorder := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ui.Orange).
+		Padding(1, 2)
 
-	qsCardContent := lipgloss.JoinVertical(lipgloss.Left,
-		sectionTitle.Render("Quick Start"),
-		fmt.Sprintf("  %s 1. Initialize cluster      %s", step1Prefix, step1Cmd),
-		fmt.Sprintf("  %s 2. Create a vibespace      %s", step2Prefix, step2Cmd),
-		fmt.Sprintf("  %s 3. Add agents & connect    %s", step3Prefix, step3Cmd),
+	systemTitle := lipgloss.NewStyle().Bold(true).Foreground(ui.Teal)
+	qsTitle := lipgloss.NewStyle().Bold(true).Foreground(ui.Orange)
+
+	// Card inner width: cardW minus border (2) minus padding (2*2)
+	cardInnerW := cardW - 6
+
+	systemBody := strings.Join([]string{clusterText, daemonText, remoteText}, "\n")
+	systemCardContent := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.PlaceHorizontal(cardInnerW, lipgloss.Center, systemTitle.Render("System")),
+		lipgloss.PlaceHorizontal(cardInnerW, lipgloss.Center, systemBody),
 	)
-	quickStartCard := cardBorder.Width(cardW).Render(qsCardContent)
+	systemCard := systemCardBorder.Width(cardW).Render(systemCardContent)
+
+	qsBody := strings.Join([]string{
+		stepLine(step1Prefix, "1. Connect to a cluster", "press i to init · 5 for remote"),
+		stepLine(step2Prefix, "2. Create a vibespace", "press n"),
+		stepLine(step3Prefix, "3. Add agents & connect", "press enter → a / x"),
+	}, "\n")
+	qsCardContent := lipgloss.JoinVertical(lipgloss.Left,
+		lipgloss.PlaceHorizontal(cardInnerW, lipgloss.Center, qsTitle.Render("Quick Start")),
+		lipgloss.PlaceHorizontal(cardInnerW, lipgloss.Center, qsBody),
+	)
+	quickStartCard := qsCardBorder.Width(cardW).Render(qsCardContent)
 
 	cardsStack := lipgloss.JoinVertical(lipgloss.Center, systemCard, "", quickStartCard)
 
-	// Links with icons
+	// Links: horizontal with separator
 	linkStyle := lipgloss.NewStyle().Foreground(ui.Teal)
+	sep := mutedStyle.Render(" · ")
 	webIcon := lipgloss.NewStyle().Foreground(ui.Orange).Render("⊕")
 	ghIcon := lipgloss.NewStyle().Foreground(ui.Pink).Render("⊙")
-	links := lipgloss.JoinVertical(lipgloss.Left,
-		webIcon+" "+linkStyle.Render("vibespace.build"),
-		ghIcon+" "+linkStyle.Render("github.com/vibespacehq/vibespace"),
-	)
+	links := webIcon + " " + linkStyle.Render("vibespace.build") + sep +
+		ghIcon + " " + linkStyle.Render("github.com/vibespacehq/vibespace")
 
 	content := lipgloss.JoinVertical(lipgloss.Center,
-		heroSection, "", "",
-		cardsStack, "", "",
+		heroSection, "",
+		cardsStack, "",
 		links,
 	)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
