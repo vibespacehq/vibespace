@@ -45,7 +45,7 @@ func TestRenderWelcomeQuickStartClusterDone(t *testing.T) {
 	if !strings.Contains(plain, "Quick Start") {
 		t.Error("expected 'Quick Start' section in output")
 	}
-	if !strings.Contains(plain, "1. Initialize cluster") {
+	if !strings.Contains(plain, "Connect to a cluster") {
 		t.Error("expected step 1 in output")
 	}
 }
