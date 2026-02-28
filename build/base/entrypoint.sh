@@ -81,12 +81,13 @@ if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
         echo "https://x-access-token:${GITHUB_ACCESS_TOKEN}@${REPO_HOST}" > "$CRED_FILE"
         chmod 600 "$CRED_FILE"
         chown user:user "$CRED_FILE"
-        git config --global credential.helper "store --file=$CRED_FILE"
+        # Write credential helper to user's gitconfig (not root's)
+        su -s /bin/bash user -c "git config --global credential.helper 'store --file=$CRED_FILE'"
 
         log "Cloning $VIBESPACE_GITHUB_REPO"
         if su -s /bin/bash user -c "git clone '$VIBESPACE_GITHUB_REPO' /vibespace/repo"; then
             log "Clone successful"
-            git config --global --add safe.directory /vibespace/repo
+            su -s /bin/bash user -c "git config --global --add safe.directory /vibespace/repo"
         else
             log "ERROR: Clone failed"
         fi
