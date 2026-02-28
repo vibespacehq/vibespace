@@ -185,7 +185,7 @@ func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, 
 	if repo != "" && strings.HasPrefix(repo, "https://") {
 		clientID := config.Global().GitHub.ClientID
 
-		devResp, err := github.RequestDeviceCode(ctx, clientID)
+		devResp, err := github.RequestDeviceCode(ctx, clientID, "repo")
 		if err != nil {
 			return fmt.Errorf("failed to start GitHub authorization: %w", err)
 		}

@@ -265,7 +265,7 @@ func Default() *Config {
 			SyntaxTheme: "monokai",
 		},
 		GitHub: GitHubConfig{
-			ClientID: "Iv23lig2ukmBeQeInhOF",
+			ClientID: "Ov23lih5HRh3ytJVCxp0",
 		},
 		Theme: ThemeConfig{
 			Brand: BrandColors{

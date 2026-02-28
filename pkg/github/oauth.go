@@ -15,7 +15,7 @@ import (
 
 // DefaultClientID is the public client ID for the Vibespace GitHub App.
 // Override via config.yaml github.client_id for self-hosted installations.
-const DefaultClientID = "Iv23lig2ukmBeQeInhOF"
+const DefaultClientID = "Ov23lih5HRh3ytJVCxp0"
 
 // DeviceCodeResponse contains the device code and user instructions from GitHub.
 type DeviceCodeResponse struct {
@@ -42,9 +42,14 @@ type TokenResponse struct {
 var BaseURL = "https://github.com"
 
 // RequestDeviceCode starts the OAuth device flow by requesting a device code.
-func RequestDeviceCode(ctx context.Context, clientID string) (*DeviceCodeResponse, error) {
+// For OAuth Apps, scope should be "repo" to get repository access.
+// For GitHub Apps, scope is ignored (permissions come from app settings).
+func RequestDeviceCode(ctx context.Context, clientID, scope string) (*DeviceCodeResponse, error) {
 	form := url.Values{
 		"client_id": {clientID},
+	}
+	if scope != "" {
+		form.Set("scope", scope)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
