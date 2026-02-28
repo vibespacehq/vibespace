@@ -22,8 +22,13 @@ RUN mkdir -p /home/user/.config/claude-code && \
 COPY vibespace-permission-hook /home/user/.local/bin/vibespace-permission-hook
 COPY claude-settings.json /etc/vibespace/claude-settings.json
 
-RUN chmod +x /home/user/.local/bin/vibespace-permission-hook && \
-    chown user:user /home/user/.local/bin/vibespace-permission-hook
+# Wrapper script to log session starts (shadows npm-global/bin/claude via PATH priority)
+COPY claude-wrapper.sh /home/user/.local/bin/claude
+
+RUN chmod +x /home/user/.local/bin/vibespace-permission-hook \
+             /home/user/.local/bin/claude && \
+    chown user:user /home/user/.local/bin/vibespace-permission-hook \
+                    /home/user/.local/bin/claude
 
 # Set agent type environment variable
 ENV VIBESPACE_AGENT_TYPE=claude-code

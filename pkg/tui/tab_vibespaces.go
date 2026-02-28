@@ -1881,13 +1881,52 @@ func (t *VibespacesTab) loadLogsForVibespace(vsID, vsName string) tea.Cmd {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		logs, err := svc.GetLogs(ctx, vsName, 8)
+		// Fetch extra lines so we have enough after filtering noise
+		logs, err := svc.GetLogs(ctx, vsName, 100)
 		if err != nil {
 			return vsLogsLoadedMsg{vibespaceID: vsID, err: err}
 		}
-		lines := strings.Split(strings.TrimRight(logs, "\n"), "\n")
+		raw := strings.Split(strings.TrimRight(logs, "\n"), "\n")
+		lines := filterContainerLogs(raw, 8)
 		return vsLogsLoadedMsg{vibespaceID: vsID, lines: lines}
 	}
+}
+
+// filterContainerLogs keeps only meaningful log lines, dropping supervisord noise.
+// It returns at most maxLines lines.
+func filterContainerLogs(raw []string, maxLines int) []string {
+	var filtered []string
+	for _, line := range raw {
+		lower := strings.ToLower(line)
+		switch {
+		case strings.Contains(line, "[vibespace]"):
+			// Entrypoint logs (clone, credentials, startup)
+		case strings.Contains(line, "[github-refresh]"):
+			// Token refresh daemon
+		case strings.Contains(lower, "accepted publickey") ||
+			strings.Contains(lower, "session opened") ||
+			strings.Contains(lower, "session closed") ||
+			strings.Contains(lower, "disconnected from user"):
+			// SSH access logs
+		case strings.Contains(lower, "error"):
+			// Any error
+		case strings.Contains(lower, "warn"):
+			// Any warning
+		case strings.Contains(lower, "fatal"):
+			// Fatal errors
+		case strings.Contains(lower, "panic"):
+			// Go panics
+		case strings.Contains(lower, "oom"):
+			// Out of memory
+		default:
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if len(filtered) > maxLines {
+		filtered = filtered[len(filtered)-maxLines:]
+	}
+	return filtered
 }
 
 func (t *VibespacesTab) loadAgentsForView(vsID, vsName string) tea.Cmd {
@@ -2499,18 +2538,19 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			return t, nil
 		}
 
-		if len(k) == 1 {
+		if msg.Type == tea.KeyRunes {
+			text := string(msg.Runes)
 			switch t.createField {
 			case createFieldName:
-				t.createName += k
+				t.createName += text
 			case createFieldRepo:
-				t.createRepo += k
+				t.createRepo += text
 			case createFieldCPU:
-				t.createCPU += k
+				t.createCPU += text
 			case createFieldMemory:
-				t.createMemory += k
+				t.createMemory += text
 			case createFieldStorage:
-				t.createStorage += k
+				t.createStorage += text
 			}
 		}
 		return t, nil
@@ -2538,8 +2578,8 @@ func (t *VibespacesTab) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.C
 		return t, nil
 
 	default:
-		if len(k) == 1 {
-			t.deleteInput += k
+		if msg.Type == tea.KeyRunes {
+			t.deleteInput += string(msg.Runes)
 		}
 		return t, nil
 	}
@@ -2567,8 +2607,8 @@ func (t *VibespacesTab) handleDeleteAgentConfirmKey(msg tea.KeyMsg) (tea.Model, 
 		return t, nil
 
 	default:
-		if len(k) == 1 {
-			t.deleteAgentInput += k
+		if msg.Type == tea.KeyRunes {
+			t.deleteAgentInput += string(msg.Runes)
 		}
 		return t, nil
 	}
@@ -2636,14 +2676,15 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 		// Text fields
-		if len(k) == 1 {
+		if msg.Type == tea.KeyRunes {
+			text := string(msg.Runes)
 			switch t.addAgentField {
 			case addAgentFieldName:
-				t.addAgentName += k
+				t.addAgentName += text
 			case addAgentFieldModel:
-				t.addAgentModel += k
+				t.addAgentModel += text
 			case addAgentFieldMaxTurns:
-				t.addAgentMaxTurns += k
+				t.addAgentMaxTurns += text
 			}
 		}
 		return t, nil
@@ -2745,12 +2786,13 @@ func (t *VibespacesTab) handleEditConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		}
 
 		// Text fields
-		if len(k) == 1 {
+		if msg.Type == tea.KeyRunes {
+			text := string(msg.Runes)
 			switch t.editConfigField {
 			case editConfigFieldModel:
-				t.editConfigModel += k
+				t.editConfigModel += text
 			case editConfigFieldMaxTurns:
-				t.editConfigMaxTurns += k
+				t.editConfigMaxTurns += text
 			}
 		}
 		return t, nil
@@ -2861,14 +2903,15 @@ func (t *VibespacesTab) handleFwdManagerAddKey(msg tea.KeyMsg) (tea.Model, tea.C
 		return t, nil
 
 	default:
-		if len(k) == 1 {
+		if msg.Type == tea.KeyRunes {
+			text := string(msg.Runes)
 			switch t.fwdManagerAddField {
 			case fwdManagerAddFieldRemote:
-				t.fwdManagerAddRemote += k
+				t.fwdManagerAddRemote += text
 			case fwdManagerAddFieldLocal:
-				t.fwdManagerAddLocal += k
+				t.fwdManagerAddLocal += text
 			case fwdManagerAddFieldDNSName:
-				t.fwdManagerAddDNSName += k
+				t.fwdManagerAddDNSName += text
 			}
 		}
 		return t, nil

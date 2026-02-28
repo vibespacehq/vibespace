@@ -9,7 +9,7 @@ import (
 const (
 	tabBarHeight    = 2 // tab text + border line
 	statusBarHeight = 2 // border line + text
-	borderH         = 2 // top + bottom border lines
+	borderH         = 3 // top margin + top border + bottom border
 	borderW         = 2 // left + right border
 )
 
@@ -18,7 +18,7 @@ const (
 var appBorderStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(ui.ColorMuted).
-	Padding(0, 0)
+	MarginTop(1)
 
 // --- Tab bar ---
 
