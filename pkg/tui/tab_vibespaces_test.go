@@ -193,8 +193,13 @@ func TestVibespacesTabCreateFormFieldNav(t *testing.T) {
 	}
 
 	tab.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if tab.createField != createFieldRepo {
+		t.Fatalf("expected Repo field after second tab, got %d", tab.createField)
+	}
+
+	tab.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if tab.createField != createFieldCPU {
-		t.Fatalf("expected CPU field after second tab, got %d", tab.createField)
+		t.Fatalf("expected CPU field after third tab, got %d", tab.createField)
 	}
 }
 
