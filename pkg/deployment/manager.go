@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
-	"github.com/vibespacehq/vibespace/pkg/config"
+	vsconfig "github.com/vibespacehq/vibespace/pkg/config"
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/model"
@@ -123,7 +123,7 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Strategy: appsv1.DeploymentStrategy{
-				Type: appsv1.DeploymentStrategyType(config.Global().Kubernetes.DeploymentStrategy),
+				Type: appsv1.DeploymentStrategyType(vsconfig.Global().Kubernetes.DeploymentStrategy),
 			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
@@ -298,7 +298,7 @@ func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *Crea
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Strategy: appsv1.DeploymentStrategy{
-				Type: appsv1.DeploymentStrategyType(config.Global().Kubernetes.DeploymentStrategy),
+				Type: appsv1.DeploymentStrategyType(vsconfig.Global().Kubernetes.DeploymentStrategy),
 			},
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
@@ -761,6 +761,39 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentNam
 		},
 	})
 
+	// GitHub OAuth tokens from secret (optional — enables repo cloning + push)
+	githubSecretName := fmt.Sprintf("vibespace-%s-github-token", vibespaceID)
+	env = append(env, corev1.EnvVar{
+		Name: "GITHUB_ACCESS_TOKEN",
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: githubSecretName,
+				},
+				Key:      "access_token",
+				Optional: boolPtr(true),
+			},
+		},
+	})
+	env = append(env, corev1.EnvVar{
+		Name: "GITHUB_REFRESH_TOKEN",
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: githubSecretName,
+				},
+				Key:      "refresh_token",
+				Optional: boolPtr(true),
+			},
+		},
+	})
+
+	// GitHub App client ID for in-container token refresh
+	env = append(env, corev1.EnvVar{
+		Name:  "VIBESPACE_GITHUB_CLIENT_ID",
+		Value: vsconfig.Global().GitHub.ClientID,
+	})
+
 	// Credential sharing
 	if shareCredentials {
 		env = append(env, corev1.EnvVar{
@@ -866,7 +899,7 @@ func (m *DeploymentManager) buildInitContainers(persistent bool) []corev1.Contai
 		return nil
 	}
 
-	cfg := config.Global()
+	cfg := vsconfig.Global()
 	uid := cfg.Kubernetes.InitContainerUID
 	mode := cfg.Kubernetes.InitContainerMode
 
@@ -909,7 +942,7 @@ func deploymentStatusToString(deploy *appsv1.Deployment) string {
 // limit what root can actually do — preventing container escapes and host-level
 // damage while still allowing agents to install packages freely.
 func containerSecurityContext() *corev1.SecurityContext {
-	caps := config.Global().Kubernetes.Capabilities
+	caps := vsconfig.Global().Kubernetes.Capabilities
 	addCaps := make([]corev1.Capability, len(caps))
 	for i, c := range caps {
 		addCaps[i] = corev1.Capability(c)

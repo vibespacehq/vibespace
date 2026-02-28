@@ -193,6 +193,23 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		}
 	}
 
+	// Create GitHub token secret if OAuth tokens are provided
+	if req.GithubAccessToken != "" {
+		if err := s.createGithubTokenSecret(ctx, id, req.GithubAccessToken, req.GithubRefreshToken); err != nil {
+			slog.Warn("failed to create GitHub token secret", "error", err)
+		} else {
+			slog.Info("GitHub token secret created", "vibespace_id", id)
+		}
+	}
+
+	// Inject VIBESPACE_GITHUB_REPO env var so entrypoint can clone
+	if req.GithubRepo != "" {
+		if req.Env == nil {
+			req.Env = make(map[string]string)
+		}
+		req.Env["VIBESPACE_GITHUB_REPO"] = req.GithubRepo
+	}
+
 	// Validate GitHub repo URL if provided
 	if req.GithubRepo != "" && !isValidGitURL(req.GithubRepo) {
 		return nil, fmt.Errorf("invalid GitHub repository URL: must be a valid HTTPS or SSH Git URL")
@@ -335,6 +352,14 @@ func (s *Service) Delete(ctx context.Context, nameOrID string, opts *DeleteOptio
 			slog.Warn("failed to delete SSH key secret", "secret", secretName, "error", err)
 		} else {
 			slog.Info("SSH key secret deleted", "secret", secretName)
+		}
+
+		// Delete GitHub token secret
+		githubSecretName := fmt.Sprintf("vibespace-%s-github-token", vibespace.ID)
+		if err := s.deleteSecret(ctx, githubSecretName); err != nil {
+			slog.Warn("failed to delete GitHub token secret", "secret", githubSecretName, "error", err)
+		} else {
+			slog.Info("GitHub token secret deleted", "secret", githubSecretName)
 		}
 	}
 
@@ -1087,6 +1112,36 @@ func (s *Service) createSSHKeySecret(ctx context.Context, vibespaceID string, pu
 	if err != nil {
 		if errors.IsAlreadyExists(err) {
 			// Update existing secret
+			_, err = s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Update(ctx, secret, metav1.UpdateOptions{})
+		}
+	}
+	return err
+}
+
+// createGithubTokenSecret creates a Kubernetes Secret containing GitHub OAuth tokens
+// for repository cloning and push access inside containers.
+func (s *Service) createGithubTokenSecret(ctx context.Context, vibespaceID, accessToken, refreshToken string) error {
+	secretName := fmt.Sprintf("vibespace-%s-github-token", vibespaceID)
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: k8s.VibespaceNamespace,
+			Labels: map[string]string{
+				"app.kubernetes.io/managed-by": "vibespace",
+				"vibespace.dev/id":             vibespaceID,
+			},
+		},
+		Type: corev1.SecretTypeOpaque,
+		StringData: map[string]string{
+			"access_token":  accessToken,
+			"refresh_token": refreshToken,
+		},
+	}
+
+	_, err := s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Create(ctx, secret, metav1.CreateOptions{})
+	if err != nil {
+		if errors.IsAlreadyExists(err) {
 			_, err = s.k8sClient.Clientset().CoreV1().Secrets(k8s.VibespaceNamespace).Update(ctx, secret, metav1.UpdateOptions{})
 		}
 	}
