@@ -314,7 +314,7 @@ func (a *App) renderWelcomeCover() string {
 	welcome := renderWelcome(
 		innerW, contentH,
 		vt.welcomeClusterStatus,
-		a.shared.DaemonRunning,
+		a.shared.IsDaemonRunning(),
 		a.blinkOn,
 	)
 

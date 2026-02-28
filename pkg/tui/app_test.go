@@ -348,6 +348,13 @@ func TestAppFullTabCycleWithK8s(t *testing.T) {
 		if len(out) == 0 {
 			t.Fatalf("tab %d (%s) rendered empty view", i, TabNames[i])
 		}
+		// Tab 0 may render the welcome cover (no tab bar) when no vibespaces exist
+		if i == 0 && a.showWelcomeCover() {
+			if !strings.Contains(out, "vibespace") {
+				t.Errorf("tab 0 welcome cover missing 'vibespace' text")
+			}
+			continue
+		}
 		// Tab bar should always contain the tab name
 		if !strings.Contains(out, TabNames[i]) {
 			t.Errorf("tab %d view missing tab name %q in tab bar", i, TabNames[i])
