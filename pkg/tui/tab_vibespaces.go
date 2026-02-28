@@ -3385,7 +3385,7 @@ func (t *VibespacesTab) submitCreateForm() tea.Cmd {
 	if repo != "" && strings.HasPrefix(repo, "https://") && t.githubAccessToken == "" {
 		clientID := config.Global().GitHub.ClientID
 		return func() tea.Msg {
-			resp, err := github.RequestDeviceCode(context.Background(), clientID)
+			resp, err := github.RequestDeviceCode(context.Background(), clientID, "repo")
 			return vsGithubDeviceCodeMsg{resp: resp, err: err}
 		}
 	}
