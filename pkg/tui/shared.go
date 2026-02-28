@@ -2,6 +2,7 @@ package tui
 
 import (
 	"log/slog"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
@@ -25,6 +26,7 @@ type SharedState struct {
 	BuildDate string
 
 	// Cached status (refreshed async via Refresh)
+	mu            sync.RWMutex
 	DaemonRunning bool
 	DaemonPid     int
 	DaemonUptime  string
@@ -81,16 +83,27 @@ type SharedStateRefreshedMsg struct{}
 func (s *SharedState) Refresh() tea.Msg {
 	if s.Daemon != nil {
 		if status, err := s.Daemon.DaemonStatus(); err == nil {
+			s.mu.Lock()
 			s.DaemonRunning = true
 			s.DaemonPid = status.Pid
 			s.DaemonUptime = status.Uptime
+			s.mu.Unlock()
 		} else {
+			s.mu.Lock()
 			s.DaemonRunning = false
 			s.DaemonPid = 0
 			s.DaemonUptime = ""
+			s.mu.Unlock()
 		}
 	}
 	return SharedStateRefreshedMsg{}
+}
+
+// IsDaemonRunning returns the cached daemon running status (thread-safe).
+func (s *SharedState) IsDaemonRunning() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.DaemonRunning
 }
 
 // refreshSharedState returns a Cmd that refreshes the shared state.
