@@ -23,6 +23,7 @@ import (
 	"github.com/vibespacehq/vibespace/pkg/config"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
 	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
+	"github.com/vibespacehq/vibespace/pkg/github"
 	"github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/ui"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
@@ -41,6 +42,7 @@ const (
 	vibespacesModeDeleteAgentConfirm                       // inline delete agent confirmation (in agent view)
 	vibespacesModeEditConfig                               // inline edit config form (in agent view)
 	vibespacesModeForwardManager                           // inline forward manager (in agent view)
+	vibespacesModeGithubAuth                               // waiting for GitHub device flow authorization
 )
 
 // vsConnectMode distinguishes connect action types.
@@ -134,6 +136,18 @@ type vsExecReturnMsg struct {
 // vsRefreshTickMsg triggers a periodic reload while vibespaces are in a transitional state.
 type vsRefreshTickMsg struct{}
 
+// vsGithubDeviceCodeMsg carries the device code response from GitHub.
+type vsGithubDeviceCodeMsg struct {
+	resp *github.DeviceCodeResponse
+	err  error
+}
+
+// vsGithubTokenMsg carries the token response from GitHub polling.
+type vsGithubTokenMsg struct {
+	token *github.TokenResponse
+	err   error
+}
+
 // vsCreateDoneMsg signals completion of a vibespace creation.
 type vsCreateDoneMsg struct {
 	err error
@@ -208,6 +222,7 @@ type createFormField int
 const (
 	createFieldName      createFormField = iota
 	createFieldAgentType                 // selector (j/k)
+	createFieldRepo                      // text input, optional
 	createFieldCPU
 	createFieldMemory
 	createFieldStorage
@@ -285,9 +300,18 @@ type VibespacesTab struct {
 	createField     createFormField
 	createName      string
 	createAgentType agent.Type
+	createRepo      string
 	createCPU       string
 	createMemory    string
 	createStorage   string
+
+	// GitHub auth state (device flow)
+	githubUserCode     string
+	githubVerifyURI    string
+	githubDevCode      string
+	githubInterval     int
+	githubAccessToken  string
+	githubRefreshToken string
 
 	// Delete confirm state
 	deleteName  string
@@ -365,6 +389,10 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "next")),
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "skip")),
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "submit")),
+		}
+	case vibespacesModeGithubAuth:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 		}
 	case vibespacesModeDeleteConfirm, vibespacesModeDeleteAgentConfirm:
 		return []key.Binding{
@@ -465,6 +493,7 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.createField = createFieldName
 		t.createName = ""
 		t.createAgentType = agent.TypeClaudeCode
+		t.createRepo = ""
 		t.createCPU = config.Global().Resources.CPU
 		t.createMemory = config.Global().Resources.Memory
 		t.createStorage = config.Global().Resources.Storage
@@ -579,6 +608,43 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t, t.loadVibespaces()
 		}
 		return t, nil
+
+	case vsGithubDeviceCodeMsg:
+		if msg.err != nil {
+			t.mode = vibespacesModeCreateForm
+			t.err = fmt.Sprintf("GitHub auth failed: %s", msg.err)
+			return t, nil
+		}
+		t.mode = vibespacesModeGithubAuth
+		t.githubUserCode = msg.resp.UserCode
+		t.githubVerifyURI = msg.resp.VerificationURI
+		t.githubDevCode = msg.resp.DeviceCode
+		t.githubInterval = msg.resp.Interval
+		// Best-effort browser open
+		_ = openBrowserURL(msg.resp.VerificationURI)
+		// Start polling for token
+		clientID := config.Global().GitHub.ClientID
+		devCode := msg.resp.DeviceCode
+		interval := msg.resp.Interval
+		expiresIn := msg.resp.ExpiresIn
+		return t, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(expiresIn)*time.Second)
+			defer cancel()
+			token, err := github.PollForToken(ctx, clientID, devCode, interval)
+			return vsGithubTokenMsg{token: token, err: err}
+		}
+
+	case vsGithubTokenMsg:
+		if msg.err != nil {
+			t.mode = vibespacesModeCreateForm
+			t.err = fmt.Sprintf("GitHub auth failed: %s", msg.err)
+			return t, nil
+		}
+		// Store tokens and proceed with vibespace creation
+		t.githubAccessToken = msg.token.AccessToken
+		t.githubRefreshToken = msg.token.RefreshToken
+		t.mode = vibespacesModeCreateForm
+		return t, t.submitCreateForm()
 
 	case vsCreateDoneMsg:
 		t.mode = vibespacesModeList
@@ -959,6 +1025,15 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case vibespacesModeCreateForm:
 		return t.handleCreateFormKey(msg)
 
+	case vibespacesModeGithubAuth:
+		// Only Esc to cancel during GitHub auth
+		if msg.String() == "esc" {
+			t.mode = vibespacesModeCreateForm
+			t.err = ""
+			return t, nil
+		}
+		return t, nil
+
 	case vibespacesModeDeleteConfirm:
 		return t.handleDeleteConfirmKey(msg)
 
@@ -1078,6 +1153,8 @@ func (t *VibespacesTab) View() string {
 	switch t.mode {
 	case vibespacesModeCreateForm:
 		bottom = t.viewCreateForm()
+	case vibespacesModeGithubAuth:
+		bottom = t.viewGithubAuth()
 	case vibespacesModeDeleteConfirm:
 		bottom = t.viewDeleteConfirm()
 	default:
@@ -2391,6 +2468,10 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			if len(t.createName) > 0 {
 				t.createName = t.createName[:len(t.createName)-1]
 			}
+		case createFieldRepo:
+			if len(t.createRepo) > 0 {
+				t.createRepo = t.createRepo[:len(t.createRepo)-1]
+			}
 		case createFieldCPU:
 			if len(t.createCPU) > 0 {
 				t.createCPU = t.createCPU[:len(t.createCPU)-1]
@@ -2422,6 +2503,8 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			switch t.createField {
 			case createFieldName:
 				t.createName += k
+			case createFieldRepo:
+				t.createRepo += k
 			case createFieldCPU:
 				t.createCPU += k
 			case createFieldMemory:
@@ -2822,6 +2905,7 @@ func (t *VibespacesTab) viewCreateForm() string {
 	fields := []formField{
 		{"Name", createFieldName, t.createName, false},
 		{"Agent type", createFieldAgentType, string(t.createAgentType), true},
+		{"Repo", createFieldRepo, t.createRepo, false},
 		{"CPU", createFieldCPU, t.createCPU, false},
 		{"Memory", createFieldMemory, t.createMemory, false},
 		{"Storage", createFieldStorage, t.createStorage, false},
@@ -2849,6 +2933,27 @@ func (t *VibespacesTab) viewCreateForm() string {
 	if t.err != "" {
 		lines = append(lines, "", lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err))
 	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
+func (t *VibespacesTab) viewGithubAuth() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
+		Render("Authorize GitHub Access")
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("  %-12s %s", dimStyle.Render("Open:"), activeStyle.Render(t.githubVerifyURI)))
+	lines = append(lines, fmt.Sprintf("  %-12s %s", dimStyle.Render("Code:"), lipgloss.NewStyle().Bold(true).Foreground(ui.Orange).Render(t.githubUserCode)))
+	lines = append(lines, "")
+	lines = append(lines, "  "+dimStyle.Render("Waiting for authorization..."))
+	lines = append(lines, "")
+	lines = append(lines, "  "+dimStyle.Render("[Esc] Cancel"))
 
 	fullBlock := header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
 	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
@@ -3274,12 +3379,29 @@ func (t *VibespacesTab) viewForwardManager() string {
 // --- Form submit commands ---
 
 func (t *VibespacesTab) submitCreateForm() tea.Cmd {
+	repo := t.createRepo
+
+	// If HTTPS repo and no GitHub tokens yet, start device flow first
+	if repo != "" && strings.HasPrefix(repo, "https://") && t.githubAccessToken == "" {
+		clientID := config.Global().GitHub.ClientID
+		return func() tea.Msg {
+			resp, err := github.RequestDeviceCode(context.Background(), clientID)
+			return vsGithubDeviceCodeMsg{resp: resp, err: err}
+		}
+	}
+
 	svc := t.shared.Vibespace
 	name := t.createName
 	agentType := t.createAgentType
 	cpu := t.createCPU
 	memory := t.createMemory
 	storage := t.createStorage
+	accessToken := t.githubAccessToken
+	refreshToken := t.githubRefreshToken
+
+	// Reset GitHub auth state for next create
+	t.githubAccessToken = ""
+	t.githubRefreshToken = ""
 
 	return func() tea.Msg {
 		if svc == nil {
@@ -3290,10 +3412,13 @@ func (t *VibespacesTab) submitCreateForm() tea.Cmd {
 
 		cfg := config.Global()
 		req := &model.CreateVibespaceRequest{
-			Name:             name,
-			Persistent:       true,
-			AgentType:        agentType,
-			ShareCredentials: cfg.Agent.ShareCredentials,
+			Name:               name,
+			Persistent:         true,
+			AgentType:          agentType,
+			GithubRepo:         repo,
+			GithubAccessToken:  accessToken,
+			GithubRefreshToken: refreshToken,
+			ShareCredentials:   cfg.Agent.ShareCredentials,
 			Resources: &model.Resources{
 				CPU:         cpu,
 				CPULimit:    cfg.Resources.CPULimit,

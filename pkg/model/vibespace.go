@@ -66,6 +66,13 @@ type CreateVibespaceRequest struct {
 	// GithubRepo is an optional GitHub repo URL to clone on startup
 	GithubRepo string `json:"github_repo,omitempty"`
 
+	// GithubAccessToken is set by the OAuth device flow before calling Service.Create().
+	// Never serialized to JSON — only carried in-memory from CLI/TUI to service layer.
+	GithubAccessToken string `json:"-"`
+
+	// GithubRefreshToken is set by the OAuth device flow before calling Service.Create().
+	GithubRefreshToken string `json:"-"`
+
 	// AgentType specifies the type of AI agent to use (default: claude-code)
 	AgentType agent.Type `json:"agent_type,omitempty"`
 

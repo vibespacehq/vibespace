@@ -44,6 +44,12 @@ type Config struct {
 	Timeouts   TimeoutsConfig   `yaml:"timeouts"`
 	TUI        TUIConfig        `yaml:"tui"`
 	Theme      ThemeConfig      `yaml:"theme"`
+	GitHub     GitHubConfig     `yaml:"github"`
+}
+
+// GitHubConfig holds GitHub App OAuth settings.
+type GitHubConfig struct {
+	ClientID string `yaml:"client_id"` // GitHub App client_id for OAuth device flow
 }
 
 // ImagesConfig holds container image references.
@@ -257,6 +263,9 @@ func Default() *Config {
 				HistoryLength:   60,
 			},
 			SyntaxTheme: "monokai",
+		},
+		GitHub: GitHubConfig{
+			ClientID: "Iv23lig2ukmBeQeInhOF",
 		},
 		Theme: ThemeConfig{
 			Brand: BrandColors{

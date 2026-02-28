@@ -66,6 +66,68 @@ EOF
 fi
 
 # ============================================================================
+# GitHub repository clone
+# ============================================================================
+if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
+    if [ ! -d "/vibespace/repo/.git" ]; then
+        log "Configuring git credentials"
+        CRED_FILE="$USER_HOME/.git-credentials-vibespace"
+        REPO_HOST=$(echo "$VIBESPACE_GITHUB_REPO" | sed -n 's|https://\([^/]*\).*|\1|p')
+        echo "https://x-access-token:${GITHUB_ACCESS_TOKEN}@${REPO_HOST}" > "$CRED_FILE"
+        chmod 600 "$CRED_FILE"
+        chown user:user "$CRED_FILE"
+        git config --global credential.helper "store --file=$CRED_FILE"
+
+        log "Cloning $VIBESPACE_GITHUB_REPO"
+        if su -s /bin/bash user -c "git clone '$VIBESPACE_GITHUB_REPO' /vibespace/repo"; then
+            log "Clone successful"
+            git config --global --add safe.directory /vibespace/repo
+        else
+            log "ERROR: Clone failed"
+        fi
+    else
+        log "Repository already present"
+    fi
+fi
+
+# ============================================================================
+# GitHub token refresh
+# ============================================================================
+if [ -n "$GITHUB_REFRESH_TOKEN" ] && [ -n "$VIBESPACE_GITHUB_CLIENT_ID" ]; then
+    REFRESH_SCRIPT="/usr/local/bin/vibespace-git-refresh.sh"
+    cat > "$REFRESH_SCRIPT" <<'RSCRIPT'
+#!/bin/bash
+# Refresh GitHub OAuth token every 7 hours (token lifetime: 8 hours)
+INTERVAL=25200
+sleep "$INTERVAL"
+while true; do
+    RESP=$(curl -sS -X POST "https://github.com/login/oauth/access_token" \
+        -H "Accept: application/json" \
+        -d "client_id=$VIBESPACE_GITHUB_CLIENT_ID" \
+        -d "grant_type=refresh_token" \
+        -d "refresh_token=$GITHUB_REFRESH_TOKEN")
+
+    NEW_AT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+    NEW_RT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('refresh_token',''))" 2>/dev/null)
+
+    if [ -n "$NEW_AT" ] && [ -n "$NEW_RT" ]; then
+        export GITHUB_ACCESS_TOKEN="$NEW_AT"
+        export GITHUB_REFRESH_TOKEN="$NEW_RT"
+        REPO_HOST=$(echo "$VIBESPACE_GITHUB_REPO" | sed -n 's|https://\([^/]*\).*|\1|p')
+        echo "https://x-access-token:${NEW_AT}@${REPO_HOST}" > "$HOME/.git-credentials-vibespace"
+        echo "[github-refresh] $(date +%H:%M) Token refreshed"
+    else
+        echo "[github-refresh] $(date +%H:%M) Refresh failed: $RESP" >&2
+    fi
+    sleep "$INTERVAL"
+done
+RSCRIPT
+    chmod +x "$REFRESH_SCRIPT"
+    nohup "$REFRESH_SCRIPT" >> /var/log/github-token-refresh.log 2>&1 &
+    log "GitHub token refresh daemon started (PID $!)"
+fi
+
+# ============================================================================
 # Shell configuration
 # ============================================================================
 cat > /etc/profile.d/vibespace.sh <<EOF

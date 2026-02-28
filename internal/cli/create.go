@@ -7,9 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	"github.com/vibespacehq/vibespace/pkg/config"
+	"github.com/vibespacehq/vibespace/pkg/github"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	modelPkg "github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
@@ -177,6 +179,39 @@ func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, 
 	}
 	if repo != "" {
 		req.GithubRepo = repo
+	}
+
+	// GitHub OAuth device flow for HTTPS repos
+	if repo != "" && strings.HasPrefix(repo, "https://") {
+		clientID := config.Global().GitHub.ClientID
+
+		devResp, err := github.RequestDeviceCode(ctx, clientID)
+		if err != nil {
+			return fmt.Errorf("failed to start GitHub authorization: %w", err)
+		}
+
+		fmt.Println()
+		fmt.Printf("  Open:  %s\n", devResp.VerificationURI)
+		fmt.Printf("  Code:  %s\n\n", devResp.UserCode)
+
+		// Best-effort browser open
+		_ = openBrowser(devResp.VerificationURI)
+
+		authSpinner := NewSpinner("Waiting for GitHub authorization...")
+		authSpinner.Start()
+
+		authCtx, authCancel := context.WithTimeout(ctx, time.Duration(devResp.ExpiresIn)*time.Second)
+		defer authCancel()
+
+		token, err := github.PollForToken(authCtx, clientID, devResp.DeviceCode, devResp.Interval)
+		if err != nil {
+			authSpinner.Fail("GitHub authorization failed")
+			return fmt.Errorf("GitHub authorization failed: %w", err)
+		}
+
+		authSpinner.Success("GitHub authorized")
+		req.GithubAccessToken = token.AccessToken
+		req.GithubRefreshToken = token.RefreshToken
 	}
 
 	spinner := NewSpinner("Creating vibespace...")
