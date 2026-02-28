@@ -43,7 +43,7 @@ func TestRequestDeviceCode(t *testing.T) {
 	BaseURL = srv.URL
 	defer func() { BaseURL = origBase }()
 
-	resp, err := RequestDeviceCode(context.Background(), "test-client-id")
+	resp, err := RequestDeviceCode(context.Background(), "test-client-id", "repo")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestRequestDeviceCode_Error(t *testing.T) {
 	BaseURL = srv.URL
 	defer func() { BaseURL = origBase }()
 
-	_, err := RequestDeviceCode(context.Background(), "bad-id")
+	_, err := RequestDeviceCode(context.Background(), "bad-id", "repo")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

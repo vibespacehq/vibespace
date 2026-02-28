@@ -74,7 +74,11 @@ fi
 # GitHub repository clone
 # ============================================================================
 if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
-    if [ ! -d "/vibespace/repo/.git" ]; then
+    # Extract repo name from URL (e.g. "vibespace-website" from "https://github.com/user/vibespace-website")
+    REPO_NAME=$(basename "$VIBESPACE_GITHUB_REPO" .git)
+    CLONE_DIR="/vibespace/$REPO_NAME"
+
+    if [ ! -d "$CLONE_DIR/.git" ]; then
         log "Configuring git credentials"
         CRED_FILE="$USER_HOME/.git-credentials-vibespace"
         REPO_HOST=$(echo "$VIBESPACE_GITHUB_REPO" | sed -n 's|https://\([^/]*\).*|\1|p')
@@ -84,15 +88,15 @@ if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
         # Write credential helper to user's gitconfig (not root's)
         su -s /bin/bash user -c "git config --global credential.helper 'store --file=$CRED_FILE'"
 
-        log "Cloning $VIBESPACE_GITHUB_REPO"
-        if su -s /bin/bash user -c "git clone '$VIBESPACE_GITHUB_REPO' /vibespace/repo"; then
+        log "Cloning $VIBESPACE_GITHUB_REPO into $CLONE_DIR"
+        if su -s /bin/bash user -c "git clone '$VIBESPACE_GITHUB_REPO' '$CLONE_DIR'"; then
             log "Clone successful"
-            su -s /bin/bash user -c "git config --global --add safe.directory /vibespace/repo"
+            su -s /bin/bash user -c "git config --global --add safe.directory '$CLONE_DIR'"
         else
             log "ERROR: Clone failed"
         fi
     else
-        log "Repository already present"
+        log "Repository already present at $CLONE_DIR"
     fi
 fi
 
