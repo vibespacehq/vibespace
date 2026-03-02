@@ -10,6 +10,9 @@ chown -R user:user /vibespace 2>/dev/null || true
 # Determine home directory (may change if credential sharing enabled)
 USER_HOME="/home/user"
 
+# Agent name is required for per-agent storage
+AGENT_NAME="${VIBESPACE_AGENT:-agent}"
+
 # ============================================================================
 # Credential sharing (--share-credentials mode)
 # ============================================================================
@@ -80,7 +83,6 @@ if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
 
     if [ "$VIBESPACE_GIT_WORKTREE" = "true" ]; then
         # ── Worktree mode ──
-        AGENT_NAME="${VIBESPACE_AGENT:-agent}"
         BARE_DIR="/vibespace/.bare-repo"
         BRANCH="${VIBESPACE_GIT_BRANCH:-$AGENT_NAME}"
         WORKTREE_DIR="/vibespace/worktrees/$AGENT_NAME"
@@ -207,9 +209,26 @@ chown user:user "$USER_HOME/.bashrc"
 # ============================================================================
 CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
 mkdir -p "$CLAUDE_CONFIG_DIR"
-# Note: permission hook settings are injected per-session by the TUI
-# into project-level /vibespace/.claude/settings.json, not global settings.
-# This ensures direct SSH sessions aren't blocked by the hook.
+
+# Per-agent session isolation in shared-creds mode:
+# Credentials (.credentials.json, settings) stay shared via common home,
+# but sessions (projects/, history.jsonl) are isolated per agent on PVC.
+if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
+    AGENT_SESSIONS="/vibespace/.agents/$AGENT_NAME/.claude-sessions"
+    AGENT_HISTORY="/vibespace/.agents/$AGENT_NAME/.claude-history.jsonl"
+    mkdir -p "$AGENT_SESSIONS"
+    touch "$AGENT_HISTORY"
+    chown -R user:user "/vibespace/.agents/$AGENT_NAME"
+
+    # Remove existing dir/file if not already a symlink (first boot)
+    [ -d "$CLAUDE_CONFIG_DIR/projects" ] && [ ! -L "$CLAUDE_CONFIG_DIR/projects" ] && rm -rf "$CLAUDE_CONFIG_DIR/projects"
+    [ -f "$CLAUDE_CONFIG_DIR/history.jsonl" ] && [ ! -L "$CLAUDE_CONFIG_DIR/history.jsonl" ] && rm -f "$CLAUDE_CONFIG_DIR/history.jsonl"
+
+    ln -sfn "$AGENT_SESSIONS" "$CLAUDE_CONFIG_DIR/projects"
+    ln -sfn "$AGENT_HISTORY" "$CLAUDE_CONFIG_DIR/history.jsonl"
+    log "Claude sessions isolated for agent $AGENT_NAME"
+fi
+
 chown -R user:user "$CLAUDE_CONFIG_DIR"
 
 # ============================================================================
