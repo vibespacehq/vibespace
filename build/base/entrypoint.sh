@@ -214,9 +214,26 @@ case "$VIBESPACE_AGENT_TYPE" in
     claude-code)
         CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
         mkdir -p "$CLAUDE_CONFIG_DIR"
-        # Note: permission hook settings are injected per-session by the TUI
-        # into project-level /vibespace/.claude/settings.json, not global settings.
-        # This ensures direct SSH sessions aren't blocked by the hook.
+
+        # Per-agent session isolation in shared-creds mode:
+        # Credentials (.credentials.json, settings) stay shared via common home,
+        # but sessions (projects/, history.jsonl) are isolated per agent on PVC.
+        if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
+            AGENT_SESSIONS="/vibespace/.agents/$AGENT_NAME/.claude-sessions"
+            AGENT_HISTORY="/vibespace/.agents/$AGENT_NAME/.claude-history.jsonl"
+            mkdir -p "$AGENT_SESSIONS"
+            touch "$AGENT_HISTORY"
+            chown -R user:user "/vibespace/.agents/$AGENT_NAME"
+
+            # Remove existing dir/file if not already a symlink (first boot)
+            [ -d "$CLAUDE_CONFIG_DIR/projects" ] && [ ! -L "$CLAUDE_CONFIG_DIR/projects" ] && rm -rf "$CLAUDE_CONFIG_DIR/projects"
+            [ -f "$CLAUDE_CONFIG_DIR/history.jsonl" ] && [ ! -L "$CLAUDE_CONFIG_DIR/history.jsonl" ] && rm -f "$CLAUDE_CONFIG_DIR/history.jsonl"
+
+            ln -sfn "$AGENT_SESSIONS" "$CLAUDE_CONFIG_DIR/projects"
+            ln -sfn "$AGENT_HISTORY" "$CLAUDE_CONFIG_DIR/history.jsonl"
+            log "Claude sessions isolated for agent $AGENT_NAME"
+        fi
+
         chown -R user:user "$CLAUDE_CONFIG_DIR"
         ;;
     codex)
