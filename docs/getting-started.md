@@ -51,6 +51,12 @@ The `--share-credentials` flag sets up a shared credential store so you only nee
 Other flags you might want:
 
 ```bash
+# Clone a GitHub repo into the workspace
+vibespace create my-project -t claude-code -s --repo https://github.com/org/repo
+
+# Enable worktree mode for parallel development (each agent gets its own branch)
+vibespace create my-project -t claude-code -s --repo https://github.com/org/repo --worktree
+
 # Mount a local directory into the container
 vibespace create my-project -t claude-code -s --mount ~/code/my-repo:/workspace
 

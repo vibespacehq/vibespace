@@ -15,7 +15,9 @@ An agent is an AI coding assistant running inside a vibespace. Vibespace current
 - **claude-code** — Anthropic's Claude Code CLI
 - **codex** — OpenAI's Codex CLI
 
-A vibespace starts with one agent (the primary), but you can add more. Multiple agents share the same filesystem, so they can all work on the same codebase simultaneously.
+A vibespace starts with one agent (the primary), but you can add more. By default, multiple agents share the same filesystem, so they can all work on the same codebase simultaneously.
+
+For parallel development, you can enable **worktree mode** (`--worktree`) when creating a vibespace with a GitHub repo. This gives each agent its own git branch and working copy via git worktrees backed by a shared bare repository. Agents can work on different features simultaneously without clobbering each other's changes.
 
 Each agent has its own configuration: model selection, tool permissions, max turns, and system prompt. You can tune these per-agent with `vibespace config set`.
 
