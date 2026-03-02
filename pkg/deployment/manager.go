@@ -111,6 +111,11 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 		}
 	}
 
+	// Store worktree annotation
+	if req.Env["VIBESPACE_GIT_WORKTREE"] == "true" {
+		annotations["vibespace.dev/worktree"] = "true"
+	}
+
 	// Create the Deployment
 	replicas := int32(1)
 	deployment := &appsv1.Deployment{

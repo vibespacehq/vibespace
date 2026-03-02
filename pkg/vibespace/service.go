@@ -202,12 +202,28 @@ func (s *Service) Create(ctx context.Context, req *model.CreateVibespaceRequest)
 		}
 	}
 
+	// Validate worktree requires repo
+	if req.Worktree && req.GithubRepo == "" {
+		return nil, fmt.Errorf("--worktree requires --repo")
+	}
+
 	// Inject VIBESPACE_GITHUB_REPO env var so entrypoint can clone
 	if req.GithubRepo != "" {
 		if req.Env == nil {
 			req.Env = make(map[string]string)
 		}
 		req.Env["VIBESPACE_GITHUB_REPO"] = req.GithubRepo
+	}
+
+	// Inject worktree env vars
+	if req.Worktree {
+		if req.Env == nil {
+			req.Env = make(map[string]string)
+		}
+		req.Env["VIBESPACE_GIT_WORKTREE"] = "true"
+		if req.WorktreeBranch != "" {
+			req.Env["VIBESPACE_GIT_BRANCH"] = req.WorktreeBranch
+		}
 	}
 
 	// Validate GitHub repo URL if provided
@@ -620,6 +636,12 @@ func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
 		}
 	}
 
+	// Extract worktree flag from annotation
+	worktree := false
+	if annotations != nil && annotations["vibespace.dev/worktree"] == "true" {
+		worktree = true
+	}
+
 	return &model.Vibespace{
 		ID:         id,
 		Name:       name,
@@ -628,6 +650,7 @@ func deploymentToVibespace(deploy *appsv1.Deployment) *model.Vibespace {
 		Persistent: true,
 		Image:      image,
 		Mounts:     mounts,
+		Worktree:   worktree,
 		CreatedAt:  createdAt,
 	}
 }
@@ -825,6 +848,9 @@ type SpawnAgentOptions struct {
 
 	// Config is the agent configuration (nil = inherit from vibespace)
 	Config *agent.Config
+
+	// Branch overrides the git branch name in worktree mode (default: agent name)
+	Branch string
 }
 
 // SpawnAgent creates a new agent in a vibespace
@@ -930,6 +956,23 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 	// Get agent configuration
 	config := opts.Config
 
+	// Build agent env vars (propagate worktree settings from vibespace)
+	agentEnv := make(map[string]string)
+	if vs.Worktree {
+		agentEnv["VIBESPACE_GIT_WORKTREE"] = "true"
+		// Read VIBESPACE_GITHUB_REPO from primary deployment's env vars
+		if primaryDeploy, pErr := s.deploymentManager.GetDeployment(ctx, vs.ID); pErr == nil {
+			for _, e := range primaryDeploy.Spec.Template.Spec.Containers[0].Env {
+				if e.Name == "VIBESPACE_GITHUB_REPO" && e.Value != "" {
+					agentEnv["VIBESPACE_GITHUB_REPO"] = e.Value
+				}
+			}
+		}
+		if opts.Branch != "" {
+			agentEnv["VIBESPACE_GIT_BRANCH"] = opts.Branch
+		}
+	}
+
 	err = s.deploymentManager.CreateAgentDeployment(ctx, &deployment.CreateAgentRequest{
 		VibespaceID: vs.ID,
 		Name:        vs.Name,
@@ -944,7 +987,7 @@ func (s *Service) SpawnAgent(ctx context.Context, nameOrID string, opts *SpawnAg
 			MemoryLimit: vs.Resources.MemoryLimit,
 			Storage:     vs.Resources.Storage,
 		},
-		Env:              nil,
+		Env:              agentEnv,
 		PVCName:          pvcName,
 		ShareCredentials: opts.ShareCredentials,
 		Config:           config,
