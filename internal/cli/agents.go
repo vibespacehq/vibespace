@@ -67,8 +67,9 @@ var agentCreateCmd = &cobra.Command{
 		disallowedTools, _ := cmd.Flags().GetString("disallowed-tools")
 		model, _ := cmd.Flags().GetString("model")
 		maxTurns, _ := cmd.Flags().GetInt("max-turns")
+		branch, _ := cmd.Flags().GetString("branch")
 
-		return doAgentCreate(nil, vsName, name, agentTypeStr, shareCredentials, skipPermissions, allowedTools, disallowedTools, model, maxTurns)
+		return doAgentCreate(nil, vsName, name, agentTypeStr, shareCredentials, skipPermissions, allowedTools, disallowedTools, model, maxTurns, branch)
 	},
 }
 
@@ -140,6 +141,7 @@ func init() {
 	agentCreateCmd.Flags().String("disallowed-tools", "", "Comma-separated disallowed tools")
 	agentCreateCmd.Flags().String("model", "", "Model to use (e.g., opus, sonnet)")
 	agentCreateCmd.Flags().Int("max-turns", 0, "Maximum conversation turns")
+	agentCreateCmd.Flags().String("branch", "", "Git branch in worktree mode (default: agent name)")
 }
 
 // --- Business logic ---
@@ -219,7 +221,7 @@ func doAgentList(svc *vspkg.Service, vibespace string) error {
 	return nil
 }
 
-func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr string, shareCredentials, skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int) error {
+func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr string, shareCredentials, skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int, branch string) error {
 	ctx := context.Background()
 	out := getOutput()
 
@@ -303,6 +305,7 @@ func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr strin
 		AgentType:        agentType,
 		ShareCredentials: shareCredentials,
 		Config:           agentConfig,
+		Branch:           branch,
 	}
 	agentName, err := svc.SpawnAgent(ctx, vs.ID, opts)
 	if err != nil {

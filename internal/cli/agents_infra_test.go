@@ -57,7 +57,7 @@ func TestDoAgentCreate_SpawnError(t *testing.T) {
 	svc, cs := newFakeService(t, deploy)
 	addReactor(cs, "create", "deployments", fmt.Errorf("resource quota exceeded"))
 
-	err := doAgentCreate(svc, "test-vs", "", "claude-code", false, false, "", "", "", 0)
+	err := doAgentCreate(svc, "test-vs", "", "claude-code", false, false, "", "", "", 0, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -170,7 +170,7 @@ func TestDoAgentCreate_StoppedVibespace(t *testing.T) {
 	deploy := fakeStoppedDeployment("test-vs", "abc123")
 	svc, _ := newFakeService(t, deploy)
 
-	err := doAgentCreate(svc, "test-vs", "", "claude-code", false, false, "", "", "", 0)
+	err := doAgentCreate(svc, "test-vs", "", "claude-code", false, false, "", "", "", 0, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
