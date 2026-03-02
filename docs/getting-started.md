@@ -40,7 +40,7 @@ First init takes a few minutes — subsequent starts are faster.
 
 ## Create a vibespace
 
-A vibespace is an isolated development environment with one or more AI coding agents inside it.
+A vibespace is an isolated stateful runtime environment with one or more AI coding agents inside it.
 
 ```bash
 vibespace create my-project --agent-type claude-code --share-credentials
