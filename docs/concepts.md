@@ -4,7 +4,7 @@ The core ideas behind vibespace and how they fit together.
 
 ## Vibespace
 
-A vibespace is an isolated development environment running as a Kubernetes deployment. Each one gets its own container, persistent storage, and SSH access. You can think of it as a sandboxed Linux machine dedicated to a project.
+A vibespace is an isolated stateful runtime environment with Kubernetes orchestration. Each one gets its own container, persistent storage, and SSH access. You can think of it as a sandboxed Linux machine dedicated to a project.
 
 Vibespaces persist across restarts. Your code, agent history, and configuration survive `vibespace stop` and come back when you start again.
 
