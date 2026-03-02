@@ -74,6 +74,8 @@ Create a new vibespace.
 | `--repo` | | | GitHub repo to clone into the workspace |
 | `--mount` | `-m` | | Mount host dir (`host:container[:ro]`). Repeatable. |
 | `--share-credentials` | `-s` | `false` | Share credentials between agents of the same type |
+| `--worktree` | | `false` | Enable git worktree mode (each agent gets its own branch). Requires `--repo`. |
+| `--branch` | | | Git branch for the primary agent (default: agent name). Requires `--worktree`. |
 | `--skip-permissions` | | `false` | Run agent without permission prompts |
 | `--allowed-tools` | | | Comma-separated list of allowed tools |
 | `--disallowed-tools` | | | Comma-separated list of blocked tools |
@@ -124,6 +126,7 @@ Add a new agent to the vibespace.
 | `--agent-type` | `-t` | | Agent type (default: same as primary) |
 | `--name` | `-n` | | Custom agent name |
 | `--share-credentials` | `-s` | `false` | Use shared credential store |
+| `--branch` | | | Git branch for this agent in worktree mode (default: agent name) |
 | `--skip-permissions` | | `false` | Run without permission prompts |
 | `--allowed-tools` | | | Comma-separated allowed tools |
 | `--disallowed-tools` | | | Comma-separated blocked tools |
