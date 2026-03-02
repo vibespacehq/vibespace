@@ -44,6 +44,8 @@ var (
 	createAgentType        string   // Agent type (claude-code, codex)
 	createAgentName        string   // Custom name for primary agent
 	createMounts           []string // Host directory mounts (host:container[:ro])
+	createWorktree         bool     // Enable git worktree mode
+	createBranch           string   // Git branch for primary agent in worktree mode
 	// Agent config flags
 	createSkipPermissions bool
 	createAllowedTools    string
@@ -67,6 +69,8 @@ func init() {
 	createCmd.MarkFlagRequired("agent-type")
 	createCmd.Flags().StringVarP(&createAgentName, "name", "n", "", "Custom name for the primary agent (default: <type>-1)")
 	createCmd.Flags().StringArrayVarP(&createMounts, "mount", "m", nil, "Mount host directory (host:container[:ro], can be repeated)")
+	createCmd.Flags().BoolVar(&createWorktree, "worktree", false, "Enable git worktree mode (each agent gets its own branch)")
+	createCmd.Flags().StringVar(&createBranch, "branch", "", "Git branch for primary agent in worktree mode (default: agent name)")
 
 	// Agent configuration flags
 	createCmd.Flags().BoolVar(&createSkipPermissions, "skip-permissions", false, "Enable --dangerously-skip-permissions for Claude")
@@ -108,15 +112,25 @@ func runCreate(cmd *cobra.Command, args []string) error {
 	}
 	return doCreate(nil, args[0], createAgentType, createRepo, createAgentName, createCPU, createCPULimit,
 		createMemory, createMemoryLimit, createStorage, createShareCredentials, createMounts,
-		createSkipPermissions, createAllowedTools, createDisallowedTools, createModel, createMaxTurns)
+		createSkipPermissions, createAllowedTools, createDisallowedTools, createModel, createMaxTurns,
+		createWorktree, createBranch)
 }
 
 func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, cpuLimit,
 	memory, memoryLimit, storage string, shareCredentials bool, mounts []string,
-	skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int) error {
+	skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int,
+	worktree bool, branch string) error {
 	ctx := context.Background()
 
 	slog.Info("create command started", "name", name, "repo", repo, "agent_type", agentTypeStr)
+
+	// Validate worktree flags
+	if worktree && repo == "" {
+		return fmt.Errorf("--worktree requires --repo")
+	}
+	if branch != "" && !worktree {
+		return fmt.Errorf("--branch requires --worktree")
+	}
 
 	// Parse and validate agent type
 	agentType := agent.ParseType(agentTypeStr)
@@ -180,6 +194,8 @@ func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, 
 	if repo != "" {
 		req.GithubRepo = repo
 	}
+	req.Worktree = worktree
+	req.WorktreeBranch = branch
 
 	// GitHub OAuth device flow for HTTPS repos
 	if repo != "" && strings.HasPrefix(repo, "https://") {

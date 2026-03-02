@@ -15,7 +15,7 @@ func TestDoCreate_ServiceError(t *testing.T) {
 	addReactor(cs, "get", "namespaces", fmt.Errorf("connection refused"))
 
 	err := doCreate(svc, "test-vs", "claude-code", "", "", "250m", "1000m",
-		"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0)
+		"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0, false, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -30,7 +30,7 @@ func TestDoCreate_DuplicateConflict(t *testing.T) {
 	svc, _ := newFakeService(t, deploy)
 
 	err := doCreate(svc, "test-vs", "claude-code", "", "", "250m", "1000m",
-		"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0)
+		"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0, false, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -44,7 +44,7 @@ func TestDoCreate_InvalidMount(t *testing.T) {
 	svc, _ := newFakeService(t)
 
 	err := doCreate(svc, "test-vs", "claude-code", "", "", "250m", "1000m",
-		"512Mi", "1Gi", "10Gi", false, []string{"badformat"}, false, "", "", "", 0)
+		"512Mi", "1Gi", "10Gi", false, []string{"badformat"}, false, "", "", "", 0, false, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -59,7 +59,7 @@ func TestDoCreate_Success(t *testing.T) {
 
 	got := captureStdout(t, func() {
 		err := doCreate(svc, "test-vs", "claude-code", "", "", "250m", "1000m",
-			"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0)
+			"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0, false, "")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

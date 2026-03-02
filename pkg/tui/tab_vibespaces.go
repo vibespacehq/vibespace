@@ -225,6 +225,8 @@ const (
 	createFieldName      createFormField = iota
 	createFieldAgentType                 // selector (j/k)
 	createFieldRepo                      // text input, optional
+	createFieldWorktree                  // toggle (j/k), only shown when repo is set
+	createFieldBranch                    // text input, only shown when worktree is enabled
 	createFieldCPU
 	createFieldMemory
 	createFieldStorage
@@ -241,6 +243,7 @@ const (
 	addAgentFieldMaxTurns                                 // text input, optional
 	addAgentFieldShareCreds                               // toggle (j/k)
 	addAgentFieldSkipPerms                                // toggle (j/k)
+	addAgentFieldBranch                                   // text input, only shown in worktree mode
 	addAgentFieldAllowedTools                             // multi-select (j/k navigate, space toggle)
 	addAgentFieldDisallowedTools                          // multi-select (j/k navigate, space toggle)
 	addAgentFieldCount                                    // sentinel
@@ -303,6 +306,8 @@ type VibespacesTab struct {
 	createName      string
 	createAgentType agent.Type
 	createRepo      string
+	createWorktree  bool
+	createBranch    string
 	createCPU       string
 	createMemory    string
 	createStorage   string
@@ -331,6 +336,7 @@ type VibespacesTab struct {
 	addAgentField         addAgentFormField
 	addAgentType          agent.Type
 	addAgentName          string
+	addAgentBranch        string
 	addAgentModel         string
 	addAgentMaxTurns      string
 	addAgentShareCreds    bool
@@ -496,6 +502,8 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.createName = ""
 		t.createAgentType = agent.TypeClaudeCode
 		t.createRepo = ""
+		t.createWorktree = false
+		t.createBranch = ""
 		t.createCPU = config.Global().Resources.CPU
 		t.createMemory = config.Global().Resources.Memory
 		t.createStorage = config.Global().Resources.Storage
@@ -941,6 +949,7 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				t.addAgentField = addAgentFieldType
 				t.addAgentType = agent.TypeClaudeCode
 				t.addAgentName = ""
+				t.addAgentBranch = ""
 				agentCfg := config.Global().Agent
 				t.addAgentModel = agentCfg.Model
 				if agentCfg.MaxTurns > 0 {
@@ -2019,14 +2028,6 @@ func (t *VibespacesTab) prepareSessionResume(vsName, agentName string, agentType
 	return prepareSessionResumeCmd(vsName, agentName, agentType, sessionID, cfg)
 }
 
-func (t *VibespacesTab) execSessionResume(sshPort int, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
-	var cfg *agent.Config
-	if c, ok := t.agentConfigs[agentName]; ok {
-		cfg = c
-	}
-	return execSessionResumeCmd(sshPort, agentName, agentType, sessionID, cfg)
-}
-
 // --- Standalone session functions (shared by VibespacesTab and SessionsTab) ---
 
 // ensureSSHForwardForAgent ensures daemon is running and an SSH forward exists for the agent.
@@ -2503,6 +2504,41 @@ func formatSessionAge(t time.Time) string {
 
 // --- Form key handlers ---
 
+// createFieldVisible returns true if the given create form field should be visible.
+func (t *VibespacesTab) createFieldVisible(f createFormField) bool {
+	switch f {
+	case createFieldWorktree:
+		return t.createRepo != ""
+	case createFieldBranch:
+		return t.createWorktree
+	default:
+		return true
+	}
+}
+
+// createFieldNext advances to the next visible create form field.
+func (t *VibespacesTab) createFieldNext() {
+	for {
+		t.createField++
+		if t.createField >= createFieldCount || t.createFieldVisible(t.createField) {
+			return
+		}
+	}
+}
+
+// createFieldPrev moves to the previous visible create form field.
+func (t *VibespacesTab) createFieldPrev() {
+	for {
+		if t.createField <= 0 {
+			return
+		}
+		t.createField--
+		if t.createFieldVisible(t.createField) {
+			return
+		}
+	}
+}
+
 func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 
@@ -2518,7 +2554,7 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return t, t.submitCreateForm()
 
 	case k == "tab":
-		t.createField++
+		t.createFieldNext()
 		if t.createField >= createFieldCount {
 			if t.createName == "" {
 				t.createField = createFieldName
@@ -2532,7 +2568,7 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		if t.createField == createFieldName && t.createName == "" {
 			return t, nil
 		}
-		t.createField++
+		t.createFieldNext()
 		if t.createField >= createFieldCount {
 			return t, t.submitCreateForm()
 		}
@@ -2540,14 +2576,12 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 
 	case k == "down":
 		if t.createField < createFieldCount-1 {
-			t.createField++
+			t.createFieldNext()
 		}
 		return t, nil
 
 	case k == "up":
-		if t.createField > 0 {
-			t.createField--
-		}
+		t.createFieldPrev()
 		return t, nil
 
 	case k == "backspace":
@@ -2559,6 +2593,15 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		case createFieldRepo:
 			if len(t.createRepo) > 0 {
 				t.createRepo = t.createRepo[:len(t.createRepo)-1]
+			}
+			// When repo is cleared, reset worktree state
+			if t.createRepo == "" {
+				t.createWorktree = false
+				t.createBranch = ""
+			}
+		case createFieldBranch:
+			if len(t.createBranch) > 0 {
+				t.createBranch = t.createBranch[:len(t.createBranch)-1]
 			}
 		case createFieldCPU:
 			if len(t.createCPU) > 0 {
@@ -2587,6 +2630,16 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			return t, nil
 		}
 
+		if t.createField == createFieldWorktree {
+			if k == "j" || k == "k" {
+				t.createWorktree = !t.createWorktree
+				if !t.createWorktree {
+					t.createBranch = ""
+				}
+			}
+			return t, nil
+		}
+
 		if msg.Type == tea.KeyRunes {
 			text := string(msg.Runes)
 			switch t.createField {
@@ -2594,6 +2647,8 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 				t.createName += text
 			case createFieldRepo:
 				t.createRepo += text
+			case createFieldBranch:
+				t.createBranch += text
 			case createFieldCPU:
 				t.createCPU += text
 			case createFieldMemory:
@@ -2676,6 +2731,10 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case k == "tab", k == "enter":
 		t.addAgentField++
+		// Skip branch field when vibespace has no worktree
+		if t.addAgentField == addAgentFieldBranch && (t.selectedVS == nil || !t.selectedVS.Worktree) {
+			t.addAgentField++
+		}
 		if t.addAgentField >= addAgentFieldCount {
 			return t, t.submitAddAgent()
 		}
@@ -2688,6 +2747,10 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case k == "down":
 		if t.addAgentField < addAgentFieldCount-1 {
 			t.addAgentField++
+			// Skip branch field when vibespace has no worktree
+			if t.addAgentField == addAgentFieldBranch && (t.selectedVS == nil || !t.selectedVS.Worktree) {
+				t.addAgentField++
+			}
 			if t.addAgentField == addAgentFieldAllowedTools || t.addAgentField == addAgentFieldDisallowedTools {
 				t.addAgentToolsCursor = 0
 			}
@@ -2697,6 +2760,10 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case k == "up":
 		if t.addAgentField > 0 {
 			t.addAgentField--
+			// Skip branch field when vibespace has no worktree
+			if t.addAgentField == addAgentFieldBranch && (t.selectedVS == nil || !t.selectedVS.Worktree) {
+				t.addAgentField--
+			}
 			if t.addAgentField == addAgentFieldAllowedTools || t.addAgentField == addAgentFieldDisallowedTools {
 				t.addAgentToolsCursor = 0
 			}
@@ -2748,6 +2815,8 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			switch t.addAgentField {
 			case addAgentFieldName:
 				t.addAgentName += text
+			case addAgentFieldBranch:
+				t.addAgentBranch += text
 			case addAgentFieldModel:
 				t.addAgentModel += text
 			case addAgentFieldMaxTurns:
@@ -2792,6 +2861,10 @@ func (t *VibespacesTab) addAgentBackspace() {
 	case addAgentFieldName:
 		if len(t.addAgentName) > 0 {
 			t.addAgentName = t.addAgentName[:len(t.addAgentName)-1]
+		}
+	case addAgentFieldBranch:
+		if len(t.addAgentBranch) > 0 {
+			t.addAgentBranch = t.addAgentBranch[:len(t.addAgentBranch)-1]
 		}
 	case addAgentFieldModel:
 		if len(t.addAgentModel) > 0 {
@@ -3043,6 +3116,13 @@ func (t *VibespacesTab) viewCreateForm() string {
 	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
 		Render("Create vibespace")
 
+	boolStr := func(v bool) string {
+		if v {
+			return "yes"
+		}
+		return "no"
+	}
+
 	type formField struct {
 		label    string
 		field    createFormField
@@ -3054,10 +3134,20 @@ func (t *VibespacesTab) viewCreateForm() string {
 		{"Name", createFieldName, t.createName, false},
 		{"Agent type", createFieldAgentType, string(t.createAgentType), true},
 		{"Repo", createFieldRepo, t.createRepo, false},
-		{"CPU", createFieldCPU, t.createCPU, false},
-		{"Memory", createFieldMemory, t.createMemory, false},
-		{"Storage", createFieldStorage, t.createStorage, false},
 	}
+	// Only show worktree when repo is set
+	if t.createRepo != "" {
+		fields = append(fields, formField{"Worktree", createFieldWorktree, boolStr(t.createWorktree), true})
+	}
+	// Only show branch when worktree is enabled
+	if t.createWorktree {
+		fields = append(fields, formField{"Branch", createFieldBranch, t.createBranch, false})
+	}
+	fields = append(fields,
+		formField{"CPU", createFieldCPU, t.createCPU, false},
+		formField{"Memory", createFieldMemory, t.createMemory, false},
+		formField{"Storage", createFieldStorage, t.createStorage, false},
+	)
 
 	var lines []string
 	for _, f := range fields {
@@ -3072,7 +3162,11 @@ func (t *VibespacesTab) viewCreateForm() string {
 				val = activeStyle.Render(f.value + "█")
 			}
 		} else {
-			val = dimStyle.Render(f.value)
+			if f.value == "" && !f.isSelect {
+				val = dimStyle.Render("(optional)")
+			} else {
+				val = dimStyle.Render(f.value)
+			}
 		}
 
 		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(label), val))
@@ -3201,17 +3295,24 @@ func (t *VibespacesTab) viewAddAgentForm() string {
 		{"Agent type", addAgentFieldType, string(t.addAgentType), "j/k to change", true, false, nil, nil, ""},
 		{"Name", addAgentFieldName, t.addAgentName, "optional, auto-generated if empty", false, false, nil,
 			func() bool { return t.addAgentName == "" }, "(auto)"},
-		{"Model", addAgentFieldModel, t.addAgentModel, "e.g. opus, sonnet", false, false, nil,
-			func() bool { return t.addAgentModel == "" }, "(default)"},
-		{"Max turns", addAgentFieldMaxTurns, t.addAgentMaxTurns, "0 = unlimited", false, false, nil,
-			func() bool { return t.addAgentMaxTurns == "" }, "(unlimited)"},
-		{"Share creds", addAgentFieldShareCreds, boolStr(t.addAgentShareCreds), "j/k to toggle", true, false, nil, nil, ""},
-		{"Skip perms", addAgentFieldSkipPerms, boolStr(t.addAgentSkipPerms), "j/k to toggle", true, false, nil, nil, ""},
-		{"Allowed tools", addAgentFieldAllowedTools, allowedSummary, "j/k navigate, space toggle", false, true, t.addAgentAllowedSet,
-			func() bool { return len(t.addAgentAllowedSet) == 0 }, "(default)"},
-		{"Disallow tools", addAgentFieldDisallowedTools, disallowedSummary, "j/k navigate, space toggle", false, true, t.addAgentDisallowedSet,
-			func() bool { return len(t.addAgentDisallowedSet) == 0 }, "(none)"},
 	}
+	// Only show branch field when the vibespace has worktree enabled
+	if t.selectedVS != nil && t.selectedVS.Worktree {
+		entries = append(entries, formEntry{"Branch", addAgentFieldBranch, t.addAgentBranch, "git branch (default: agent name)", false, false, nil,
+			func() bool { return t.addAgentBranch == "" }, "(agent name)"})
+	}
+	entries = append(entries,
+		formEntry{"Model", addAgentFieldModel, t.addAgentModel, "e.g. opus, sonnet", false, false, nil,
+			func() bool { return t.addAgentModel == "" }, "(default)"},
+		formEntry{"Max turns", addAgentFieldMaxTurns, t.addAgentMaxTurns, "0 = unlimited", false, false, nil,
+			func() bool { return t.addAgentMaxTurns == "" }, "(unlimited)"},
+		formEntry{"Share creds", addAgentFieldShareCreds, boolStr(t.addAgentShareCreds), "j/k to toggle", true, false, nil, nil, ""},
+		formEntry{"Skip perms", addAgentFieldSkipPerms, boolStr(t.addAgentSkipPerms), "j/k to toggle", true, false, nil, nil, ""},
+		formEntry{"Allowed tools", addAgentFieldAllowedTools, allowedSummary, "j/k navigate, space toggle", false, true, t.addAgentAllowedSet,
+			func() bool { return len(t.addAgentAllowedSet) == 0 }, "(default)"},
+		formEntry{"Disallow tools", addAgentFieldDisallowedTools, disallowedSummary, "j/k navigate, space toggle", false, true, t.addAgentDisallowedSet,
+			func() bool { return len(t.addAgentDisallowedSet) == 0 }, "(none)"},
+	)
 
 	var lines []string
 	for _, e := range entries {
@@ -3544,6 +3645,8 @@ func (t *VibespacesTab) submitCreateForm() tea.Cmd {
 	cpu := t.createCPU
 	memory := t.createMemory
 	storage := t.createStorage
+	worktree := t.createWorktree
+	branch := t.createBranch
 	accessToken := t.githubAccessToken
 	refreshToken := t.githubRefreshToken
 
@@ -3564,6 +3667,8 @@ func (t *VibespacesTab) submitCreateForm() tea.Cmd {
 			Persistent:         true,
 			AgentType:          agentType,
 			GithubRepo:         repo,
+			Worktree:           worktree,
+			WorktreeBranch:     branch,
 			GithubAccessToken:  accessToken,
 			GithubRefreshToken: refreshToken,
 			ShareCredentials:   cfg.Agent.ShareCredentials,
@@ -3662,6 +3767,7 @@ func (t *VibespacesTab) submitAddAgent() tea.Cmd {
 	vsName := t.selectedVS.Name
 	agentType := t.addAgentType
 	agentName := t.addAgentName
+	agentBranch := t.addAgentBranch
 	shareCreds := t.addAgentShareCreds
 	skipPerms := t.addAgentSkipPerms
 	modelName := t.addAgentModel
@@ -3689,6 +3795,7 @@ func (t *VibespacesTab) submitAddAgent() tea.Cmd {
 			Name:             agentName,
 			AgentType:        agentType,
 			ShareCredentials: shareCreds,
+			Branch:           agentBranch,
 		}
 
 		// Build agent config if any config flags are set

@@ -74,31 +74,63 @@ fi
 # GitHub repository clone
 # ============================================================================
 if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
-    # Extract repo name from URL (e.g. "vibespace-website" from "https://github.com/user/vibespace-website")
-    REPO_NAME=$(basename "$VIBESPACE_GITHUB_REPO" .git)
-    CLONE_DIR="/vibespace/$REPO_NAME"
+    # Configure git credentials (shared by both modes)
+    log "Configuring git credentials"
+    CRED_FILE="$USER_HOME/.git-credentials-vibespace"
+    REPO_HOST=$(echo "$VIBESPACE_GITHUB_REPO" | sed -n 's|https://\([^/]*\).*|\1|p')
+    echo "https://x-access-token:${GITHUB_ACCESS_TOKEN}@${REPO_HOST}" > "$CRED_FILE"
+    chmod 600 "$CRED_FILE"
+    chown user:user "$CRED_FILE"
+    su -s /bin/bash user -c "git config --global credential.helper 'store --file=$CRED_FILE'"
 
-    if [ ! -d "$CLONE_DIR/.git" ]; then
-        log "Configuring git credentials"
-        CRED_FILE="$USER_HOME/.git-credentials-vibespace"
-        REPO_HOST=$(echo "$VIBESPACE_GITHUB_REPO" | sed -n 's|https://\([^/]*\).*|\1|p')
-        echo "https://x-access-token:${GITHUB_ACCESS_TOKEN}@${REPO_HOST}" > "$CRED_FILE"
-        chmod 600 "$CRED_FILE"
-        chown user:user "$CRED_FILE"
-        # Write credential helper to user's gitconfig (not root's)
-        su -s /bin/bash user -c "git config --global credential.helper 'store --file=$CRED_FILE'"
+    if [ "$VIBESPACE_GIT_WORKTREE" = "true" ]; then
+        # ── Worktree mode ──
+        BARE_DIR="/vibespace/.bare-repo"
+        BRANCH="${VIBESPACE_GIT_BRANCH:-$AGENT_NAME}"
+        WORKTREE_DIR="/vibespace/worktrees/$AGENT_NAME"
 
-        log "Cloning $VIBESPACE_GITHUB_REPO into $CLONE_DIR"
-        if su -s /bin/bash user -c "git clone '$VIBESPACE_GITHUB_REPO' '$CLONE_DIR'"; then
-            log "Clone successful"
-            su -s /bin/bash user -c "git config --global --add safe.directory '$CLONE_DIR'"
-        else
-            log "ERROR: Clone failed"
+        # Bare clone (first agent only, idempotent)
+        if [ ! -d "$BARE_DIR/HEAD" ]; then
+            log "Creating bare clone of $VIBESPACE_GITHUB_REPO"
+            su -s /bin/bash user -c "git clone --bare '$VIBESPACE_GITHUB_REPO' '$BARE_DIR'"
+            su -s /bin/bash user -c "git -C '$BARE_DIR' config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'"
         fi
+
+        # Create worktree (per-agent, idempotent)
+        if [ -d "$BARE_DIR/HEAD" ] && [ ! -d "$WORKTREE_DIR/.git" ]; then
+            log "Creating worktree at $WORKTREE_DIR (branch: $BRANCH)"
+            mkdir -p /vibespace/worktrees
+            DEFAULT_BRANCH=$(su -s /bin/bash user -c "git -C '$BARE_DIR' symbolic-ref HEAD" | sed 's|refs/heads/||')
+            su -s /bin/bash user -c "git -C '$BARE_DIR' worktree add -b '$BRANCH' '$WORKTREE_DIR' 'refs/heads/${DEFAULT_BRANCH:-main}'"
+        fi
+
+        # Safe directories
+        su -s /bin/bash user -c "git config --global --add safe.directory '$WORKTREE_DIR'"
+        su -s /bin/bash user -c "git config --global --add safe.directory '$BARE_DIR'"
+
+        export VIBESPACE_WORKDIR="$WORKTREE_DIR"
     else
-        log "Repository already present at $CLONE_DIR"
+        # ── Normal clone mode (existing behavior) ──
+        REPO_NAME=$(basename "$VIBESPACE_GITHUB_REPO" .git)
+        CLONE_DIR="/vibespace/$REPO_NAME"
+
+        if [ ! -d "$CLONE_DIR/.git" ]; then
+            log "Cloning $VIBESPACE_GITHUB_REPO into $CLONE_DIR"
+            if su -s /bin/bash user -c "git clone '$VIBESPACE_GITHUB_REPO' '$CLONE_DIR'"; then
+                log "Clone successful"
+                su -s /bin/bash user -c "git config --global --add safe.directory '$CLONE_DIR'"
+            else
+                log "ERROR: Clone failed"
+            fi
+        else
+            log "Repository already present at $CLONE_DIR"
+        fi
+        export VIBESPACE_WORKDIR="$CLONE_DIR"
     fi
 fi
+
+# Default workdir fallback
+export VIBESPACE_WORKDIR="${VIBESPACE_WORKDIR:-/vibespace}"
 
 # ============================================================================
 # GitHub token refresh
@@ -150,6 +182,8 @@ export VIBESPACE_SHARE_CREDENTIALS="${VIBESPACE_SHARE_CREDENTIALS:-false}"
 export VIBESPACE_SKIP_PERMISSIONS="${VIBESPACE_SKIP_PERMISSIONS:-false}"
 export VIBESPACE_ALLOWED_TOOLS="${VIBESPACE_ALLOWED_TOOLS:-}"
 export VIBESPACE_DISALLOWED_TOOLS="${VIBESPACE_DISALLOWED_TOOLS:-}"
+export VIBESPACE_GIT_WORKTREE="${VIBESPACE_GIT_WORKTREE:-}"
+export VIBESPACE_WORKDIR="${VIBESPACE_WORKDIR:-/vibespace}"
 EOF
 chmod 644 /etc/profile.d/vibespace.sh
 
@@ -202,5 +236,7 @@ log "Starting (name=${VIBESPACE_NAME:-?}, agent=${VIBESPACE_AGENT:-?}, shared=${
 # Export environment variables for supervisord (with defaults for optional ones)
 export USER_HOME
 export VIBESPACE_SHARE_CREDENTIALS="${VIBESPACE_SHARE_CREDENTIALS:-false}"
+export VIBESPACE_GIT_WORKTREE="${VIBESPACE_GIT_WORKTREE:-}"
+export VIBESPACE_WORKDIR="${VIBESPACE_WORKDIR:-/vibespace}"
 
 exec "$@"
