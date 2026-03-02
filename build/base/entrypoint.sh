@@ -90,14 +90,14 @@ if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
         WORKTREE_DIR="/vibespace/worktrees/$AGENT_NAME"
 
         # Bare clone (first agent only, idempotent)
-        if [ ! -d "$BARE_DIR/HEAD" ]; then
+        if [ ! -f "$BARE_DIR/HEAD" ]; then
             log "Creating bare clone of $VIBESPACE_GITHUB_REPO"
             su -s /bin/bash user -c "git clone --bare '$VIBESPACE_GITHUB_REPO' '$BARE_DIR'"
             su -s /bin/bash user -c "git -C '$BARE_DIR' config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'"
         fi
 
         # Create worktree (per-agent, idempotent)
-        if [ -d "$BARE_DIR/HEAD" ] && [ ! -d "$WORKTREE_DIR/.git" ]; then
+        if [ -f "$BARE_DIR/HEAD" ] && [ ! -e "$WORKTREE_DIR/.git" ]; then
             log "Creating worktree at $WORKTREE_DIR (branch: $BRANCH)"
             mkdir -p /vibespace/worktrees
             DEFAULT_BRANCH=$(su -s /bin/bash user -c "git -C '$BARE_DIR' symbolic-ref HEAD" | sed 's|refs/heads/||')
