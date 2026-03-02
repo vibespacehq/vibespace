@@ -100,6 +100,7 @@ if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
         if [ -f "$BARE_DIR/HEAD" ] && [ ! -e "$WORKTREE_DIR/.git" ]; then
             log "Creating worktree at $WORKTREE_DIR (branch: $BRANCH)"
             mkdir -p /vibespace/worktrees
+            chown user:user /vibespace/worktrees
             # Prune stale worktree entries from previous pod lifecycles
             su -s /bin/bash user -c "git -C '$BARE_DIR' worktree prune" 2>/dev/null || true
             # Try creating new branch; if it already exists, reuse it
