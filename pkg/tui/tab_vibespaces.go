@@ -1897,7 +1897,15 @@ func (t *VibespacesTab) loadLogsForVibespace(vsID, vsName string) tea.Cmd {
 func filterContainerLogs(raw []string, maxLines int) []string {
 	var filtered []string
 	for _, line := range raw {
+		line = strings.TrimRight(line, "\r")
 		lower := strings.ToLower(line)
+
+		// Skip known noise lines
+		if strings.Contains(lower, "syslogin_perform_logout") ||
+			strings.Contains(lower, "received disconnect from") {
+			continue
+		}
+
 		switch {
 		case strings.Contains(line, "[vibespace]"):
 			// Entrypoint logs (clone, credentials, startup)
@@ -1907,7 +1915,10 @@ func filterContainerLogs(raw []string, maxLines int) []string {
 			strings.Contains(lower, "session opened") ||
 			strings.Contains(lower, "session closed") ||
 			strings.Contains(lower, "disconnected from user"):
-			// SSH access logs
+			// SSH access logs — strip verbose key info
+			if idx := strings.Index(line, " ssh2:"); idx > 0 {
+				line = line[:idx]
+			}
 		case strings.Contains(lower, "error"):
 			// Any error
 		case strings.Contains(lower, "warn"):
