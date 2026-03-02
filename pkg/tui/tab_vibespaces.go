@@ -102,6 +102,7 @@ type vsSessionInfo struct {
 
 // vsSessionsLoadedMsg delivers parsed sessions from inside the agent pod.
 type vsSessionsLoadedMsg struct {
+	vsName    string // vibespace name (used by SessionsTab tree)
 	agentName string
 	sessions  []vsSessionInfo
 	err       error
@@ -109,12 +110,13 @@ type vsSessionsLoadedMsg struct {
 
 // vsConnectReadyMsg signals that SSH forward is ready for a connect action.
 type vsConnectReadyMsg struct {
-	sshPort   int
-	agentName string
-	agentType agent.Type
-	sessionID string
-	mode      vsConnectMode
-	err       error
+	sshPort     int
+	agentName   string
+	agentType   agent.Type
+	sessionID   string
+	mode        vsConnectMode
+	agentConfig *agent.Config // carried for SessionsTab (no t.agentConfigs access)
+	err         error
 }
 
 // vsSessionResumeMsg signals that a session resume process has completed.
@@ -563,7 +565,11 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.mode {
 		case vsConnectModeSessionResume:
-			return t, t.execSessionResume(msg.sshPort, msg.agentName, msg.agentType, msg.sessionID)
+			var cfg *agent.Config
+			if c, ok := t.agentConfigs[msg.agentName]; ok {
+				cfg = c
+			}
+			return t, execSessionResumeCmd(msg.sshPort, msg.agentName, msg.agentType, msg.sessionID, cfg)
 		case vsConnectModeShell:
 			return t, t.execShellConnect(msg.sshPort)
 		case vsConnectModeAgentCLI:
@@ -935,10 +941,15 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				t.addAgentField = addAgentFieldType
 				t.addAgentType = agent.TypeClaudeCode
 				t.addAgentName = ""
-				t.addAgentModel = ""
-				t.addAgentMaxTurns = ""
-				t.addAgentShareCreds = false
-				t.addAgentSkipPerms = false
+				agentCfg := config.Global().Agent
+				t.addAgentModel = agentCfg.Model
+				if agentCfg.MaxTurns > 0 {
+					t.addAgentMaxTurns = strconv.Itoa(agentCfg.MaxTurns)
+				} else {
+					t.addAgentMaxTurns = ""
+				}
+				t.addAgentShareCreds = agentCfg.ShareCredentials
+				t.addAgentSkipPerms = agentCfg.SkipPermissions
 				t.addAgentToolsList = agentSupportedTools(agent.TypeClaudeCode)
 				t.addAgentAllowedSet = make(map[string]bool)
 				t.addAgentDisallowedSet = make(map[string]bool)
@@ -1794,7 +1805,7 @@ func (t *VibespacesTab) viewSessionTable() string {
 
 	sel := t.sessionCursor
 	tbl := table.New().
-		Headers("ID", "Last Active", "Turns", "Title").
+		Headers("ID", "Last Active", "Turns", "First Prompt").
 		Rows(rows...).
 		Border(lipgloss.NormalBorder()).
 		BorderTop(false).
@@ -1997,18 +2008,69 @@ func (t *VibespacesTab) loadForwards(vsID, vsName string) tea.Cmd {
 }
 
 func (t *VibespacesTab) loadSessions(vsName, agentName string, agentType agent.Type) tea.Cmd {
+	return loadAgentSessionsCmd(vsName, agentName, agentType)
+}
+
+func (t *VibespacesTab) prepareSessionResume(vsName, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+	var cfg *agent.Config
+	if c, ok := t.agentConfigs[agentName]; ok {
+		cfg = c
+	}
+	return prepareSessionResumeCmd(vsName, agentName, agentType, sessionID, cfg)
+}
+
+func (t *VibespacesTab) execSessionResume(sshPort int, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+	var cfg *agent.Config
+	if c, ok := t.agentConfigs[agentName]; ok {
+		cfg = c
+	}
+	return execSessionResumeCmd(sshPort, agentName, agentType, sessionID, cfg)
+}
+
+// --- Standalone session functions (shared by VibespacesTab and SessionsTab) ---
+
+// ensureSSHForwardForAgent ensures daemon is running and an SSH forward exists for the agent.
+// Returns the local port for SSH access.
+func ensureSSHForwardForAgent(vsName, agentName string) (int, error) {
+	if !daemon.IsDaemonRunning() {
+		if err := daemon.SpawnDaemon(); err != nil {
+			return 0, fmt.Errorf("start daemon: %w", err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	client, err := daemon.NewClient()
+	if err != nil {
+		return 0, fmt.Errorf("connect to daemon: %w", err)
+	}
+
+	if port, ok := findSSHForward(client, vsName, agentName); ok {
+		return port, nil
+	}
+
+	_ = client.Refresh()
+	time.Sleep(2 * time.Second)
+
+	if port, ok := findSSHForward(client, vsName, agentName); ok {
+		return port, nil
+	}
+
+	return 0, fmt.Errorf("no active SSH forward for %s/%s", vsName, agentName)
+}
+
+// loadAgentSessionsCmd loads session history from an agent container via SSH.
+func loadAgentSessionsCmd(vsName, agentName string, agentType agent.Type) tea.Cmd {
 	return func() tea.Msg {
-		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		sshPort, err := ensureSSHForwardForAgent(vsName, agentName)
 		if err != nil {
-			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("SSH forward: %w", err)}
+			return vsSessionsLoadedMsg{vsName: vsName, agentName: agentName, err: fmt.Errorf("SSH forward: %w", err)}
 		}
 
 		keyPath := vibespace.GetSSHPrivateKeyPath()
 		if keyPath == "" {
-			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("no SSH key found")}
+			return vsSessionsLoadedMsg{vsName: vsName, agentName: agentName, err: fmt.Errorf("no SSH key found")}
 		}
 
-		// Build remote command based on agent type
 		var remoteCmd string
 		switch agentType {
 		case agent.TypeCodex:
@@ -2036,7 +2098,7 @@ func (t *VibespacesTab) loadSessions(vsName, agentName string, agentType agent.T
 			if detail == "" {
 				detail = err.Error()
 			}
-			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("read sessions: %s", strings.TrimSpace(detail))}
+			return vsSessionsLoadedMsg{vsName: vsName, agentName: agentName, err: fmt.Errorf("read sessions: %s", strings.TrimSpace(detail))}
 		}
 
 		var sessions []vsSessionInfo
@@ -2046,33 +2108,28 @@ func (t *VibespacesTab) loadSessions(vsName, agentName string, agentType agent.T
 		default:
 			sessions = parseHistoryJSONL(output, "/vibespace")
 		}
-		return vsSessionsLoadedMsg{agentName: agentName, sessions: sessions}
+		return vsSessionsLoadedMsg{vsName: vsName, agentName: agentName, sessions: sessions}
 	}
 }
 
-// prepareSessionResume ensures the SSH forward is ready, then sends vsConnectReadyMsg.
-func (t *VibespacesTab) prepareSessionResume(vsName, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+// prepareSessionResumeCmd ensures the SSH forward is ready, then sends vsConnectReadyMsg.
+func prepareSessionResumeCmd(vsName, agentName string, agentType agent.Type, sessionID string, cfg *agent.Config) tea.Cmd {
 	return func() tea.Msg {
-		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		sshPort, err := ensureSSHForwardForAgent(vsName, agentName)
 		if err != nil {
 			return vsConnectReadyMsg{agentName: agentName, agentType: agentType, sessionID: sessionID, mode: vsConnectModeSessionResume, err: err}
 		}
-		return vsConnectReadyMsg{sshPort: sshPort, agentName: agentName, agentType: agentType, sessionID: sessionID, mode: vsConnectModeSessionResume}
+		return vsConnectReadyMsg{sshPort: sshPort, agentName: agentName, agentType: agentType, sessionID: sessionID, mode: vsConnectModeSessionResume, agentConfig: cfg}
 	}
 }
 
-// execSessionResume builds the SSH command and returns tea.ExecProcess to suspend the TUI.
-func (t *VibespacesTab) execSessionResume(sshPort int, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+// execSessionResumeCmd builds the SSH command and returns tea.ExecProcess to suspend the TUI.
+func execSessionResumeCmd(sshPort int, agentName string, agentType agent.Type, sessionID string, cfg *agent.Config) tea.Cmd {
 	keyPath := vibespace.GetSSHPrivateKeyPath()
 	if keyPath == "" {
 		return func() tea.Msg {
 			return vsSessionResumeMsg{err: fmt.Errorf("no SSH key found")}
 		}
-	}
-
-	var cfg *agent.Config
-	if c, ok := t.agentConfigs[agentName]; ok {
-		cfg = c
 	}
 
 	agentImpl := agent.MustGet(agentType)
@@ -2095,37 +2152,6 @@ func (t *VibespacesTab) execSessionResume(sshPort int, agentName string, agentTy
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return vsSessionResumeMsg{err: err}
 	})
-}
-
-// ensureSSHForward ensures daemon is running and an SSH forward exists for the agent.
-// Returns the local port for SSH access.
-func (t *VibespacesTab) ensureSSHForward(vsName, agentName string) (int, error) {
-	if !daemon.IsDaemonRunning() {
-		if err := daemon.SpawnDaemon(); err != nil {
-			return 0, fmt.Errorf("start daemon: %w", err)
-		}
-		time.Sleep(2 * time.Second)
-	}
-
-	client, err := daemon.NewClient()
-	if err != nil {
-		return 0, fmt.Errorf("connect to daemon: %w", err)
-	}
-
-	// Try to find existing SSH forward
-	if port, ok := findSSHForward(client, vsName, agentName); ok {
-		return port, nil
-	}
-
-	// Refresh daemon state and retry
-	_ = client.Refresh()
-	time.Sleep(2 * time.Second)
-
-	if port, ok := findSSHForward(client, vsName, agentName); ok {
-		return port, nil
-	}
-
-	return 0, fmt.Errorf("no active SSH forward for %s/%s", vsName, agentName)
 }
 
 // findSSHForward queries the daemon for an active SSH forward.
@@ -2163,7 +2189,7 @@ func (t *VibespacesTab) prepareShellConnectPrimary(vsName string) tea.Cmd {
 		if primary == nil {
 			return vsConnectReadyMsg{mode: vsConnectModeShell, err: fmt.Errorf("no agents in %s", vsName)}
 		}
-		sshPort, err := t.ensureSSHForward(vsName, primary.AgentName)
+		sshPort, err := ensureSSHForwardForAgent(vsName, primary.AgentName)
 		if err != nil {
 			return vsConnectReadyMsg{mode: vsConnectModeShell, err: err}
 		}
@@ -2174,7 +2200,7 @@ func (t *VibespacesTab) prepareShellConnectPrimary(vsName string) tea.Cmd {
 // prepareAgentConnect ensures SSH forward for the agent's interactive CLI.
 func (t *VibespacesTab) prepareAgentConnect(vsName, agentName string, agentType agent.Type) tea.Cmd {
 	return func() tea.Msg {
-		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		sshPort, err := ensureSSHForwardForAgent(vsName, agentName)
 		if err != nil {
 			return vsConnectReadyMsg{agentName: agentName, agentType: agentType, mode: vsConnectModeAgentCLI, err: err}
 		}
@@ -2512,6 +2538,18 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		}
 		return t, nil
 
+	case k == "down":
+		if t.createField < createFieldCount-1 {
+			t.createField++
+		}
+		return t, nil
+
+	case k == "up":
+		if t.createField > 0 {
+			t.createField--
+		}
+		return t, nil
+
 	case k == "backspace":
 		switch t.createField {
 		case createFieldName:
@@ -2647,6 +2685,24 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return t, nil
 
+	case k == "down":
+		if t.addAgentField < addAgentFieldCount-1 {
+			t.addAgentField++
+			if t.addAgentField == addAgentFieldAllowedTools || t.addAgentField == addAgentFieldDisallowedTools {
+				t.addAgentToolsCursor = 0
+			}
+		}
+		return t, nil
+
+	case k == "up":
+		if t.addAgentField > 0 {
+			t.addAgentField--
+			if t.addAgentField == addAgentFieldAllowedTools || t.addAgentField == addAgentFieldDisallowedTools {
+				t.addAgentToolsCursor = 0
+			}
+		}
+		return t, nil
+
 	case k == "backspace":
 		t.addAgentBackspace()
 		return t, nil
@@ -2770,6 +2826,24 @@ func (t *VibespacesTab) handleEditConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		}
 		return t, nil
 
+	case k == "down":
+		if t.editConfigField < editConfigFieldCount-1 {
+			t.editConfigField++
+			if t.editConfigField == editConfigFieldAllowedTools || t.editConfigField == editConfigFieldDisallowedTools {
+				t.editConfigToolsCursor = 0
+			}
+		}
+		return t, nil
+
+	case k == "up":
+		if t.editConfigField > 0 {
+			t.editConfigField--
+			if t.editConfigField == editConfigFieldAllowedTools || t.editConfigField == editConfigFieldDisallowedTools {
+				t.editConfigToolsCursor = 0
+			}
+		}
+		return t, nil
+
 	case k == "backspace":
 		switch t.editConfigField {
 		case editConfigFieldModel:
@@ -2885,6 +2959,26 @@ func (t *VibespacesTab) handleFwdManagerAddKey(msg tea.KeyMsg) (tea.Model, tea.C
 		}
 		if t.fwdManagerAddField >= fwdManagerAddFieldCount {
 			return t, t.submitAddForward()
+		}
+		return t, nil
+
+	case k == "down":
+		if t.fwdManagerAddField < fwdManagerAddFieldCount-1 {
+			t.fwdManagerAddField++
+			// Skip DNS name if DNS disabled
+			if t.fwdManagerAddField == fwdManagerAddFieldDNSName && !t.fwdManagerAddDNS {
+				t.fwdManagerAddField--
+			}
+		}
+		return t, nil
+
+	case k == "up":
+		if t.fwdManagerAddField > 0 {
+			t.fwdManagerAddField--
+			// Skip DNS name if DNS disabled
+			if t.fwdManagerAddField == fwdManagerAddFieldDNSName && !t.fwdManagerAddDNS {
+				t.fwdManagerAddField--
+			}
 		}
 		return t, nil
 
