@@ -158,8 +158,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if msg.Action == tea.MouseActionRelease {
-			// Click anywhere in the tab bar area (label row + underline row)
-			if msg.Y < tabBarHeight && len(a.tabOffsets) > 0 {
+			// Click anywhere in the tab bar area (label row + underline row).
+			// borderH includes MarginTop(1) + top border(1) + bottom border(1);
+			// subtract the bottom border to get the offset where the tab bar starts.
+			tabBarTop := borderH - 1 // margin + top border
+			if msg.Y >= tabBarTop && msg.Y < tabBarTop+tabBarHeight && len(a.tabOffsets) > 0 {
 				x := msg.X
 				for i := tabCount - 1; i >= 0; i-- {
 					if x >= a.tabOffsets[i] {
