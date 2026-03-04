@@ -61,18 +61,19 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 	// Apply configuration
 	args = a.applyConfig(args, config)
 
-	// Wrap in bash -l -c to ensure proper shell environment and cd to /vibespace
+	// Wrap in bash -l -c to ensure proper shell environment and cd to $VIBESPACE_WORKDIR
+	// (set by entrypoint: worktree dir, clone dir, or /vibespace fallback).
 	// Inject permission hook settings into project-level .claude/settings.json
 	// so the hook only runs when the TUI permission server is reachable via reverse tunnel.
 	// Clean up on exit so direct SSH sessions aren't affected.
 	hookTimeout := int(vsconfig.Global().Timeouts.PermissionHook.Duration.Milliseconds())
-	setupHook := fmt.Sprintf(`mkdir -p /vibespace/.claude && cat > /vibespace/.claude/settings.json << 'HOOKEOF'
+	setupHook := fmt.Sprintf(`mkdir -p "$VIBESPACE_WORKDIR/.claude" && cat > "$VIBESPACE_WORKDIR/.claude/settings.json" << 'HOOKEOF'
 {"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"/home/user/.local/bin/vibespace-permission-hook","timeout":%d}]}]}}
 HOOKEOF
 `, hookTimeout)
-	cleanupHook := `rm -f /vibespace/.claude/settings.json`
+	cleanupHook := `rm -f "$VIBESPACE_WORKDIR/.claude/settings.json"`
 	claudeCmd := strings.Join(args, " ")
-	return fmt.Sprintf(`bash -l -c '%s trap "%s" EXIT; cd /vibespace && %s'`, setupHook, cleanupHook, claudeCmd)
+	return fmt.Sprintf(`bash -l -c '%s trap "%s" EXIT; cd "$VIBESPACE_WORKDIR" && %s'`, setupHook, cleanupHook, claudeCmd)
 }
 
 // BuildInteractiveCommand builds a Claude command for interactive terminal mode.

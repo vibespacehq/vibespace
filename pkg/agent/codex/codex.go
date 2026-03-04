@@ -67,8 +67,9 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 	// Add - at the end to read prompt from stdin
 	args = append(args, "-")
 
-	// Wrap in bash -l -c to ensure proper shell environment and cd to /vibespace
-	return fmt.Sprintf(`bash -l -c 'cd /vibespace && %s'`, strings.Join(args, " "))
+	// Wrap in bash -l -c to ensure proper shell environment and cd to $VIBESPACE_WORKDIR
+	// (set by entrypoint: worktree dir, clone dir, or /vibespace fallback)
+	return fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, strings.Join(args, " "))
 }
 
 // BuildInteractiveCommand builds a Codex command for interactive terminal mode.
