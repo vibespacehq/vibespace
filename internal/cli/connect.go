@@ -158,7 +158,8 @@ func buildInteractiveCommand(agentImpl agent.CodingAgent, config *agent.Config) 
 	// Use the agent's BuildInteractiveCommand method
 	agentCmd := agentImpl.BuildInteractiveCommand("", config)
 	// Wrap with cd and bash login shell to ensure PATH is set correctly
-	return fmt.Sprintf("bash -l -c 'cd /vibespace && %s'", agentCmd)
+	// $VIBESPACE_WORKDIR is set by entrypoint (worktree dir, clone dir, or /vibespace)
+	return fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, agentCmd)
 }
 
 // connectViaSSH connects to the vibespace via native SSH
