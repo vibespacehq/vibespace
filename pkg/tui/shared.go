@@ -80,7 +80,27 @@ func NewSharedState(version, commit, buildDate string) *SharedState {
 type SharedStateRefreshedMsg struct{}
 
 // Refresh updates all cached fields from live services.
+// If the k8s client was unavailable at startup (no cluster), it retries.
 func (s *SharedState) Refresh() tea.Msg {
+	// Retry k8s client if cluster wasn't available at startup
+	s.mu.Lock()
+	if s.Metrics == nil {
+		if kc, err := k8s.NewClient(); err == nil {
+			s.Vibespace = vibespace.NewService(kc)
+			s.Metrics = metrics.NewFetcher(kc)
+			slog.Debug("shared state: k8s client now available after cluster init")
+		}
+	}
+	s.mu.Unlock()
+
+	// Retry daemon client if unavailable at startup
+	if s.Daemon == nil {
+		if dc, err := daemon.NewClient(); err == nil {
+			s.Daemon = dc
+			slog.Debug("shared state: daemon client now available")
+		}
+	}
+
 	if s.Daemon != nil {
 		if status, err := s.Daemon.DaemonStatus(); err == nil {
 			s.mu.Lock()
