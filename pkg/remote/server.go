@@ -278,7 +278,9 @@ func (s *Server) WriteWireGuardConfig() error {
 }
 
 // Start starts the WireGuard interface and management API.
-func (s *Server) Start(ctx context.Context, foreground bool) error {
+// SetupWireGuard performs all sudo-requiring WireGuard setup: key init, config write,
+// and interface bring-up. Call this from a process that has a terminal (before daemonizing).
+func (s *Server) SetupWireGuard() error {
 	// Check firewall before starting
 	for _, result := range CheckFirewall() {
 		if !result.Status {
@@ -317,6 +319,20 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	s.state.Running = true
 	if err := s.state.Save(); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Server) Start(ctx context.Context, foreground bool) error {
+	// SetupWireGuard handles all sudo-requiring work (config, interface).
+	// When daemonizing, SpawnServe calls it in the parent (which has a TTY).
+	// In standalone foreground mode (user ran --foreground directly), do it here.
+	// Skip if the interface is already up (parent already did the setup).
+	if !IsInterfaceUp() {
+		if err := s.SetupWireGuard(); err != nil {
+			return err
+		}
 	}
 
 	// Ensure TLS cert exists (shared between registration and management APIs)
@@ -729,6 +745,17 @@ func SpawnServe() error {
 
 	// Clean up stale interface/PID if process died
 	CleanupStaleServe()
+
+	// Do all sudo-requiring WireGuard setup here in the parent process,
+	// which still has a terminal for password prompts. The daemon child
+	// (Setsid: true) has no TTY and cannot prompt for sudo.
+	server, err := NewServer()
+	if err != nil {
+		return fmt.Errorf("failed to create server: %w", err)
+	}
+	if err := server.SetupWireGuard(); err != nil {
+		return fmt.Errorf("failed to setup WireGuard: %w", err)
+	}
 
 	pidFile := filepath.Join(vsHome, "serve.pid")
 	os.Remove(pidFile)
