@@ -311,6 +311,8 @@ func Disconnect() error {
 	// so the request goes through before WireGuard is brought down).
 	if state.Connected && state.ServerIP != "" && state.PublicKey != "" {
 		notifyServerDisconnect(state.ServerIP, state.PublicKey)
+	} else {
+		slog.Debug("skipping disconnect notification", "connected", state.Connected, "serverIP", state.ServerIP, "hasPublicKey", state.PublicKey != "")
 	}
 
 	// Bring down WireGuard
@@ -375,16 +377,20 @@ func waitForConnectivity(serverIP string, timeout time.Duration) error {
 	return fmt.Errorf("timeout waiting for connectivity to %s", serverIP)
 }
 
-// notifyServerDisconnect sends a best-effort disconnect notification to the server.
+// notifyServerDisconnect sends a disconnect notification to the server
+// so it can remove the client registration.
 func notifyServerDisconnect(serverIP, publicKey string) {
+	slog.Info("notifying server of disconnect", "serverIP", serverIP, "publicKey", publicKey[:8]+"...")
 	client := mgmtHTTPClient(2 * time.Second)
 	body, _ := json.Marshal(map[string]string{"public_key": publicKey})
 	url := fmt.Sprintf("https://%s:%d/disconnect", serverIP, DefaultManagementPort())
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return // fire-and-forget
+		slog.Warn("disconnect notification failed", "error", err)
+		return
 	}
 	resp.Body.Close()
+	slog.Info("disconnect notification sent", "status", resp.StatusCode)
 }
 
 // splitHostPort is a safe wrapper around net.SplitHostPort.
