@@ -409,7 +409,7 @@ func (t *MonitorTab) renderTotals(pods []metrics.PodMetrics) string {
 }
 
 func (t *MonitorTab) renderCharts(showAll bool) string {
-	if t.height < 30 || len(t.cpuHistory) < 2 {
+	if t.height < 20 || len(t.cpuHistory) < 2 {
 		return ""
 	}
 
@@ -441,7 +441,7 @@ func (t *MonitorTab) renderCharts(showAll bool) string {
 	sb.WriteString("  " + mutedLine + "\n")
 
 	// Memory chart (only if enough vertical space)
-	if t.height > 40 {
+	if t.height > 30 {
 		var memLabel string
 		if showAll {
 			memLabel = "Memory History (cluster)"
