@@ -6,7 +6,7 @@
 
 Sandboxed AI coding agent environments on Kubernetes. Run Claude Code, Codex, or multiple agents collaborating on the same codebase — locally or on a remote server.
 
-<!-- TODO: add hero GIF showing the TUI -->
+https://github.com/user-attachments/assets/991dd850-d879-4259-a87e-c005bdd55115
 
 ## What it does
 
