@@ -124,6 +124,12 @@ func (t *MonitorTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.lastRefresh = time.Now()
 			t.appendHistory()
 		}
+		// If metrics unavailable because the k8s client wasn't ready at startup
+		// (e.g. remote mode still connecting), retry the shared state to pick up
+		// the k8s client once it becomes available.
+		if !msg.available && t.shared.Metrics == nil {
+			return t, refreshSharedState(t.shared)
+		}
 		return t, nil
 
 	case monitorVSListMsg:
