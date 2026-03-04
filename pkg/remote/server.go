@@ -757,6 +757,13 @@ func SpawnServe() error {
 		return fmt.Errorf("failed to setup WireGuard: %w", err)
 	}
 
+	// Pre-generate the TLS cert before spawning the daemon to avoid a race
+	// where both parent (token generation) and daemon (registration API)
+	// call ensureRegistrationCert() concurrently and produce different certs.
+	if _, err := server.ensureRegistrationCert(); err != nil {
+		return fmt.Errorf("failed to ensure registration cert: %w", err)
+	}
+
 	pidFile := filepath.Join(vsHome, "serve.pid")
 	os.Remove(pidFile)
 
