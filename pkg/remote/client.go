@@ -307,9 +307,10 @@ func Disconnect() error {
 		return fmt.Errorf("not connected to any remote server: %w", vserrors.ErrRemoteNotConnected)
 	}
 
-	// Fire-and-forget: notify server we're disconnecting
+	// Notify server before tearing down the tunnel (must be synchronous
+	// so the request goes through before WireGuard is brought down).
 	if state.Connected && state.ServerIP != "" && state.PublicKey != "" {
-		go notifyServerDisconnect(state.ServerIP, state.PublicKey)
+		notifyServerDisconnect(state.ServerIP, state.PublicKey)
 	}
 
 	// Bring down WireGuard

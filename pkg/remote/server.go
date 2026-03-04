@@ -478,7 +478,10 @@ func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&req)
 
 	if req.PublicKey != "" {
-		slog.Info("client disconnected", "public_key", req.PublicKey[:8]+"...")
+		slog.Info("client disconnecting", "public_key", req.PublicKey[:8]+"...")
+		if err := s.RemoveClient(req.PublicKey); err != nil {
+			slog.Warn("failed to remove disconnecting client", "error", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
