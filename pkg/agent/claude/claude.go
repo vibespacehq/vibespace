@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	vsconfig "github.com/vibespacehq/vibespace/pkg/config"
 )
 
 func init() {
@@ -33,12 +34,12 @@ func (a *Agent) DisplayName() string {
 
 // DefaultAgentPrefix returns the prefix used for agent naming.
 func (a *Agent) DefaultAgentPrefix() string {
-	return "claude"
+	return vsconfig.Global().Agent.Prefixes.Claude
 }
 
 // ContainerImage returns the Docker image for Claude Code.
 func (a *Agent) ContainerImage() string {
-	return "ghcr.io/vibespacehq/vibespace/claude-code:latest"
+	return vsconfig.Global().Images.Claude
 }
 
 // ConfigDirectory returns the config directory inside the container.
@@ -60,8 +61,19 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 	// Apply configuration
 	args = a.applyConfig(args, config)
 
-	// Wrap in bash -l -c to ensure proper shell environment and cd to /vibespace
-	return fmt.Sprintf(`bash -l -c 'cd /vibespace && %s'`, strings.Join(args, " "))
+	// Wrap in bash -l -c to ensure proper shell environment and cd to $VIBESPACE_WORKDIR
+	// (set by entrypoint: worktree dir, clone dir, or /vibespace fallback).
+	// Inject permission hook settings into project-level .claude/settings.json
+	// so the hook only runs when the TUI permission server is reachable via reverse tunnel.
+	// Clean up on exit so direct SSH sessions aren't affected.
+	hookTimeout := int(vsconfig.Global().Timeouts.PermissionHook.Duration.Milliseconds())
+	setupHook := fmt.Sprintf(`mkdir -p "$VIBESPACE_WORKDIR/.claude" && cat > "$VIBESPACE_WORKDIR/.claude/settings.json" << 'HOOKEOF'
+{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"/home/user/.local/bin/vibespace-permission-hook","timeout":%d}]}]}}
+HOOKEOF
+`, hookTimeout)
+	cleanupHook := `rm -f "$VIBESPACE_WORKDIR/.claude/settings.json"`
+	claudeCmd := strings.Join(args, " ")
+	return fmt.Sprintf(`bash -l -c '%s trap "%s" EXIT; cd "$VIBESPACE_WORKDIR" && %s'`, setupHook, cleanupHook, claudeCmd)
 }
 
 // BuildInteractiveCommand builds a Claude command for interactive terminal mode.
@@ -222,7 +234,9 @@ func (a *Agent) ParseStreamLine(line string) (*agent.StreamMessage, bool) {
 // SupportedTools returns the list of tools Claude Code supports.
 func (a *Agent) SupportedTools() []string {
 	return []string{
-		"Read", "Write", "Edit", "Bash", "Glob", "Grep",
+		"Read", "Write", "Edit",
+		"Bash", "Bash(read_only:true)",
+		"Glob", "Grep",
 		"Task", "WebFetch", "WebSearch", "NotebookEdit",
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/vibespacehq/vibespace/internal/platform"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 	"github.com/vibespacehq/vibespace/pkg/remote"
 
 	"github.com/spf13/cobra"
@@ -322,6 +323,11 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	// Remove WireGuard config from /etc/wireguard (requires sudo)
 	remote.CleanupWireGuardConfig()
 
+	// Remove all vibespace DNS entries from /etc/hosts
+	if err := vsdns.RemoveAllHostEntries(""); err != nil {
+		slog.Warn("failed to remove DNS host entries", "error", err)
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		slog.Error("failed to get home directory", "error", err)
@@ -351,15 +357,31 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Remove entire ~/.vibespace/ directory
+	// Remove ~/.vibespace/ directory but preserve config.yaml
 	spinner := NewSpinner("Removing vibespace data...")
 	spinner.Start()
 	slog.Info("removing vibespace home directory", "path", vibespaceHome)
+
+	// Back up config.yaml if it exists
+	configPath := filepath.Join(vibespaceHome, "config.yaml")
+	var configBackup []byte
+	if data, err := os.ReadFile(configPath); err == nil {
+		configBackup = data
+	}
+
 	if err := os.RemoveAll(vibespaceHome); err != nil {
 		spinner.Fail("Failed to remove vibespace data")
 		slog.Error("failed to remove vibespace home", "error", err)
 		return fmt.Errorf("failed to remove %s: %w", vibespaceHome, err)
 	}
+
+	// Restore config.yaml
+	if configBackup != nil {
+		os.MkdirAll(vibespaceHome, 0755)
+		os.WriteFile(configPath, configBackup, 0644)
+		slog.Info("preserved config.yaml")
+	}
+
 	spinner.Success("Vibespace data removed")
 
 	slog.Info("uninstall completed successfully")

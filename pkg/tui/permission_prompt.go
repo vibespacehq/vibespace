@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/vibespacehq/vibespace/pkg/permission"
+	"github.com/vibespacehq/vibespace/pkg/ui"
 )
 
 // PermissionPrompt is a Bubble Tea component for displaying permission prompts.
@@ -72,36 +73,36 @@ func (p *PermissionPrompt) View() string {
 	// Styles
 	borderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(warningColor).
+		BorderForeground(ui.Orange).
 		Padding(1, 2).
 		Width(boxWidth)
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(warningColor)
+		Foreground(ui.Orange)
 
 	labelStyle := lipgloss.NewStyle().
-		Foreground(dimColor)
+		Foreground(ui.ColorDim)
 
 	valueStyle := lipgloss.NewStyle().
-		Foreground(whiteColor)
+		Foreground(ui.ColorWhite)
 
 	allowButtonStyle := lipgloss.NewStyle().
 		Padding(0, 2).
 		Background(lipgloss.Color("#1a1a2e")).
-		Foreground(whiteColor)
+		Foreground(ui.ColorWhite)
 
 	denyButtonStyle := lipgloss.NewStyle().
 		Padding(0, 2).
 		Background(lipgloss.Color("#1a1a2e")).
-		Foreground(whiteColor)
+		Foreground(ui.ColorWhite)
 
 	selectedStyle := lipgloss.NewStyle().
 		Padding(0, 2).
 		Bold(true)
 
 	hintStyle := lipgloss.NewStyle().
-		Foreground(dimColor).
+		Foreground(ui.ColorDim).
 		Italic(true)
 
 	// Build content
@@ -143,16 +144,16 @@ func (p *PermissionPrompt) View() string {
 	if p.selected == 0 {
 		activeAllow := selectedStyle
 		allowBtn = activeAllow.
-			Background(successColor).
-			Foreground(blackColor).
+			Background(ui.Teal).
+			Foreground(ui.ColorBlack).
 			Render(" Allow ")
 		denyBtn = denyButtonStyle.Render(denyBtn)
 	} else {
 		allowBtn = allowButtonStyle.Render(allowBtn)
 		activeDeny := selectedStyle
 		denyBtn = activeDeny.
-			Background(errorColor).
-			Foreground(whiteColor).
+			Background(ui.ColorError).
+			Foreground(ui.ColorWhite).
 			Render(" Deny ")
 	}
 

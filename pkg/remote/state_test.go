@@ -9,7 +9,7 @@ import (
 
 func TestAllocateClientIP(t *testing.T) {
 	state := &ServerState{
-		NextClientIP: DefaultClientIPStart,
+		NextClientIP: DefaultClientIPStart(),
 	}
 
 	ip1 := state.AllocateClientIP()

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/vibespacehq/vibespace/pkg/config"
 	"github.com/vibespacehq/vibespace/pkg/remote"
 
 	corev1 "k8s.io/api/core/v1"
@@ -18,13 +19,21 @@ import (
 	metricsv "k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
-const (
-	VibespaceNamespace = "vibespace"
-)
+// VibespaceNamespace is the Kubernetes namespace for vibespace resources.
+// Read from config at runtime to support customization.
+var VibespaceNamespace = "vibespace"
+
+func init() {
+	// Will be overridden by config.Global() after Load().
+	// The var provides backwards compat for any code using it before config loads.
+}
+
+// Namespace returns the configured Kubernetes namespace.
+func Namespace() string { return config.Global().Kubernetes.Namespace }
 
 // Client wraps the Kubernetes client
 type Client struct {
-	clientset   *kubernetes.Clientset
+	clientset   kubernetes.Interface
 	config      *rest.Config
 	metricsset  metricsv.Interface
 	metricsOnce sync.Once
@@ -96,8 +105,13 @@ func getBundledKubeconfigPath() (string, error) {
 }
 
 // Clientset returns the underlying Kubernetes clientset
-func (c *Client) Clientset() *kubernetes.Clientset {
+func (c *Client) Clientset() kubernetes.Interface {
 	return c.clientset
+}
+
+// NewClientFromClientset creates a Client from an existing clientset (for testing).
+func NewClientFromClientset(cs kubernetes.Interface) *Client {
+	return &Client{clientset: cs}
 }
 
 // Config returns the underlying Kubernetes REST config

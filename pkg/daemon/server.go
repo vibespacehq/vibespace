@@ -96,6 +96,11 @@ func (s *Server) Start() error {
 	return nil
 }
 
+// DNSServer returns the embedded DNS server (available after Start)
+func (s *Server) DNSServer() *vsdns.Server {
+	return s.dnsServer
+}
+
 // Stop stops the server
 func (s *Server) Stop() {
 	slog.Info("stopping daemon server")
@@ -234,6 +239,8 @@ func (s *Server) handleRequest(req Request) Response {
 		return s.handleRemoveForward(req)
 	case RequestRefresh:
 		return s.handleRefresh(req)
+	case RequestUpdateForwardDNS:
+		return s.handleUpdateForwardDNS(req)
 	case RequestShutdown:
 		return s.handleShutdown()
 	default:
@@ -381,14 +388,6 @@ func (s *Server) handleAddForward(req Request) Response {
 		return NewErrorResponse(err)
 	}
 
-	// Update desired state (uses simple agent name)
-	desired := s.desiredMgr.GetOrCreate(req.Vibespace)
-	desired.AddForward(req.Agent, DesiredForward{
-		ContainerPort: req.Port,
-		LocalPort:     localPort,
-	})
-	s.desiredMgr.Save(req.Vibespace)
-
 	// Register DNS record if requested
 	var dnsName string
 	if req.DNS && s.dnsServer != nil {
@@ -399,6 +398,15 @@ func (s *Server) handleAddForward(req Request) Response {
 		}
 		s.dnsServer.AddRecord(dnsName, "127.0.0.1")
 	}
+
+	// Update desired state (uses simple agent name)
+	desired := s.desiredMgr.GetOrCreate(req.Vibespace)
+	desired.AddForward(req.Agent, DesiredForward{
+		ContainerPort: req.Port,
+		LocalPort:     localPort,
+		DNSName:       dnsName,
+	})
+	s.desiredMgr.Save(req.Vibespace)
 
 	// Update runtime state (uses simple agent name)
 	vsState := s.state.GetOrCreateVibespace(req.Vibespace)
@@ -452,6 +460,71 @@ func (s *Server) handleRemoveForward(req Request) Response {
 	}
 
 	return NewSuccessResponse(nil)
+}
+
+// handleUpdateForwardDNS toggles DNS on an existing forward
+func (s *Server) handleUpdateForwardDNS(req Request) Response {
+	if req.Vibespace == "" {
+		return NewErrorResponse(fmt.Errorf("vibespace name required"))
+	}
+	if req.Agent == "" {
+		return NewErrorResponse(fmt.Errorf("agent name required"))
+	}
+	if req.Port == 0 {
+		return NewErrorResponse(fmt.Errorf("remote port required"))
+	}
+
+	vsState := s.state.GetVibespace(req.Vibespace)
+	if vsState == nil {
+		return NewErrorResponse(fmt.Errorf("vibespace %q not found", req.Vibespace))
+	}
+
+	agentState := vsState.GetAgentState(req.Agent)
+	if agentState == nil {
+		return NewErrorResponse(fmt.Errorf("agent %q not found", req.Agent))
+	}
+
+	// Find the forward by remote port
+	var fwd *ForwardState
+	for _, fs := range agentState.Forwards {
+		if fs.RemotePort == req.Port {
+			fwd = fs
+			break
+		}
+	}
+	if fwd == nil {
+		return NewErrorResponse(fmt.Errorf("forward for port %d not found", req.Port))
+	}
+
+	var resultDNS string
+	if fwd.DNSName == "" {
+		// No DNS → add record
+		if req.DNSName != "" {
+			resultDNS = req.DNSName
+		} else {
+			resultDNS = req.Agent + "." + req.Vibespace
+		}
+		if s.dnsServer != nil {
+			s.dnsServer.AddRecord(resultDNS, "127.0.0.1")
+		}
+		fwd.DNSName = resultDNS
+	} else {
+		// Has DNS → remove record
+		if s.dnsServer != nil {
+			s.dnsServer.RemoveRecord(fwd.DNSName)
+		}
+		fwd.DNSName = ""
+	}
+
+	// Persist DNS change in desired state
+	if desired := s.desiredMgr.Get(req.Vibespace); desired != nil {
+		desired.UpdateForwardDNS(req.Agent, req.Port, fwd.DNSName)
+		s.desiredMgr.Save(req.Vibespace)
+	}
+
+	return NewSuccessResponse(UpdateForwardDNSResponse{
+		DNSName: resultDNS,
+	})
 }
 
 // handleRefresh handles a refresh request - triggers reconciliation

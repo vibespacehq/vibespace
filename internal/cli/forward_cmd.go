@@ -2,9 +2,11 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -209,16 +211,6 @@ func doForwardAdd(vibespace, agent string, remotePort, localPort int, enableDNS 
 		return err
 	}
 
-	// If DNS requested, ensure resolver file exists (requires sudo)
-	if enableDNS {
-		if err := ensureResolverFile(); err != nil {
-			slog.Warn("failed to set up DNS resolver", "error", err)
-			fmt.Fprintf(os.Stderr, "Warning: DNS resolver setup failed: %v\n", err)
-			fmt.Fprintf(os.Stderr, "DNS names will not resolve. Use localhost:%d instead.\n", localPort)
-			enableDNS = false
-		}
-	}
-
 	client, err := daemon.NewClient()
 	if err != nil {
 		slog.Error("failed to connect to daemon", "error", err)
@@ -229,6 +221,21 @@ func doForwardAdd(vibespace, agent string, remotePort, localPort int, enableDNS 
 	if err != nil {
 		slog.Error("failed to add forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
 		return fmt.Errorf("failed to add forward: %w", err)
+	}
+
+	// Add /etc/hosts entry if DNS was enabled
+	if result.DNSName != "" {
+		if err := vsdns.AddHostEntry(result.DNSName, ""); errors.Is(err, vsdns.ErrSudoRequired) {
+			// Prompt for sudo interactively, then retry
+			printStep("DNS entry requires sudo...")
+			sudoCmd := exec.Command("sudo", "-v")
+			sudoCmd.Stdin = os.Stdin
+			sudoCmd.Stdout = os.Stdout
+			sudoCmd.Stderr = os.Stderr
+			if sudoCmd.Run() == nil {
+				vsdns.AddHostEntry(result.DNSName, "")
+			}
+		}
 	}
 
 	// JSON output
@@ -245,7 +252,7 @@ func doForwardAdd(vibespace, agent string, remotePort, localPort int, enableDNS 
 	slog.Info("forward add command completed", "vibespace", vibespace, "agent", agent, "local_port", result.LocalPort, "remote_port", result.RemotePort, "dns_name", result.DNSName)
 	printSuccess("Forward added: localhost:%d -> %d", result.LocalPort, result.RemotePort)
 	if result.DNSName != "" {
-		fmt.Printf("  DNS: %s.vibespace.internal:%d (use Safari — Chromium browsers bypass local DNS)\n", result.DNSName, result.LocalPort)
+		fmt.Printf("  DNS: %s.%s:%d\n", result.DNSName, vsdns.Domain(), result.LocalPort)
 	}
 	return nil
 }
@@ -268,9 +275,37 @@ func doForwardRemove(vibespace, agent string, remotePort int) error {
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 
+	// Look up DNS name before removing so we can clean up /etc/hosts
+	var dnsName string
+	if list, err := client.ListForwardsForVibespace(vibespace); err == nil {
+		for _, a := range list.Agents {
+			if a.Name == agent {
+				for _, fwd := range a.Forwards {
+					if fwd.RemotePort == remotePort && fwd.DNSName != "" {
+						dnsName = fwd.DNSName
+					}
+				}
+			}
+		}
+	}
+
 	if err := client.RemoveForwardForVibespace(vibespace, agent, remotePort); err != nil {
 		slog.Error("failed to remove forward", "vibespace", vibespace, "agent", agent, "remote_port", remotePort, "error", err)
 		return fmt.Errorf("failed to remove forward: %w", err)
+	}
+
+	// Remove /etc/hosts entry if forward had DNS
+	if dnsName != "" {
+		if err := vsdns.RemoveHostEntry(dnsName, ""); errors.Is(err, vsdns.ErrSudoRequired) {
+			printStep("Removing DNS entry requires sudo...")
+			sudoCmd := exec.Command("sudo", "-v")
+			sudoCmd.Stdin = os.Stdin
+			sudoCmd.Stdout = os.Stdout
+			sudoCmd.Stderr = os.Stderr
+			if sudoCmd.Run() == nil {
+				vsdns.RemoveHostEntry(dnsName, "")
+			}
+		}
 	}
 
 	// JSON output
@@ -285,14 +320,4 @@ func doForwardRemove(vibespace, agent string, remotePort int) error {
 	slog.Info("forward remove command completed", "vibespace", vibespace, "agent", agent, "remote_port", remotePort)
 	printSuccess("Forward removed: port %d", remotePort)
 	return nil
-}
-
-// ensureResolverFile ensures /etc/resolver/vibespace.internal exists on macOS.
-// This requires sudo and will prompt the user for their password.
-func ensureResolverFile() error {
-	if vsdns.ResolverFileExists() {
-		return nil
-	}
-	printStep("Setting up DNS resolver (requires sudo)...")
-	return vsdns.ConfigureSystemResolver(5553)
 }

@@ -26,40 +26,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// If permission prompt is showing, handle its input first
-		if m.permissionPrompt != nil {
-			switch msg.Type {
-			case tea.KeyCtrlC:
-				// Deny and close prompt
-				return m, m.handlePermissionDecision(permission.DecisionDeny)
-
-			case tea.KeyEnter:
-				// Confirm current selection
-				return m, m.handlePermissionDecision(m.permissionPrompt.GetDecision())
-
-			case tea.KeyLeft:
-				m.permissionPrompt.MoveLeft()
-				return m, nil
-
-			case tea.KeyRight:
-				m.permissionPrompt.MoveRight()
-				return m, nil
-
-			case tea.KeyEsc:
-				// Deny on escape
-				return m, m.handlePermissionDecision(permission.DecisionDeny)
-			}
-
-			// Handle 'a' for allow, 'd' for deny
+		// If permission prompt is showing and input is empty, handle permission keys
+		if m.permissionPrompt != nil && m.input.Value() == "" {
 			switch msg.String() {
 			case "a", "A":
 				return m, m.handlePermissionDecision(permission.DecisionAllow)
 			case "d", "D":
 				return m, m.handlePermissionDecision(permission.DecisionDeny)
 			}
-
-			// Ignore other keys while prompt is showing
-			return m, nil
 		}
 
 		// Handle special keys
@@ -388,10 +362,10 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 		// Use tmux: attach to existing session or create new one with agent
 		// tmux new-session -A: attach if exists, create if not
 		// Set TERM=xterm-256color to avoid issues with non-standard terminals (e.g., ghostty)
-		// Wrap in bash -l -c to ensure PATH is set and cd to /vibespace
+		// Wrap in bash -l -c to ensure PATH is set and cd to $VIBESPACE_WORKDIR
 		// Escape double quotes in agentCmd since they'll be inside bash -l -c "..."
 		escapedAgentCmd := strings.ReplaceAll(agentCmd, `"`, `\"`)
-		tmuxCmd := fmt.Sprintf(`TERM=xterm-256color tmux new-session -A -s %s 'bash -l -c "cd /vibespace && %s"'`, tmuxSession, escapedAgentCmd)
+		tmuxCmd := fmt.Sprintf(`TERM=xterm-256color tmux new-session -A -s %s 'bash -l -c "cd \$VIBESPACE_WORKDIR && %s"'`, tmuxSession, escapedAgentCmd)
 
 		// Debug logging
 		sshKeyPath := vibespace.GetSSHPrivateKeyPath()

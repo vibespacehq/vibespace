@@ -7,8 +7,10 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/vibespacehq/vibespace/pkg/agent"
 	"github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
 func newTestSessionsTab() *SessionsTab {
@@ -17,6 +19,17 @@ func newTestSessionsTab() *SessionsTab {
 	tab.SetSize(120, 40)
 	return tab
 }
+
+// setupTreeTab creates a SessionsTab pre-populated with vibespaces and multi-sessions.
+func setupTreeTab(vibespaces []*model.Vibespace, multiSessions []session.Session) *SessionsTab {
+	tab := newTestSessionsTab()
+	tab.vibespaces = vibespaces
+	tab.multiSessions = multiSessions
+	tab.rebuildTree()
+	return tab
+}
+
+// --- Helper function tests (unchanged) ---
 
 func TestTimeAgo(t *testing.T) {
 	tests := []struct {
@@ -38,13 +51,11 @@ func TestTimeAgo(t *testing.T) {
 }
 
 func TestSessVibespaceNames(t *testing.T) {
-	// No vibespaces
 	s := session.Session{}
 	if got := sessVibespaceNames(s); got != "-" {
 		t.Fatalf("expected '-', got %q", got)
 	}
 
-	// With vibespaces
 	s.Vibespaces = []session.VibespaceEntry{
 		{Name: "project-a"},
 		{Name: "project-b"},
@@ -56,19 +67,16 @@ func TestSessVibespaceNames(t *testing.T) {
 }
 
 func TestSessAgentCount(t *testing.T) {
-	// No vibespaces
 	s := session.Session{}
 	if got := sessAgentCount(s); got != "-" {
 		t.Fatalf("expected '-', got %q", got)
 	}
 
-	// Vibespace with no agents means "all"
 	s.Vibespaces = []session.VibespaceEntry{{Name: "test"}}
 	if got := sessAgentCount(s); got != "all" {
 		t.Fatalf("expected 'all', got %q", got)
 	}
 
-	// Specific agents
 	s.Vibespaces = []session.VibespaceEntry{
 		{Name: "test", Agents: []string{"agent-1", "agent-2"}},
 	}
@@ -96,58 +104,353 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
+// --- Tree building tests ---
+
+func TestRebuildTreeEmpty(t *testing.T) {
+	tab := newTestSessionsTab()
+	tab.rebuildTree()
+	if len(tab.flatTree) != 0 {
+		t.Fatalf("expected empty tree, got %d items", len(tab.flatTree))
+	}
+}
+
+func TestRebuildTreeGroupsOnly(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "project-a", Status: "running"},
+			{Name: "project-b", Status: "stopped"},
+		},
+		nil,
+	)
+	if len(tab.flatTree) != 2 {
+		t.Fatalf("expected 2 groups, got %d items", len(tab.flatTree))
+	}
+	if tab.flatTree[0].Type != sessionItemGroup || tab.flatTree[0].VSName != "project-a" {
+		t.Error("first item should be group 'project-a'")
+	}
+	if tab.flatTree[1].Type != sessionItemGroup || tab.flatTree[1].VSName != "project-b" {
+		t.Error("second item should be group 'project-b'")
+	}
+}
+
+func TestRebuildTreeWithMultiSessions(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "project-a", Status: "running"},
+		},
+		[]session.Session{
+			{Name: "my-session", Vibespaces: []session.VibespaceEntry{{Name: "project-a"}}},
+		},
+	)
+	// Group collapsed: just the group header with multi count badge
+	if len(tab.flatTree) != 1 {
+		t.Fatalf("expected 1 item (collapsed group), got %d", len(tab.flatTree))
+	}
+	if tab.flatTree[0].MultiCount != 1 {
+		t.Errorf("expected MultiCount=1, got %d", tab.flatTree[0].MultiCount)
+	}
+
+	// Expand group
+	tab.expandedVS["project-a"] = true
+	tab.rebuildTree()
+	if len(tab.flatTree) != 2 {
+		t.Fatalf("expected 2 items (group + multi session), got %d", len(tab.flatTree))
+	}
+	if tab.flatTree[1].Type != sessionItemMulti {
+		t.Error("second item should be multi session")
+	}
+	if tab.flatTree[1].MultiSession.Name != "my-session" {
+		t.Errorf("expected 'my-session', got %q", tab.flatTree[1].MultiSession.Name)
+	}
+}
+
+func TestRebuildTreeCrossVSMultiSession(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "project-a", Status: "running"},
+			{Name: "project-b", Status: "running"},
+		},
+		[]session.Session{
+			{
+				Name: "cross-session",
+				Vibespaces: []session.VibespaceEntry{
+					{Name: "project-a"},
+					{Name: "project-b"},
+				},
+			},
+		},
+	)
+	// Expand both groups
+	tab.expandedVS["project-a"] = true
+	tab.expandedVS["project-b"] = true
+	tab.rebuildTree()
+
+	// Should appear under both groups
+	multiCount := 0
+	for _, item := range tab.flatTree {
+		if item.Type == sessionItemMulti {
+			multiCount++
+			if item.CrossVSCount != 1 {
+				t.Errorf("expected CrossVSCount=1, got %d", item.CrossVSCount)
+			}
+		}
+	}
+	if multiCount != 2 {
+		t.Fatalf("expected cross-vs session to appear under 2 groups, got %d", multiCount)
+	}
+}
+
+func TestRebuildTreeOrphanMultiSessions(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "project-a", Status: "running"},
+		},
+		[]session.Session{
+			{Name: "orphan-session"}, // no vibespaces
+		},
+	)
+	// Should add an Ungrouped section
+	found := false
+	for _, item := range tab.flatTree {
+		if item.Type == sessionItemGroup && item.VSName == "Ungrouped" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected 'Ungrouped' group for orphan sessions")
+	}
+}
+
+func TestRebuildTreeWithSingleAgentSessions(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "project-a", Status: "running"},
+		},
+		nil,
+	)
+	// Simulate loaded group state with single-agent sessions
+	tab.expandedVS["project-a"] = true
+	tab.groupStates["project-a"] = &groupLoadState{
+		AgentsLoaded: true,
+		Agents: []vibespace.AgentInfo{
+			{AgentName: "claude-1", AgentType: agent.TypeClaudeCode},
+		},
+		AgentSessions: map[string][]vsSessionInfo{
+			"claude-1": {
+				{ID: "sess-1", Title: "fix bug", LastTime: time.Now(), Prompts: 5},
+				{ID: "sess-2", Title: "add feature", LastTime: time.Now(), Prompts: 3},
+			},
+		},
+		AgentConfigs: make(map[string]*agent.Config),
+	}
+	tab.rebuildTree()
+
+	if len(tab.flatTree) != 3 { // 1 group + 2 sessions
+		t.Fatalf("expected 3 items, got %d", len(tab.flatTree))
+	}
+	if tab.flatTree[1].Type != sessionItemSingle || tab.flatTree[1].AgentName != "claude-1" {
+		t.Error("second item should be single-agent session for claude-1")
+	}
+	if tab.flatTree[2].isLastChild != true {
+		t.Error("last session should be marked as isLastChild")
+	}
+}
+
+func TestRebuildTreeLastChildMarking(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "project-a", Status: "running"},
+		},
+		[]session.Session{
+			{Name: "s1", Vibespaces: []session.VibespaceEntry{{Name: "project-a"}}},
+			{Name: "s2", Vibespaces: []session.VibespaceEntry{{Name: "project-a"}}},
+		},
+	)
+	tab.expandedVS["project-a"] = true
+	tab.rebuildTree()
+
+	// group + s1 + s2
+	if len(tab.flatTree) != 3 {
+		t.Fatalf("expected 3, got %d", len(tab.flatTree))
+	}
+	if tab.flatTree[1].isLastChild {
+		t.Error("first child should not be last")
+	}
+	if !tab.flatTree[2].isLastChild {
+		t.Error("second child should be last")
+	}
+}
+
+// --- Navigation tests ---
+
+func TestSessionsTabTreeNavigation(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "project-a", Status: "running"},
+			{Name: "project-b", Status: "running"},
+		},
+		[]session.Session{
+			{Name: "s1", Vibespaces: []session.VibespaceEntry{{Name: "project-a"}}},
+		},
+	)
+	// Expand first group
+	tab.expandedVS["project-a"] = true
+	tab.rebuildTree()
+	tab.cursor = 0
+
+	// j moves down
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if tab.cursor != 1 {
+		t.Fatalf("expected cursor=1, got %d", tab.cursor)
+	}
+
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if tab.cursor != 2 {
+		t.Fatalf("expected cursor=2, got %d", tab.cursor)
+	}
+
+	// j at end clamps
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if tab.cursor != 2 {
+		t.Fatalf("expected cursor=2 (clamped), got %d", tab.cursor)
+	}
+
+	// k moves up
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	if tab.cursor != 1 {
+		t.Fatalf("expected cursor=1, got %d", tab.cursor)
+	}
+}
+
+func TestSessionsTabNavigationGAndShiftG(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "a", Status: "running"},
+			{Name: "b", Status: "running"},
+			{Name: "c", Status: "running"},
+			{Name: "d", Status: "running"},
+		},
+		nil,
+	)
+	tab.cursor = 1
+
+	// G goes to end
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
+	if tab.cursor != 3 {
+		t.Fatalf("expected 3, got %d", tab.cursor)
+	}
+
+	// g goes to beginning
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	if tab.cursor != 0 {
+		t.Fatalf("expected 0, got %d", tab.cursor)
+	}
+}
+
+// --- View tests ---
+
 func TestSessionsTabEmptyView(t *testing.T) {
 	tab := newTestSessionsTab()
-	tab.sessions = nil
-
 	view := stripAnsi(tab.View())
 	if !strings.Contains(view, "No sessions yet") {
 		t.Errorf("empty view should contain 'No sessions yet', got: %s", view)
 	}
 }
 
-func TestSessionsTabListView(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{
-		{Name: "session-alpha", CreatedAt: time.Now(), LastUsed: time.Now()},
-		{Name: "session-beta", CreatedAt: time.Now(), LastUsed: time.Now()},
-	}
+func TestSessionsTabTreeView(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "my-project", Status: "running"},
+		},
+		[]session.Session{
+			{
+				Name:     "code-review",
+				LastUsed: time.Now(),
+				Vibespaces: []session.VibespaceEntry{
+					{Name: "my-project", Agents: []string{"claude-1"}},
+				},
+			},
+		},
+	)
+	tab.expandedVS["my-project"] = true
+	tab.rebuildTree()
 
 	view := stripAnsi(tab.View())
-	if !strings.Contains(view, "session-alpha") {
-		t.Error("list view should contain session names")
+	if !strings.Contains(view, "my-project") {
+		t.Error("tree view should contain vibespace name")
 	}
-	if !strings.Contains(view, "session-beta") {
-		t.Error("list view should contain session names")
+	if !strings.Contains(view, "code-review") {
+		t.Error("tree view should contain session name")
 	}
 }
 
-func TestSessionsTabNewNameMode(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{
-		{Name: "existing", CreatedAt: time.Now()},
+func TestSessionsTabPreviewMultiSession(t *testing.T) {
+	ms := session.Session{
+		Name:      "preview-session",
+		CreatedAt: time.Now(),
+		LastUsed:  time.Now(),
+		Vibespaces: []session.VibespaceEntry{
+			{Name: "project-a", Agents: []string{"claude-1"}},
+		},
+	}
+	tab := setupTreeTab(
+		[]*model.Vibespace{{Name: "project-a", Status: "running"}},
+		[]session.Session{ms},
+	)
+	tab.expandedVS["project-a"] = true
+	tab.rebuildTree()
+
+	// Move cursor to the multi-session item
+	for i, item := range tab.flatTree {
+		if item.Type == sessionItemMulti {
+			tab.cursor = i
+			break
+		}
 	}
 
-	// Key "n" enters newName mode
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	if tab.mode != sessionsModeNewName {
-		t.Fatalf("expected newName mode, got %d", tab.mode)
+	// Set preview data
+	tab.previewSessionName = "preview-session"
+	tab.previewTotal = 15
+	tab.previewMsgs = []*Message{
+		NewUserMessage("hello world", "all"),
+		NewAssistantMessage("claude-1", "I can help"),
 	}
 
 	view := stripAnsi(tab.View())
-	if !strings.Contains(view, "Step 1") {
-		t.Error("new name view should contain 'Step 1'")
+	if !strings.Contains(view, "preview-session") {
+		t.Error("should contain session name")
+	}
+	if !strings.Contains(view, "15") {
+		t.Error("should contain message count")
+	}
+	if !strings.Contains(view, "You") {
+		t.Error("should contain 'You' label for user message")
 	}
 }
 
-func TestSessionsTabDeleteMode(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{
-		{Name: "to-delete", CreatedAt: time.Now()},
-	}
-	tab.selected = 0
+// --- Delete mode tests ---
 
-	// Key "d" enters delete mode
+func TestSessionsTabDeleteModeOnMultiSession(t *testing.T) {
+	ms := session.Session{
+		Name:       "to-delete",
+		Vibespaces: []session.VibespaceEntry{{Name: "project-a"}},
+	}
+	tab := setupTreeTab(
+		[]*model.Vibespace{{Name: "project-a", Status: "running"}},
+		[]session.Session{ms},
+	)
+	tab.expandedVS["project-a"] = true
+	tab.rebuildTree()
+
+	// Move to multi-session
+	for i, item := range tab.flatTree {
+		if item.Type == sessionItemMulti {
+			tab.cursor = i
+			break
+		}
+	}
+
+	// d enters delete mode
 	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
 	if tab.mode != sessionsModeDelete {
 		t.Fatalf("expected delete mode, got %d", tab.mode)
@@ -159,36 +462,59 @@ func TestSessionsTabDeleteMode(t *testing.T) {
 	}
 }
 
-func TestSessionsTabNavigation(t *testing.T) {
+func TestSessionsTabDeleteModeNotOnGroup(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{{Name: "project-a", Status: "running"}},
+		nil,
+	)
+	tab.cursor = 0 // on group header
+
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if tab.mode != sessionsModeList {
+		t.Fatalf("expected list mode (can't delete group), got %d", tab.mode)
+	}
+}
+
+func TestSessionsTabDeleteModeEscAndQ(t *testing.T) {
 	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{
-		{Name: "s1"},
-		{Name: "s2"},
-		{Name: "s3"},
-	}
-	tab.selected = 0
-
-	// j moves down
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if tab.selected != 1 {
-		t.Fatalf("expected selected=1, got %d", tab.selected)
+	tab.mode = sessionsModeDelete
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if tab.mode != sessionsModeList {
+		t.Fatalf("expected list mode from n in delete, got %d", tab.mode)
 	}
 
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if tab.selected != 2 {
-		t.Fatalf("expected selected=2, got %d", tab.selected)
+	tab.mode = sessionsModeDelete
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if tab.mode != sessionsModeList {
+		t.Fatalf("expected list mode from q in delete, got %d", tab.mode)
+	}
+}
+
+func TestSessionsTabDeleteNoItems(t *testing.T) {
+	tab := newTestSessionsTab()
+	// d should be no-op when tree is empty
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if tab.mode != sessionsModeList {
+		t.Fatalf("expected list mode, got %d", tab.mode)
+	}
+}
+
+// --- Wizard tests ---
+
+func TestSessionsTabNewNameMode(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{{Name: "project-a", Status: "running"}},
+		nil,
+	)
+
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	if tab.mode != sessionsModeNewName {
+		t.Fatalf("expected newName mode, got %d", tab.mode)
 	}
 
-	// j at end clamps
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if tab.selected != 2 {
-		t.Fatalf("expected selected=2 (clamped), got %d", tab.selected)
-	}
-
-	// k moves up
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
-	if tab.selected != 1 {
-		t.Fatalf("expected selected=1, got %d", tab.selected)
+	view := stripAnsi(tab.View())
+	if !strings.Contains(view, "Step 1") {
+		t.Error("new name view should contain 'Step 1'")
 	}
 }
 
@@ -202,13 +528,11 @@ func TestSessionsTabNewVSPicker(t *testing.T) {
 	tab.newVSSelected = []bool{false, false}
 	tab.newVSCursor = 0
 
-	// Space toggles selection
 	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
 	if !tab.newVSSelected[0] {
 		t.Fatal("expected vs1 selected after space")
 	}
 
-	// Toggle off
 	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
 	if tab.newVSSelected[0] {
 		t.Fatal("expected vs1 deselected after second space")
@@ -227,7 +551,6 @@ func TestSessionsTabNewAgentPicker(t *testing.T) {
 	tab.newSelectedVS = []vsPickerItem{{Name: "vs1"}}
 	tab.newAgentVSIndex = 0
 
-	// Navigate and toggle
 	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 	if tab.newAgentCursor != 1 {
 		t.Fatalf("expected cursor=1, got %d", tab.newAgentCursor)
@@ -242,45 +565,30 @@ func TestSessionsTabNewAgentPicker(t *testing.T) {
 func TestSessionsTabEscReturnsToList(t *testing.T) {
 	tab := newTestSessionsTab()
 
-	// From delete mode
 	tab.mode = sessionsModeDelete
 	tab.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	if tab.mode != sessionsModeList {
 		t.Fatalf("expected list mode from delete, got %d", tab.mode)
 	}
 
-	// From newName mode
 	tab.mode = sessionsModeNewName
 	tab.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	if tab.mode != sessionsModeList {
 		t.Fatalf("expected list mode from newName, got %d", tab.mode)
 	}
 
-	// From newVibespaces mode
 	tab.mode = sessionsModeNewVibespaces
 	tab.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	if tab.mode != sessionsModeList {
 		t.Fatalf("expected list mode from newVibespaces, got %d", tab.mode)
 	}
 
-	// From newAgents mode
 	tab.mode = sessionsModeNewAgents
 	tab.newSelectedVS = []vsPickerItem{{Name: "vs1"}}
 	tab.newAgentVSIndex = 0
 	tab.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	if tab.mode != sessionsModeList {
 		t.Fatalf("expected list mode from newAgents, got %d", tab.mode)
-	}
-}
-
-func TestSessionsTabDeleteNoSessions(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = nil
-
-	// "d" should be no-op when no sessions
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
-	if tab.mode != sessionsModeList {
-		t.Fatalf("expected list mode (no sessions to delete), got %d", tab.mode)
 	}
 }
 
@@ -300,100 +608,6 @@ func TestSessionsTabViewPromptNewVibespaces(t *testing.T) {
 	}
 	if !strings.Contains(view, "vs1") {
 		t.Error("vibespace picker should contain vibespace names")
-	}
-}
-
-func TestSessionsTabTitle(t *testing.T) {
-	tab := newTestSessionsTab()
-	if tab.Title() != "Sessions" {
-		t.Fatalf("expected 'Sessions', got %q", tab.Title())
-	}
-}
-
-func TestSessionsTabShortHelp(t *testing.T) {
-	tab := newTestSessionsTab()
-
-	// List mode
-	tab.mode = sessionsModeList
-	bindings := tab.ShortHelp()
-	if len(bindings) == 0 {
-		t.Fatal("expected non-empty bindings for list mode")
-	}
-
-	// Delete mode
-	tab.mode = sessionsModeDelete
-	bindings = tab.ShortHelp()
-	if len(bindings) == 0 {
-		t.Fatal("expected non-empty bindings for delete mode")
-	}
-
-	// New name mode
-	tab.mode = sessionsModeNewName
-	bindings = tab.ShortHelp()
-	if len(bindings) == 0 {
-		t.Fatal("expected non-empty bindings for newName mode")
-	}
-}
-
-func TestSessionsTabNavigationGAndShiftG(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{
-		{Name: "s1"}, {Name: "s2"}, {Name: "s3"}, {Name: "s4"},
-	}
-	tab.selected = 1
-
-	// G goes to end
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("G")})
-	if tab.selected != 3 {
-		t.Fatalf("expected 3, got %d", tab.selected)
-	}
-
-	// g goes to beginning
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
-	if tab.selected != 0 {
-		t.Fatalf("expected 0, got %d", tab.selected)
-	}
-}
-
-func TestSessionsTabDeleteModeEscAndQ(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{{Name: "test"}}
-	tab.selected = 0
-
-	// "n" and "q" should also exit delete mode
-	tab.mode = sessionsModeDelete
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
-	if tab.mode != sessionsModeList {
-		t.Fatalf("expected list mode from n in delete, got %d", tab.mode)
-	}
-
-	tab.mode = sessionsModeDelete
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
-	if tab.mode != sessionsModeList {
-		t.Fatalf("expected list mode from q in delete, got %d", tab.mode)
-	}
-}
-
-func TestSessionsTabDetailView(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{
-		{
-			Name:      "my-session",
-			CreatedAt: time.Now().Add(-2 * time.Hour),
-			LastUsed:  time.Now().Add(-30 * time.Minute),
-			Vibespaces: []session.VibespaceEntry{
-				{Name: "project-a", Agents: []string{"claude-1"}},
-			},
-		},
-	}
-	tab.selected = 0
-
-	view := stripAnsi(tab.View())
-	if !strings.Contains(view, "my-session") {
-		t.Error("view should contain session name")
-	}
-	if !strings.Contains(view, "project-a") {
-		t.Error("view should contain vibespace name")
 	}
 }
 
@@ -417,21 +631,154 @@ func TestSessionsTabViewPromptNewAgents(t *testing.T) {
 	}
 }
 
-func TestSessionsTabClampSelected(t *testing.T) {
+func TestSessionsTabVSPickerNavigation(t *testing.T) {
 	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{{Name: "a"}, {Name: "b"}}
-	tab.selected = 5
+	tab.mode = sessionsModeNewVibespaces
+	tab.newVibespaces = []vsPickerItem{
+		{Name: "vs1"}, {Name: "vs2"}, {Name: "vs3"},
+	}
+	tab.newVSSelected = []bool{false, false, false}
+	tab.newVSCursor = 0
 
-	tab.clampSelected()
-	if tab.selected != 1 {
-		t.Fatalf("expected 1, got %d", tab.selected)
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	if tab.newVSCursor != 1 {
+		t.Fatalf("expected 1, got %d", tab.newVSCursor)
 	}
 
-	tab.sessions = nil
-	tab.selected = 5
-	tab.clampSelected()
-	if tab.selected != 0 {
-		t.Fatalf("expected 0 for empty, got %d", tab.selected)
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	if tab.newVSCursor != 0 {
+		t.Fatalf("expected 0, got %d", tab.newVSCursor)
+	}
+
+	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	if !tab.newVSSelected[0] {
+		t.Fatal("expected vs1 selected after x")
+	}
+}
+
+// --- Update message tests ---
+
+func TestSessionsTabUpdateMultiSessionsLoaded(t *testing.T) {
+	tab := newTestSessionsTab()
+	tab.vibespaces = []*model.Vibespace{{Name: "vs1", Status: "running"}}
+
+	tab.Update(multiSessionsLoadedMsg{
+		sessions: []session.Session{
+			{Name: "s1", CreatedAt: time.Now(), Vibespaces: []session.VibespaceEntry{{Name: "vs1"}}},
+			{Name: "s2", CreatedAt: time.Now(), Vibespaces: []session.VibespaceEntry{{Name: "vs1"}}},
+		},
+	})
+	if len(tab.multiSessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(tab.multiSessions))
+	}
+	if tab.err != "" {
+		t.Fatalf("expected no error, got %q", tab.err)
+	}
+
+	tab.Update(multiSessionsLoadedMsg{err: fmt.Errorf("load error")})
+	if tab.err != "load error" {
+		t.Fatalf("expected 'load error', got %q", tab.err)
+	}
+}
+
+func TestSessionsTabUpdateSessionDeleted(t *testing.T) {
+	tab := newTestSessionsTab()
+	tab.mode = sessionsModeDelete
+
+	tab.Update(sessionDeletedMsg{})
+	if tab.mode != sessionsModeList {
+		t.Fatalf("expected list mode, got %d", tab.mode)
+	}
+
+	tab.Update(sessionDeletedMsg{err: fmt.Errorf("delete failed")})
+	if tab.err != "delete failed" {
+		t.Fatalf("expected error, got %q", tab.err)
+	}
+}
+
+func TestSessionsTabUpdateSessionHistory(t *testing.T) {
+	tab := newTestSessionsTab()
+
+	tab.Update(sessionHistoryMsg{
+		sessionName: "s1",
+		messages:    []*Message{NewUserMessage("hello", "all")},
+		totalCount:  5,
+	})
+	if tab.previewSessionName != "s1" {
+		t.Fatalf("expected previewSessionName='s1', got %q", tab.previewSessionName)
+	}
+	if tab.previewTotal != 5 {
+		t.Fatalf("expected previewTotal=5, got %d", tab.previewTotal)
+	}
+}
+
+func TestSessionsTabUpdateSessionCreated(t *testing.T) {
+	tab := newTestSessionsTab()
+	tab.mode = sessionsModeNewName
+
+	tab.Update(sessionCreatedMsg{err: fmt.Errorf("create failed")})
+	if tab.err != "create failed" {
+		t.Fatalf("expected error, got %q", tab.err)
+	}
+	if tab.mode != sessionsModeList {
+		t.Fatalf("expected list mode, got %d", tab.mode)
+	}
+
+	sess := &session.Session{Name: "new-session"}
+	tab.Update(sessionCreatedMsg{session: sess})
+	if tab.mode != sessionsModeList {
+		t.Fatalf("expected list mode, got %d", tab.mode)
+	}
+}
+
+func TestSessionsTabUpdateVibespacesForPicker(t *testing.T) {
+	tab := newTestSessionsTab()
+	tab.mode = sessionsModeNewVibespaces
+
+	tab.Update(vibespacesForPickerMsg{
+		vibespaces: []*model.Vibespace{
+			{Name: "vs1", Status: "running"},
+			{Name: "vs2", Status: "stopped"},
+		},
+	})
+	if len(tab.newVibespaces) != 2 {
+		t.Fatalf("expected 2 vibespaces, got %d", len(tab.newVibespaces))
+	}
+	if len(tab.newVSSelected) != 2 {
+		t.Fatalf("expected 2 selected bools, got %d", len(tab.newVSSelected))
+	}
+
+	tab.Update(vibespacesForPickerMsg{err: fmt.Errorf("load error")})
+	if tab.err != "load error" {
+		t.Fatalf("expected error, got %q", tab.err)
+	}
+}
+
+// --- Misc tests ---
+
+func TestSessionsTabTitle(t *testing.T) {
+	tab := newTestSessionsTab()
+	if tab.Title() != "Sessions" {
+		t.Fatalf("expected 'Sessions', got %q", tab.Title())
+	}
+}
+
+func TestSessionsTabShortHelp(t *testing.T) {
+	tab := newTestSessionsTab()
+
+	tab.mode = sessionsModeList
+	if len(tab.ShortHelp()) == 0 {
+		t.Fatal("expected non-empty bindings for list mode")
+	}
+
+	tab.mode = sessionsModeDelete
+	if len(tab.ShortHelp()) == 0 {
+		t.Fatal("expected non-empty bindings for delete mode")
+	}
+
+	tab.mode = sessionsModeNewName
+	if len(tab.ShortHelp()) == 0 {
+		t.Fatal("expected non-empty bindings for newName mode")
 	}
 }
 
@@ -457,165 +804,93 @@ func TestSessionsTabResetNewSession(t *testing.T) {
 	}
 }
 
-func TestSessionsTabDetailViewWithPreview(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{
-		{
-			Name:      "preview-session",
-			CreatedAt: time.Now(),
-			LastUsed:  time.Now(),
+func TestSessionsTabCursorClampOnRebuild(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{
+			{Name: "a", Status: "running"},
+			{Name: "b", Status: "running"},
 		},
+		nil,
+	)
+	tab.cursor = 5
+
+	tab.rebuildTree()
+	if tab.cursor != 1 { // 2 groups, max index is 1
+		t.Fatalf("expected cursor=1, got %d", tab.cursor)
 	}
-	tab.selected = 0
-	tab.previewName = "preview-session"
-	tab.previewTotal = 15
-	tab.previewMsgs = []*Message{
-		NewUserMessage("hello world", "all"),
-		NewAssistantMessage("claude-1", "I can help"),
+
+	tab.vibespaces = nil
+	tab.rebuildTree()
+	if tab.cursor != 0 {
+		t.Fatalf("expected cursor=0 for empty, got %d", tab.cursor)
 	}
+}
+
+func TestSessionsTabGroupLoadState(t *testing.T) {
+	tab := setupTreeTab(
+		[]*model.Vibespace{{Name: "project-a", Status: "running"}},
+		nil,
+	)
+
+	// Simulate groupAgentsLoadedMsg
+	tab.groupStates["project-a"] = &groupLoadState{
+		AgentsLoaded: true,
+		Agents: []vibespace.AgentInfo{
+			{AgentName: "claude-1", AgentType: agent.TypeClaudeCode, Status: "running"},
+			{AgentName: "codex-1", AgentType: agent.TypeCodex, Status: "running"},
+		},
+		AgentSessions: make(map[string][]vsSessionInfo),
+		AgentConfigs:  make(map[string]*agent.Config),
+	}
+	tab.expandedVS["project-a"] = true
+	tab.rebuildTree()
+
+	// Only group header (no sessions loaded yet)
+	if len(tab.flatTree) != 1 {
+		t.Fatalf("expected 1 (group only, no sessions yet), got %d", len(tab.flatTree))
+	}
+
+	// Add sessions for one agent
+	tab.groupStates["project-a"].AgentSessions["claude-1"] = []vsSessionInfo{
+		{ID: "s1", Title: "fix bug"},
+	}
+	tab.rebuildTree()
+
+	if len(tab.flatTree) != 2 { // group + 1 session
+		t.Fatalf("expected 2, got %d", len(tab.flatTree))
+	}
+}
+
+func TestSessionsTabErrorView(t *testing.T) {
+	tab := newTestSessionsTab()
+	tab.err = "something went wrong"
 
 	view := stripAnsi(tab.View())
-	if !strings.Contains(view, "preview-session") {
-		t.Error("should contain session name")
-	}
-	if !strings.Contains(view, "15") {
-		t.Error("should contain message count")
-	}
-	if !strings.Contains(view, "You") {
-		t.Error("should contain 'You' label for user message")
+	if !strings.Contains(view, "something went wrong") {
+		t.Error("error view should contain error message")
 	}
 }
 
-func TestSessionsTabUpdateSessionsLoaded(t *testing.T) {
+func TestSessionsTabVibespacesForTreeMsg(t *testing.T) {
 	tab := newTestSessionsTab()
 
-	// Send sessionsLoadedMsg with sessions
-	tab.Update(sessionsLoadedMsg{
-		sessions: []session.Session{
-			{Name: "s1", CreatedAt: time.Now()},
-			{Name: "s2", CreatedAt: time.Now()},
-		},
-	})
-	if len(tab.sessions) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(tab.sessions))
-	}
-	if tab.err != "" {
-		t.Fatalf("expected no error, got %q", tab.err)
-	}
-
-	// Error case
-	tab.Update(sessionsLoadedMsg{err: fmt.Errorf("load error")})
-	if tab.err != "load error" {
-		t.Fatalf("expected 'load error', got %q", tab.err)
-	}
-}
-
-func TestSessionsTabUpdateSessionDeleted(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.mode = sessionsModeDelete
-
-	// Successful delete
-	tab.Update(sessionDeletedMsg{})
-	if tab.mode != sessionsModeList {
-		t.Fatalf("expected list mode, got %d", tab.mode)
-	}
-
-	// Error case
-	tab.Update(sessionDeletedMsg{err: fmt.Errorf("delete failed")})
-	if tab.err != "delete failed" {
-		t.Fatalf("expected error, got %q", tab.err)
-	}
-}
-
-func TestSessionsTabUpdateSessionHistory(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.sessions = []session.Session{
-		{Name: "s1", CreatedAt: time.Now()},
-	}
-	tab.selected = 0
-
-	tab.Update(sessionHistoryMsg{
-		sessionName: "s1",
-		messages:    []*Message{NewUserMessage("hello", "all")},
-		totalCount:  5,
-	})
-	if tab.previewName != "s1" {
-		t.Fatalf("expected previewName='s1', got %q", tab.previewName)
-	}
-	if tab.previewTotal != 5 {
-		t.Fatalf("expected previewTotal=5, got %d", tab.previewTotal)
-	}
-}
-
-func TestSessionsTabUpdateSessionCreated(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.mode = sessionsModeNewName
-
-	// Error case
-	tab.Update(sessionCreatedMsg{err: fmt.Errorf("create failed")})
-	if tab.err != "create failed" {
-		t.Fatalf("expected error, got %q", tab.err)
-	}
-	if tab.mode != sessionsModeList {
-		t.Fatalf("expected list mode, got %d", tab.mode)
-	}
-
-	// Success case returns SwitchToChatMsg
-	sess := &session.Session{Name: "new-session"}
-	tab.Update(sessionCreatedMsg{session: sess})
-	if tab.mode != sessionsModeList {
-		t.Fatalf("expected list mode, got %d", tab.mode)
-	}
-}
-
-func TestSessionsTabUpdateVibespacesForPicker(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.mode = sessionsModeNewVibespaces
-
-	tab.Update(vibespacesForPickerMsg{
+	tab.Update(vibespacesForTreeMsg{
 		vibespaces: []*model.Vibespace{
-			{Name: "vs1", Status: "running"},
-			{Name: "vs2", Status: "stopped"},
+			{Name: "project-a", Status: "running"},
+			{Name: "project-b", Status: "stopped"},
 		},
 	})
-	if len(tab.newVibespaces) != 2 {
-		t.Fatalf("expected 2 vibespaces, got %d", len(tab.newVibespaces))
+
+	if len(tab.vibespaces) != 2 {
+		t.Fatalf("expected 2 vibespaces, got %d", len(tab.vibespaces))
 	}
-	if len(tab.newVSSelected) != 2 {
-		t.Fatalf("expected 2 selected bools, got %d", len(tab.newVSSelected))
+	if len(tab.flatTree) != 2 {
+		t.Fatalf("expected 2 tree items, got %d", len(tab.flatTree))
 	}
 
 	// Error case
-	tab.Update(vibespacesForPickerMsg{err: fmt.Errorf("load error")})
-	if tab.err != "load error" {
+	tab.Update(vibespacesForTreeMsg{err: fmt.Errorf("vs error")})
+	if tab.err != "vs error" {
 		t.Fatalf("expected error, got %q", tab.err)
-	}
-}
-
-func TestSessionsTabVSPickerNavigation(t *testing.T) {
-	tab := newTestSessionsTab()
-	tab.mode = sessionsModeNewVibespaces
-	tab.newVibespaces = []vsPickerItem{
-		{Name: "vs1"}, {Name: "vs2"}, {Name: "vs3"},
-	}
-	tab.newVSSelected = []bool{false, false, false}
-	tab.newVSCursor = 0
-
-	// j moves down
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
-	if tab.newVSCursor != 1 {
-		t.Fatalf("expected 1, got %d", tab.newVSCursor)
-	}
-
-	// k moves up
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
-	if tab.newVSCursor != 0 {
-		t.Fatalf("expected 0, got %d", tab.newVSCursor)
-	}
-
-	// x also toggles
-	tab.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	if !tab.newVSSelected[0] {
-		t.Fatal("expected vs1 selected after x")
 	}
 }

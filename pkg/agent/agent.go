@@ -6,6 +6,8 @@ package agent
 import (
 	"encoding/json"
 	"strings"
+
+	"github.com/vibespacehq/vibespace/pkg/config"
 )
 
 // Type represents the type of coding agent.
@@ -98,14 +100,7 @@ type Config struct {
 // DefaultAllowedTools returns the default tool list for agents.
 // This provides a restrictive baseline that can be customized per-agent type.
 func DefaultAllowedTools() []string {
-	return []string{
-		"Bash(read_only:true)",
-		"Read",
-		"Write",
-		"Edit",
-		"Glob",
-		"Grep",
-	}
+	return config.Global().Agent.AllowedTools
 }
 
 // GetAllowedTools returns allowed tools or default if empty.

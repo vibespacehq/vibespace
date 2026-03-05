@@ -17,6 +17,7 @@ type Vibespace struct {
 	Persistent bool             `json:"persistent"`
 	Image      string           `json:"image,omitempty"`  // Container image
 	Mounts     []Mount          `json:"mounts,omitempty"` // Host directory mounts
+	Worktree   bool             `json:"worktree,omitempty"`
 	CreatedAt  string           `json:"created_at"`
 	UpdatedAt  string           `json:"updated_at,omitempty"`
 	DeletedAt  string           `json:"deleted_at,omitempty"`
@@ -65,6 +66,19 @@ type CreateVibespaceRequest struct {
 
 	// GithubRepo is an optional GitHub repo URL to clone on startup
 	GithubRepo string `json:"github_repo,omitempty"`
+
+	// Worktree enables git worktree mode (each agent gets its own branch)
+	Worktree bool `json:"worktree,omitempty"`
+
+	// WorktreeBranch overrides the default branch name (default: agent name)
+	WorktreeBranch string `json:"worktree_branch,omitempty"`
+
+	// GithubAccessToken is set by the OAuth device flow before calling Service.Create().
+	// Never serialized to JSON — only carried in-memory from CLI/TUI to service layer.
+	GithubAccessToken string `json:"-"`
+
+	// GithubRefreshToken is set by the OAuth device flow before calling Service.Create().
+	GithubRefreshToken string `json:"-"`
 
 	// AgentType specifies the type of AI agent to use (default: claude-code)
 	AgentType agent.Type `json:"agent_type,omitempty"`

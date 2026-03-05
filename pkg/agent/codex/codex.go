@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	vsconfig "github.com/vibespacehq/vibespace/pkg/config"
 )
 
 func init() {
@@ -33,12 +34,12 @@ func (a *Agent) DisplayName() string {
 
 // DefaultAgentPrefix returns the prefix used for agent naming.
 func (a *Agent) DefaultAgentPrefix() string {
-	return "codex"
+	return vsconfig.Global().Agent.Prefixes.Codex
 }
 
 // ContainerImage returns the Docker image for Codex.
 func (a *Agent) ContainerImage() string {
-	return "ghcr.io/vibespacehq/vibespace/codex:latest"
+	return vsconfig.Global().Images.Codex
 }
 
 // ConfigDirectory returns the config directory inside the container.
@@ -66,8 +67,9 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 	// Add - at the end to read prompt from stdin
 	args = append(args, "-")
 
-	// Wrap in bash -l -c to ensure proper shell environment and cd to /vibespace
-	return fmt.Sprintf(`bash -l -c 'cd /vibespace && %s'`, strings.Join(args, " "))
+	// Wrap in bash -l -c to ensure proper shell environment and cd to $VIBESPACE_WORKDIR
+	// (set by entrypoint: worktree dir, clone dir, or /vibespace fallback)
+	return fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, strings.Join(args, " "))
 }
 
 // BuildInteractiveCommand builds a Codex command for interactive terminal mode.

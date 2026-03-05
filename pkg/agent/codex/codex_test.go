@@ -300,8 +300,8 @@ func TestBuildPrintModeCommand(t *testing.T) {
 		if !strings.HasPrefix(cmd, "bash -l -c") {
 			t.Errorf("command should start with 'bash -l -c', got: %s", cmd)
 		}
-		if !strings.Contains(cmd, "cd /vibespace") {
-			t.Error("command should cd to /vibespace")
+		if !strings.Contains(cmd, `cd "$VIBESPACE_WORKDIR"`) {
+			t.Error("command should cd to $VIBESPACE_WORKDIR")
 		}
 	})
 }

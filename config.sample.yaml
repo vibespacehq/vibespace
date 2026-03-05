@@ -1,0 +1,125 @@
+# vibespace configuration
+#
+# Place this file at ~/.vibespace/config.yaml
+# Only include the values you want to override — everything else uses built-in defaults.
+#
+# Priority chain: defaults -> config file -> environment variables -> CLI flags
+
+# Container images for agents
+images:
+  claude: "ghcr.io/vibespacehq/vibespace/claude-code:latest"
+  codex: "ghcr.io/vibespacehq/vibespace/codex:latest"
+  init: "busybox:latest"
+
+# Default resource requests/limits for new vibespaces
+resources:
+  cpu: "250m"           # CPU request (scheduling guarantee)
+  cpu_limit: "1000m"    # CPU limit (max burst)
+  memory: "512Mi"       # Memory request
+  memory_limit: "1Gi"   # Memory limit
+  storage: "10Gi"       # Persistent volume size
+
+# Agent behavior defaults
+agent:
+  allowed_tools:
+    - "Bash(read_only:true)"
+    - "Read"
+    - "Write"
+    - "Edit"
+    - "Glob"
+    - "Grep"
+  skip_permissions: false
+  share_credentials: false
+  model: ""             # Empty = agent default
+  max_turns: 0          # 0 = unlimited
+  prefixes:
+    claude: "claude"    # Agents named claude-1, claude-2, ...
+    codex: "codex"      # Agents named codex-1, codex-2, ...
+
+# Cluster VM resources (used by `vibespace init`)
+cluster:
+  cpu: 4                # CPU cores
+  memory: 8             # Memory in GB
+  disk: 60              # Disk in GB
+
+# Port assignments
+ports:
+  ssh: 22
+  ttyd: 7681
+  permission: 18080
+  wireguard: 51820
+  management: 7780      # Private, binds to WireGuard IP only
+  registration: 7781    # Public, binds to 0.0.0.0 with TLS
+  local_port_multiplier: 10000
+
+# WireGuard network settings (remote mode)
+network:
+  server_ip: "10.100.0.1"
+  client_ip_start: 2
+  invite_token_ttl: "30m"
+
+# DNS settings
+dns:
+  domain: "vibespace.internal"
+
+# Kubernetes settings
+kubernetes:
+  namespace: "vibespace"
+  deployment_strategy: "Recreate"   # or "RollingUpdate"
+  init_container_uid: 1000
+  init_container_mode: 755
+  capabilities:
+    - CHOWN
+    - DAC_OVERRIDE
+    - FOWNER
+    - SETUID
+    - SETGID
+    - NET_BIND_SERVICE
+    - KILL
+    - SYS_CHROOT
+    - AUDIT_WRITE
+
+# Timeout settings
+timeouts:
+  daemon_socket: "10s"
+  permission_hook: "300s"
+  cluster_startup: "10m"
+  cluster_poll_interval: "5s"
+
+# TUI settings
+tui:
+  monitor:
+    refresh_interval: "5s"
+    history_length: 60    # Data points kept (5min at 5s refresh)
+  syntax_theme: "monokai" # Chroma syntax highlighting theme
+
+# Theme colors (hex format)
+theme:
+  brand:
+    teal: "#00ABAB"
+    pink: "#F102F3"
+    orange: "#FF7D4B"
+    yellow: "#F5F50A"
+  semantic:
+    success: "#00ABAB"
+    error: "#FF4D4D"
+    warning: "#FF7D4B"
+    dim: "#666666"
+    muted: "#444444"
+    text_light: "#1a1a1a"
+    text_dark: "#FFFFFF"
+  tui_colors:
+    user: "#00FF9F"
+    tool: "#FF7D4B"
+    timestamp: "#555555"
+    code_bg: "#1a1a2e"
+    code_fg: "#87CEEB"
+    thinking: "#F102F3"
+  agent_palette:         # Colors assigned to agents in order
+    - "#F102F3"
+    - "#FF7D4B"
+    - "#00D9FF"
+    - "#7B61FF"
+    - "#F5F50A"
+    - "#00FF9F"
+    - "#FF6B6B"

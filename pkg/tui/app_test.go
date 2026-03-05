@@ -30,7 +30,7 @@ func containsText(target string) func([]byte) bool {
 // newTestApp creates an App and sends a WindowSizeMsg so it's ready for direct tests.
 func newTestApp(t *testing.T) *App {
 	t.Helper()
-	a := NewApp()
+	a := NewApp("dev", "test", "now")
 	// Initialize the zone manager (normally done in Init()) so View() works.
 	zone.NewGlobal()
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -40,10 +40,11 @@ func newTestApp(t *testing.T) *App {
 // --- teatest integration tests (no k8s) ---
 
 func TestAppHelpOverlay(t *testing.T) {
-	tm := teatest.NewTestModel(t, NewApp(), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, NewApp("dev", "test", "now"), teatest.WithInitialTermSize(120, 40))
 	t.Cleanup(func() { tm.Send(tea.QuitMsg{}) })
 
-	teatest.WaitFor(t, tm.Output(), containsText("Vibespaces"),
+	// Welcome cover shows "vibespace" (lowercase logo)
+	teatest.WaitFor(t, tm.Output(), containsText("vibespace"),
 		teatest.WithDuration(3*time.Second))
 
 	// Open help with ?
@@ -53,7 +54,7 @@ func TestAppHelpOverlay(t *testing.T) {
 
 	// Close help with Esc
 	tm.Send(tea.KeyMsg{Type: tea.KeyEscape})
-	teatest.WaitFor(t, tm.Output(), containsText("Vibespaces"),
+	teatest.WaitFor(t, tm.Output(), containsText("vibespace"),
 		teatest.WithDuration(3*time.Second))
 
 	tm.Send(tea.QuitMsg{})
@@ -61,10 +62,10 @@ func TestAppHelpOverlay(t *testing.T) {
 }
 
 func TestAppPaletteOverlay(t *testing.T) {
-	tm := teatest.NewTestModel(t, NewApp(), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, NewApp("dev", "test", "now"), teatest.WithInitialTermSize(120, 40))
 	t.Cleanup(func() { tm.Send(tea.QuitMsg{}) })
 
-	teatest.WaitFor(t, tm.Output(), containsText("Vibespaces"),
+	teatest.WaitFor(t, tm.Output(), containsText("vibespace"),
 		teatest.WithDuration(3*time.Second))
 
 	// Open palette with :
@@ -74,7 +75,7 @@ func TestAppPaletteOverlay(t *testing.T) {
 
 	// Close palette with Esc
 	tm.Send(tea.KeyMsg{Type: tea.KeyEscape})
-	teatest.WaitFor(t, tm.Output(), containsText("Vibespaces"),
+	teatest.WaitFor(t, tm.Output(), containsText("vibespace"),
 		teatest.WithDuration(3*time.Second))
 
 	tm.Send(tea.QuitMsg{})
@@ -82,10 +83,10 @@ func TestAppPaletteOverlay(t *testing.T) {
 }
 
 func TestAppCtrlCQuits(t *testing.T) {
-	tm := teatest.NewTestModel(t, NewApp(), teatest.WithInitialTermSize(120, 40))
+	tm := teatest.NewTestModel(t, NewApp("dev", "test", "now"), teatest.WithInitialTermSize(120, 40))
 	t.Cleanup(func() { tm.Send(tea.QuitMsg{}) })
 
-	teatest.WaitFor(t, tm.Output(), containsText("Vibespaces"),
+	teatest.WaitFor(t, tm.Output(), containsText("vibespace"),
 		teatest.WithDuration(3*time.Second))
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -98,16 +99,17 @@ func TestAppInitialRender(t *testing.T) {
 	a := newTestApp(t)
 	out := stripAnsi(a.View())
 
-	// The tab bar should show all 5 tab names
-	for _, name := range TabNames {
-		if !strings.Contains(out, name) {
-			t.Errorf("initial render missing tab name %q", name)
-		}
+	// With no vibespaces, the welcome cover is shown (no tab bar)
+	if !strings.Contains(out, "vibespace") {
+		t.Error("initial render should show welcome cover with 'vibespace' logo")
+	}
+	if !strings.Contains(out, "System") {
+		t.Error("initial render should show 'System' section in welcome cover")
 	}
 }
 
 func TestAppLoadingBeforeWindowSize(t *testing.T) {
-	a := NewApp()
+	a := NewApp("dev", "test", "now")
 	// Before any WindowSizeMsg, View should return loading text
 	out := a.View()
 	if !bytes.Contains([]byte(out), []byte("Loading...")) {
@@ -295,7 +297,7 @@ func TestComputeTabLayout(t *testing.T) {
 }
 
 func TestBuildGradient(t *testing.T) {
-	stops := brandGradient
+	stops := getBrandGradient()
 
 	// n=0 → nil
 	if got := buildGradient(0, stops); got != nil {
@@ -346,6 +348,13 @@ func TestAppFullTabCycleWithK8s(t *testing.T) {
 		if len(out) == 0 {
 			t.Fatalf("tab %d (%s) rendered empty view", i, TabNames[i])
 		}
+		// Tab 0 may render the welcome cover (no tab bar) when no vibespaces exist
+		if i == 0 && a.showWelcomeCover() {
+			if !strings.Contains(out, "vibespace") {
+				t.Errorf("tab 0 welcome cover missing 'vibespace' text")
+			}
+			continue
+		}
 		// Tab bar should always contain the tab name
 		if !strings.Contains(out, TabNames[i]) {
 			t.Errorf("tab %d view missing tab name %q in tab bar", i, TabNames[i])
@@ -361,8 +370,8 @@ func TestAppVibespacesTabWithK8s(t *testing.T) {
 	a := newTestApp(t)
 	out := stripAnsi(a.View())
 
-	// Vibespaces tab should render content (table, empty state, or error)
-	if !strings.Contains(out, "Vibespaces") {
+	// With k8s, vibespaces tab renders either welcome cover or table with tab bar
+	if !strings.Contains(out, "vibespace") && !strings.Contains(out, "Vibespaces") {
 		t.Fatal("vibespaces tab missing from view")
 	}
 }

@@ -46,16 +46,22 @@ func init() {
 }
 
 func runDelete(cmd *cobra.Command, args []string) error {
+	return doDelete(nil, args[0], deleteForce, deleteKeepData, deleteDryRun)
+}
+
+func doDelete(svc *vibespace.Service, name string, force, keepData, dryRun bool) error {
 	ctx := context.Background()
-	name := args[0]
 	out := getOutput()
 
-	slog.Info("delete command started", "name", name, "force", deleteForce, "keep_data", deleteKeepData, "dry_run", deleteDryRun)
+	slog.Info("delete command started", "name", name, "force", force, "keep_data", keepData, "dry_run", dryRun)
 
-	svc, err := getVibespaceService()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceService()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	// Check if vibespace exists
@@ -70,19 +76,19 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		fmt.Sprintf("Deployment: vibespace-%s", vs.ID),
 		fmt.Sprintf("Service: vibespace-%s", vs.ID),
 	}
-	if !deleteKeepData {
+	if !keepData {
 		resources = append(resources, fmt.Sprintf("PVC: vibespace-%s-pvc", name))
 	}
 	resources = append(resources, fmt.Sprintf("Secret: vibespace-%s-ssh-keys", vs.ID))
 
 	// Dry-run mode
-	if deleteDryRun {
+	if dryRun {
 		if out.IsJSONMode() {
 			return out.JSON(JSONOutput{
 				Success: true,
 				Data: DeleteOutput{
 					Name:      name,
-					KeepData:  deleteKeepData,
+					KeepData:  keepData,
 					DryRun:    true,
 					Resources: resources,
 				},
@@ -92,7 +98,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		for _, r := range resources {
 			fmt.Printf("  - %s\n", r)
 		}
-		if deleteKeepData {
+		if keepData {
 			fmt.Println()
 			printStep("Storage data would be preserved")
 		}
@@ -100,14 +106,14 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	}
 
 	// Confirm deletion unless --force
-	if !deleteForce {
+	if !force {
 		// Check if stdin is a terminal
 		if !out.CanPrompt() {
 			return fmt.Errorf("cannot prompt for confirmation (stdin is not a terminal). Use --force to skip confirmation")
 		}
 
 		msg := fmt.Sprintf("Delete vibespace '%s'?", vs.Name)
-		if deleteKeepData {
+		if keepData {
 			msg += " (data will be preserved)"
 		} else {
 			msg += " All data will be deleted."
@@ -127,7 +133,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	spinner.Start()
 
 	opts := &vibespace.DeleteOptions{
-		KeepData:  deleteKeepData,
+		KeepData:  keepData,
 		Vibespace: vs, // Pass the already-fetched vibespace to avoid redundant lookup
 	}
 
@@ -144,7 +150,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 			Success: true,
 			Data: DeleteOutput{
 				Name:      name,
-				KeepData:  deleteKeepData,
+				KeepData:  keepData,
 				DryRun:    false,
 				Resources: resources,
 			},
@@ -153,7 +159,7 @@ func runDelete(cmd *cobra.Command, args []string) error {
 
 	slog.Info("delete command completed", "name", name)
 	printSuccess("Vibespace '%s' deleted", name)
-	if deleteKeepData {
+	if keepData {
 		printStep("Storage data preserved. Clean up manually if needed.")
 	}
 	return nil

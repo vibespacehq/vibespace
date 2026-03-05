@@ -1,137 +1,109 @@
 package dns
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
-// ConfigureSystemResolver configures the system to use our DNS server for
-// the vibespace.internal domain.
-//
-// On macOS: Creates /etc/resolver/vibespace.internal pointing to 127.0.0.1:<port>
-// On Linux: Adds a systemd-resolved configuration
-func ConfigureSystemResolver(port int) error {
-	switch runtime.GOOS {
-	case "darwin":
-		return configureMacOSResolver(port)
-	case "linux":
-		return configureLinuxResolver(port)
-	default:
-		slog.Warn("DNS resolver configuration not supported on this platform", "os", runtime.GOOS)
+const hostsMarker = "# vibespace-managed"
+
+// ErrSudoRequired is returned when sudo credentials are not cached
+// and a password is needed.
+var ErrSudoRequired = errors.New("sudo authentication required")
+
+// AddHostEntry adds "127.0.0.1 <name>.vibespace.internal" to /etc/hosts.
+// If sudoPass is empty, tries non-interactive sudo (cached credentials).
+// If sudoPass is provided, pipes it via sudo -S.
+// Returns ErrSudoRequired if cached credentials are unavailable and no password given.
+func AddHostEntry(name, sudoPass string) error {
+	if HasHostEntry(name) {
 		return nil
 	}
-}
+	fqdn := name + "." + Domain()
+	line := fmt.Sprintf("127.0.0.1 %s %s", fqdn, hostsMarker)
 
-// RemoveSystemResolver removes the system resolver configuration.
-func RemoveSystemResolver() error {
-	switch runtime.GOOS {
-	case "darwin":
-		return removeMacOSResolver()
-	case "linux":
-		return removeLinuxResolver()
-	default:
-		return nil
+	if err := runSudo(sudoPass, "bash", "-c", fmt.Sprintf("echo '%s' >> /etc/hosts", line)); err != nil {
+		return err
 	}
-}
-
-func configureMacOSResolver(port int) error {
-	resolverDir := "/etc/resolver"
-	resolverFile := resolverDir + "/" + Domain
-	content := fmt.Sprintf("nameserver 127.0.0.1\\nport %d\\n", port)
-
-	// Single sudo command: create dir + write file
-	cmd := exec.Command("sudo", "bash", "-c",
-		fmt.Sprintf("mkdir -p %s && echo -e '%s' > %s", resolverDir, content, resolverFile))
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to configure resolver: %w", err)
-	}
-
-	slog.Info("macOS resolver configured", "file", resolverFile, "port", port)
+	slog.Info("added /etc/hosts entry", "name", fqdn)
 	return nil
 }
 
-// ResolverFileExists checks if the macOS resolver file exists.
-func ResolverFileExists() bool {
-	_, err := os.Stat("/etc/resolver/" + Domain)
-	return err == nil
-}
-
-func removeMacOSResolver() error {
-	resolverFile := "/etc/resolver/" + Domain
-	if _, err := os.Stat(resolverFile); os.IsNotExist(err) {
+// RemoveHostEntry removes a vibespace-managed entry from /etc/hosts.
+func RemoveHostEntry(name, sudoPass string) error {
+	if !HasHostEntry(name) {
 		return nil
 	}
+	fqdn := name + "." + Domain()
 
-	cmd := exec.Command("sudo", "rm", "-f", resolverFile)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to remove resolver file: %w", err)
+	if err := runSudo(sudoPass, "sed", "-i", "", fmt.Sprintf("/%s.*%s/d", fqdn, hostsMarker), "/etc/hosts"); err != nil {
+		return err
 	}
-
-	slog.Info("macOS resolver removed", "file", resolverFile)
+	slog.Info("removed /etc/hosts entry", "name", fqdn)
 	return nil
 }
 
-func configureLinuxResolver(port int) error {
-	// Use systemd-resolved drop-in config
-	dropinDir := "/etc/systemd/resolved.conf.d"
-
-	cmd := exec.Command("sudo", "mkdir", "-p", dropinDir)
-	if err := cmd.Run(); err != nil {
-		slog.Warn("could not create resolved.conf.d (systemd-resolved may not be in use)", "error", err)
+// RemoveAllHostEntries removes all vibespace-managed entries from /etc/hosts.
+func RemoveAllHostEntries(sudoPass string) error {
+	if !hasAnyHostEntries() {
 		return nil
 	}
+	if err := runSudo(sudoPass, "sed", "-i", "", fmt.Sprintf("/%s/d", hostsMarker), "/etc/hosts"); err != nil {
+		return err
+	}
+	slog.Info("removed all vibespace entries from /etc/hosts")
+	return nil
+}
 
-	content := fmt.Sprintf("[Resolve]\nDNS=127.0.0.1:%d\nDomains=~%s\n", port, Domain)
-	dropinFile := dropinDir + "/vibespace.conf"
-
-	cmd = exec.Command("sudo", "tee", dropinFile)
-	pipe, err := cmd.StdinPipe()
+// HasHostEntry checks if a vibespace-managed entry exists for the given name.
+func HasHostEntry(name string) bool {
+	fqdn := name + "." + Domain()
+	data, err := os.ReadFile("/etc/hosts")
 	if err != nil {
-		return fmt.Errorf("failed to create pipe: %w", err)
+		return false
 	}
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start tee: %w", err)
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, fqdn) && strings.Contains(line, hostsMarker) {
+			return true
+		}
 	}
-
-	pipe.Write([]byte(content))
-	pipe.Close()
-
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("failed to write resolver config: %w", err)
-	}
-
-	// Restart systemd-resolved to pick up changes
-	exec.Command("sudo", "systemctl", "restart", "systemd-resolved").Run()
-
-	slog.Info("linux resolver configured", "file", dropinFile, "port", port)
-	return nil
+	return false
 }
 
-func removeLinuxResolver() error {
-	dropinFile := "/etc/systemd/resolved.conf.d/vibespace.conf"
-	if _, err := os.Stat(dropinFile); os.IsNotExist(err) {
+func hasAnyHostEntries() bool {
+	data, err := os.ReadFile("/etc/hosts")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), hostsMarker)
+}
+
+// runSudo runs a command with sudo. Empty password tries sudo -n (cached creds).
+// Non-empty password uses sudo -S (piped stdin).
+func runSudo(password string, args ...string) error {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+		slog.Warn("hosts entry management not supported", "os", runtime.GOOS)
 		return nil
 	}
 
-	cmd := exec.Command("sudo", "rm", "-f", dropinFile)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to remove resolver config: %w", err)
+	if password != "" {
+		cmd := exec.Command("sudo", append([]string{"-S"}, args...)...)
+		cmd.Stdin = strings.NewReader(password + "\n")
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("sudo failed: %w", err)
+		}
+		return nil
 	}
 
-	// Restart systemd-resolved
-	exec.Command("sudo", "systemctl", "restart", "systemd-resolved").Run()
-
-	slog.Info("linux resolver removed", "file", dropinFile)
+	// Try non-interactive (cached credentials)
+	cmd := exec.Command("sudo", append([]string{"-n"}, args...)...)
+	if err := cmd.Run(); err != nil {
+		return ErrSudoRequired
+	}
 	return nil
 }

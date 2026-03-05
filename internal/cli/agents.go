@@ -26,7 +26,7 @@ var agentCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return doAgentList(vsName)
+		return doAgentList(nil, vsName)
 	},
 }
 
@@ -41,7 +41,7 @@ var agentListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return doAgentList(vsName)
+		return doAgentList(nil, vsName)
 	},
 }
 
@@ -67,8 +67,9 @@ var agentCreateCmd = &cobra.Command{
 		disallowedTools, _ := cmd.Flags().GetString("disallowed-tools")
 		model, _ := cmd.Flags().GetString("model")
 		maxTurns, _ := cmd.Flags().GetInt("max-turns")
+		branch, _ := cmd.Flags().GetString("branch")
 
-		return doAgentCreate(vsName, name, agentTypeStr, shareCredentials, skipPermissions, allowedTools, disallowedTools, model, maxTurns)
+		return doAgentCreate(nil, vsName, name, agentTypeStr, shareCredentials, skipPermissions, allowedTools, disallowedTools, model, maxTurns, branch)
 	},
 }
 
@@ -83,7 +84,7 @@ var agentDeleteCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return doAgentDelete(vsName, args[0])
+		return doAgentDelete(nil, vsName, args[0])
 	},
 }
 
@@ -102,7 +103,7 @@ var agentStartCmd = &cobra.Command{
 		if len(args) > 0 {
 			agentName = args[0]
 		}
-		return doAgentStart(vsName, agentName)
+		return doAgentStart(nil, vsName, agentName)
 	},
 }
 
@@ -121,7 +122,7 @@ var agentStopCmd = &cobra.Command{
 		if len(args) > 0 {
 			agentName = args[0]
 		}
-		return doAgentStop(vsName, agentName)
+		return doAgentStop(nil, vsName, agentName)
 	},
 }
 
@@ -140,20 +141,24 @@ func init() {
 	agentCreateCmd.Flags().String("disallowed-tools", "", "Comma-separated disallowed tools")
 	agentCreateCmd.Flags().String("model", "", "Model to use (e.g., opus, sonnet)")
 	agentCreateCmd.Flags().Int("max-turns", 0, "Maximum conversation turns")
+	agentCreateCmd.Flags().String("branch", "", "Git branch in worktree mode (default: agent name)")
 }
 
 // --- Business logic ---
 
-func doAgentList(vibespace string) error {
+func doAgentList(svc *vspkg.Service, vibespace string) error {
 	ctx := context.Background()
 	out := getOutput()
 
 	slog.Debug("agent list command started", "vibespace", vibespace)
 
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceServiceWithCheck()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	agents, err := svc.ListAgents(ctx, vibespace)
@@ -216,7 +221,7 @@ func doAgentList(vibespace string) error {
 	return nil
 }
 
-func doAgentCreate(vibespace, customName, agentTypeStr string, shareCredentials, skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int) error {
+func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr string, shareCredentials, skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int, branch string) error {
 	ctx := context.Background()
 	out := getOutput()
 
@@ -257,10 +262,13 @@ func doAgentCreate(vibespace, customName, agentTypeStr string, shareCredentials,
 
 	slog.Info("agent create command started", "vibespace", vibespace, "name", customName, "agent_type", agentType, "share_credentials", shareCredentials)
 
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceServiceWithCheck()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	vs, err := checkVibespaceRunning(ctx, svc, vibespace)
@@ -297,6 +305,7 @@ func doAgentCreate(vibespace, customName, agentTypeStr string, shareCredentials,
 		AgentType:        agentType,
 		ShareCredentials: shareCredentials,
 		Config:           agentConfig,
+		Branch:           branch,
 	}
 	agentName, err := svc.SpawnAgent(ctx, vs.ID, opts)
 	if err != nil {
@@ -348,16 +357,19 @@ func doAgentCreate(vibespace, customName, agentTypeStr string, shareCredentials,
 	return nil
 }
 
-func doAgentDelete(vibespace, agentID string) error {
+func doAgentDelete(svc *vspkg.Service, vibespace, agentID string) error {
 	ctx := context.Background()
 	out := getOutput()
 
 	slog.Info("agent delete command started", "vibespace", vibespace, "agent", agentID)
 
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceServiceWithCheck()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	vs, err := checkVibespaceExists(ctx, svc, vibespace)
@@ -386,16 +398,19 @@ func doAgentDelete(vibespace, agentID string) error {
 	return nil
 }
 
-func doAgentStart(vibespace, agentName string) error {
+func doAgentStart(svc *vspkg.Service, vibespace, agentName string) error {
 	ctx := context.Background()
 	out := getOutput()
 
 	slog.Info("start command started", "vibespace", vibespace, "agent", agentName)
 
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceServiceWithCheck()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	vs, err := checkVibespaceExists(ctx, svc, vibespace)
@@ -442,16 +457,19 @@ func doAgentStart(vibespace, agentName string) error {
 	return nil
 }
 
-func doAgentStop(vibespace, agentName string) error {
+func doAgentStop(svc *vspkg.Service, vibespace, agentName string) error {
 	ctx := context.Background()
 	out := getOutput()
 
 	slog.Info("stop command started", "vibespace", vibespace, "agent", agentName)
 
-	svc, err := getVibespaceServiceWithCheck()
-	if err != nil {
-		slog.Error("failed to get vibespace service", "error", err)
-		return err
+	if svc == nil {
+		var err error
+		svc, err = getVibespaceServiceWithCheck()
+		if err != nil {
+			slog.Error("failed to get vibespace service", "error", err)
+			return err
+		}
 	}
 
 	vs, err := checkVibespaceExists(ctx, svc, vibespace)
