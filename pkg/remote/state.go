@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vibespacehq/vibespace/pkg/config"
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 )
 
@@ -70,19 +71,30 @@ type InviteToken struct {
 	Host             string `json:"h,omitempty"`  // Server host/IP for registration URL
 }
 
-// Default paths and values
+// Default paths
 const (
 	RemoteStateFile  = "remote.json"
 	ServerStateFile  = "serve.json"
 	RemoteKubeconfig = "remote_kubeconfig"
-
-	DefaultWireGuardPort    = 51820
-	DefaultManagementPort   = 7780 // Private, binds to WireGuard IP only
-	DefaultRegistrationPort = 7781 // Public, binds to 0.0.0.0 with self-signed TLS
-	DefaultServerIP         = "10.100.0.1"
-	DefaultClientIPStart    = 2
-	DefaultInviteTokenTTL   = 30 * time.Minute
 )
+
+// DefaultWireGuardPort returns the configured WireGuard port.
+func DefaultWireGuardPort() int { return config.Global().Ports.WireGuard }
+
+// DefaultManagementPort returns the configured management API port (private, WG IP only).
+func DefaultManagementPort() int { return config.Global().Ports.Management }
+
+// DefaultRegistrationPort returns the configured registration API port (public, 0.0.0.0).
+func DefaultRegistrationPort() int { return config.Global().Ports.Registration }
+
+// DefaultServerIP returns the configured WireGuard server IP.
+func DefaultServerIP() string { return config.Global().Network.ServerIP }
+
+// DefaultClientIPStart returns the starting octet for client IPs.
+func DefaultClientIPStart() int { return config.Global().Network.ClientIPStart }
+
+// DefaultInviteTokenTTL returns the configured invite token time-to-live.
+func DefaultInviteTokenTTL() time.Duration { return config.Global().Network.InviteTokenTTL.Duration }
 
 var (
 	stateMu sync.Mutex
@@ -186,9 +198,9 @@ func LoadServerState() (*ServerState, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &ServerState{
-				ListenPort:   DefaultWireGuardPort,
-				ServerIP:     DefaultServerIP + "/24",
-				NextClientIP: DefaultClientIPStart,
+				ListenPort:   DefaultWireGuardPort(),
+				ServerIP:     DefaultServerIP() + "/24",
+				NextClientIP: DefaultClientIPStart(),
 			}, nil
 		}
 		return nil, fmt.Errorf("failed to read server state: %w", err)

@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/vibespacehq/vibespace/pkg/config"
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
+	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/tui"
+	"github.com/vibespacehq/vibespace/pkg/ui"
 
 	"github.com/spf13/cobra"
 )
@@ -19,13 +22,14 @@ var (
 
 // Global flags
 var (
-	globalJSON      bool
-	globalVerbose   bool
-	globalQuiet     bool
-	globalNoColor   bool
-	globalPlain     bool
-	globalHeader    bool
-	globalVibespace string
+	globalJSON       bool
+	globalVerbose    bool
+	globalQuiet      bool
+	globalNoColor    bool
+	globalPlain      bool
+	globalHeader     bool
+	globalVibespace  string
+	globalConfigPath string
 )
 
 var rootCmd = &cobra.Command{
@@ -59,15 +63,23 @@ Environment Variables:
   VIBESPACE_DEFAULT_CPU       Default vibespace CPU (default: 1000m)
   VIBESPACE_DEFAULT_MEMORY    Default vibespace memory (default: 1Gi)
   VIBESPACE_DEFAULT_STORAGE   Default vibespace storage (default: 10Gi)
+  VIBESPACE_CONFIG            Path to config file (default: ~/.vibespace/config.yaml)
   NO_COLOR                    Disable colored output`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load(globalConfigPath)
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+		config.SetGlobal(cfg)
+		ui.ApplyTheme(cfg.Theme)
+		k8s.VibespaceNamespace = cfg.Kubernetes.Namespace
 		initOutputFromFlags()
 		return nil
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return tui.RunApp()
+		return tui.RunApp(Version, Commit, BuildDate)
 	},
 }
 
@@ -142,6 +154,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&globalNoColor, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&globalPlain, "plain", false, "Plain output for scripting")
 	rootCmd.PersistentFlags().BoolVar(&globalHeader, "header", false, "Include headers in plain output")
+
+	// Config flag
+	rootCmd.PersistentFlags().StringVar(&globalConfigPath, "config", "", "Path to config file (env: VIBESPACE_CONFIG)")
 
 	// Vibespace flag
 	defaultVS := os.Getenv("VIBESPACE_NAME")

@@ -10,8 +10,9 @@ import (
 
 // DesiredForward represents a desired port-forward configuration
 type DesiredForward struct {
-	ContainerPort int `json:"container"`
-	LocalPort     int `json:"local"`
+	ContainerPort int    `json:"container"`
+	LocalPort     int    `json:"local"`
+	DNSName       string `json:"dns_name,omitempty"`
 }
 
 // DesiredState represents the desired port-forward state for a vibespace
@@ -172,6 +173,19 @@ func (s *DesiredState) AddForward(agentName string, forward DesiredForward) {
 	}
 
 	s.Agents[agentName] = append(s.Agents[agentName], forward)
+}
+
+// UpdateForwardDNS updates the DNS name for an existing forward
+func (s *DesiredState) UpdateForwardDNS(agentName string, containerPort int, dnsName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i, f := range s.Agents[agentName] {
+		if f.ContainerPort == containerPort {
+			s.Agents[agentName][i].DNSName = dnsName
+			return
+		}
+	}
 }
 
 // RemoveForward removes a forward from a vibespace's agent

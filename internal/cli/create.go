@@ -7,8 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/config"
+	"github.com/vibespacehq/vibespace/pkg/github"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	modelPkg "github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
@@ -41,6 +44,8 @@ var (
 	createAgentType        string   // Agent type (claude-code, codex)
 	createAgentName        string   // Custom name for primary agent
 	createMounts           []string // Host directory mounts (host:container[:ro])
+	createWorktree         bool     // Enable git worktree mode
+	createBranch           string   // Git branch for primary agent in worktree mode
 	// Agent config flags
 	createSkipPermissions bool
 	createAllowedTools    string
@@ -49,44 +54,23 @@ var (
 	createMaxTurns        int
 )
 
-// Default resource values - can be overridden via environment variables
-// Requests are low to allow more agents to be scheduled via overcommit
-// Limits are high to allow agents to burst when actively processing
-const (
-	DefaultCPU         = "250m"  // CPU request for k8s scheduling
-	DefaultCPULimit    = "1000m" // CPU limit for burst capacity
-	DefaultMemory      = "512Mi" // Memory request for k8s scheduling
-	DefaultMemoryLimit = "1Gi"   // Memory limit for burst capacity
-	DefaultStorage     = "10Gi"
-)
-
-// getEnvOrDefault returns the environment variable value or a default
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
 func init() {
-	// Read defaults from environment variables, falling back to constants
-	cpuDefault := getEnvOrDefault("VIBESPACE_DEFAULT_CPU", DefaultCPU)
-	cpuLimitDefault := getEnvOrDefault("VIBESPACE_DEFAULT_CPU_LIMIT", DefaultCPULimit)
-	memoryDefault := getEnvOrDefault("VIBESPACE_DEFAULT_MEMORY", DefaultMemory)
-	memoryLimitDefault := getEnvOrDefault("VIBESPACE_DEFAULT_MEMORY_LIMIT", DefaultMemoryLimit)
-	storageDefault := getEnvOrDefault("VIBESPACE_DEFAULT_STORAGE", DefaultStorage)
-
+	// Flag defaults use hardcoded values matching config.Default().
+	// At runtime, runCreate checks cmd.Flags().Changed() and falls back to config.Global()
+	// which has file + env overrides applied.
 	createCmd.Flags().StringVar(&createRepo, "repo", "", "GitHub repository to clone")
-	createCmd.Flags().StringVar(&createCPU, "cpu", cpuDefault, "CPU request for scheduling (e.g., 250m, 500m)")
-	createCmd.Flags().StringVar(&createCPULimit, "cpu-limit", cpuLimitDefault, "CPU limit for burst (e.g., 1000m, 2000m)")
-	createCmd.Flags().StringVar(&createMemory, "memory", memoryDefault, "Memory request for scheduling (e.g., 256Mi, 512Mi)")
-	createCmd.Flags().StringVar(&createMemoryLimit, "memory-limit", memoryLimitDefault, "Memory limit for burst (e.g., 1Gi, 2Gi)")
-	createCmd.Flags().StringVar(&createStorage, "storage", storageDefault, "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
+	createCmd.Flags().StringVar(&createCPU, "cpu", "250m", "CPU request for scheduling (e.g., 250m, 500m)")
+	createCmd.Flags().StringVar(&createCPULimit, "cpu-limit", "1000m", "CPU limit for burst (e.g., 1000m, 2000m)")
+	createCmd.Flags().StringVar(&createMemory, "memory", "512Mi", "Memory request for scheduling (e.g., 256Mi, 512Mi)")
+	createCmd.Flags().StringVar(&createMemoryLimit, "memory-limit", "1Gi", "Memory limit for burst (e.g., 1Gi, 2Gi)")
+	createCmd.Flags().StringVar(&createStorage, "storage", "10Gi", "Storage size for persistent volume (e.g., 10Gi, 20Gi)")
 	createCmd.Flags().BoolVarP(&createShareCredentials, "share-credentials", "s", false, "Share credentials across all agents")
 	createCmd.Flags().StringVarP(&createAgentType, "agent-type", "t", "", "Agent type: claude-code, codex (required)")
 	createCmd.MarkFlagRequired("agent-type")
 	createCmd.Flags().StringVarP(&createAgentName, "name", "n", "", "Custom name for the primary agent (default: <type>-1)")
 	createCmd.Flags().StringArrayVarP(&createMounts, "mount", "m", nil, "Mount host directory (host:container[:ro], can be repeated)")
+	createCmd.Flags().BoolVar(&createWorktree, "worktree", false, "Enable git worktree mode (each agent gets its own branch)")
+	createCmd.Flags().StringVar(&createBranch, "branch", "", "Git branch for primary agent in worktree mode (default: agent name)")
 
 	// Agent configuration flags
 	createCmd.Flags().BoolVar(&createSkipPermissions, "skip-permissions", false, "Enable --dangerously-skip-permissions for Claude")
@@ -97,17 +81,56 @@ func init() {
 }
 
 func runCreate(cmd *cobra.Command, args []string) error {
+	// Apply config.Global() for flags not explicitly set by user
+	cfg := config.Global()
+	if !cmd.Flags().Changed("cpu") {
+		createCPU = cfg.Resources.CPU
+	}
+	if !cmd.Flags().Changed("cpu-limit") {
+		createCPULimit = cfg.Resources.CPULimit
+	}
+	if !cmd.Flags().Changed("memory") {
+		createMemory = cfg.Resources.Memory
+	}
+	if !cmd.Flags().Changed("memory-limit") {
+		createMemoryLimit = cfg.Resources.MemoryLimit
+	}
+	if !cmd.Flags().Changed("storage") {
+		createStorage = cfg.Resources.Storage
+	}
+	if !cmd.Flags().Changed("share-credentials") {
+		createShareCredentials = cfg.Agent.ShareCredentials
+	}
+	if !cmd.Flags().Changed("skip-permissions") {
+		createSkipPermissions = cfg.Agent.SkipPermissions
+	}
+	if !cmd.Flags().Changed("model") && cfg.Agent.Model != "" {
+		createModel = cfg.Agent.Model
+	}
+	if !cmd.Flags().Changed("max-turns") && cfg.Agent.MaxTurns > 0 {
+		createMaxTurns = cfg.Agent.MaxTurns
+	}
 	return doCreate(nil, args[0], createAgentType, createRepo, createAgentName, createCPU, createCPULimit,
 		createMemory, createMemoryLimit, createStorage, createShareCredentials, createMounts,
-		createSkipPermissions, createAllowedTools, createDisallowedTools, createModel, createMaxTurns)
+		createSkipPermissions, createAllowedTools, createDisallowedTools, createModel, createMaxTurns,
+		createWorktree, createBranch)
 }
 
 func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, cpuLimit,
 	memory, memoryLimit, storage string, shareCredentials bool, mounts []string,
-	skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int) error {
+	skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int,
+	worktree bool, branch string) error {
 	ctx := context.Background()
 
 	slog.Info("create command started", "name", name, "repo", repo, "agent_type", agentTypeStr)
+
+	// Validate worktree flags
+	if worktree && repo == "" {
+		return fmt.Errorf("--worktree requires --repo")
+	}
+	if branch != "" && !worktree {
+		return fmt.Errorf("--branch requires --worktree")
+	}
 
 	// Parse and validate agent type
 	agentType := agent.ParseType(agentTypeStr)
@@ -170,6 +193,41 @@ func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, 
 	}
 	if repo != "" {
 		req.GithubRepo = repo
+	}
+	req.Worktree = worktree
+	req.WorktreeBranch = branch
+
+	// GitHub OAuth device flow for HTTPS repos
+	if repo != "" && strings.HasPrefix(repo, "https://") {
+		clientID := config.Global().GitHub.ClientID
+
+		devResp, err := github.RequestDeviceCode(ctx, clientID, "repo")
+		if err != nil {
+			return fmt.Errorf("failed to start GitHub authorization: %w", err)
+		}
+
+		fmt.Println()
+		fmt.Printf("  Open:  %s\n", devResp.VerificationURI)
+		fmt.Printf("  Code:  %s\n\n", devResp.UserCode)
+
+		// Best-effort browser open
+		_ = openBrowser(devResp.VerificationURI)
+
+		authSpinner := NewSpinner("Waiting for GitHub authorization...")
+		authSpinner.Start()
+
+		authCtx, authCancel := context.WithTimeout(ctx, time.Duration(devResp.ExpiresIn)*time.Second)
+		defer authCancel()
+
+		token, err := github.PollForToken(authCtx, clientID, devResp.DeviceCode, devResp.Interval)
+		if err != nil {
+			authSpinner.Fail("GitHub authorization failed")
+			return fmt.Errorf("GitHub authorization failed: %w", err)
+		}
+
+		authSpinner.Success("GitHub authorized")
+		req.GithubAccessToken = token.AccessToken
+		req.GithubRefreshToken = token.RefreshToken
 	}
 
 	spinner := NewSpinner("Creating vibespace...")

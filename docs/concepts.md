@@ -4,7 +4,7 @@ The core ideas behind vibespace and how they fit together.
 
 ## Vibespace
 
-A vibespace is an isolated development environment running as a Kubernetes deployment. Each one gets its own container, persistent storage, and SSH access. You can think of it as a sandboxed Linux machine dedicated to a project.
+A vibespace is an isolated stateful runtime environment with Kubernetes orchestration. Each one gets its own container, persistent storage, and SSH access. You can think of it as a sandboxed Linux machine dedicated to a project.
 
 Vibespaces persist across restarts. Your code, agent history, and configuration survive `vibespace stop` and come back when you start again.
 
@@ -15,7 +15,9 @@ An agent is an AI coding assistant running inside a vibespace. Vibespace current
 - **claude-code** — Anthropic's Claude Code CLI
 - **codex** — OpenAI's Codex CLI
 
-A vibespace starts with one agent (the primary), but you can add more. Multiple agents share the same filesystem, so they can all work on the same codebase simultaneously.
+A vibespace starts with one agent (the primary), but you can add more. By default, multiple agents share the same filesystem, so they can all work on the same codebase simultaneously.
+
+For parallel development, you can enable **worktree mode** (`--worktree`) when creating a vibespace with a GitHub repo. This gives each agent its own git branch and working copy via git worktrees backed by a shared bare repository. Agents can work on different features simultaneously without clobbering each other's changes.
 
 Each agent has its own configuration: model selection, tool permissions, max turns, and system prompt. You can tune these per-agent with `vibespace config set`.
 

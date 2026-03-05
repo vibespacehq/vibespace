@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os/exec"
@@ -19,7 +20,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/vibespacehq/vibespace/pkg/agent"
+	"github.com/vibespacehq/vibespace/pkg/config"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
+	"github.com/vibespacehq/vibespace/pkg/github"
 	"github.com/vibespacehq/vibespace/pkg/model"
 	"github.com/vibespacehq/vibespace/pkg/ui"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
@@ -29,14 +33,16 @@ import (
 type vibespacesMode int
 
 const (
-	vibespacesModeList           vibespacesMode = iota // table view
-	vibespacesModeAgentView                            // full-screen agent detail
-	vibespacesModeSessionList                          // session list for an agent
-	vibespacesModeCreateForm                           // inline create form
-	vibespacesModeDeleteConfirm                        // inline delete confirmation
-	vibespacesModeAddAgent                             // inline add agent form (in agent view)
-	vibespacesModeEditConfig                           // inline edit config form (in agent view)
-	vibespacesModeForwardManager                       // inline forward manager (in agent view)
+	vibespacesModeList               vibespacesMode = iota // table view
+	vibespacesModeAgentView                                // full-screen agent detail
+	vibespacesModeSessionList                              // session list for an agent
+	vibespacesModeCreateForm                               // inline create form
+	vibespacesModeDeleteConfirm                            // inline delete confirmation
+	vibespacesModeAddAgent                                 // inline add agent form (in agent view)
+	vibespacesModeDeleteAgentConfirm                       // inline delete agent confirmation (in agent view)
+	vibespacesModeEditConfig                               // inline edit config form (in agent view)
+	vibespacesModeForwardManager                           // inline forward manager (in agent view)
+	vibespacesModeGithubAuth                               // waiting for GitHub device flow authorization
 )
 
 // vsConnectMode distinguishes connect action types.
@@ -96,6 +102,7 @@ type vsSessionInfo struct {
 
 // vsSessionsLoadedMsg delivers parsed sessions from inside the agent pod.
 type vsSessionsLoadedMsg struct {
+	vsName    string // vibespace name (used by SessionsTab tree)
 	agentName string
 	sessions  []vsSessionInfo
 	err       error
@@ -103,12 +110,13 @@ type vsSessionsLoadedMsg struct {
 
 // vsConnectReadyMsg signals that SSH forward is ready for a connect action.
 type vsConnectReadyMsg struct {
-	sshPort   int
-	agentName string
-	agentType agent.Type
-	sessionID string
-	mode      vsConnectMode
-	err       error
+	sshPort     int
+	agentName   string
+	agentType   agent.Type
+	sessionID   string
+	mode        vsConnectMode
+	agentConfig *agent.Config // carried for SessionsTab (no t.agentConfigs access)
+	err         error
 }
 
 // vsSessionResumeMsg signals that a session resume process has completed.
@@ -129,6 +137,18 @@ type vsExecReturnMsg struct {
 
 // vsRefreshTickMsg triggers a periodic reload while vibespaces are in a transitional state.
 type vsRefreshTickMsg struct{}
+
+// vsGithubDeviceCodeMsg carries the device code response from GitHub.
+type vsGithubDeviceCodeMsg struct {
+	resp *github.DeviceCodeResponse
+	err  error
+}
+
+// vsGithubTokenMsg carries the token response from GitHub polling.
+type vsGithubTokenMsg struct {
+	token *github.TokenResponse
+	err   error
+}
 
 // vsCreateDoneMsg signals completion of a vibespace creation.
 type vsCreateDoneMsg struct {
@@ -158,12 +178,44 @@ type vsEditConfigDoneMsg struct {
 
 // vsAddForwardDoneMsg signals completion of adding a forward.
 type vsAddForwardDoneMsg struct {
-	err error
+	err     error
+	dnsName string // non-empty if DNS hosts entry still needed
 }
 
 // vsRemoveForwardDoneMsg signals completion of removing a forward.
 type vsRemoveForwardDoneMsg struct {
+	err     error
+	dnsName string // non-empty if DNS hosts entry removal still needed
+}
+
+// vsToggleDNSDoneMsg signals completion of toggling DNS on a forward.
+type vsToggleDNSDoneMsg struct {
+	err     error
+	dnsName string // non-empty = DNS was added (needs AddHostEntry); empty = DNS was removed
+	oldDNS  string // non-empty = DNS was removed (needs RemoveHostEntry)
+}
+
+// vsDeleteAgentDoneMsg signals completion of an agent deletion (kill).
+type vsDeleteAgentDoneMsg struct {
 	err error
+}
+
+// vsAgentStartStopDoneMsg signals completion of an agent start/stop operation.
+type vsAgentStartStopDoneMsg struct {
+	action string
+	err    error
+}
+
+// vsAgentStatusClearMsg clears the transient agent status message after a delay.
+type vsAgentStatusClearMsg struct{}
+
+// vsAgentRefreshTickMsg triggers a periodic agent list reload after start/stop.
+type vsAgentRefreshTickMsg struct{}
+
+// vsSudoDoneMsg signals completion of sudo password validation.
+type vsSudoDoneMsg struct {
+	ok       bool
+	password string
 }
 
 // createFormField identifies which field is active in the create form.
@@ -172,6 +224,9 @@ type createFormField int
 const (
 	createFieldName      createFormField = iota
 	createFieldAgentType                 // selector (j/k)
+	createFieldRepo                      // text input, optional
+	createFieldWorktree                  // toggle (j/k), only shown when repo is set
+	createFieldBranch                    // text input, only shown when worktree is enabled
 	createFieldCPU
 	createFieldMemory
 	createFieldStorage
@@ -188,6 +243,7 @@ const (
 	addAgentFieldMaxTurns                                 // text input, optional
 	addAgentFieldShareCreds                               // toggle (j/k)
 	addAgentFieldSkipPerms                                // toggle (j/k)
+	addAgentFieldBranch                                   // text input, only shown in worktree mode
 	addAgentFieldAllowedTools                             // multi-select (j/k navigate, space toggle)
 	addAgentFieldDisallowedTools                          // multi-select (j/k navigate, space toggle)
 	addAgentFieldCount                                    // sentinel
@@ -249,18 +305,38 @@ type VibespacesTab struct {
 	createField     createFormField
 	createName      string
 	createAgentType agent.Type
+	createRepo      string
+	createWorktree  bool
+	createBranch    string
 	createCPU       string
 	createMemory    string
 	createStorage   string
+
+	// GitHub auth state (device flow)
+	githubUserCode     string
+	githubVerifyURI    string
+	githubDevCode      string
+	githubInterval     int
+	githubAccessToken  string
+	githubRefreshToken string
 
 	// Delete confirm state
 	deleteName  string
 	deleteInput string
 
+	// Delete agent confirm state (agent view)
+	deleteAgentName  string
+	deleteAgentInput string
+
+	// Agent status feedback (transient message shown in agent view)
+	agentStatusMsg      string
+	agentRefreshPending int // remaining refresh ticks after start/stop
+
 	// Add agent form state (agent view)
 	addAgentField         addAgentFormField
 	addAgentType          agent.Type
 	addAgentName          string
+	addAgentBranch        string
 	addAgentModel         string
 	addAgentMaxTurns      string
 	addAgentShareCreds    bool
@@ -289,6 +365,18 @@ type VibespacesTab struct {
 	fwdManagerAddDNS     bool               // enable DNS resolution
 	fwdManagerAddDNSName string             // custom DNS name (optional)
 	fwdManagerAddField   fwdManagerAddField // which add-form field is active
+
+	// Sudo state for DNS hosts entry management
+	sudoPassword     string // cached sudo password for sudo -S
+	sudoPromptActive bool   // true when showing password prompt
+	sudoInput        string // password input buffer
+	sudoPendingDNS   string // DNS name waiting for sudo to complete
+	sudoPendingOp    string // "add" or "remove"
+
+	// Welcome screen state
+	welcomeClusterStatus clusterStatus
+	welcomeClusterMode   string
+	welcomeLoaded        bool
 }
 
 func NewVibespacesTab(shared *SharedState) *VibespacesTab {
@@ -310,7 +398,11 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "skip")),
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("ctrl+s", "submit")),
 		}
-	case vibespacesModeDeleteConfirm:
+	case vibespacesModeGithubAuth:
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		}
+	case vibespacesModeDeleteConfirm, vibespacesModeDeleteAgentConfirm:
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
@@ -335,6 +427,7 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add")),
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "remove")),
+			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "dns")),
 			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
 		}
 	case vibespacesModeSessionList:
@@ -349,12 +442,23 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate agents")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "sessions")),
 			key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add agent")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 			key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit config")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forwards")),
+			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "start/stop")),
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "connect")),
 			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "browser")),
 		}
 	default:
+		if len(t.vibespaces) == 0 {
+			return []key.Binding{
+				key.NewBinding(key.WithKeys("i"), key.WithHelp("i", "init")),
+				key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "create")),
+				key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "refresh")),
+				key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+				key.NewBinding(key.WithKeys(":"), key.WithHelp(":", "palette")),
+			}
+		}
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "navigate")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "view")),
@@ -370,7 +474,7 @@ func (t *VibespacesTab) ShortHelp() []key.Binding {
 func (t *VibespacesTab) SetSize(w, h int) { t.width = w; t.height = h }
 
 func (t *VibespacesTab) Init() tea.Cmd {
-	return t.loadVibespaces()
+	return tea.Batch(t.loadVibespaces(), detectClusterStatus())
 }
 
 func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -397,9 +501,12 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.createField = createFieldName
 		t.createName = ""
 		t.createAgentType = agent.TypeClaudeCode
-		t.createCPU = "250m"
-		t.createMemory = "512Mi"
-		t.createStorage = "10Gi"
+		t.createRepo = ""
+		t.createWorktree = false
+		t.createBranch = ""
+		t.createCPU = config.Global().Resources.CPU
+		t.createMemory = config.Global().Resources.Memory
+		t.createStorage = config.Global().Resources.Storage
 		t.err = ""
 		return t, nil
 
@@ -466,7 +573,11 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.mode {
 		case vsConnectModeSessionResume:
-			return t, t.execSessionResume(msg.sshPort, msg.agentName, msg.agentType, msg.sessionID)
+			var cfg *agent.Config
+			if c, ok := t.agentConfigs[msg.agentName]; ok {
+				cfg = c
+			}
+			return t, execSessionResumeCmd(msg.sshPort, msg.agentName, msg.agentType, msg.sessionID, cfg)
 		case vsConnectModeShell:
 			return t, t.execShellConnect(msg.sshPort)
 		case vsConnectModeAgentCLI:
@@ -512,6 +623,43 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return t, nil
 
+	case vsGithubDeviceCodeMsg:
+		if msg.err != nil {
+			t.mode = vibespacesModeCreateForm
+			t.err = fmt.Sprintf("GitHub auth failed: %s", msg.err)
+			return t, nil
+		}
+		t.mode = vibespacesModeGithubAuth
+		t.githubUserCode = msg.resp.UserCode
+		t.githubVerifyURI = msg.resp.VerificationURI
+		t.githubDevCode = msg.resp.DeviceCode
+		t.githubInterval = msg.resp.Interval
+		// Best-effort browser open
+		_ = openBrowserURL(msg.resp.VerificationURI)
+		// Start polling for token
+		clientID := config.Global().GitHub.ClientID
+		devCode := msg.resp.DeviceCode
+		interval := msg.resp.Interval
+		expiresIn := msg.resp.ExpiresIn
+		return t, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(expiresIn)*time.Second)
+			defer cancel()
+			token, err := github.PollForToken(ctx, clientID, devCode, interval)
+			return vsGithubTokenMsg{token: token, err: err}
+		}
+
+	case vsGithubTokenMsg:
+		if msg.err != nil {
+			t.mode = vibespacesModeCreateForm
+			t.err = fmt.Sprintf("GitHub auth failed: %s", msg.err)
+			return t, nil
+		}
+		// Store tokens and proceed with vibespace creation
+		t.githubAccessToken = msg.token.AccessToken
+		t.githubRefreshToken = msg.token.RefreshToken
+		t.mode = vibespacesModeCreateForm
+		return t, t.submitCreateForm()
+
 	case vsCreateDoneMsg:
 		t.mode = vibespacesModeList
 		if msg.err != nil {
@@ -532,8 +680,21 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return t, t.loadVibespaces()
 
-	case vsAddAgentDoneMsg:
-		t.mode = vibespacesModeAgentView
+	case welcomeClusterStatusMsg:
+		t.welcomeClusterStatus = msg.status
+		if msg.clusterMode != "" {
+			t.welcomeClusterMode = msg.clusterMode
+		}
+		t.welcomeLoaded = true
+		return t, nil
+
+	case vsInitDoneMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		return t, tea.Batch(t.loadVibespaces(), detectClusterStatus(), refreshSharedState(t.shared))
+
+	case vsDeleteAgentDoneMsg:
 		if msg.err != nil {
 			t.err = msg.err.Error()
 		}
@@ -545,6 +706,66 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 		return t, nil
+
+	case vsAgentStartStopDoneMsg:
+		if msg.err != nil {
+			t.agentStatusMsg = ""
+			t.agentRefreshPending = 0
+			t.err = msg.err.Error()
+		} else if msg.action == "stop" {
+			t.agentStatusMsg = "Agent stopped"
+		} else {
+			t.agentStatusMsg = "Agent started"
+		}
+		t.agentRefreshPending = 5
+		refreshTick := tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return vsAgentRefreshTickMsg{}
+		})
+		clearTick := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+			return vsAgentStatusClearMsg{}
+		})
+		if t.selectedVS != nil {
+			return t, tea.Batch(t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name), refreshTick, clearTick)
+		}
+		return t, tea.Batch(refreshTick, clearTick)
+
+	case vsAgentStatusClearMsg:
+		t.agentStatusMsg = ""
+		return t, nil
+
+	case vsAgentRefreshTickMsg:
+		t.agentRefreshPending--
+		if t.agentRefreshPending <= 0 || t.mode != vibespacesModeAgentView {
+			t.agentRefreshPending = 0
+			return t, nil
+		}
+		var cmds []tea.Cmd
+		if t.selectedVS != nil {
+			cmds = append(cmds, t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name))
+		}
+		cmds = append(cmds, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return vsAgentRefreshTickMsg{}
+		}))
+		return t, tea.Batch(cmds...)
+
+	case vsAddAgentDoneMsg:
+		t.mode = vibespacesModeAgentView
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		}
+		t.agentRefreshPending = 5
+		refreshTick := tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+			return vsAgentRefreshTickMsg{}
+		})
+		if t.selectedVS != nil {
+			return t, tea.Batch(
+				t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+				refreshTick,
+			)
+		}
+		return t, refreshTick
 
 	case vsEditConfigDoneMsg:
 		t.mode = vibespacesModeAgentView
@@ -560,6 +781,12 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.fwdManagerAdding = false
 		if msg.err != nil {
 			t.err = msg.err.Error()
+		} else if msg.dnsName != "" {
+			// sudo needed for /etc/hosts entry
+			t.sudoPromptActive = true
+			t.sudoInput = ""
+			t.sudoPendingDNS = msg.dnsName
+			t.sudoPendingOp = "add"
 		}
 		if t.selectedVS != nil {
 			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
@@ -569,10 +796,46 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case vsRemoveForwardDoneMsg:
 		if msg.err != nil {
 			t.err = msg.err.Error()
+		} else if msg.dnsName != "" {
+			t.sudoPromptActive = true
+			t.sudoInput = ""
+			t.sudoPendingDNS = msg.dnsName
+			t.sudoPendingOp = "remove"
 		}
 		if t.selectedVS != nil {
 			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
 		}
+		return t, nil
+
+	case vsToggleDNSDoneMsg:
+		if msg.err != nil {
+			t.err = msg.err.Error()
+		} else if msg.dnsName != "" {
+			// DNS was added — need to add /etc/hosts entry
+			t.sudoPromptActive = true
+			t.sudoInput = ""
+			t.sudoPendingDNS = msg.dnsName
+			t.sudoPendingOp = "add"
+		} else if msg.oldDNS != "" {
+			// DNS was removed — need to remove /etc/hosts entry
+			t.sudoPromptActive = true
+			t.sudoInput = ""
+			t.sudoPendingDNS = msg.oldDNS
+			t.sudoPendingOp = "remove"
+		}
+		if t.selectedVS != nil {
+			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
+		}
+		return t, nil
+
+	case vsSudoDoneMsg:
+		t.sudoPromptActive = false
+		if msg.ok {
+			t.sudoPassword = msg.password
+			// Retry the pending DNS operation with the password
+			return t, t.retryDNSHostEntry()
+		}
+		t.err = "sudo authentication failed"
 		return t, nil
 
 	case tea.KeyMsg:
@@ -583,6 +846,36 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Handle sudo password prompt input
+	if t.sudoPromptActive {
+		switch msg.String() {
+		case "esc":
+			t.sudoPromptActive = false
+			t.sudoInput = ""
+			t.sudoPendingDNS = ""
+			t.sudoPendingOp = ""
+			return t, nil
+		case "enter":
+			pw := t.sudoInput
+			t.sudoInput = ""
+			if pw == "" {
+				t.sudoPromptActive = false
+				return t, nil
+			}
+			return t, t.validateSudo(pw)
+		case "backspace":
+			if len(t.sudoInput) > 0 {
+				t.sudoInput = t.sudoInput[:len(t.sudoInput)-1]
+			}
+			return t, nil
+		default:
+			if len(msg.String()) == 1 {
+				t.sudoInput += msg.String()
+			}
+			return t, nil
+		}
+	}
+
 	switch t.mode {
 	case vibespacesModeSessionList:
 		switch msg.String() {
@@ -656,10 +949,16 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				t.addAgentField = addAgentFieldType
 				t.addAgentType = agent.TypeClaudeCode
 				t.addAgentName = ""
-				t.addAgentModel = ""
-				t.addAgentMaxTurns = ""
-				t.addAgentShareCreds = false
-				t.addAgentSkipPerms = false
+				t.addAgentBranch = ""
+				agentCfg := config.Global().Agent
+				t.addAgentModel = agentCfg.Model
+				if agentCfg.MaxTurns > 0 {
+					t.addAgentMaxTurns = strconv.Itoa(agentCfg.MaxTurns)
+				} else {
+					t.addAgentMaxTurns = ""
+				}
+				t.addAgentShareCreds = agentCfg.ShareCredentials
+				t.addAgentSkipPerms = agentCfg.SkipPermissions
 				t.addAgentToolsList = agentSupportedTools(agent.TypeClaudeCode)
 				t.addAgentAllowedSet = make(map[string]bool)
 				t.addAgentDisallowedSet = make(map[string]bool)
@@ -719,14 +1018,47 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				t.err = ""
 				return t, nil
 			}
+		case "d":
+			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+				ag := t.viewAgents[t.agentCursor]
+				if !ag.IsPrimary {
+					t.mode = vibespacesModeDeleteAgentConfirm
+					t.deleteAgentName = ag.AgentName
+					t.deleteAgentInput = ""
+					t.err = ""
+					return t, nil
+				}
+			}
+		case "S":
+			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+				ag := t.viewAgents[t.agentCursor]
+				if ag.Status == "running" {
+					t.agentStatusMsg = fmt.Sprintf("Stopping %s…", ag.AgentName)
+				} else {
+					t.agentStatusMsg = fmt.Sprintf("Starting %s…", ag.AgentName)
+				}
+				return t, t.toggleAgentStartStop(t.selectedVS.Name, ag.AgentName, ag.Status)
+			}
 		}
 		return t, nil
 
 	case vibespacesModeCreateForm:
 		return t.handleCreateFormKey(msg)
 
+	case vibespacesModeGithubAuth:
+		// Only Esc to cancel during GitHub auth
+		if msg.String() == "esc" {
+			t.mode = vibespacesModeCreateForm
+			t.err = ""
+			return t, nil
+		}
+		return t, nil
+
 	case vibespacesModeDeleteConfirm:
 		return t.handleDeleteConfirmKey(msg)
+
+	case vibespacesModeDeleteAgentConfirm:
+		return t.handleDeleteAgentConfirmKey(msg)
 
 	case vibespacesModeAddAgent:
 		return t.handleAddAgentKey(msg)
@@ -784,9 +1116,9 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			t.createField = createFieldName
 			t.createName = ""
 			t.createAgentType = agent.TypeClaudeCode
-			t.createCPU = "250m"
-			t.createMemory = "512Mi"
-			t.createStorage = "10Gi"
+			t.createCPU = config.Global().Resources.CPU
+			t.createMemory = config.Global().Resources.Memory
+			t.createStorage = config.Global().Resources.Storage
 			t.err = ""
 			return t, nil
 		case "d":
@@ -802,6 +1134,12 @@ func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				vs := t.vibespaces[t.selected]
 				return t, t.toggleStartStop(vs.Name, vs.Status)
 			}
+		case "i":
+			if len(t.vibespaces) == 0 {
+				return t, execInit()
+			}
+		case "r":
+			return t, tea.Batch(t.loadVibespaces(), detectClusterStatus(), refreshSharedState(t.shared))
 		}
 		if t.selected != prev {
 			return t, t.loadLogsForSelected()
@@ -819,7 +1157,7 @@ func (t *VibespacesTab) View() string {
 	}
 
 	switch t.mode {
-	case vibespacesModeAgentView, vibespacesModeAddAgent, vibespacesModeEditConfig, vibespacesModeForwardManager:
+	case vibespacesModeAgentView, vibespacesModeAddAgent, vibespacesModeDeleteAgentConfirm, vibespacesModeEditConfig, vibespacesModeForwardManager:
 		return t.viewAgentView()
 	case vibespacesModeSessionList:
 		return t.viewSessionList()
@@ -835,6 +1173,8 @@ func (t *VibespacesTab) View() string {
 	switch t.mode {
 	case vibespacesModeCreateForm:
 		bottom = t.viewCreateForm()
+	case vibespacesModeGithubAuth:
+		bottom = t.viewGithubAuth()
 	case vibespacesModeDeleteConfirm:
 		bottom = t.viewDeleteConfirm()
 	default:
@@ -854,17 +1194,13 @@ func (t *VibespacesTab) View() string {
 // --- View helpers ---
 
 func (t *VibespacesTab) viewEmpty() string {
+	// This is a fallback — the App renders the full-screen welcome cover
+	// when no vibespaces exist, bypassing this method entirely.
 	msg := lipgloss.NewStyle().
 		Foreground(ui.ColorDim).
 		Padding(2, 0).
-		Render("No vibespaces found.")
-
-	hint := lipgloss.NewStyle().
-		Foreground(ui.ColorDim).
-		Render("Create one with: vibespace create <name>")
-
-	block := lipgloss.JoinVertical(lipgloss.Center, msg, hint)
-	return lipgloss.Place(t.width, t.height, lipgloss.Center, lipgloss.Center, block)
+		Render("No vibespaces found. Press n to create one.")
+	return lipgloss.Place(t.width, t.height, lipgloss.Center, lipgloss.Center, msg)
 }
 
 func (t *VibespacesTab) viewTable() string {
@@ -948,7 +1284,7 @@ func (t *VibespacesTab) buildTableData() ([]string, [][]string) {
 			if showAge {
 				cells = append(cells, vsTimeAgo(vs.CreatedAt))
 			}
-			rows[i] = renderGradientRow(cells, brandGradient)
+			rows[i] = renderGradientRow(cells, getBrandGradient())
 		} else {
 			cells := []string{"  " + vs.Name, vsStatusStyled(vs.Status), agentCount}
 			if showCPU {
@@ -1084,7 +1420,7 @@ func (t *VibespacesTab) viewAgentView() string {
 	var topParts []string
 
 	// Header: ← name                                          status
-	backArrow := renderGradientText("← ", brandGradient)
+	backArrow := renderGradientText("← ", getBrandGradient())
 	nameText := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorText).Render(vs.Name)
 	statusText := vsStatusStyled(vs.Status)
 
@@ -1112,6 +1448,8 @@ func (t *VibespacesTab) viewAgentView() string {
 	switch t.mode {
 	case vibespacesModeAddAgent:
 		bottom = t.viewAddAgentForm()
+	case vibespacesModeDeleteAgentConfirm:
+		bottom = t.viewDeleteAgentConfirm()
 	case vibespacesModeEditConfig:
 		bottom = t.viewEditConfigForm()
 	case vibespacesModeForwardManager:
@@ -1237,7 +1575,27 @@ func (t *VibespacesTab) viewAgentDetail() string {
 		} else if len(cfg.AllowedTools) > 0 {
 			allowedStr = strings.Join(cfg.AllowedTools, ", ")
 		} else {
-			allowedStr = strings.Join(agent.DefaultAllowedTools(), ", ") + " (default)"
+			// Show defaults minus any disallowed tools
+			defaults := agent.DefaultAllowedTools()
+			if len(cfg.DisallowedTools) > 0 {
+				disallowed := make(map[string]bool, len(cfg.DisallowedTools))
+				for _, t := range cfg.DisallowedTools {
+					disallowed[t] = true
+				}
+				var filtered []string
+				for _, t := range defaults {
+					if !disallowed[t] {
+						filtered = append(filtered, t)
+					}
+				}
+				if len(filtered) == 0 {
+					allowedStr = "none (all defaults disallowed)"
+				} else {
+					allowedStr = strings.Join(filtered, ", ") + " (default)"
+				}
+			} else {
+				allowedStr = strings.Join(defaults, ", ") + " (default)"
+			}
 		}
 		cfgLines = append(cfgLines, fmt.Sprintf("%s  %s",
 			labelStyle.Render("allowed_tools"),
@@ -1310,13 +1668,22 @@ func (t *VibespacesTab) viewAgentDetail() string {
 				dimStyle.Render(fmt.Sprintf("→ %-*s", maxLocal, local)),
 				dimStyle.Render(fmt.Sprintf("%-*s", maxType, fwd.Type)),
 				dimStyle.Render(fwd.Status))
+			if fwd.DNSName != "" {
+				line += "  " + dimStyle.Render(fmt.Sprintf("%s.vibespace.internal:%d", fwd.DNSName, fwd.LocalPort))
+			}
 			fwdLines = append(fwdLines, line)
 		}
 		fwdBlock = "\n\n" + fwdHeader + "\n" + mutedLine + "\n" +
 			strings.Join(fwdLines, "\n") + "\n" + mutedLine
 	}
 
-	fullBlock := detailsBlock + "\n\n" + cfgBlock + fwdBlock
+	var statusLine string
+	if t.agentStatusMsg != "" {
+		statusLine = "\n\n" + lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
+			Render(t.agentStatusMsg)
+	}
+
+	fullBlock := detailsBlock + "\n\n" + cfgBlock + fwdBlock + statusLine
 	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
 }
 
@@ -1335,7 +1702,7 @@ func (t *VibespacesTab) viewAgentTable() string {
 
 		if i == t.agentCursor {
 			cells := []string{"› " + ag.AgentName, agentType, modelStr, status}
-			rows[i] = renderGradientRow(cells, brandGradient)
+			rows[i] = renderGradientRow(cells, getBrandGradient())
 		} else {
 			rows[i] = []string{name, agentType, modelStr, vsStatusStyled(status)}
 		}
@@ -1396,7 +1763,7 @@ func (t *VibespacesTab) viewSessionList() string {
 		Render(strings.Repeat("─", t.width-4))
 
 	// Header: ← agent-name sessions
-	backArrow := renderGradientText("← ", brandGradient)
+	backArrow := renderGradientText("← ", getBrandGradient())
 	nameText := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorText).
 		Render(t.sessionAgent + " sessions")
 	header := backArrow + nameText
@@ -1439,7 +1806,7 @@ func (t *VibespacesTab) viewSessionTable() string {
 
 		if i == t.sessionCursor {
 			cells := []string{"› " + idShort, ago, prompts, title}
-			rows[i] = renderGradientRow(cells, brandGradient)
+			rows[i] = renderGradientRow(cells, getBrandGradient())
 		} else {
 			rows[i] = []string{"  " + idShort, ago, prompts, title}
 		}
@@ -1447,7 +1814,7 @@ func (t *VibespacesTab) viewSessionTable() string {
 
 	sel := t.sessionCursor
 	tbl := table.New().
-		Headers("ID", "Last Active", "Turns", "Title").
+		Headers("ID", "Last Active", "Turns", "First Prompt").
 		Rows(rows...).
 		Border(lipgloss.NormalBorder()).
 		BorderTop(false).
@@ -1534,13 +1901,63 @@ func (t *VibespacesTab) loadLogsForVibespace(vsID, vsName string) tea.Cmd {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		logs, err := svc.GetLogs(ctx, vsName, 8)
+		// Fetch extra lines so we have enough after filtering noise
+		logs, err := svc.GetLogs(ctx, vsName, 100)
 		if err != nil {
 			return vsLogsLoadedMsg{vibespaceID: vsID, err: err}
 		}
-		lines := strings.Split(strings.TrimRight(logs, "\n"), "\n")
+		raw := strings.Split(strings.TrimRight(logs, "\n"), "\n")
+		lines := filterContainerLogs(raw, 8)
 		return vsLogsLoadedMsg{vibespaceID: vsID, lines: lines}
 	}
+}
+
+// filterContainerLogs keeps only meaningful log lines, dropping supervisord noise.
+// It returns at most maxLines lines.
+func filterContainerLogs(raw []string, maxLines int) []string {
+	var filtered []string
+	for _, line := range raw {
+		line = strings.TrimRight(line, "\r")
+		lower := strings.ToLower(line)
+
+		// Skip known noise lines
+		if strings.Contains(lower, "syslogin_perform_logout") ||
+			strings.Contains(lower, "received disconnect from") {
+			continue
+		}
+
+		switch {
+		case strings.Contains(line, "[vibespace]"):
+			// Entrypoint logs (clone, credentials, startup)
+		case strings.Contains(line, "[github-refresh]"):
+			// Token refresh daemon
+		case strings.Contains(lower, "accepted publickey") ||
+			strings.Contains(lower, "session opened") ||
+			strings.Contains(lower, "session closed") ||
+			strings.Contains(lower, "disconnected from user"):
+			// SSH access logs — strip verbose key info
+			if idx := strings.Index(line, " ssh2:"); idx > 0 {
+				line = line[:idx]
+			}
+		case strings.Contains(lower, "error"):
+			// Any error
+		case strings.Contains(lower, "warn"):
+			// Any warning
+		case strings.Contains(lower, "fatal"):
+			// Fatal errors
+		case strings.Contains(lower, "panic"):
+			// Go panics
+		case strings.Contains(lower, "oom"):
+			// Out of memory
+		default:
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	if len(filtered) > maxLines {
+		filtered = filtered[len(filtered)-maxLines:]
+	}
+	return filtered
 }
 
 func (t *VibespacesTab) loadAgentsForView(vsID, vsName string) tea.Cmd {
@@ -1600,18 +2017,61 @@ func (t *VibespacesTab) loadForwards(vsID, vsName string) tea.Cmd {
 }
 
 func (t *VibespacesTab) loadSessions(vsName, agentName string, agentType agent.Type) tea.Cmd {
+	return loadAgentSessionsCmd(vsName, agentName, agentType)
+}
+
+func (t *VibespacesTab) prepareSessionResume(vsName, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+	var cfg *agent.Config
+	if c, ok := t.agentConfigs[agentName]; ok {
+		cfg = c
+	}
+	return prepareSessionResumeCmd(vsName, agentName, agentType, sessionID, cfg)
+}
+
+// --- Standalone session functions (shared by VibespacesTab and SessionsTab) ---
+
+// ensureSSHForwardForAgent ensures daemon is running and an SSH forward exists for the agent.
+// Returns the local port for SSH access.
+func ensureSSHForwardForAgent(vsName, agentName string) (int, error) {
+	if !daemon.IsDaemonRunning() {
+		if err := daemon.SpawnDaemon(); err != nil {
+			return 0, fmt.Errorf("start daemon: %w", err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	client, err := daemon.NewClient()
+	if err != nil {
+		return 0, fmt.Errorf("connect to daemon: %w", err)
+	}
+
+	if port, ok := findSSHForward(client, vsName, agentName); ok {
+		return port, nil
+	}
+
+	_ = client.Refresh()
+	time.Sleep(2 * time.Second)
+
+	if port, ok := findSSHForward(client, vsName, agentName); ok {
+		return port, nil
+	}
+
+	return 0, fmt.Errorf("no active SSH forward for %s/%s", vsName, agentName)
+}
+
+// loadAgentSessionsCmd loads session history from an agent container via SSH.
+func loadAgentSessionsCmd(vsName, agentName string, agentType agent.Type) tea.Cmd {
 	return func() tea.Msg {
-		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		sshPort, err := ensureSSHForwardForAgent(vsName, agentName)
 		if err != nil {
-			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("SSH forward: %w", err)}
+			return vsSessionsLoadedMsg{vsName: vsName, agentName: agentName, err: fmt.Errorf("SSH forward: %w", err)}
 		}
 
 		keyPath := vibespace.GetSSHPrivateKeyPath()
 		if keyPath == "" {
-			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("no SSH key found")}
+			return vsSessionsLoadedMsg{vsName: vsName, agentName: agentName, err: fmt.Errorf("no SSH key found")}
 		}
 
-		// Build remote command based on agent type
 		var remoteCmd string
 		switch agentType {
 		case agent.TypeCodex:
@@ -1639,7 +2099,7 @@ func (t *VibespacesTab) loadSessions(vsName, agentName string, agentType agent.T
 			if detail == "" {
 				detail = err.Error()
 			}
-			return vsSessionsLoadedMsg{agentName: agentName, err: fmt.Errorf("read sessions: %s", strings.TrimSpace(detail))}
+			return vsSessionsLoadedMsg{vsName: vsName, agentName: agentName, err: fmt.Errorf("read sessions: %s", strings.TrimSpace(detail))}
 		}
 
 		var sessions []vsSessionInfo
@@ -1649,23 +2109,23 @@ func (t *VibespacesTab) loadSessions(vsName, agentName string, agentType agent.T
 		default:
 			sessions = parseHistoryJSONL(output, "/vibespace")
 		}
-		return vsSessionsLoadedMsg{agentName: agentName, sessions: sessions}
+		return vsSessionsLoadedMsg{vsName: vsName, agentName: agentName, sessions: sessions}
 	}
 }
 
-// prepareSessionResume ensures the SSH forward is ready, then sends vsConnectReadyMsg.
-func (t *VibespacesTab) prepareSessionResume(vsName, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+// prepareSessionResumeCmd ensures the SSH forward is ready, then sends vsConnectReadyMsg.
+func prepareSessionResumeCmd(vsName, agentName string, agentType agent.Type, sessionID string, cfg *agent.Config) tea.Cmd {
 	return func() tea.Msg {
-		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		sshPort, err := ensureSSHForwardForAgent(vsName, agentName)
 		if err != nil {
 			return vsConnectReadyMsg{agentName: agentName, agentType: agentType, sessionID: sessionID, mode: vsConnectModeSessionResume, err: err}
 		}
-		return vsConnectReadyMsg{sshPort: sshPort, agentName: agentName, agentType: agentType, sessionID: sessionID, mode: vsConnectModeSessionResume}
+		return vsConnectReadyMsg{sshPort: sshPort, agentName: agentName, agentType: agentType, sessionID: sessionID, mode: vsConnectModeSessionResume, agentConfig: cfg}
 	}
 }
 
-// execSessionResume builds the SSH command and returns tea.ExecProcess to suspend the TUI.
-func (t *VibespacesTab) execSessionResume(sshPort int, agentName string, agentType agent.Type, sessionID string) tea.Cmd {
+// execSessionResumeCmd builds the SSH command and returns tea.ExecProcess to suspend the TUI.
+func execSessionResumeCmd(sshPort int, agentName string, agentType agent.Type, sessionID string, cfg *agent.Config) tea.Cmd {
 	keyPath := vibespace.GetSSHPrivateKeyPath()
 	if keyPath == "" {
 		return func() tea.Msg {
@@ -1673,14 +2133,9 @@ func (t *VibespacesTab) execSessionResume(sshPort int, agentName string, agentTy
 		}
 	}
 
-	var cfg *agent.Config
-	if c, ok := t.agentConfigs[agentName]; ok {
-		cfg = c
-	}
-
 	agentImpl := agent.MustGet(agentType)
 	agentCmd := agentImpl.BuildInteractiveCommand(sessionID, cfg)
-	remoteCmd := fmt.Sprintf("bash -l -c 'cd /vibespace && %s'", agentCmd)
+	remoteCmd := fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, agentCmd)
 
 	slog.Debug("resuming session", "agent", agentName, "session", sessionID, "type", agentType)
 
@@ -1698,37 +2153,6 @@ func (t *VibespacesTab) execSessionResume(sshPort int, agentName string, agentTy
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
 		return vsSessionResumeMsg{err: err}
 	})
-}
-
-// ensureSSHForward ensures daemon is running and an SSH forward exists for the agent.
-// Returns the local port for SSH access.
-func (t *VibespacesTab) ensureSSHForward(vsName, agentName string) (int, error) {
-	if !daemon.IsDaemonRunning() {
-		if err := daemon.SpawnDaemon(); err != nil {
-			return 0, fmt.Errorf("start daemon: %w", err)
-		}
-		time.Sleep(2 * time.Second)
-	}
-
-	client, err := daemon.NewClient()
-	if err != nil {
-		return 0, fmt.Errorf("connect to daemon: %w", err)
-	}
-
-	// Try to find existing SSH forward
-	if port, ok := findSSHForward(client, vsName, agentName); ok {
-		return port, nil
-	}
-
-	// Refresh daemon state and retry
-	_ = client.Refresh()
-	time.Sleep(2 * time.Second)
-
-	if port, ok := findSSHForward(client, vsName, agentName); ok {
-		return port, nil
-	}
-
-	return 0, fmt.Errorf("no active SSH forward for %s/%s", vsName, agentName)
 }
 
 // findSSHForward queries the daemon for an active SSH forward.
@@ -1766,7 +2190,7 @@ func (t *VibespacesTab) prepareShellConnectPrimary(vsName string) tea.Cmd {
 		if primary == nil {
 			return vsConnectReadyMsg{mode: vsConnectModeShell, err: fmt.Errorf("no agents in %s", vsName)}
 		}
-		sshPort, err := t.ensureSSHForward(vsName, primary.AgentName)
+		sshPort, err := ensureSSHForwardForAgent(vsName, primary.AgentName)
 		if err != nil {
 			return vsConnectReadyMsg{mode: vsConnectModeShell, err: err}
 		}
@@ -1777,7 +2201,7 @@ func (t *VibespacesTab) prepareShellConnectPrimary(vsName string) tea.Cmd {
 // prepareAgentConnect ensures SSH forward for the agent's interactive CLI.
 func (t *VibespacesTab) prepareAgentConnect(vsName, agentName string, agentType agent.Type) tea.Cmd {
 	return func() tea.Msg {
-		sshPort, err := t.ensureSSHForward(vsName, agentName)
+		sshPort, err := ensureSSHForwardForAgent(vsName, agentName)
 		if err != nil {
 			return vsConnectReadyMsg{agentName: agentName, agentType: agentType, mode: vsConnectModeAgentCLI, err: err}
 		}
@@ -1861,7 +2285,7 @@ func (t *VibespacesTab) execAgentConnect(sshPort int, agentName string, agentTyp
 
 	agentImpl := agent.MustGet(agentType)
 	agentCmd := agentImpl.BuildInteractiveCommand("", cfg)
-	remoteCmd := fmt.Sprintf("bash -l -c 'cd /vibespace && %s'", agentCmd)
+	remoteCmd := fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, agentCmd)
 
 	slog.Debug("agent connect", "agent", agentName, "type", agentType)
 
@@ -2080,6 +2504,41 @@ func formatSessionAge(t time.Time) string {
 
 // --- Form key handlers ---
 
+// createFieldVisible returns true if the given create form field should be visible.
+func (t *VibespacesTab) createFieldVisible(f createFormField) bool {
+	switch f {
+	case createFieldWorktree:
+		return t.createRepo != ""
+	case createFieldBranch:
+		return t.createWorktree
+	default:
+		return true
+	}
+}
+
+// createFieldNext advances to the next visible create form field.
+func (t *VibespacesTab) createFieldNext() {
+	for {
+		t.createField++
+		if t.createField >= createFieldCount || t.createFieldVisible(t.createField) {
+			return
+		}
+	}
+}
+
+// createFieldPrev moves to the previous visible create form field.
+func (t *VibespacesTab) createFieldPrev() {
+	for {
+		if t.createField <= 0 {
+			return
+		}
+		t.createField--
+		if t.createFieldVisible(t.createField) {
+			return
+		}
+	}
+}
+
 func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 
@@ -2095,7 +2554,7 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		return t, t.submitCreateForm()
 
 	case k == "tab":
-		t.createField++
+		t.createFieldNext()
 		if t.createField >= createFieldCount {
 			if t.createName == "" {
 				t.createField = createFieldName
@@ -2109,10 +2568,20 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		if t.createField == createFieldName && t.createName == "" {
 			return t, nil
 		}
-		t.createField++
+		t.createFieldNext()
 		if t.createField >= createFieldCount {
 			return t, t.submitCreateForm()
 		}
+		return t, nil
+
+	case k == "down":
+		if t.createField < createFieldCount-1 {
+			t.createFieldNext()
+		}
+		return t, nil
+
+	case k == "up":
+		t.createFieldPrev()
 		return t, nil
 
 	case k == "backspace":
@@ -2120,6 +2589,19 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		case createFieldName:
 			if len(t.createName) > 0 {
 				t.createName = t.createName[:len(t.createName)-1]
+			}
+		case createFieldRepo:
+			if len(t.createRepo) > 0 {
+				t.createRepo = t.createRepo[:len(t.createRepo)-1]
+			}
+			// When repo is cleared, reset worktree state
+			if t.createRepo == "" {
+				t.createWorktree = false
+				t.createBranch = ""
+			}
+		case createFieldBranch:
+			if len(t.createBranch) > 0 {
+				t.createBranch = t.createBranch[:len(t.createBranch)-1]
 			}
 		case createFieldCPU:
 			if len(t.createCPU) > 0 {
@@ -2148,16 +2630,31 @@ func (t *VibespacesTab) handleCreateFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			return t, nil
 		}
 
-		if len(k) == 1 {
+		if t.createField == createFieldWorktree {
+			if k == "j" || k == "k" {
+				t.createWorktree = !t.createWorktree
+				if !t.createWorktree {
+					t.createBranch = ""
+				}
+			}
+			return t, nil
+		}
+
+		if msg.Type == tea.KeyRunes {
+			text := string(msg.Runes)
 			switch t.createField {
 			case createFieldName:
-				t.createName += k
+				t.createName += text
+			case createFieldRepo:
+				t.createRepo += text
+			case createFieldBranch:
+				t.createBranch += text
 			case createFieldCPU:
-				t.createCPU += k
+				t.createCPU += text
 			case createFieldMemory:
-				t.createMemory += k
+				t.createMemory += text
 			case createFieldStorage:
-				t.createStorage += k
+				t.createStorage += text
 			}
 		}
 		return t, nil
@@ -2185,8 +2682,37 @@ func (t *VibespacesTab) handleDeleteConfirmKey(msg tea.KeyMsg) (tea.Model, tea.C
 		return t, nil
 
 	default:
-		if len(k) == 1 {
-			t.deleteInput += k
+		if msg.Type == tea.KeyRunes {
+			t.deleteInput += string(msg.Runes)
+		}
+		return t, nil
+	}
+}
+
+func (t *VibespacesTab) handleDeleteAgentConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	k := msg.String()
+
+	switch {
+	case k == "esc":
+		t.mode = vibespacesModeAgentView
+		return t, nil
+
+	case k == "enter":
+		if t.deleteAgentInput == t.deleteAgentName {
+			t.mode = vibespacesModeAgentView
+			return t, t.deleteAgent(t.selectedVS.Name, t.deleteAgentName)
+		}
+		return t, nil
+
+	case k == "backspace":
+		if len(t.deleteAgentInput) > 0 {
+			t.deleteAgentInput = t.deleteAgentInput[:len(t.deleteAgentInput)-1]
+		}
+		return t, nil
+
+	default:
+		if msg.Type == tea.KeyRunes {
+			t.deleteAgentInput += string(msg.Runes)
 		}
 		return t, nil
 	}
@@ -2205,12 +2731,42 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case k == "tab", k == "enter":
 		t.addAgentField++
+		// Skip branch field when vibespace has no worktree
+		if t.addAgentField == addAgentFieldBranch && (t.selectedVS == nil || !t.selectedVS.Worktree) {
+			t.addAgentField++
+		}
 		if t.addAgentField >= addAgentFieldCount {
 			return t, t.submitAddAgent()
 		}
 		// Reset tools cursor when entering a multi-select field
 		if t.addAgentField == addAgentFieldAllowedTools || t.addAgentField == addAgentFieldDisallowedTools {
 			t.addAgentToolsCursor = 0
+		}
+		return t, nil
+
+	case k == "down":
+		if t.addAgentField < addAgentFieldCount-1 {
+			t.addAgentField++
+			// Skip branch field when vibespace has no worktree
+			if t.addAgentField == addAgentFieldBranch && (t.selectedVS == nil || !t.selectedVS.Worktree) {
+				t.addAgentField++
+			}
+			if t.addAgentField == addAgentFieldAllowedTools || t.addAgentField == addAgentFieldDisallowedTools {
+				t.addAgentToolsCursor = 0
+			}
+		}
+		return t, nil
+
+	case k == "up":
+		if t.addAgentField > 0 {
+			t.addAgentField--
+			// Skip branch field when vibespace has no worktree
+			if t.addAgentField == addAgentFieldBranch && (t.selectedVS == nil || !t.selectedVS.Worktree) {
+				t.addAgentField--
+			}
+			if t.addAgentField == addAgentFieldAllowedTools || t.addAgentField == addAgentFieldDisallowedTools {
+				t.addAgentToolsCursor = 0
+			}
 		}
 		return t, nil
 
@@ -2248,20 +2804,23 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		// Multi-select fields: j/k navigate, space toggles
 		case addAgentFieldAllowedTools:
-			return t, t.handleToolsMultiSelect(k, t.addAgentAllowedSet)
+			return t, t.handleToolsMultiSelect(k, t.addAgentAllowedSet, t.addAgentDisallowedSet)
 		case addAgentFieldDisallowedTools:
-			return t, t.handleToolsMultiSelect(k, t.addAgentDisallowedSet)
+			return t, t.handleToolsMultiSelect(k, t.addAgentDisallowedSet, t.addAgentAllowedSet)
 		}
 
 		// Text fields
-		if len(k) == 1 {
+		if msg.Type == tea.KeyRunes {
+			text := string(msg.Runes)
 			switch t.addAgentField {
 			case addAgentFieldName:
-				t.addAgentName += k
+				t.addAgentName += text
+			case addAgentFieldBranch:
+				t.addAgentBranch += text
 			case addAgentFieldModel:
-				t.addAgentModel += k
+				t.addAgentModel += text
 			case addAgentFieldMaxTurns:
-				t.addAgentMaxTurns += k
+				t.addAgentMaxTurns += text
 			}
 		}
 		return t, nil
@@ -2269,12 +2828,13 @@ func (t *VibespacesTab) handleAddAgentKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleToolsMultiSelect handles j/k navigation and space toggle for tool multi-select fields (add agent).
-func (t *VibespacesTab) handleToolsMultiSelect(k string, set map[string]bool) tea.Cmd {
-	return t.handleToolsMultiSelectWith(k, t.addAgentToolsList, &t.addAgentToolsCursor, set)
+func (t *VibespacesTab) handleToolsMultiSelect(k string, set, oppositeSet map[string]bool) tea.Cmd {
+	return t.handleToolsMultiSelectWith(k, t.addAgentToolsList, &t.addAgentToolsCursor, set, oppositeSet)
 }
 
 // handleToolsMultiSelectWith is the generic helper for tool multi-select navigation.
-func (t *VibespacesTab) handleToolsMultiSelectWith(k string, toolsList []string, cursor *int, set map[string]bool) tea.Cmd {
+// oppositeSet is the mutually exclusive set — toggling a tool on removes it from the opposite set.
+func (t *VibespacesTab) handleToolsMultiSelectWith(k string, toolsList []string, cursor *int, set, oppositeSet map[string]bool) tea.Cmd {
 	n := len(toolsList)
 	if n == 0 {
 		return nil
@@ -2290,6 +2850,7 @@ func (t *VibespacesTab) handleToolsMultiSelectWith(k string, toolsList []string,
 			delete(set, tool)
 		} else {
 			set[tool] = true
+			delete(oppositeSet, tool)
 		}
 	}
 	return nil
@@ -2300,6 +2861,10 @@ func (t *VibespacesTab) addAgentBackspace() {
 	case addAgentFieldName:
 		if len(t.addAgentName) > 0 {
 			t.addAgentName = t.addAgentName[:len(t.addAgentName)-1]
+		}
+	case addAgentFieldBranch:
+		if len(t.addAgentBranch) > 0 {
+			t.addAgentBranch = t.addAgentBranch[:len(t.addAgentBranch)-1]
 		}
 	case addAgentFieldModel:
 		if len(t.addAgentModel) > 0 {
@@ -2334,6 +2899,24 @@ func (t *VibespacesTab) handleEditConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 		}
 		return t, nil
 
+	case k == "down":
+		if t.editConfigField < editConfigFieldCount-1 {
+			t.editConfigField++
+			if t.editConfigField == editConfigFieldAllowedTools || t.editConfigField == editConfigFieldDisallowedTools {
+				t.editConfigToolsCursor = 0
+			}
+		}
+		return t, nil
+
+	case k == "up":
+		if t.editConfigField > 0 {
+			t.editConfigField--
+			if t.editConfigField == editConfigFieldAllowedTools || t.editConfigField == editConfigFieldDisallowedTools {
+				t.editConfigToolsCursor = 0
+			}
+		}
+		return t, nil
+
 	case k == "backspace":
 		switch t.editConfigField {
 		case editConfigFieldModel:
@@ -2355,18 +2938,19 @@ func (t *VibespacesTab) handleEditConfigKey(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			}
 			return t, nil
 		case editConfigFieldAllowedTools:
-			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigAllowedSet)
+			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigAllowedSet, t.editConfigDisallowedSet)
 		case editConfigFieldDisallowedTools:
-			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigDisallowedSet)
+			return t, t.handleToolsMultiSelectWith(k, t.editConfigToolsList, &t.editConfigToolsCursor, t.editConfigDisallowedSet, t.editConfigAllowedSet)
 		}
 
 		// Text fields
-		if len(k) == 1 {
+		if msg.Type == tea.KeyRunes {
+			text := string(msg.Runes)
 			switch t.editConfigField {
 			case editConfigFieldModel:
-				t.editConfigModel += k
+				t.editConfigModel += text
 			case editConfigFieldMaxTurns:
-				t.editConfigMaxTurns += k
+				t.editConfigMaxTurns += text
 			}
 		}
 		return t, nil
@@ -2405,6 +2989,12 @@ func (t *VibespacesTab) handleForwardManagerKey(msg tea.KeyMsg) (tea.Model, tea.
 		if t.fwdManagerCursor < len(fwds) {
 			fwd := fwds[t.fwdManagerCursor]
 			return t, t.submitRemoveForward(fwd.RemotePort)
+		}
+	case "n":
+		fwds := t.currentAgentForwards()
+		if t.fwdManagerCursor < len(fwds) {
+			fwd := fwds[t.fwdManagerCursor]
+			return t, t.submitToggleDNS(fwd.RemotePort, fwd.DNSName)
 		}
 	case "r":
 		if t.selectedVS != nil {
@@ -2445,6 +3035,26 @@ func (t *VibespacesTab) handleFwdManagerAddKey(msg tea.KeyMsg) (tea.Model, tea.C
 		}
 		return t, nil
 
+	case k == "down":
+		if t.fwdManagerAddField < fwdManagerAddFieldCount-1 {
+			t.fwdManagerAddField++
+			// Skip DNS name if DNS disabled
+			if t.fwdManagerAddField == fwdManagerAddFieldDNSName && !t.fwdManagerAddDNS {
+				t.fwdManagerAddField--
+			}
+		}
+		return t, nil
+
+	case k == "up":
+		if t.fwdManagerAddField > 0 {
+			t.fwdManagerAddField--
+			// Skip DNS name if DNS disabled
+			if t.fwdManagerAddField == fwdManagerAddFieldDNSName && !t.fwdManagerAddDNS {
+				t.fwdManagerAddField--
+			}
+		}
+		return t, nil
+
 	case k == " ":
 		// Space toggles the DNS bool field
 		if t.fwdManagerAddField == fwdManagerAddFieldDNS {
@@ -2471,14 +3081,15 @@ func (t *VibespacesTab) handleFwdManagerAddKey(msg tea.KeyMsg) (tea.Model, tea.C
 		return t, nil
 
 	default:
-		if len(k) == 1 {
+		if msg.Type == tea.KeyRunes {
+			text := string(msg.Runes)
 			switch t.fwdManagerAddField {
 			case fwdManagerAddFieldRemote:
-				t.fwdManagerAddRemote += k
+				t.fwdManagerAddRemote += text
 			case fwdManagerAddFieldLocal:
-				t.fwdManagerAddLocal += k
+				t.fwdManagerAddLocal += text
 			case fwdManagerAddFieldDNSName:
-				t.fwdManagerAddDNSName += k
+				t.fwdManagerAddDNSName += text
 			}
 		}
 		return t, nil
@@ -2505,6 +3116,13 @@ func (t *VibespacesTab) viewCreateForm() string {
 	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
 		Render("Create vibespace")
 
+	boolStr := func(v bool) string {
+		if v {
+			return "yes"
+		}
+		return "no"
+	}
+
 	type formField struct {
 		label    string
 		field    createFormField
@@ -2515,10 +3133,21 @@ func (t *VibespacesTab) viewCreateForm() string {
 	fields := []formField{
 		{"Name", createFieldName, t.createName, false},
 		{"Agent type", createFieldAgentType, string(t.createAgentType), true},
-		{"CPU", createFieldCPU, t.createCPU, false},
-		{"Memory", createFieldMemory, t.createMemory, false},
-		{"Storage", createFieldStorage, t.createStorage, false},
+		{"Repo", createFieldRepo, t.createRepo, false},
 	}
+	// Only show worktree when repo is set
+	if t.createRepo != "" {
+		fields = append(fields, formField{"Worktree", createFieldWorktree, boolStr(t.createWorktree), true})
+	}
+	// Only show branch when worktree is enabled
+	if t.createWorktree {
+		fields = append(fields, formField{"Branch", createFieldBranch, t.createBranch, false})
+	}
+	fields = append(fields,
+		formField{"CPU", createFieldCPU, t.createCPU, false},
+		formField{"Memory", createFieldMemory, t.createMemory, false},
+		formField{"Storage", createFieldStorage, t.createStorage, false},
+	)
 
 	var lines []string
 	for _, f := range fields {
@@ -2533,7 +3162,11 @@ func (t *VibespacesTab) viewCreateForm() string {
 				val = activeStyle.Render(f.value + "█")
 			}
 		} else {
-			val = dimStyle.Render(f.value)
+			if f.value == "" && !f.isSelect {
+				val = dimStyle.Render("(optional)")
+			} else {
+				val = dimStyle.Render(f.value)
+			}
 		}
 
 		lines = append(lines, fmt.Sprintf("  %s %s", labelStyle.Render(label), val))
@@ -2542,6 +3175,27 @@ func (t *VibespacesTab) viewCreateForm() string {
 	if t.err != "" {
 		lines = append(lines, "", lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err))
 	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
+func (t *VibespacesTab) viewGithubAuth() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.Orange).
+		Render("Authorize GitHub Access")
+
+	var lines []string
+	lines = append(lines, fmt.Sprintf("  %-12s %s", dimStyle.Render("Open:"), activeStyle.Render(t.githubVerifyURI)))
+	lines = append(lines, fmt.Sprintf("  %-12s %s", dimStyle.Render("Code:"), lipgloss.NewStyle().Bold(true).Foreground(ui.Orange).Render(t.githubUserCode)))
+	lines = append(lines, "")
+	lines = append(lines, "  "+dimStyle.Render("Waiting for authorization..."))
+	lines = append(lines, "")
+	lines = append(lines, "  "+dimStyle.Render("[Esc] Cancel"))
 
 	fullBlock := header + "\n" + mutedLine + "\n" + strings.Join(lines, "\n") + "\n" + mutedLine
 	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
@@ -2559,6 +3213,28 @@ func (t *VibespacesTab) viewDeleteConfirm() string {
 	prompt := fmt.Sprintf("  Type %s to confirm: %s",
 		dimStyle.Render(t.deleteName),
 		activeStyle.Render(t.deleteInput+"█"))
+
+	var errLine string
+	if t.err != "" {
+		errLine = "\n" + lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err)
+	}
+
+	fullBlock := header + "\n" + mutedLine + "\n" + prompt + errLine + "\n" + mutedLine
+	return lipgloss.NewStyle().Padding(0, 2).Render(fullBlock)
+}
+
+func (t *VibespacesTab) viewDeleteAgentConfirm() string {
+	dimStyle := lipgloss.NewStyle().Foreground(ui.ColorDim)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.ColorText)
+	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
+		Render(strings.Repeat("─", t.width-4))
+
+	header := lipgloss.NewStyle().Italic(true).Foreground(ui.ColorError).
+		Render(fmt.Sprintf("Delete agent \"%s\"?", t.deleteAgentName))
+
+	prompt := fmt.Sprintf("  Type %s to confirm: %s",
+		dimStyle.Render(t.deleteAgentName),
+		activeStyle.Render(t.deleteAgentInput+"█"))
 
 	var errLine string
 	if t.err != "" {
@@ -2619,17 +3295,24 @@ func (t *VibespacesTab) viewAddAgentForm() string {
 		{"Agent type", addAgentFieldType, string(t.addAgentType), "j/k to change", true, false, nil, nil, ""},
 		{"Name", addAgentFieldName, t.addAgentName, "optional, auto-generated if empty", false, false, nil,
 			func() bool { return t.addAgentName == "" }, "(auto)"},
-		{"Model", addAgentFieldModel, t.addAgentModel, "e.g. opus, sonnet", false, false, nil,
-			func() bool { return t.addAgentModel == "" }, "(default)"},
-		{"Max turns", addAgentFieldMaxTurns, t.addAgentMaxTurns, "0 = unlimited", false, false, nil,
-			func() bool { return t.addAgentMaxTurns == "" }, "(unlimited)"},
-		{"Share creds", addAgentFieldShareCreds, boolStr(t.addAgentShareCreds), "j/k to toggle", true, false, nil, nil, ""},
-		{"Skip perms", addAgentFieldSkipPerms, boolStr(t.addAgentSkipPerms), "j/k to toggle", true, false, nil, nil, ""},
-		{"Allowed tools", addAgentFieldAllowedTools, allowedSummary, "j/k navigate, space toggle", false, true, t.addAgentAllowedSet,
-			func() bool { return len(t.addAgentAllowedSet) == 0 }, "(default)"},
-		{"Disallow tools", addAgentFieldDisallowedTools, disallowedSummary, "j/k navigate, space toggle", false, true, t.addAgentDisallowedSet,
-			func() bool { return len(t.addAgentDisallowedSet) == 0 }, "(none)"},
 	}
+	// Only show branch field when the vibespace has worktree enabled
+	if t.selectedVS != nil && t.selectedVS.Worktree {
+		entries = append(entries, formEntry{"Branch", addAgentFieldBranch, t.addAgentBranch, "git branch (default: agent name)", false, false, nil,
+			func() bool { return t.addAgentBranch == "" }, "(agent name)"})
+	}
+	entries = append(entries,
+		formEntry{"Model", addAgentFieldModel, t.addAgentModel, "e.g. opus, sonnet", false, false, nil,
+			func() bool { return t.addAgentModel == "" }, "(default)"},
+		formEntry{"Max turns", addAgentFieldMaxTurns, t.addAgentMaxTurns, "0 = unlimited", false, false, nil,
+			func() bool { return t.addAgentMaxTurns == "" }, "(unlimited)"},
+		formEntry{"Share creds", addAgentFieldShareCreds, boolStr(t.addAgentShareCreds), "j/k to toggle", true, false, nil, nil, ""},
+		formEntry{"Skip perms", addAgentFieldSkipPerms, boolStr(t.addAgentSkipPerms), "j/k to toggle", true, false, nil, nil, ""},
+		formEntry{"Allowed tools", addAgentFieldAllowedTools, allowedSummary, "j/k navigate, space toggle", false, true, t.addAgentAllowedSet,
+			func() bool { return len(t.addAgentAllowedSet) == 0 }, "(default)"},
+		formEntry{"Disallow tools", addAgentFieldDisallowedTools, disallowedSummary, "j/k navigate, space toggle", false, true, t.addAgentDisallowedSet,
+			func() bool { return len(t.addAgentDisallowedSet) == 0 }, "(none)"},
+	)
 
 	var lines []string
 	for _, e := range entries {
@@ -2836,14 +3519,20 @@ func (t *VibespacesTab) viewForwardManager() string {
 				maxLocal, local,
 				maxType, fwd.Type,
 				fwd.Status)
+
+			// Build clickable DNS hyperlink (OSC 8)
+			var dnsSuffix string
 			if fwd.DNSName != "" {
-				line += "  " + fwd.DNSName + ".vibespace.internal:" + fmt.Sprintf("%d", fwd.LocalPort)
+				host := fwd.DNSName + ".vibespace.internal"
+				display := fmt.Sprintf("%s:%d", host, fwd.LocalPort)
+				url := "http://" + display
+				dnsSuffix = "  " + fmt.Sprintf("\x1b]8;;%s\x07%s\x1b]8;;\x07", url, display)
 			}
 
 			if i == t.fwdManagerCursor {
-				lines = append(lines, "  "+activeStyle.Render("› "+line))
+				lines = append(lines, "  "+activeStyle.Render("› "+line)+dnsSuffix)
 			} else {
-				lines = append(lines, "  "+dimStyle.Render("  "+line))
+				lines = append(lines, "  "+dimStyle.Render("  "+line)+dnsSuffix)
 			}
 		}
 	}
@@ -2918,6 +3607,16 @@ func (t *VibespacesTab) viewForwardManager() string {
 		}
 	}
 
+	// Sudo password prompt for DNS host entry
+	if t.sudoPromptActive {
+		warnStyle := lipgloss.NewStyle().Foreground(ui.ColorWarning).Bold(true)
+		lines = append(lines, "")
+		lines = append(lines, "  "+warnStyle.Render("sudo required")+" "+dimStyle.Render("for /etc/hosts DNS entry"))
+		mask := strings.Repeat("•", len(t.sudoInput))
+		lines = append(lines, "  "+dimStyle.Render("Password:")+" "+activeStyle.Render(mask+"█"))
+		lines = append(lines, "  "+dimStyle.Render("enter submit  esc skip"))
+	}
+
 	if t.err != "" {
 		lines = append(lines, "", lipgloss.NewStyle().Foreground(ui.ColorError).Render("  "+t.err))
 	}
@@ -2929,12 +3628,31 @@ func (t *VibespacesTab) viewForwardManager() string {
 // --- Form submit commands ---
 
 func (t *VibespacesTab) submitCreateForm() tea.Cmd {
+	repo := t.createRepo
+
+	// If HTTPS repo and no GitHub tokens yet, start device flow first
+	if repo != "" && strings.HasPrefix(repo, "https://") && t.githubAccessToken == "" {
+		clientID := config.Global().GitHub.ClientID
+		return func() tea.Msg {
+			resp, err := github.RequestDeviceCode(context.Background(), clientID, "repo")
+			return vsGithubDeviceCodeMsg{resp: resp, err: err}
+		}
+	}
+
 	svc := t.shared.Vibespace
 	name := t.createName
 	agentType := t.createAgentType
 	cpu := t.createCPU
 	memory := t.createMemory
 	storage := t.createStorage
+	worktree := t.createWorktree
+	branch := t.createBranch
+	accessToken := t.githubAccessToken
+	refreshToken := t.githubRefreshToken
+
+	// Reset GitHub auth state for next create
+	t.githubAccessToken = ""
+	t.githubRefreshToken = ""
 
 	return func() tea.Msg {
 		if svc == nil {
@@ -2943,17 +3661,32 @@ func (t *VibespacesTab) submitCreateForm() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
+		cfg := config.Global()
 		req := &model.CreateVibespaceRequest{
-			Name:       name,
-			Persistent: true,
-			AgentType:  agentType,
+			Name:               name,
+			Persistent:         true,
+			AgentType:          agentType,
+			GithubRepo:         repo,
+			Worktree:           worktree,
+			WorktreeBranch:     branch,
+			GithubAccessToken:  accessToken,
+			GithubRefreshToken: refreshToken,
+			ShareCredentials:   cfg.Agent.ShareCredentials,
 			Resources: &model.Resources{
 				CPU:         cpu,
-				CPULimit:    "1000m",
+				CPULimit:    cfg.Resources.CPULimit,
 				Memory:      memory,
-				MemoryLimit: "1Gi",
+				MemoryLimit: cfg.Resources.MemoryLimit,
 				Storage:     storage,
 			},
+		}
+		agentCfg := &agent.Config{
+			SkipPermissions: cfg.Agent.SkipPermissions,
+			Model:           cfg.Agent.Model,
+			MaxTurns:        cfg.Agent.MaxTurns,
+		}
+		if !agentCfg.IsEmpty() {
+			req.AgentConfig = agentCfg
 		}
 
 		_, err := svc.Create(ctx, req)
@@ -2994,6 +3727,38 @@ func (t *VibespacesTab) toggleStartStop(name, status string) tea.Cmd {
 	}
 }
 
+func (t *VibespacesTab) deleteAgent(vsName, agentName string) tea.Cmd {
+	svc := t.shared.Vibespace
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsDeleteAgentDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		err := svc.KillAgent(ctx, vsName, agentName)
+		return vsDeleteAgentDoneMsg{err: err}
+	}
+}
+
+func (t *VibespacesTab) toggleAgentStartStop(vsName, agentName, status string) tea.Cmd {
+	svc := t.shared.Vibespace
+
+	return func() tea.Msg {
+		if svc == nil {
+			return vsAgentStartStopDoneMsg{err: fmt.Errorf("vibespace service unavailable")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if status == "running" {
+			return vsAgentStartStopDoneMsg{action: "stop", err: svc.StopAgent(ctx, vsName, agentName)}
+		}
+		return vsAgentStartStopDoneMsg{action: "start", err: svc.StartAgent(ctx, vsName, agentName)}
+	}
+}
+
 func (t *VibespacesTab) submitAddAgent() tea.Cmd {
 	svc := t.shared.Vibespace
 	if t.selectedVS == nil {
@@ -3002,6 +3767,7 @@ func (t *VibespacesTab) submitAddAgent() tea.Cmd {
 	vsName := t.selectedVS.Name
 	agentType := t.addAgentType
 	agentName := t.addAgentName
+	agentBranch := t.addAgentBranch
 	shareCreds := t.addAgentShareCreds
 	skipPerms := t.addAgentSkipPerms
 	modelName := t.addAgentModel
@@ -3029,6 +3795,7 @@ func (t *VibespacesTab) submitAddAgent() tea.Cmd {
 			Name:             agentName,
 			AgentType:        agentType,
 			ShareCredentials: shareCreds,
+			Branch:           agentBranch,
 		}
 
 		// Build agent config if any config flags are set
@@ -3104,6 +3871,8 @@ func (t *VibespacesTab) submitAddForward() tea.Cmd {
 	enableDNS := t.fwdManagerAddDNS
 	dnsName := t.fwdManagerAddDNSName
 
+	sudoPass := t.sudoPassword
+
 	return func() tea.Msg {
 		if dc == nil {
 			return vsAddForwardDoneMsg{err: fmt.Errorf("daemon not available")}
@@ -3120,8 +3889,16 @@ func (t *VibespacesTab) submitAddForward() tea.Cmd {
 			}
 		}
 
-		_, err = dc.AddForwardForVibespace(vsName, agentName, remotePort, localPort, enableDNS, dnsName)
-		return vsAddForwardDoneMsg{err: err}
+		result, err := dc.AddForwardForVibespace(vsName, agentName, remotePort, localPort, enableDNS, dnsName)
+		if err != nil {
+			return vsAddForwardDoneMsg{err: err}
+		}
+		if result != nil && result.DNSName != "" {
+			if hostErr := vsdns.AddHostEntry(result.DNSName, sudoPass); errors.Is(hostErr, vsdns.ErrSudoRequired) {
+				return vsAddForwardDoneMsg{dnsName: result.DNSName}
+			}
+		}
+		return vsAddForwardDoneMsg{}
 	}
 }
 
@@ -3132,13 +3909,99 @@ func (t *VibespacesTab) submitRemoveForward(remotePort int) tea.Cmd {
 	}
 	vsName := t.selectedVS.Name
 	agentName := t.viewAgents[t.agentCursor].AgentName
+	sudoPass := t.sudoPassword
 
 	return func() tea.Msg {
 		if dc == nil {
 			return vsRemoveForwardDoneMsg{err: fmt.Errorf("daemon not available")}
 		}
+		// Look up DNS name before removing so we can clean up /etc/hosts
+		var dnsName string
+		if list, err := dc.ListForwardsForVibespace(vsName); err == nil {
+			for _, a := range list.Agents {
+				if a.Name == agentName {
+					for _, fwd := range a.Forwards {
+						if fwd.RemotePort == remotePort && fwd.DNSName != "" {
+							dnsName = fwd.DNSName
+						}
+					}
+				}
+			}
+		}
 		err := dc.RemoveForwardForVibespace(vsName, agentName, remotePort)
-		return vsRemoveForwardDoneMsg{err: err}
+		if err != nil {
+			return vsRemoveForwardDoneMsg{err: err}
+		}
+		if dnsName != "" {
+			if hostErr := vsdns.RemoveHostEntry(dnsName, sudoPass); errors.Is(hostErr, vsdns.ErrSudoRequired) {
+				return vsRemoveForwardDoneMsg{dnsName: dnsName}
+			}
+		}
+		return vsRemoveForwardDoneMsg{}
+	}
+}
+
+// submitToggleDNS toggles DNS on/off for an existing forward.
+func (t *VibespacesTab) submitToggleDNS(remotePort int, currentDNS string) tea.Cmd {
+	dc := t.shared.Daemon
+	if t.selectedVS == nil || t.agentCursor >= len(t.viewAgents) {
+		return nil
+	}
+	vsName := t.selectedVS.Name
+	agentName := t.viewAgents[t.agentCursor].AgentName
+	sudoPass := t.sudoPassword
+
+	return func() tea.Msg {
+		if dc == nil {
+			return vsToggleDNSDoneMsg{err: fmt.Errorf("daemon not available")}
+		}
+		result, err := dc.UpdateForwardDNS(vsName, agentName, remotePort, "")
+		if err != nil {
+			return vsToggleDNSDoneMsg{err: err}
+		}
+		if result.DNSName != "" {
+			// DNS was added — update /etc/hosts
+			if hostErr := vsdns.AddHostEntry(result.DNSName, sudoPass); errors.Is(hostErr, vsdns.ErrSudoRequired) {
+				return vsToggleDNSDoneMsg{dnsName: result.DNSName}
+			}
+			return vsToggleDNSDoneMsg{}
+		}
+		// DNS was removed — clean up /etc/hosts
+		if currentDNS != "" {
+			if hostErr := vsdns.RemoveHostEntry(currentDNS, sudoPass); errors.Is(hostErr, vsdns.ErrSudoRequired) {
+				return vsToggleDNSDoneMsg{oldDNS: currentDNS}
+			}
+		}
+		return vsToggleDNSDoneMsg{}
+	}
+}
+
+// validateSudo validates a sudo password and returns a vsSudoDoneMsg.
+func (t *VibespacesTab) validateSudo(pw string) tea.Cmd {
+	return func() tea.Msg {
+		cmd := exec.Command("sudo", "-S", "true")
+		cmd.Stdin = strings.NewReader(pw + "\n")
+		err := cmd.Run()
+		return vsSudoDoneMsg{ok: err == nil, password: pw}
+	}
+}
+
+// retryDNSHostEntry retries the pending DNS host entry operation with the cached password.
+func (t *VibespacesTab) retryDNSHostEntry() tea.Cmd {
+	op := t.sudoPendingOp
+	name := t.sudoPendingDNS
+	pass := t.sudoPassword
+	t.sudoPendingDNS = ""
+	t.sudoPendingOp = ""
+
+	return func() tea.Msg {
+		switch op {
+		case "add":
+			vsdns.AddHostEntry(name, pass)
+		case "remove":
+			vsdns.RemoveHostEntry(name, pass)
+		}
+		return nil
 	}
 }
 
@@ -3177,7 +4040,11 @@ func excludedTools(agentType agent.Type, allowed []string) []string {
 	}
 	var excluded []string
 	for _, t := range supported {
-		if !allowedBase[t] {
+		base := t
+		if idx := strings.Index(t, "("); idx >= 0 {
+			base = t[:idx]
+		}
+		if !allowedBase[base] {
 			excluded = append(excluded, t)
 		}
 	}

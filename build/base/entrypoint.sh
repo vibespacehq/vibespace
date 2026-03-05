@@ -71,6 +71,110 @@ EOF
 fi
 
 # ============================================================================
+# GitHub repository clone
+# ============================================================================
+if [ -n "$VIBESPACE_GITHUB_REPO" ] && [ -n "$GITHUB_ACCESS_TOKEN" ]; then
+    # Configure git credentials (shared by both modes)
+    log "Configuring git credentials"
+    CRED_FILE="$USER_HOME/.git-credentials-vibespace"
+    REPO_HOST=$(echo "$VIBESPACE_GITHUB_REPO" | sed -n 's|https://\([^/]*\).*|\1|p')
+    echo "https://x-access-token:${GITHUB_ACCESS_TOKEN}@${REPO_HOST}" > "$CRED_FILE"
+    chmod 600 "$CRED_FILE"
+    chown user:user "$CRED_FILE"
+    su -s /bin/bash user -c "git config --global credential.helper 'store --file=$CRED_FILE'"
+
+    if [ "$VIBESPACE_GIT_WORKTREE" = "true" ]; then
+        # ── Worktree mode ──
+        BARE_DIR="/vibespace/.bare-repo"
+        BRANCH="${VIBESPACE_GIT_BRANCH:-$AGENT_NAME}"
+        WORKTREE_DIR="/vibespace/worktrees/$AGENT_NAME"
+
+        # Bare clone (first agent only, idempotent)
+        if [ ! -f "$BARE_DIR/HEAD" ]; then
+            log "Creating bare clone of $VIBESPACE_GITHUB_REPO"
+            su -s /bin/bash user -c "git clone --bare '$VIBESPACE_GITHUB_REPO' '$BARE_DIR'"
+            su -s /bin/bash user -c "git -C '$BARE_DIR' config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'"
+        fi
+
+        # Create worktree (per-agent, idempotent)
+        if [ -f "$BARE_DIR/HEAD" ] && [ ! -e "$WORKTREE_DIR/.git" ]; then
+            log "Creating worktree at $WORKTREE_DIR (branch: $BRANCH)"
+            mkdir -p /vibespace/worktrees
+            chown user:user /vibespace/worktrees
+            # Prune stale worktree entries from previous pod lifecycles
+            su -s /bin/bash user -c "git -C '$BARE_DIR' worktree prune" 2>/dev/null || true
+            # Try creating new branch; if it already exists, reuse it
+            if ! su -s /bin/bash user -c "git -C '$BARE_DIR' worktree add -b '$BRANCH' '$WORKTREE_DIR' 2>/dev/null"; then
+                su -s /bin/bash user -c "git -C '$BARE_DIR' worktree add '$WORKTREE_DIR' '$BRANCH'"
+            fi
+        fi
+
+        # Safe directories
+        su -s /bin/bash user -c "git config --global --add safe.directory '$WORKTREE_DIR'"
+        su -s /bin/bash user -c "git config --global --add safe.directory '$BARE_DIR'"
+
+        export VIBESPACE_WORKDIR="$WORKTREE_DIR"
+    else
+        # ── Normal clone mode (existing behavior) ──
+        REPO_NAME=$(basename "$VIBESPACE_GITHUB_REPO" .git)
+        CLONE_DIR="/vibespace/$REPO_NAME"
+
+        if [ ! -d "$CLONE_DIR/.git" ]; then
+            log "Cloning $VIBESPACE_GITHUB_REPO into $CLONE_DIR"
+            if su -s /bin/bash user -c "git clone '$VIBESPACE_GITHUB_REPO' '$CLONE_DIR'"; then
+                log "Clone successful"
+                su -s /bin/bash user -c "git config --global --add safe.directory '$CLONE_DIR'"
+            else
+                log "ERROR: Clone failed"
+            fi
+        else
+            log "Repository already present at $CLONE_DIR"
+        fi
+        export VIBESPACE_WORKDIR="$CLONE_DIR"
+    fi
+fi
+
+# Default workdir fallback
+export VIBESPACE_WORKDIR="${VIBESPACE_WORKDIR:-/vibespace}"
+
+# ============================================================================
+# GitHub token refresh
+# ============================================================================
+if [ -n "$GITHUB_REFRESH_TOKEN" ] && [ -n "$VIBESPACE_GITHUB_CLIENT_ID" ]; then
+    REFRESH_SCRIPT="/usr/local/bin/vibespace-git-refresh.sh"
+    cat > "$REFRESH_SCRIPT" <<'RSCRIPT'
+#!/bin/bash
+# Refresh GitHub OAuth token every 7 hours (token lifetime: 8 hours)
+INTERVAL=25200
+sleep "$INTERVAL"
+while true; do
+    RESP=$(curl -sS -X POST "https://github.com/login/oauth/access_token" \
+        -H "Accept: application/json" \
+        -d "client_id=$VIBESPACE_GITHUB_CLIENT_ID" \
+        -d "grant_type=refresh_token" \
+        -d "refresh_token=$GITHUB_REFRESH_TOKEN")
+
+    NEW_AT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
+    NEW_RT=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('refresh_token',''))" 2>/dev/null)
+
+    if [ -n "$NEW_AT" ] && [ -n "$NEW_RT" ]; then
+        export GITHUB_ACCESS_TOKEN="$NEW_AT"
+        export GITHUB_REFRESH_TOKEN="$NEW_RT"
+        REPO_HOST=$(echo "$VIBESPACE_GITHUB_REPO" | sed -n 's|https://\([^/]*\).*|\1|p')
+        echo "https://x-access-token:${NEW_AT}@${REPO_HOST}" > "$HOME/.git-credentials-vibespace"
+        echo "[github-refresh] $(date +%H:%M) Token refreshed"
+    else
+        echo "[github-refresh] $(date +%H:%M) Refresh failed: $RESP" >&2
+    fi
+    sleep "$INTERVAL"
+done
+RSCRIPT
+    chmod +x "$REFRESH_SCRIPT"
+    nohup "$REFRESH_SCRIPT" >> /var/log/github-token-refresh.log 2>&1 &
+    log "GitHub token refresh daemon started (PID $!)"
+fi
+
+# ============================================================================
 # Shell configuration
 # ============================================================================
 cat > /etc/profile.d/vibespace.sh <<EOF
@@ -83,6 +187,8 @@ export VIBESPACE_SHARE_CREDENTIALS="${VIBESPACE_SHARE_CREDENTIALS:-false}"
 export VIBESPACE_SKIP_PERMISSIONS="${VIBESPACE_SKIP_PERMISSIONS:-false}"
 export VIBESPACE_ALLOWED_TOOLS="${VIBESPACE_ALLOWED_TOOLS:-}"
 export VIBESPACE_DISALLOWED_TOOLS="${VIBESPACE_DISALLOWED_TOOLS:-}"
+export VIBESPACE_GIT_WORKTREE="${VIBESPACE_GIT_WORKTREE:-}"
+export VIBESPACE_WORKDIR="${VIBESPACE_WORKDIR:-/vibespace}"
 EOF
 chmod 644 /etc/profile.d/vibespace.sh
 
@@ -109,11 +215,26 @@ case "$VIBESPACE_AGENT_TYPE" in
     claude-code)
         CLAUDE_CONFIG_DIR="$USER_HOME/.claude"
         mkdir -p "$CLAUDE_CONFIG_DIR"
-        # Copy Claude settings if the file exists (from claude-code image layer)
-        if [ -f /etc/vibespace/claude-settings.json ]; then
-            cp /etc/vibespace/claude-settings.json "$CLAUDE_CONFIG_DIR/settings.json"
-            log "Claude Code permission hooks configured"
+
+        # Per-agent session isolation in shared-creds mode:
+        # Credentials (.credentials.json, settings) stay shared via common home,
+        # but sessions (projects/, history.jsonl) are isolated per agent on PVC.
+        if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
+            AGENT_SESSIONS="/vibespace/.agents/$AGENT_NAME/.claude-sessions"
+            AGENT_HISTORY="/vibespace/.agents/$AGENT_NAME/.claude-history.jsonl"
+            mkdir -p "$AGENT_SESSIONS"
+            touch "$AGENT_HISTORY"
+            chown -R user:user "/vibespace/.agents/$AGENT_NAME"
+
+            # Remove existing dir/file if not already a symlink (first boot)
+            [ -d "$CLAUDE_CONFIG_DIR/projects" ] && [ ! -L "$CLAUDE_CONFIG_DIR/projects" ] && rm -rf "$CLAUDE_CONFIG_DIR/projects"
+            [ -f "$CLAUDE_CONFIG_DIR/history.jsonl" ] && [ ! -L "$CLAUDE_CONFIG_DIR/history.jsonl" ] && rm -f "$CLAUDE_CONFIG_DIR/history.jsonl"
+
+            ln -sfn "$AGENT_SESSIONS" "$CLAUDE_CONFIG_DIR/projects"
+            ln -sfn "$AGENT_HISTORY" "$CLAUDE_CONFIG_DIR/history.jsonl"
+            log "Claude sessions isolated for agent $AGENT_NAME"
         fi
+
         chown -R user:user "$CLAUDE_CONFIG_DIR"
         ;;
     codex)
@@ -137,5 +258,7 @@ log "Starting (name=${VIBESPACE_NAME:-?}, agent=${VIBESPACE_AGENT:-?}, shared=${
 # Export environment variables for supervisord (with defaults for optional ones)
 export USER_HOME
 export VIBESPACE_SHARE_CREDENTIALS="${VIBESPACE_SHARE_CREDENTIALS:-false}"
+export VIBESPACE_GIT_WORKTREE="${VIBESPACE_GIT_WORKTREE:-}"
+export VIBESPACE_WORKDIR="${VIBESPACE_WORKDIR:-/vibespace}"
 
 exec "$@"

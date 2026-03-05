@@ -75,7 +75,7 @@ func (s *Server) GenerateInviteToken(publicEndpoint string, ttl time.Duration) (
 	}
 
 	if ttl <= 0 {
-		ttl = DefaultInviteTokenTTL
+		ttl = DefaultInviteTokenTTL()
 	}
 
 	// Extract host (without port) for registration URL
@@ -278,7 +278,9 @@ func (s *Server) WriteWireGuardConfig() error {
 }
 
 // Start starts the WireGuard interface and management API.
-func (s *Server) Start(ctx context.Context, foreground bool) error {
+// SetupWireGuard performs all sudo-requiring WireGuard setup: key init, config write,
+// and interface bring-up. Call this from a process that has a terminal (before daemonizing).
+func (s *Server) SetupWireGuard() error {
 	// Check firewall before starting
 	for _, result := range CheckFirewall() {
 		if !result.Status {
@@ -319,6 +321,20 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 
+	return nil
+}
+
+func (s *Server) Start(ctx context.Context, foreground bool) error {
+	// SetupWireGuard handles all sudo-requiring work (config, interface).
+	// When daemonizing, SpawnServe calls it in the parent (which has a TTY).
+	// In standalone foreground mode (user ran --foreground directly), do it here.
+	// Skip if the interface is already up (parent already did the setup).
+	if !IsInterfaceUp() {
+		if err := s.SetupWireGuard(); err != nil {
+			return err
+		}
+	}
+
 	// Ensure TLS cert exists (shared between registration and management APIs)
 	mgmtCert, err := s.ensureRegistrationCert()
 	if err != nil {
@@ -331,7 +347,7 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	mux.HandleFunc("/kubeconfig", s.handleKubeconfig)
 	mux.HandleFunc("/disconnect", s.handleDisconnect)
 
-	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort)
+	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort())
 	s.mgmtServer = &http.Server{
 		Addr:    mgmtAddr,
 		Handler: securityHeaders(mux),
@@ -462,7 +478,10 @@ func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&req)
 
 	if req.PublicKey != "" {
-		slog.Info("client disconnected", "public_key", req.PublicKey[:8]+"...")
+		slog.Info("client disconnecting", "public_key", req.PublicKey[:8]+"...")
+		if err := s.RemoveClient(req.PublicKey); err != nil {
+			slog.Warn("failed to remove disconnecting client", "error", err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -563,7 +582,7 @@ func (s *Server) startRegistrationAPI() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/register", s.handleRegister)
 
-	addr := fmt.Sprintf("0.0.0.0:%d", DefaultRegistrationPort)
+	addr := fmt.Sprintf("0.0.0.0:%d", DefaultRegistrationPort())
 	s.registrationServer = &http.Server{
 		Addr:    addr,
 		Handler: securityHeaders(mux),
@@ -709,7 +728,7 @@ func newTokenNonce() string {
 
 func serverWGIP(serverIP string) string {
 	if serverIP == "" {
-		return DefaultServerIP
+		return DefaultServerIP()
 	}
 	return strings.Split(serverIP, "/")[0]
 }
@@ -729,6 +748,24 @@ func SpawnServe() error {
 
 	// Clean up stale interface/PID if process died
 	CleanupStaleServe()
+
+	// Do all sudo-requiring WireGuard setup here in the parent process,
+	// which still has a terminal for password prompts. The daemon child
+	// (Setsid: true) has no TTY and cannot prompt for sudo.
+	server, err := NewServer()
+	if err != nil {
+		return fmt.Errorf("failed to create server: %w", err)
+	}
+	if err := server.SetupWireGuard(); err != nil {
+		return fmt.Errorf("failed to setup WireGuard: %w", err)
+	}
+
+	// Pre-generate the TLS cert before spawning the daemon to avoid a race
+	// where both parent (token generation) and daemon (registration API)
+	// call ensureRegistrationCert() concurrently and produce different certs.
+	if _, err := server.ensureRegistrationCert(); err != nil {
+		return fmt.Errorf("failed to ensure registration cert: %w", err)
+	}
 
 	pidFile := filepath.Join(vsHome, "serve.pid")
 	os.Remove(pidFile)
@@ -896,7 +933,7 @@ func CleanupStaleServe() {
 
 // FetchKubeconfigFromServer fetches the kubeconfig from the server's management API.
 func FetchKubeconfigFromServer(serverIP string) ([]byte, error) {
-	url := fmt.Sprintf("https://%s:%d/kubeconfig", serverIP, DefaultManagementPort)
+	url := fmt.Sprintf("https://%s:%d/kubeconfig", serverIP, DefaultManagementPort())
 
 	// Use cert pinning if fingerprint is available, skip-verify otherwise
 	var tlsCfg *tls.Config

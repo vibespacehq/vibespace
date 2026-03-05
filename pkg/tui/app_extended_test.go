@@ -11,11 +11,11 @@ import (
 func TestAppTabSwitchView(t *testing.T) {
 	app := newTestApp(t)
 
-	// Initial tab is Vibespaces (index 0)
+	// Initial tab is Vibespaces (index 0) — shows welcome cover (no tab bar)
 	view := app.View()
 	stripped := ui.StripAnsi(view)
-	if !strings.Contains(stripped, "Vibespaces") {
-		t.Errorf("initial view should contain 'Vibespaces', got snippet: %s", stripped[:min(len(stripped), 200)])
+	if !strings.Contains(stripped, "vibespace") {
+		t.Errorf("initial view should contain 'vibespace' (welcome cover), got snippet: %s", stripped[:min(len(stripped), 200)])
 	}
 
 	// Switch to Chat tab (index 1, one Tab press)
@@ -84,6 +84,9 @@ func TestAppPaletteOpenClose(t *testing.T) {
 
 func TestAppViewContainsAllTabs(t *testing.T) {
 	app := newTestApp(t)
+
+	// Switch away from welcome cover so the tab bar is visible
+	app.switchTab(TabChat)
 	view := app.View()
 	stripped := ui.StripAnsi(view)
 

@@ -1,12 +1,12 @@
-# vibespace
+# [vibespace](https://vibespace.build)
 
 [![CI](https://github.com/vibespacehq/vibespace/actions/workflows/ci.yml/badge.svg)](https://github.com/vibespacehq/vibespace/actions/workflows/ci.yml)
 [![E2E](https://github.com/vibespacehq/vibespace/actions/workflows/ci-e2e.yml/badge.svg)](https://github.com/vibespacehq/vibespace/actions/workflows/ci-e2e.yml)
 [![codecov](https://codecov.io/gh/vibespacehq/vibespace/branch/main/graph/badge.svg?token=IGV80ATBGL)](https://codecov.io/gh/vibespacehq/vibespace)
 
-Sandboxed AI coding agent environments on Kubernetes. Run Claude Code, Codex, or multiple agents collaborating on the same codebase — locally or on a remote server.
+Stateful runtime environments for AI agents with Kubernetes orchestration. Run Claude Code, Codex, or multiple agents collaborating on the same codebase — locally or on a remote server.
 
-<!-- TODO: add hero GIF showing the TUI -->
+https://github.com/user-attachments/assets/991dd850-d879-4259-a87e-c005bdd55115
 
 ## What it does
 

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
+	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/portforward"
 
@@ -29,6 +30,7 @@ type Reconciler struct {
 	state      *DaemonState
 	manager    *portforward.Manager
 	clientset  kubernetes.Interface
+	dnsServer  *vsdns.Server
 	mu         sync.Mutex
 }
 
@@ -38,6 +40,11 @@ type ReconcilerConfig struct {
 	State      *DaemonState
 	Manager    *portforward.Manager
 	Clientset  kubernetes.Interface
+}
+
+// SetDNSServer sets the DNS server on the reconciler (called after server starts)
+func (r *Reconciler) SetDNSServer(dns *vsdns.Server) {
+	r.dnsServer = dns
 }
 
 // NewReconciler creates a new reconciler
@@ -262,10 +269,9 @@ func (r *Reconciler) cleanupEmptyVibespaces(currentVibespaces map[string][]PodIn
 				}
 			}
 			r.state.RemoveVibespace(vibespace)
-			// Clean up desired state file
-			if err := r.desiredMgr.Remove(vibespace); err != nil {
-				slog.Warn("failed to remove desired state", "vibespace", vibespace, "error", err)
-			}
+			// Keep desired state — pods may return after a restart.
+			// Desired state is only removed when the user explicitly
+			// removes forwards or deletes the vibespace.
 		}
 	}
 }
@@ -302,6 +308,11 @@ func (r *Reconciler) ensureForward(vibespace, agentName string, fwd DesiredForwa
 		return
 	}
 
+	// Restore DNS record if one was persisted
+	if fwd.DNSName != "" && r.dnsServer != nil {
+		r.dnsServer.AddRecord(fwd.DNSName, "127.0.0.1")
+	}
+
 	// Update state
 	vsState := r.state.GetVibespace(vibespace)
 	if vsState != nil {
@@ -310,6 +321,7 @@ func (r *Reconciler) ensureForward(vibespace, agentName string, fwd DesiredForwa
 			RemotePort: fwd.ContainerPort,
 			Type:       portforward.TypeManual,
 			Status:     portforward.StatusActive,
+			DNSName:    fwd.DNSName,
 		})
 	}
 
@@ -331,18 +343,18 @@ func (r *Reconciler) ensureDefaultForwards(vibespace, agentName string) {
 	hasSSH := false
 	hasTTYD := false
 	for _, fwd := range existingForwards {
-		if fwd.RemotePort == portforward.DefaultSSHPort {
+		if fwd.RemotePort == portforward.DefaultSSHPort() {
 			if fwd.Status == portforward.StatusError {
 				slog.Info("removing dead SSH forward for recreation", "agent", key)
-				r.manager.RemoveForward(key, portforward.DefaultSSHPort)
+				r.manager.RemoveForward(key, portforward.DefaultSSHPort())
 			} else {
 				hasSSH = true
 			}
 		}
-		if fwd.RemotePort == portforward.DefaultTTYDPort {
+		if fwd.RemotePort == portforward.DefaultTTYDPort() {
 			if fwd.Status == portforward.StatusError {
 				slog.Info("removing dead ttyd forward for recreation", "agent", key)
-				r.manager.RemoveForward(key, portforward.DefaultTTYDPort)
+				r.manager.RemoveForward(key, portforward.DefaultTTYDPort())
 			} else {
 				hasTTYD = true
 			}
@@ -356,13 +368,13 @@ func (r *Reconciler) ensureDefaultForwards(vibespace, agentName string) {
 
 	// Create SSH forward if missing
 	if !hasSSH {
-		sshLocalPort, err := r.manager.AddForward(key, portforward.DefaultSSHPort, portforward.TypeSSH, 0)
+		sshLocalPort, err := r.manager.AddForward(key, portforward.DefaultSSHPort(), portforward.TypeSSH, 0)
 		if err != nil {
 			slog.Error("failed to create SSH forward", "agent", agentName, "error", err)
 		} else {
 			vsState.AddForward(agentName, &ForwardState{
 				LocalPort:  sshLocalPort,
-				RemotePort: portforward.DefaultSSHPort,
+				RemotePort: portforward.DefaultSSHPort(),
 				Type:       portforward.TypeSSH,
 				Status:     portforward.StatusActive,
 			})
@@ -372,13 +384,13 @@ func (r *Reconciler) ensureDefaultForwards(vibespace, agentName string) {
 
 	// Create ttyd forward if missing
 	if !hasTTYD {
-		ttydLocalPort, err := r.manager.AddForward(key, portforward.DefaultTTYDPort, portforward.TypeTTYD, 0)
+		ttydLocalPort, err := r.manager.AddForward(key, portforward.DefaultTTYDPort(), portforward.TypeTTYD, 0)
 		if err != nil {
 			slog.Error("failed to create ttyd forward", "agent", agentName, "error", err)
 		} else {
 			vsState.AddForward(agentName, &ForwardState{
 				LocalPort:  ttydLocalPort,
-				RemotePort: portforward.DefaultTTYDPort,
+				RemotePort: portforward.DefaultTTYDPort(),
 				Type:       portforward.TypeTTYD,
 				Status:     portforward.StatusActive,
 			})

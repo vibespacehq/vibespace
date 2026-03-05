@@ -122,7 +122,7 @@ func NewModel(sess *session.Session, resume bool) *Model {
 	sessionManager := NewAgentSessionManager()
 
 	// Create permission server
-	permServer := permission.NewServer(permission.DefaultPermissionPort)
+	permServer := permission.NewServer(permission.DefaultPermissionPort())
 
 	return &Model{
 		session:          sess,

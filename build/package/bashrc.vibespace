@@ -72,6 +72,10 @@ info() {
     if [ "$VIBESPACE_SHARE_CREDENTIALS" = "true" ]; then
         echo -e "  Sharing:   ${_C_YELLOW}credentials enabled${_C_RESET}"
     fi
+    if [ "$VIBESPACE_GIT_WORKTREE" = "true" ]; then
+        echo -e "  Worktree:  ${_C_YELLOW}enabled${_C_RESET}"
+        echo -e "  Branch:    ${_C_TEAL}$(cd "${VIBESPACE_WORKDIR}" && git branch --show-current 2>/dev/null)${_C_RESET}"
+    fi
     echo ""
 }
 
@@ -86,6 +90,9 @@ echo -e "  ${_C_GRAY}AI-Powered Development Environment${_C_RESET}"
 echo ""
 echo -e "  Vibespace: ${_C_ORANGE}${VIBESPACE_NAME:-unknown}${_C_RESET}"
 echo -e "  Agent:     ${_C_TEAL}${VIBESPACE_AGENT:-claude-1}${_C_RESET}"
+if [ "$VIBESPACE_GIT_WORKTREE" = "true" ]; then
+    echo -e "  Branch:    ${_C_YELLOW}$(cd "${VIBESPACE_WORKDIR}" && git branch --show-current 2>/dev/null)${_C_RESET}"
+fi
 echo ""
 echo -e "  ${_C_GRAY}Commands:${_C_RESET}"
 echo -e "    ${_C_YELLOW}claude${_C_RESET}        Start Claude Code AI assistant"
@@ -96,4 +103,4 @@ echo ""
 # ============================================================================
 # Start in /vibespace directory
 # ============================================================================
-cd /vibespace 2>/dev/null
+cd "${VIBESPACE_WORKDIR:-/vibespace}" 2>/dev/null

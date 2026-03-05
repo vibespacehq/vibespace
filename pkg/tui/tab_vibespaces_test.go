@@ -111,9 +111,11 @@ func TestVibespacesTabEmptyListView(t *testing.T) {
 	tab := newTestVibespacesTab()
 	tab.vibespaces = nil
 
+	// Tab's viewEmpty is a simple fallback; the full welcome cover is
+	// rendered at the App level via showWelcomeCover().
 	view := stripAnsi(tab.View())
-	if !strings.Contains(view, "No vibespaces") {
-		t.Errorf("empty view should contain 'No vibespaces', got: %s", view)
+	if !strings.Contains(view, "No vibespaces found") {
+		t.Errorf("empty view should contain fallback message, got: %s", view)
 	}
 }
 
@@ -191,8 +193,13 @@ func TestVibespacesTabCreateFormFieldNav(t *testing.T) {
 	}
 
 	tab.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if tab.createField != createFieldRepo {
+		t.Fatalf("expected Repo field after second tab, got %d", tab.createField)
+	}
+
+	tab.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if tab.createField != createFieldCPU {
-		t.Fatalf("expected CPU field after second tab, got %d", tab.createField)
+		t.Fatalf("expected CPU field after third tab, got %d", tab.createField)
 	}
 }
 
@@ -785,43 +792,56 @@ func TestHandleToolsMultiSelectWith(t *testing.T) {
 	toolsList := []string{"Bash", "Read", "Write", "Edit"}
 	cursor := 0
 	set := make(map[string]bool)
+	opposite := make(map[string]bool)
 
 	// j moves down
-	tab.handleToolsMultiSelectWith("j", toolsList, &cursor, set)
+	tab.handleToolsMultiSelectWith("j", toolsList, &cursor, set, opposite)
 	if cursor != 1 {
 		t.Fatalf("expected cursor=1, got %d", cursor)
 	}
 
 	// k moves up
-	tab.handleToolsMultiSelectWith("k", toolsList, &cursor, set)
+	tab.handleToolsMultiSelectWith("k", toolsList, &cursor, set, opposite)
 	if cursor != 0 {
 		t.Fatalf("expected cursor=0, got %d", cursor)
 	}
 
 	// space toggles
-	tab.handleToolsMultiSelectWith(" ", toolsList, &cursor, set)
+	tab.handleToolsMultiSelectWith(" ", toolsList, &cursor, set, opposite)
 	if !set["Bash"] {
 		t.Fatal("expected Bash toggled on")
 	}
-	tab.handleToolsMultiSelectWith(" ", toolsList, &cursor, set)
+	tab.handleToolsMultiSelectWith(" ", toolsList, &cursor, set, opposite)
 	if set["Bash"] {
 		t.Fatal("expected Bash toggled off")
 	}
 
+	// toggling on removes from opposite set
+	opposite["Read"] = true
+	cursor = 1
+	tab.handleToolsMultiSelectWith(" ", toolsList, &cursor, set, opposite)
+	if !set["Read"] {
+		t.Fatal("expected Read toggled on in set")
+	}
+	if opposite["Read"] {
+		t.Fatal("expected Read removed from opposite set")
+	}
+
 	// Clamps at bounds
-	tab.handleToolsMultiSelectWith("k", toolsList, &cursor, set)
+	cursor = 0
+	tab.handleToolsMultiSelectWith("k", toolsList, &cursor, set, opposite)
 	if cursor != 0 {
 		t.Fatalf("expected cursor=0, got %d", cursor)
 	}
 
 	cursor = 3
-	tab.handleToolsMultiSelectWith("j", toolsList, &cursor, set)
+	tab.handleToolsMultiSelectWith("j", toolsList, &cursor, set, opposite)
 	if cursor != 3 {
 		t.Fatalf("expected cursor=3 (clamped), got %d", cursor)
 	}
 
 	// Empty list returns nil
-	cmd := tab.handleToolsMultiSelectWith("j", nil, &cursor, set)
+	cmd := tab.handleToolsMultiSelectWith("j", nil, &cursor, set, opposite)
 	if cmd != nil {
 		t.Fatal("expected nil cmd for empty list")
 	}

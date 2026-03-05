@@ -14,7 +14,7 @@ func TestAddRemoveRecord(t *testing.T) {
 
 	s.AddRecord("myapp", "192.168.1.100")
 
-	fqdn := "myapp." + Domain + "."
+	fqdn := "myapp." + Domain() + "."
 	s.mu.RLock()
 	ip, ok := s.records[fqdn]
 	s.mu.RUnlock()
@@ -78,7 +78,7 @@ func TestDNSResolution(t *testing.T) {
 	// Send a real DNS query
 	c := new(mdns.Client)
 	m := new(mdns.Msg)
-	m.SetQuestion("test-app."+Domain+".", mdns.TypeA)
+	m.SetQuestion("test-app."+Domain()+".", mdns.TypeA)
 
 	r, _, err := c.Exchange(m, fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
@@ -119,7 +119,7 @@ func TestDefaultFallback(t *testing.T) {
 	// Query an unregistered name
 	c := new(mdns.Client)
 	m := new(mdns.Msg)
-	m.SetQuestion("unknown-service."+Domain+".", mdns.TypeA)
+	m.SetQuestion("unknown-service."+Domain()+".", mdns.TypeA)
 
 	r, _, err := c.Exchange(m, fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {

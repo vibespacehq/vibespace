@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/vibespacehq/vibespace/pkg/daemon"
-	vsdns "github.com/vibespacehq/vibespace/pkg/dns"
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/portforward"
 
@@ -108,10 +107,8 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start server: %w", err)
 	}
 
-	// Configure system DNS resolver for *.vibespace.internal
-	if err := vsdns.ConfigureSystemResolver(5553); err != nil {
-		slog.Warn("failed to configure system DNS resolver", "error", err)
-	}
+	// Wire DNS server into reconciler now that it's started
+	reconciler.SetDNSServer(server.DNSServer())
 
 	slog.Info("daemon ready")
 
@@ -129,7 +126,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		go func() {
 			// Cleanup
 			slog.Info("shutting down daemon")
-			vsdns.RemoveSystemResolver()
 			manager.StopAll()
 			server.Stop()
 			cleanupDaemonFiles()
@@ -152,7 +148,6 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		slog.Info("context cancelled")
 		// Cleanup
 		slog.Info("shutting down daemon")
-		vsdns.RemoveSystemResolver()
 		manager.StopAll()
 		server.Stop()
 		cleanupDaemonFiles()

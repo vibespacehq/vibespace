@@ -7,11 +7,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vibespacehq/vibespace/internal/platform"
+	"github.com/vibespacehq/vibespace/pkg/config"
 	"github.com/vibespacehq/vibespace/pkg/daemon"
 
 	"github.com/spf13/cobra"
@@ -45,40 +45,32 @@ var (
 	initBareMetal  bool
 )
 
-// Default cluster resource values - can be overridden via environment variables
-const (
-	DefaultClusterCPU    = 4
-	DefaultClusterMemory = 8
-	DefaultClusterDisk   = 60
-)
-
-// getEnvOrDefaultInt returns the environment variable as int or a default
-func getEnvOrDefaultInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intVal, err := strconv.Atoi(value); err == nil {
-			return intVal
-		}
-	}
-	return defaultValue
-}
-
 func init() {
-	// Read defaults from environment variables, falling back to constants
-	cpuDefault := getEnvOrDefaultInt("VIBESPACE_CLUSTER_CPU", DefaultClusterCPU)
-	memoryDefault := getEnvOrDefaultInt("VIBESPACE_CLUSTER_MEMORY", DefaultClusterMemory)
-	diskDefault := getEnvOrDefaultInt("VIBESPACE_CLUSTER_DISK", DefaultClusterDisk)
-
+	// Flag defaults use hardcoded values matching config.Default().
+	// At runtime, runInit checks cmd.Flags().Changed() and falls back to config.Global().
 	initCmd.Flags().BoolVar(&initExternal, "external", false, "Use an external Kubernetes cluster")
 	initCmd.Flags().StringVar(&initKubeconfig, "kubeconfig", "", "Path to external kubeconfig")
-	initCmd.Flags().IntVar(&initCPU, "cpu", cpuDefault, "Number of CPU cores for the cluster VM")
-	initCmd.Flags().IntVar(&initMemory, "memory", memoryDefault, "Memory in GB for the cluster VM")
-	initCmd.Flags().IntVar(&initDisk, "disk", diskDefault, "Disk size in GB for the cluster VM")
+	initCmd.Flags().IntVar(&initCPU, "cpu", 4, "Number of CPU cores for the cluster VM")
+	initCmd.Flags().IntVar(&initMemory, "memory", 8, "Memory in GB for the cluster VM")
+	initCmd.Flags().IntVar(&initDisk, "disk", 60, "Disk size in GB for the cluster VM")
 	initCmd.Flags().BoolVar(&initBareMetal, "bare-metal", false, "Install k3s directly on the host (Linux only, no VM)")
 }
 
 func runInit(cmd *cobra.Command, args []string) error {
 	slog.Info("init command started")
 	ctx := context.Background()
+
+	// Apply config.Global() for flags not explicitly set by user
+	cfg := config.Global()
+	if !cmd.Flags().Changed("cpu") {
+		initCPU = cfg.Cluster.CPU
+	}
+	if !cmd.Flags().Changed("memory") {
+		initMemory = cfg.Cluster.Memory
+	}
+	if !cmd.Flags().Changed("disk") {
+		initDisk = cfg.Cluster.Disk
+	}
 
 	// Warn if connected to a remote server
 	if isRemoteConnected() {
@@ -339,8 +331,8 @@ func initExternalCluster(vibespaceHome, kubeconfig string) error {
 }
 
 func waitForCluster(ctx context.Context, manager platform.ClusterManager) error {
-	timeout := 10 * time.Minute
-	interval := 5 * time.Second
+	timeout := config.Global().Timeouts.ClusterStartup.Duration
+	interval := config.Global().Timeouts.ClusterPollInterval.Duration
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {

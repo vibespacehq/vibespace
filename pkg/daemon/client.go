@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"time"
+
+	"github.com/vibespacehq/vibespace/pkg/config"
 )
 
 // Client is a client for communicating with the daemon via Unix socket
@@ -23,7 +25,7 @@ func NewClient() (*Client, error) {
 
 	return &Client{
 		sockPath: paths.SockFile,
-		timeout:  10 * time.Second,
+		timeout:  config.Global().Timeouts.DaemonSocket.Duration,
 	}, nil
 }
 
@@ -198,6 +200,31 @@ func (c *Client) AddForwardForVibespace(vibespace, agent string, remotePort, loc
 	var result AddForwardResponse
 	if err := json.Unmarshal(resp.Data, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse add forward response: %w", err)
+	}
+
+	return &result, nil
+}
+
+// UpdateForwardDNS toggles DNS on an existing forward
+func (c *Client) UpdateForwardDNS(vibespace, agent string, remotePort int, dnsName string) (*UpdateForwardDNSResponse, error) {
+	resp, err := c.sendRequest(Request{
+		Type:      RequestUpdateForwardDNS,
+		Vibespace: vibespace,
+		Agent:     agent,
+		Port:      remotePort,
+		DNSName:   dnsName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("update forward DNS failed: %s", resp.Error)
+	}
+
+	var result UpdateForwardDNSResponse
+	if err := json.Unmarshal(resp.Data, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse update forward DNS response: %w", err)
 	}
 
 	return &result, nil
