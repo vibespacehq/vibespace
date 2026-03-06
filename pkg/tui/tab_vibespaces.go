@@ -2134,8 +2134,8 @@ func execSessionResumeCmd(sshPort int, agentName string, agentType agent.Type, s
 	}
 
 	agentImpl := agent.MustGet(agentType)
-	agentCmd := agentImpl.BuildInteractiveCommand(sessionID, cfg)
-	remoteCmd := fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, agentCmd)
+	agentArgs := agentImpl.BuildInteractiveCommand(sessionID, cfg)
+	remoteCmd := agent.WrapForSSHRemote(agentArgs)
 
 	slog.Debug("resuming session", "agent", agentName, "session", sessionID, "type", agentType)
 
@@ -2284,8 +2284,8 @@ func (t *VibespacesTab) execAgentConnect(sshPort int, agentName string, agentTyp
 	}
 
 	agentImpl := agent.MustGet(agentType)
-	agentCmd := agentImpl.BuildInteractiveCommand("", cfg)
-	remoteCmd := fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, agentCmd)
+	agentArgs := agentImpl.BuildInteractiveCommand("", cfg)
+	remoteCmd := agent.WrapForSSHRemote(agentArgs)
 
 	slog.Debug("agent connect", "agent", agentName, "type", agentType)
 

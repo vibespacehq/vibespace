@@ -4,7 +4,6 @@ package codex
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	vsconfig "github.com/vibespacehq/vibespace/pkg/config"
@@ -69,11 +68,13 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 
 	// Wrap in bash -l -c to ensure proper shell environment and cd to $VIBESPACE_WORKDIR
 	// (set by entrypoint: worktree dir, clone dir, or /vibespace fallback)
-	return fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, strings.Join(args, " "))
+	return fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, agent.JoinArgsForBash(args))
 }
 
 // BuildInteractiveCommand builds a Codex command for interactive terminal mode.
-func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) string {
+// Returns the argument list to prevent command injection; callers use
+// agent.ShellQuoteArgs or agent.WrapForSSHRemote to build the shell string.
+func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) []string {
 	var args []string
 
 	if sessionID != "" {
@@ -87,7 +88,7 @@ func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) 
 	// Apply configuration
 	args = a.applyConfig(args, config)
 
-	return strings.Join(args, " ")
+	return args
 }
 
 // applyConfig adds configuration flags to the command arguments.

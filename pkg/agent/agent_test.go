@@ -184,3 +184,100 @@ func TestConfigValidate(t *testing.T) {
 		t.Error("config with multiple fields set should not be empty")
 	}
 }
+
+func TestShellQuote(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"hello", "'hello'"},
+		{"hello world", "'hello world'"},
+		{"it's", `'it'\''s'`},
+		{"$(rm -rf /)", "'$(rm -rf /)'"},
+		{"`whoami`", "'`whoami`'"},
+		{"a;b", "'a;b'"},
+		{"a|b", "'a|b'"},
+		{"", "''"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := ShellQuote(tt.input)
+			if got != tt.want {
+				t.Errorf("ShellQuote(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShellQuoteArgs(t *testing.T) {
+	args := []string{"claude", "--resume", "abc-123"}
+	got := ShellQuoteArgs(args)
+	want := "'claude' '--resume' 'abc-123'"
+	if got != want {
+		t.Errorf("ShellQuoteArgs = %q, want %q", got, want)
+	}
+}
+
+func TestShellQuoteArgsInjection(t *testing.T) {
+	// Simulate a malicious session ID
+	args := []string{"claude", "--resume", "'; rm -rf / #"}
+	got := ShellQuoteArgs(args)
+	// The single quote in the malicious input should be escaped
+	if !strings.Contains(got, `'\''`) {
+		t.Errorf("ShellQuoteArgs did not escape single quote in: %s", got)
+	}
+	// Should not contain unescaped single quote that would break out
+	// Count opening/closing quotes — every arg produces 'arg' with internal ' escaped
+	if strings.Count(got, "rm -rf") != 1 {
+		t.Error("malicious command should be contained within quotes")
+	}
+}
+
+func TestWrapForSSHRemote(t *testing.T) {
+	args := []string{"claude", "--model", "test-model"}
+	got := WrapForSSHRemote(args)
+	if !strings.HasPrefix(got, "bash -l -c '") {
+		t.Errorf("WrapForSSHRemote should start with bash -l -c, got: %s", got)
+	}
+	if !strings.Contains(got, `cd "$VIBESPACE_WORKDIR"`) {
+		t.Error("should contain cd to VIBESPACE_WORKDIR")
+	}
+	if !strings.Contains(got, "'claude'") {
+		t.Error("should contain quoted claude command")
+	}
+}
+
+func TestDoubleQuoteForBash(t *testing.T) {
+	tests := []struct {
+		name, input, want string
+	}{
+		{"simple", "hello", `"hello"`},
+		{"with dollar", "$HOME", `"\$HOME"`},
+		{"with backtick", "`cmd`", "\"\\`cmd\\`\""},
+		{"with double quote", `say "hi"`, `"say \"hi\""`},
+		{"with backslash", `a\b`, `"a\\b"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DoubleQuoteForBash(tt.input)
+			if got != tt.want {
+				t.Errorf("DoubleQuoteForBash(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestJoinArgsForBash(t *testing.T) {
+	args := []string{"claude", "-p", "--model", "$(evil)", "--resume", "sess-123"}
+	got := JoinArgsForBash(args)
+	// Flags and command names should be unquoted
+	if !strings.Contains(got, "claude ") {
+		t.Error("claude should be unquoted")
+	}
+	if !strings.Contains(got, " -p ") {
+		t.Error("-p should be unquoted")
+	}
+	// User values should be double-quoted with $ escaped (parens are safe in double quotes)
+	if !strings.Contains(got, `"\$(evil)"`) {
+		t.Errorf("$(evil) should be double-quoted with $ escaped, got: %s", got)
+	}
+}
