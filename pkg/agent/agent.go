@@ -44,7 +44,7 @@ func JoinArgsForBash(args []string) string {
 }
 
 // ShellQuote escapes a string for safe embedding in a single-quoted shell context.
-// Uses the standard approach: replace ' with '\'' (end quote, literal quote, start quote).
+// Uses the standard approach: replace ' with '\” (end quote, literal quote, start quote).
 func ShellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
