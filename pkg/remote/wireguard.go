@@ -11,11 +11,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -77,6 +80,128 @@ type ServerConfig struct {
 type ServerClientConfig struct {
 	PublicKey  string
 	AllowedIPs string // e.g., "10.100.0.2/32"
+}
+
+// wgKeyRegex matches a valid base64-encoded 32-byte WireGuard key (44 chars, padding '=').
+var wgKeyRegex = regexp.MustCompile(`^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$`)
+
+// validateWireGuardResponse validates server-provided fields before they are interpolated
+// into WireGuard config files. This prevents INI injection (e.g. PostUp directives) from
+// a malicious or compromised server.
+func validateWireGuardResponse(resp *RegisterResponse) error {
+	// Blanket: no field may contain newlines or INI section markers
+	for _, check := range []struct {
+		name, value string
+	}{
+		{"assigned_ip", resp.AssignedIP},
+		{"server_public_key", resp.ServerPublicKey},
+		{"server_endpoint", resp.ServerEndpoint},
+		{"server_ip", resp.ServerIP},
+	} {
+		if strings.ContainsAny(check.value, "\n\r[]") {
+			return fmt.Errorf("invalid %s: contains forbidden characters", check.name)
+		}
+		if check.value == "" {
+			return fmt.Errorf("invalid %s: empty", check.name)
+		}
+	}
+	// '=' is an INI metacharacter but also base64 padding — check non-key fields only
+	for _, check := range []struct {
+		name, value string
+	}{
+		{"assigned_ip", resp.AssignedIP},
+		{"server_endpoint", resp.ServerEndpoint},
+		{"server_ip", resp.ServerIP},
+	} {
+		if strings.Contains(check.value, "=") {
+			return fmt.Errorf("invalid %s: contains forbidden characters", check.name)
+		}
+	}
+
+	// AssignedIP: must be a valid CIDR in 10.100.0.0/24
+	if err := validateWGSubnetCIDR(resp.AssignedIP); err != nil {
+		return fmt.Errorf("invalid assigned_ip %q: %w", resp.AssignedIP, err)
+	}
+
+	// ServerIP: must be a valid IP in 10.100.0.0/24
+	if err := validateWGSubnetIP(resp.ServerIP); err != nil {
+		return fmt.Errorf("invalid server_ip %q: %w", resp.ServerIP, err)
+	}
+
+	// ServerPublicKey: must be a valid 32-byte base64-encoded key
+	if !wgKeyRegex.MatchString(resp.ServerPublicKey) {
+		return fmt.Errorf("invalid server_public_key: not a valid WireGuard key")
+	}
+	keyBytes, err := base64.StdEncoding.DecodeString(resp.ServerPublicKey)
+	if err != nil || len(keyBytes) != 32 {
+		return fmt.Errorf("invalid server_public_key: must decode to 32 bytes")
+	}
+
+	// ServerEndpoint: must be host:port with valid port
+	if err := validateWGEndpoint(resp.ServerEndpoint); err != nil {
+		return fmt.Errorf("invalid server_endpoint %q: %w", resp.ServerEndpoint, err)
+	}
+
+	return nil
+}
+
+// validateWGSubnetCIDR checks that addr is a valid CIDR within 10.100.0.0/24.
+func validateWGSubnetCIDR(addr string) error {
+	ip, ipNet, err := net.ParseCIDR(addr)
+	if err != nil {
+		return fmt.Errorf("not a valid CIDR")
+	}
+	wgSubnet := net.IPNet{
+		IP:   net.IPv4(10, 100, 0, 0),
+		Mask: net.CIDRMask(24, 32),
+	}
+	if !wgSubnet.Contains(ip) {
+		return fmt.Errorf("not in WireGuard subnet 10.100.0.0/24")
+	}
+	ones, _ := ipNet.Mask.Size()
+	if ones != 32 {
+		return fmt.Errorf("expected /32 mask for client address")
+	}
+	return nil
+}
+
+// validateWGSubnetIP checks that addr is a valid IP within 10.100.0.0/24.
+func validateWGSubnetIP(addr string) error {
+	ip := net.ParseIP(addr)
+	if ip == nil {
+		return fmt.Errorf("not a valid IP address")
+	}
+	wgSubnet := net.IPNet{
+		IP:   net.IPv4(10, 100, 0, 0),
+		Mask: net.CIDRMask(24, 32),
+	}
+	if !wgSubnet.Contains(ip) {
+		return fmt.Errorf("not in WireGuard subnet 10.100.0.0/24")
+	}
+	return nil
+}
+
+// validateWGEndpoint checks that endpoint is a valid host:port.
+func validateWGEndpoint(endpoint string) error {
+	host, portStr, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return fmt.Errorf("not a valid host:port")
+	}
+	if host == "" {
+		return fmt.Errorf("empty host")
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("invalid port number")
+	}
+	// Host must be an IP or a valid hostname (no whitespace, no shell metacharacters)
+	if net.ParseIP(host) == nil {
+		hostRegex := regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9.\-]*[a-zA-Z0-9])?$`)
+		if !hostRegex.MatchString(host) {
+			return fmt.Errorf("invalid hostname")
+		}
+	}
+	return nil
 }
 
 // Client config template
