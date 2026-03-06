@@ -92,15 +92,41 @@ func (m *BareMetalManager) downloadKubectl(ctx context.Context) error {
 }
 
 func (m *BareMetalManager) installK3s(ctx context.Context) error {
-	// Download the k3s install script
+	// Download the k3s install script to a temp file
 	installScript, err := fetchURL(ctx, "https://get.k3s.io")
 	if err != nil {
 		return fmt.Errorf("failed to download k3s installer: %w", err)
 	}
 
-	// Run the installer via sudo with INSTALL_K3S_SKIP_START=true
+	// Fetch the published SHA256 checksum and verify integrity
+	checksumContent, err := fetchURL(ctx, "https://get.k3s.io/sha256sum")
+	if err != nil {
+		return fmt.Errorf("failed to fetch k3s installer checksum: %w", err)
+	}
+	expectedSHA256 := strings.Fields(checksumContent)[0]
+
+	// Write installer to temp file for checksum verification
+	tmpFile, err := os.CreateTemp("", "k3s-install-*.sh")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(installScript); err != nil {
+		tmpFile.Close()
+		return fmt.Errorf("failed to write installer to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	if err := verifySHA256(tmpPath, expectedSHA256); err != nil {
+		return fmt.Errorf("k3s installer integrity check failed: %w", err)
+	}
+	slog.Debug("k3s installer checksum verified", "sha256", expectedSHA256)
+
+	// Run the verified installer via sudo
 	slog.Debug("running k3s installer")
-	cmd := exec.CommandContext(ctx, "sudo", "sh", "-c", installScript)
+	cmd := exec.CommandContext(ctx, "sudo", "sh", tmpPath)
 	cmd.Env = append(os.Environ(), "INSTALL_K3S_SKIP_START=true")
 	stdout, stderr := bareMetalSubprocessWriters("k3s install")
 	cmd.Stdout = stdout

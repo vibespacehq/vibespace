@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // verifySHA256 verifies that a file matches the expected SHA256 hex hash.
@@ -36,14 +37,19 @@ func verifySHA256(filePath, expectedHex string) error {
 	return nil
 }
 
+// maxFetchSize is the maximum body size for fetchURL (1 MB).
+const maxFetchSize = 1 << 20
+
 // fetchURL fetches a small text resource and returns its trimmed content.
+// Response body is limited to maxFetchSize to prevent memory exhaustion.
 func fetchURL(ctx context.Context, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch %s: %w", url, err)
 	}
@@ -53,7 +59,7 @@ func fetchURL(ctx context.Context, url string) (string, error) {
 		return "", fmt.Errorf("fetch %s failed with status: %s", url, resp.Status)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFetchSize))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}
