@@ -352,20 +352,15 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Build agent command with agent's config
+		// Build agent command with agent's config (returns []string for safe quoting)
 		sessionID := m.sessionManager.GetSession(m.sessionName, key)
-		agentCmd := BuildInteractiveAgentCommand(conn.AgentType(), conn.Config(), sessionID)
+		agentArgs := BuildInteractiveAgentCommand(conn.AgentType(), conn.Config(), sessionID)
 
 		// tmux session name based on agent (sanitize for tmux)
 		tmuxSession := fmt.Sprintf("agent-%s", addr.Agent)
 
-		// Use tmux: attach to existing session or create new one with agent
-		// tmux new-session -A: attach if exists, create if not
-		// Set TERM=xterm-256color to avoid issues with non-standard terminals (e.g., ghostty)
-		// Wrap in bash -l -c to ensure PATH is set and cd to $VIBESPACE_WORKDIR
-		// Escape double quotes in agentCmd since they'll be inside bash -l -c "..."
-		escapedAgentCmd := strings.ReplaceAll(agentCmd, `"`, `\"`)
-		tmuxCmd := fmt.Sprintf(`TERM=xterm-256color tmux new-session -A -s %s 'bash -l -c "cd \$VIBESPACE_WORKDIR && %s"'`, tmuxSession, escapedAgentCmd)
+		// Build properly shell-quoted tmux command
+		tmuxCmd := agent.WrapForTmuxSSH(tmuxSession, agentArgs)
 
 		// Debug logging
 		sshKeyPath := vibespace.GetSSHPrivateKeyPath()
@@ -374,7 +369,7 @@ func (m *Model) executeCommand(cmd CommandAction) (tea.Model, tea.Cmd) {
 			"agent", key,
 			"agentType", conn.AgentType(),
 			"sessionID", sessionID,
-			"agentCmd", agentCmd,
+			"agentArgs", agentArgs,
 			"tmuxSession", tmuxSession,
 			"tmuxCmd", tmuxCmd,
 			"sshKeyPath", sshKeyPath,

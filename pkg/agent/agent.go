@@ -5,10 +5,79 @@ package agent
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/config"
 )
+
+// DoubleQuoteForBash escapes a string with double quotes for safe embedding inside
+// an existing single-quoted bash -c context. It escapes characters that are special
+// inside double quotes ($, `, ", \, !) and wraps the result in double quotes.
+// This is safe at level 1 (outer shell) because no single quotes are produced,
+// and safe at level 2 (inner bash) because special chars are escaped.
+func DoubleQuoteForBash(s string) string {
+	r := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		`$`, `\$`,
+		"`", "\\`",
+		`!`, `\!`,
+	)
+	return `"` + r.Replace(s) + `"`
+}
+
+// JoinArgsForBash joins command args with proper double-quote escaping for embedding
+// inside a bash -c single-quoted context. Known-safe args (flags starting with -)
+// are not quoted; all other values are double-quoted.
+func JoinArgsForBash(args []string) string {
+	parts := make([]string, len(args))
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "-") || arg == "claude" || arg == "codex" || arg == "resume" || arg == "exec" {
+			// Known-safe flag/command names and subcommands — pass through unquoted
+			parts[i] = arg
+		} else {
+			parts[i] = DoubleQuoteForBash(arg)
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// ShellQuote escapes a string for safe embedding in a single-quoted shell context.
+// Uses the standard approach: replace ' with '\'' (end quote, literal quote, start quote).
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// ShellQuoteArgs joins a list of arguments into a properly shell-quoted command string.
+// Each argument is individually single-quote-escaped, making the result safe
+// to interpolate into a shell command without injection risk.
+func ShellQuoteArgs(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		quoted[i] = ShellQuote(arg)
+	}
+	return strings.Join(quoted, " ")
+}
+
+// WrapForSSHRemote builds a shell command suitable for SSH remote execution.
+// Wraps the given args in `bash -l -c 'cd "$VIBESPACE_WORKDIR" && <quoted_args>'`
+// with proper escaping to prevent command injection.
+func WrapForSSHRemote(args []string) string {
+	innerCmd := ShellQuoteArgs(args)
+	// The inner command is already shell-safe; wrap in bash -l -c
+	return fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, innerCmd)
+}
+
+// WrapForTmuxSSH builds a shell command for launching via tmux over SSH.
+// Uses tmux new-session -A to attach or create, with proper escaping.
+func WrapForTmuxSSH(tmuxSession string, args []string) string {
+	innerCmd := ShellQuoteArgs(args)
+	// tmux session name must be safe (alphanumeric + hyphen)
+	return fmt.Sprintf(`TERM=xterm-256color tmux new-session -A -s %s 'bash -l -c %s'`,
+		ShellQuote(tmuxSession),
+		ShellQuote(fmt.Sprintf(`cd "$VIBESPACE_WORKDIR" && %s`, innerCmd)))
+}
 
 // Type represents the type of coding agent.
 type Type string
@@ -260,9 +329,11 @@ type CodingAgent interface {
 	BuildPrintModeCommand(sessionID string, resume bool, config *Config) string
 
 	// BuildInteractiveCommand builds a command for interactive terminal mode.
+	// Returns the argument list (not a shell string) to prevent command injection.
+	// Callers must use ShellQuoteArgs or WrapForSSHRemote to convert to a shell string.
 	// sessionID is optional - if provided, resumes that session.
 	// config contains agent configuration.
-	BuildInteractiveCommand(sessionID string, config *Config) string
+	BuildInteractiveCommand(sessionID string, config *Config) []string
 
 	// Session handling
 	// SessionIDFlag returns the flag used to specify a new session ID.

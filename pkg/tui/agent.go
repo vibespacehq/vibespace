@@ -558,9 +558,10 @@ func (c *AgentConn) AgentImpl() agent.CodingAgent {
 	return c.agentImpl
 }
 
-// BuildInteractiveAgentCommand builds an interactive command for any agent type
-// This is used by /focus to launch an interactive session with the agent's config
-func BuildInteractiveAgentCommand(agentType agent.Type, config *agent.Config, sessionID string) string {
+// BuildInteractiveAgentCommand builds an interactive command for any agent type.
+// Returns []string argument list to prevent command injection.
+// This is used by /focus to launch an interactive session with the agent's config.
+func BuildInteractiveAgentCommand(agentType agent.Type, config *agent.Config, sessionID string) []string {
 	agentImpl, err := agent.Get(agentType)
 	if err != nil {
 		// Fall back to Claude Code
@@ -615,7 +616,7 @@ func (c *AgentConn) buildClaudeCommandFallback(sessionID string, useResume bool)
 		args = append(args, "--allowedTools", `"Bash(read_only:true),Read,Write,Edit,Glob,Grep"`)
 	}
 
-	return fmt.Sprintf(`bash -l -c '%s'`, strings.Join(args, " "))
+	return fmt.Sprintf(`bash -l -c '%s'`, agent.JoinArgsForBash(args))
 }
 
 // Close closes the agent connection

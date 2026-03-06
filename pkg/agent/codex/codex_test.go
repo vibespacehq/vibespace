@@ -310,14 +310,16 @@ func TestBuildInteractiveCommand(t *testing.T) {
 	a := &Agent{}
 
 	t.Run("new session", func(t *testing.T) {
-		cmd := a.BuildInteractiveCommand("", &agent.Config{})
+		args := a.BuildInteractiveCommand("", &agent.Config{})
+		cmd := strings.Join(args, " ")
 		if cmd != "codex --yolo" {
 			t.Errorf("cmd = %q, want %q", cmd, "codex --yolo")
 		}
 	})
 
 	t.Run("resume session", func(t *testing.T) {
-		cmd := a.BuildInteractiveCommand("sess-789", &agent.Config{})
+		args := a.BuildInteractiveCommand("sess-789", &agent.Config{})
+		cmd := strings.Join(args, " ")
 		if !strings.Contains(cmd, "codex resume sess-789") {
 			t.Errorf("cmd = %q, should contain 'codex resume sess-789'", cmd)
 		}
@@ -325,12 +327,23 @@ func TestBuildInteractiveCommand(t *testing.T) {
 
 	t.Run("with model", func(t *testing.T) {
 		config := &agent.Config{Model: "o3"}
-		cmd := a.BuildInteractiveCommand("", config)
+		args := a.BuildInteractiveCommand("", config)
+		cmd := strings.Join(args, " ")
 		if !strings.Contains(cmd, "--model") {
 			t.Error("command should contain --model")
 		}
 		if !strings.Contains(cmd, "o3") {
 			t.Error("command should contain model name")
+		}
+	})
+
+	t.Run("returns slice not string", func(t *testing.T) {
+		args := a.BuildInteractiveCommand("", &agent.Config{})
+		if len(args) < 2 {
+			t.Fatalf("expected at least 2 args, got %d", len(args))
+		}
+		if args[0] != "codex" {
+			t.Errorf("first arg = %q, want %q", args[0], "codex")
 		}
 	})
 }
