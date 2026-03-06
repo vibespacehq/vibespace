@@ -155,11 +155,10 @@ func doConnect(vsName, agentName string, runAgent, browser bool) error {
 
 // buildInteractiveCommand builds the command to run the agent interactively
 func buildInteractiveCommand(agentImpl agent.CodingAgent, config *agent.Config) string {
-	// Use the agent's BuildInteractiveCommand method
-	agentCmd := agentImpl.BuildInteractiveCommand("", config)
-	// Wrap with cd and bash login shell to ensure PATH is set correctly
-	// $VIBESPACE_WORKDIR is set by entrypoint (worktree dir, clone dir, or /vibespace)
-	return fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, agentCmd)
+	// Use the agent's BuildInteractiveCommand method (returns []string)
+	agentArgs := agentImpl.BuildInteractiveCommand("", config)
+	// Wrap with cd and bash login shell using safe shell quoting
+	return agent.WrapForSSHRemote(agentArgs)
 }
 
 // connectViaSSH connects to the vibespace via native SSH

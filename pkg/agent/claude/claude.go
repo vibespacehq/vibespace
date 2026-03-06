@@ -72,12 +72,14 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 HOOKEOF
 `, hookTimeout)
 	cleanupHook := `rm -f "$VIBESPACE_WORKDIR/.claude/settings.json"`
-	claudeCmd := strings.Join(args, " ")
+	claudeCmd := agent.JoinArgsForBash(args)
 	return fmt.Sprintf(`bash -l -c '%s trap "%s" EXIT; cd "$VIBESPACE_WORKDIR" && %s'`, setupHook, cleanupHook, claudeCmd)
 }
 
 // BuildInteractiveCommand builds a Claude command for interactive terminal mode.
-func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) string {
+// Returns the argument list to prevent command injection; callers use
+// agent.ShellQuoteArgs or agent.WrapForSSHRemote to build the shell string.
+func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) []string {
 	args := []string{"claude"}
 
 	// Session handling - interactive mode uses --resume for existing sessions
@@ -88,7 +90,7 @@ func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) 
 	// Apply configuration
 	args = a.applyConfig(args, config)
 
-	return strings.Join(args, " ")
+	return args
 }
 
 // applyConfig adds configuration flags to the command arguments.
