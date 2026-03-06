@@ -92,15 +92,18 @@ func (m *BareMetalManager) downloadKubectl(ctx context.Context) error {
 }
 
 func (m *BareMetalManager) installK3s(ctx context.Context) error {
-	// Download the k3s install script to a temp file
-	installScript, err := fetchURL(ctx, "https://get.k3s.io")
+	// Download the k3s install script and its checksum from the same source (GitHub)
+	// to ensure they always match. The get.k3s.io URL serves a dynamically updated
+	// script that may differ from the repo version.
+	const k3sInstallURL = "https://raw.githubusercontent.com/k3s-io/k3s/master/install.sh"
+	const k3sChecksumURL = "https://raw.githubusercontent.com/k3s-io/k3s/master/install.sh.sha256sum"
+
+	installScript, err := fetchURL(ctx, k3sInstallURL)
 	if err != nil {
 		return fmt.Errorf("failed to download k3s installer: %w", err)
 	}
 
-	// Fetch the published SHA256 checksum and verify integrity
-	// The checksum file is maintained alongside install.sh in the k3s repo
-	checksumContent, err := fetchURL(ctx, "https://raw.githubusercontent.com/k3s-io/k3s/master/install.sh.sha256sum")
+	checksumContent, err := fetchURL(ctx, k3sChecksumURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch k3s installer checksum: %w", err)
 	}
