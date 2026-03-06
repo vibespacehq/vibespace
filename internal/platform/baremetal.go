@@ -99,7 +99,8 @@ func (m *BareMetalManager) installK3s(ctx context.Context) error {
 	}
 
 	// Fetch the published SHA256 checksum and verify integrity
-	checksumContent, err := fetchURL(ctx, "https://get.k3s.io/sha256sum")
+	// The checksum file is maintained alongside install.sh in the k3s repo
+	checksumContent, err := fetchURL(ctx, "https://raw.githubusercontent.com/k3s-io/k3s/master/install.sh.sha256sum")
 	if err != nil {
 		return fmt.Errorf("failed to fetch k3s installer checksum: %w", err)
 	}
