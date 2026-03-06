@@ -66,6 +66,32 @@ func fetchURL(ctx context.Context, url string) (string, error) {
 	return strings.TrimSpace(string(body)), nil
 }
 
+// downloadToFile downloads a URL directly to an open file, preserving exact bytes.
+// Unlike fetchURL, this does not trim whitespace, making it suitable for files
+// that will be checksum-verified.
+func downloadToFile(ctx context.Context, url string, f *os.File) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to download %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s failed with status: %s", url, resp.Status)
+	}
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("failed to write response: %w", err)
+	}
+	return nil
+}
+
 // parseSHA256SUMS parses a SHA256SUMS file and returns the hash for the named asset.
 // Format: "<hex>  <filename>" (two spaces between hash and filename).
 func parseSHA256SUMS(content, assetName string) (string, error) {
