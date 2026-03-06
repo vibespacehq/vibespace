@@ -932,19 +932,16 @@ func CleanupStaleServe() {
 }
 
 // FetchKubeconfigFromServer fetches the kubeconfig from the server's management API.
-func FetchKubeconfigFromServer(serverIP string) ([]byte, error) {
+// Requires a cert fingerprint for TLS pinning — never falls back to InsecureSkipVerify.
+func FetchKubeconfigFromServer(serverIP, certFingerprint string) ([]byte, error) {
 	url := fmt.Sprintf("https://%s:%d/kubeconfig", serverIP, DefaultManagementPort())
 
-	// Use cert pinning if fingerprint is available, skip-verify otherwise
-	var tlsCfg *tls.Config
-	if state, err := LoadRemoteState(); err == nil && state.CertFingerprint != "" {
-		tlsCfg = PinningTLSConfig(state.CertFingerprint)
-	} else {
-		tlsCfg = &tls.Config{InsecureSkipVerify: true}
+	if certFingerprint == "" {
+		return nil, fmt.Errorf("cert fingerprint required to fetch kubeconfig")
 	}
 	client := &http.Client{
 		Timeout:   15 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+		Transport: &http.Transport{TLSClientConfig: PinningTLSConfig(certFingerprint)},
 	}
 	resp, err := client.Get(url)
 	if err != nil {

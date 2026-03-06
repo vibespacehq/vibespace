@@ -156,7 +156,7 @@ func runRemoteWatch(cmd *cobra.Command, args []string) error {
 	fmt.Println("Press Ctrl-C to stop.")
 	fmt.Println()
 
-	watcher := remote.NewConnectionWatcher(state.ServerIP)
+	watcher := remote.NewConnectionWatcher(state.ServerIP, state.CertFingerprint)
 
 	watcher.OnDisconnect(func() {
 		fmt.Printf("%s Tunnel lost, attempting reconnect...\n", out.Yellow("[!!]"))
