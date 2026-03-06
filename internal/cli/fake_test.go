@@ -23,7 +23,7 @@ import (
 // newFakeService creates a vibespace.Service backed by a fake k8s clientset.
 func newFakeService(t *testing.T, objects ...runtime.Object) (*vibespace.Service, *fake.Clientset) {
 	t.Helper()
-	cs := fake.NewSimpleClientset(objects...)
+	cs := fake.NewClientset(objects...)
 	client := k8s.NewClientFromClientset(cs)
 	return vibespace.NewService(client), cs
 }
