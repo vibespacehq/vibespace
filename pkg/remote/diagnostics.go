@@ -164,7 +164,14 @@ func checkWireGuardHandshake(sudoPass string) DiagnosticResult {
 }
 
 func checkManagementAPI(state *RemoteState) DiagnosticResult {
-	client := mgmtHTTPClient(3 * time.Second)
+	client, err := mgmtHTTPClient(3*time.Second, state.CertFingerprint)
+	if err != nil {
+		return DiagnosticResult{
+			Check:   "Management API",
+			Status:  false,
+			Message: fmt.Sprintf("No cert fingerprint available for management API: %v", err),
+		}
+	}
 	resp, err := client.Get(fmt.Sprintf("https://%s:%d/health", state.ServerIP, DefaultManagementPort()))
 	if err != nil {
 		return DiagnosticResult{
