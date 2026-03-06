@@ -3,7 +3,6 @@ package remote
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -39,20 +38,27 @@ func chownToRealUser(paths ...string) {
 }
 
 // mgmtHTTPClient returns an HTTP client for the management API with cert pinning.
-// Loads the saved cert fingerprint from RemoteState and uses PinningTLSConfig.
-// Falls back to InsecureSkipVerify if no fingerprint is available (e.g. during
-// initial connectivity check before state is fully saved).
-func mgmtHTTPClient(timeout time.Duration) *http.Client {
-	var tlsCfg *tls.Config
-	if state, err := LoadRemoteState(); err == nil && state.CertFingerprint != "" {
-		tlsCfg = PinningTLSConfig(state.CertFingerprint)
-	} else {
-		tlsCfg = &tls.Config{InsecureSkipVerify: true}
+// Requires a non-empty cert fingerprint — never falls back to InsecureSkipVerify.
+func mgmtHTTPClient(timeout time.Duration, certFingerprint string) (*http.Client, error) {
+	if certFingerprint == "" {
+		return nil, fmt.Errorf("cert fingerprint required for management API (no InsecureSkipVerify fallback)")
 	}
 	return &http.Client{
 		Timeout:   timeout,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+		Transport: &http.Transport{TLSClientConfig: PinningTLSConfig(certFingerprint)},
+	}, nil
+}
+
+// mustMgmtHTTPClient loads the cert fingerprint from RemoteState and returns a pinned client.
+// Logs a warning and returns nil if state or fingerprint is unavailable.
+func mustMgmtHTTPClient(timeout time.Duration) *http.Client {
+	state, err := LoadRemoteState()
+	if err != nil || state.CertFingerprint == "" {
+		slog.Warn("no cert fingerprint available for management API")
+		return nil
 	}
+	client, _ := mgmtHTTPClient(timeout, state.CertFingerprint)
+	return client
 }
 
 // cleanHostname returns a clean hostname suitable for client identification.
@@ -191,18 +197,19 @@ func Connect(opts ConnectOptions) error {
 		return fmt.Errorf("failed to start WireGuard: %w", err)
 	}
 
-	// Wait for tunnel connectivity
-	// Save cert fingerprint early so mgmtHTTPClient can use it for pinning
-	state.Save() // best-effort, connectivity check can fall back to InsecureSkipVerify
+	// Wait for tunnel connectivity using cert fingerprint from invite token
 	slog.Info("waiting for tunnel connectivity")
-	if err := waitForConnectivity(regResp.ServerIP, 30*time.Second); err != nil {
+	if err := waitForConnectivity(regResp.ServerIP, 30*time.Second, invite.CertFingerprint); err != nil {
 		QuickDown()
 		return fmt.Errorf("tunnel did not establish: %w", err)
 	}
 
+	// Save state now that tunnel is confirmed up
+	state.Save()
+
 	// Fetch kubeconfig from management API
 	slog.Info("fetching kubeconfig from server")
-	kubeconfig, err := FetchKubeconfigFromServer(regResp.ServerIP)
+	kubeconfig, err := FetchKubeconfigFromServer(regResp.ServerIP, invite.CertFingerprint)
 	if err != nil {
 		QuickDown()
 		return fmt.Errorf("failed to fetch kubeconfig: %w", err)
@@ -293,6 +300,11 @@ func registerWithServer(invite *InviteToken, publicKey, hostname string) (*Regis
 		return nil, fmt.Errorf("failed to decode registration response: %w", err)
 	}
 
+	// Validate server-provided fields before using them in WireGuard config
+	if err := validateWireGuardResponse(&regResp); err != nil {
+		return nil, fmt.Errorf("server returned invalid WireGuard configuration: %w", err)
+	}
+
 	return &regResp, nil
 }
 
@@ -358,13 +370,16 @@ func GetStatus() (*RemoteState, error) {
 }
 
 // waitForConnectivity pings the server until it responds or timeout.
-func waitForConnectivity(serverIP string, timeout time.Duration) error {
+func waitForConnectivity(serverIP string, timeout time.Duration, certFingerprint string) error {
 	deadline := time.Now().Add(timeout)
 	attempt := 0
 	for time.Now().Before(deadline) {
 		attempt++
-		// Try to reach the management API (TLS)
-		client := mgmtHTTPClient(2 * time.Second)
+		// Try to reach the management API (TLS with cert pinning)
+		client, err := mgmtHTTPClient(2*time.Second, certFingerprint)
+		if err != nil {
+			return fmt.Errorf("cannot create management API client: %w", err)
+		}
 		resp, err := client.Get(fmt.Sprintf("https://%s:%d/health", serverIP, DefaultManagementPort()))
 		if err == nil {
 			resp.Body.Close()
@@ -381,7 +396,11 @@ func waitForConnectivity(serverIP string, timeout time.Duration) error {
 // so it can remove the client registration.
 func notifyServerDisconnect(serverIP, publicKey string) {
 	slog.Info("notifying server of disconnect", "serverIP", serverIP, "publicKey", publicKey[:8]+"...")
-	client := mgmtHTTPClient(2 * time.Second)
+	client := mustMgmtHTTPClient(2 * time.Second)
+	if client == nil {
+		slog.Warn("cannot notify server: no cert fingerprint available")
+		return
+	}
 	body, _ := json.Marshal(map[string]string{"public_key": publicKey})
 	url := fmt.Sprintf("https://%s:%d/disconnect", serverIP, DefaultManagementPort())
 	resp, err := client.Post(url, "application/json", bytes.NewReader(body))
@@ -406,23 +425,25 @@ func mustEncodeInviteToken(token *InviteToken) string {
 
 // ConnectionWatcher monitors the WireGuard tunnel and automatically reconnects if it drops.
 type ConnectionWatcher struct {
-	serverIP      string
-	checkInterval time.Duration
-	maxRetries    int
-	onDisconnect  func()
-	onReconnect   func()
-	stopCh        chan struct{}
-	stopped       chan struct{}
+	serverIP        string
+	certFingerprint string
+	checkInterval   time.Duration
+	maxRetries      int
+	onDisconnect    func()
+	onReconnect     func()
+	stopCh          chan struct{}
+	stopped         chan struct{}
 }
 
 // NewConnectionWatcher creates a new connection watcher.
-func NewConnectionWatcher(serverIP string) *ConnectionWatcher {
+func NewConnectionWatcher(serverIP, certFingerprint string) *ConnectionWatcher {
 	return &ConnectionWatcher{
-		serverIP:      serverIP,
-		checkInterval: 15 * time.Second,
-		maxRetries:    3,
-		stopCh:        make(chan struct{}),
-		stopped:       make(chan struct{}),
+		serverIP:        serverIP,
+		certFingerprint: certFingerprint,
+		checkInterval:   15 * time.Second,
+		maxRetries:      3,
+		stopCh:          make(chan struct{}),
+		stopped:         make(chan struct{}),
 	}
 }
 
@@ -495,7 +516,10 @@ func (w *ConnectionWatcher) run() {
 }
 
 func (w *ConnectionWatcher) ping() bool {
-	client := mgmtHTTPClient(2 * time.Second)
+	client, err := mgmtHTTPClient(2*time.Second, w.certFingerprint)
+	if err != nil {
+		return false
+	}
 	resp, err := client.Get(fmt.Sprintf("https://%s:%d/health", w.serverIP, DefaultManagementPort()))
 	if err != nil {
 		return false
@@ -519,5 +543,5 @@ func (w *ConnectionWatcher) reconnect() error {
 	}
 
 	// Wait for connectivity
-	return waitForConnectivity(w.serverIP, 30*time.Second)
+	return waitForConnectivity(w.serverIP, 30*time.Second, w.certFingerprint)
 }
