@@ -98,18 +98,13 @@ func (m *BareMetalManager) installK3s(ctx context.Context) error {
 	const k3sInstallURL = "https://raw.githubusercontent.com/k3s-io/k3s/master/install.sh"
 	const k3sChecksumURL = "https://raw.githubusercontent.com/k3s-io/k3s/master/install.sh.sha256sum"
 
-	installScript, err := fetchURL(ctx, k3sInstallURL)
-	if err != nil {
-		return fmt.Errorf("failed to download k3s installer: %w", err)
-	}
-
 	checksumContent, err := fetchURL(ctx, k3sChecksumURL)
 	if err != nil {
 		return fmt.Errorf("failed to fetch k3s installer checksum: %w", err)
 	}
 	expectedSHA256 := strings.Fields(checksumContent)[0]
 
-	// Write installer to temp file for checksum verification
+	// Download installer directly to temp file (not via fetchURL which trims whitespace)
 	tmpFile, err := os.CreateTemp("", "k3s-install-*.sh")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
@@ -117,9 +112,9 @@ func (m *BareMetalManager) installK3s(ctx context.Context) error {
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
-	if _, err := tmpFile.WriteString(installScript); err != nil {
+	if err := downloadToFile(ctx, k3sInstallURL, tmpFile); err != nil {
 		tmpFile.Close()
-		return fmt.Errorf("failed to write installer to temp file: %w", err)
+		return fmt.Errorf("failed to download k3s installer: %w", err)
 	}
 	tmpFile.Close()
 
