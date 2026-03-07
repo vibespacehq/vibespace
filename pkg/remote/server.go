@@ -426,6 +426,24 @@ func (s *Server) Stop(ctx context.Context) error {
 	return s.state.Save()
 }
 
+// peerFromRequest identifies the registered client making the request
+// by matching the source IP against WireGuard-assigned IPs.
+func (s *Server) peerFromRequest(r *http.Request) *ClientRegistration {
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.state.Clients {
+		clientIP := strings.TrimSuffix(s.state.Clients[i].AssignedIP, "/32")
+		if clientIP == ip {
+			return &s.state.Clients[i]
+		}
+	}
+	return nil
+}
+
 // handleHealth handles GET /health requests.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -440,6 +458,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleKubeconfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if peer := s.peerFromRequest(r); peer == nil {
+		http.Error(w, "unauthorized: unknown peer", http.StatusUnauthorized)
 		return
 	}
 
@@ -469,23 +492,24 @@ func (s *Server) handleKubeconfig(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(content))
 }
 
-// handleDisconnect handles POST /disconnect - optional notification from client.
+// handleDisconnect handles POST /disconnect - removes the calling peer.
+// The caller's identity is derived from their WireGuard source IP,
+// not from the request body, to prevent peers from disconnecting others.
 func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req struct {
-		PublicKey string `json:"public_key"`
+	peer := s.peerFromRequest(r)
+	if peer == nil {
+		http.Error(w, "unauthorized: unknown peer", http.StatusUnauthorized)
+		return
 	}
-	json.NewDecoder(r.Body).Decode(&req)
 
-	if req.PublicKey != "" {
-		slog.Info("client disconnecting", "public_key", req.PublicKey[:8]+"...")
-		if err := s.RemoveClient(req.PublicKey); err != nil {
-			slog.Warn("failed to remove disconnecting client", "error", err)
-		}
+	slog.Info("client disconnecting", "name", peer.Name, "ip", peer.AssignedIP)
+	if err := s.RemoveClient(peer.PublicKey); err != nil {
+		slog.Warn("failed to remove disconnecting client", "error", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
