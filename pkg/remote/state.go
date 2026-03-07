@@ -45,7 +45,7 @@ type ServerState struct {
 	SigningPublicKey      string               `json:"signing_public_key"`
 	SigningPrivateKeyPath string               `json:"signing_private_key_path"`
 	Clients               []ClientRegistration `json:"clients"`
-	NextClientIP          int                  `json:"next_client_ip"` // Next octet for client IP (starts at 2)
+	NextClientIP          int                  `json:"next_client_ip"`        // Next octet for client IP (starts at 2)
 	UsedNonces            map[string]int64     `json:"used_nonces,omitempty"` // nonce -> token expiry (unix) for replay prevention
 }
 
