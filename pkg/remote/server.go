@@ -349,8 +349,12 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 
 	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort())
 	s.mgmtServer = &http.Server{
-		Addr:    mgmtAddr,
-		Handler: securityHeaders(mux),
+		Addr:              mgmtAddr,
+		Handler:           securityHeaders(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{mgmtCert},
 			MinVersion:   tls.VersionTLS13,
@@ -584,8 +588,12 @@ func (s *Server) startRegistrationAPI() error {
 
 	addr := fmt.Sprintf("0.0.0.0:%d", DefaultRegistrationPort())
 	s.registrationServer = &http.Server{
-		Addr:    addr,
-		Handler: securityHeaders(mux),
+		Addr:              addr,
+		Handler:           securityHeaders(mux),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},
 			MinVersion:   tls.VersionTLS13,
@@ -721,7 +729,7 @@ func (s *Server) ensureSigningKey() (string, []byte, error) {
 func newTokenNonce() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
+		panic("crypto/rand failed: " + err.Error())
 	}
 	return base64.RawURLEncoding.EncodeToString(b[:])
 }
