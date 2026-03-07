@@ -678,7 +678,24 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid or expired token", http.StatusUnauthorized)
 		return
 	}
-	_ = invite // Token is valid
+
+	// Reject replayed tokens — each nonce can only be used once
+	s.mu.Lock()
+	s.state.PruneExpiredNonces()
+	alreadyUsed := s.state.CheckAndRecordNonce(invite.Nonce, invite.ExpiresAt)
+	if alreadyUsed {
+		s.mu.Unlock()
+		slog.Warn("registration rejected: token already used", "nonce", invite.Nonce[:8]+"...")
+		http.Error(w, "token already used", http.StatusConflict)
+		return
+	}
+	if err := s.state.Save(); err != nil {
+		s.mu.Unlock()
+		slog.Error("failed to save nonce state", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	s.mu.Unlock()
 
 	// Validate public key format (base64, should decode to 32 bytes)
 	keyBytes, err := base64.StdEncoding.DecodeString(req.PublicKey)
