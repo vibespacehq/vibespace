@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -446,23 +447,17 @@ func (m *ColimaManager) Start(ctx context.Context, config ClusterConfig) error {
 	currentPath := os.Getenv("PATH")
 	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
 
-	// Use bash -c to run colima with PATH and KUBECONFIG set
-	// This ensures the environment is properly inherited by Colima's subprocesses (like limactl)
 	// Using dedicated "vibespace" profile to avoid conflicts with user's default Colima setup
-	commandStr := fmt.Sprintf(
-		"PATH='%s' KUBECONFIG='%s' '%s' --profile %s start --kubernetes --cpu %d --memory %d --disk %d",
-		newPath,
-		m.KubeconfigPath(),
-		m.colimaBin(),
-		colimaProfile,
-		config.CPU,
-		config.Memory,
-		config.Disk,
+	cmd := exec.CommandContext(ctx, m.colimaBin(),
+		"--profile", colimaProfile,
+		"start", "--kubernetes",
+		"--cpu", strconv.Itoa(config.CPU),
+		"--memory", strconv.Itoa(config.Memory),
+		"--disk", strconv.Itoa(config.Disk),
 	)
+	cmd.Env = append(os.Environ(), "PATH="+newPath, "KUBECONFIG="+m.KubeconfigPath())
 
-	slog.Debug("executing colima start", "command", commandStr)
-
-	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)
+	slog.Debug("executing colima start", "bin", m.colimaBin(), "profile", colimaProfile)
 	stdout, stderrLog := subprocessWriters("colima start")
 	var stderrBuf bytes.Buffer
 	cmd.Stdout = stdout
@@ -486,18 +481,13 @@ func (m *ColimaManager) Resume(ctx context.Context) error {
 	currentPath := os.Getenv("PATH")
 	newPath := fmt.Sprintf("%s:%s:%s", m.limaBinDir(), m.binDir, currentPath)
 
-	// Use bash -c to run colima with PATH and KUBECONFIG set
-	commandStr := fmt.Sprintf(
-		"PATH='%s' KUBECONFIG='%s' '%s' --profile %s start",
-		newPath,
-		m.KubeconfigPath(),
-		m.colimaBin(),
-		colimaProfile,
+	cmd := exec.CommandContext(ctx, m.colimaBin(),
+		"--profile", colimaProfile,
+		"start",
 	)
+	cmd.Env = append(os.Environ(), "PATH="+newPath, "KUBECONFIG="+m.KubeconfigPath())
 
-	slog.Debug("executing colima resume (start stopped VM)", "command", commandStr)
-
-	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)
+	slog.Debug("executing colima resume (start stopped VM)", "bin", m.colimaBin(), "profile", colimaProfile)
 	stdout, stderrLog := subprocessWriters("colima resume")
 	var stderrBuf bytes.Buffer
 	cmd.Stdout = stdout
@@ -532,16 +522,14 @@ func (m *ColimaManager) Recover(ctx context.Context) error {
 		_ = unlockCmd.Run() // Ignore errors - disk may not exist or be locked
 	}
 
-	// Force delete the Colima VM using bash -c for proper PATH inheritance
-	commandStr := fmt.Sprintf(
-		"PATH='%s' '%s' --profile %s delete --force",
-		newPath,
-		m.colimaBin(),
-		colimaProfile,
+	// Force delete the Colima VM
+	cmd := exec.CommandContext(ctx, m.colimaBin(),
+		"--profile", colimaProfile,
+		"delete", "--force",
 	)
-	slog.Debug("executing colima delete for recovery", "command", commandStr)
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
+	slog.Debug("executing colima delete for recovery", "bin", m.colimaBin(), "profile", colimaProfile)
 
-	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		slog.Debug("colima delete failed during recovery", "error", err, "output", string(output))
@@ -680,17 +668,14 @@ func (m *ColimaManager) Uninstall(ctx context.Context) error {
 		_ = unlockCmd.Run() // Ignore errors - disk may not exist or be locked
 	}
 
-	// Delete the Colima VM using bash -c for proper PATH inheritance
-	// This is critical - without proper PATH, colima can't find limactl
-	commandStr := fmt.Sprintf(
-		"PATH='%s' '%s' --profile %s delete --force",
-		newPath,
-		m.colimaBin(),
-		colimaProfile,
+	// Delete the Colima VM - PATH is critical for colima to find limactl
+	cmd := exec.CommandContext(ctx, m.colimaBin(),
+		"--profile", colimaProfile,
+		"delete", "--force",
 	)
-	slog.Debug("executing colima delete", "command", commandStr)
+	cmd.Env = append(os.Environ(), "PATH="+newPath)
+	slog.Debug("executing colima delete", "bin", m.colimaBin(), "profile", colimaProfile)
 
-	cmd := exec.CommandContext(ctx, "bash", "-c", commandStr)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		slog.Warn("colima delete failed", "error", err, "output", string(output))
@@ -729,8 +714,10 @@ func (m *ColimaManager) Uninstall(ctx context.Context) error {
 	}
 
 	// Verify deletion - check if VM still appears in colima list
-	checkCmd := fmt.Sprintf("PATH='%s' '%s' --profile %s list --json 2>/dev/null", newPath, m.colimaBin(), colimaProfile)
-	checkOutput, _ := exec.CommandContext(ctx, "bash", "-c", checkCmd).Output()
+	checkExec := exec.CommandContext(ctx, m.colimaBin(), "--profile", colimaProfile, "list", "--json")
+	checkExec.Env = append(os.Environ(), "PATH="+newPath)
+	checkExec.Stderr = io.Discard
+	checkOutput, _ := checkExec.Output()
 	if len(checkOutput) > 0 && strings.Contains(string(checkOutput), colimaProfile) {
 		slog.Warn("VM still exists after delete attempt", "output", string(checkOutput))
 	}
