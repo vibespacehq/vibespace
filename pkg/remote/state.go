@@ -46,6 +46,7 @@ type ServerState struct {
 	SigningPrivateKeyPath string               `json:"signing_private_key_path"`
 	Clients               []ClientRegistration `json:"clients"`
 	NextClientIP          int                  `json:"next_client_ip"` // Next octet for client IP (starts at 2)
+	UsedNonces            map[string]int64     `json:"used_nonces,omitempty"` // nonce -> token expiry (unix) for replay prevention
 }
 
 // ClientRegistration represents a registered client.
@@ -240,6 +241,29 @@ func (s *ServerState) Save() error {
 	}
 
 	return nil
+}
+
+// CheckAndRecordNonce returns true if the nonce has already been used.
+// If unused, it records the nonce with the token's expiry for later cleanup.
+func (s *ServerState) CheckAndRecordNonce(nonce string, expiresAt int64) bool {
+	if s.UsedNonces == nil {
+		s.UsedNonces = make(map[string]int64)
+	}
+	if _, used := s.UsedNonces[nonce]; used {
+		return true
+	}
+	s.UsedNonces[nonce] = expiresAt
+	return false
+}
+
+// PruneExpiredNonces removes nonces whose tokens have expired.
+func (s *ServerState) PruneExpiredNonces() {
+	now := time.Now().Unix()
+	for nonce, exp := range s.UsedNonces {
+		if now > exp {
+			delete(s.UsedNonces, nonce)
+		}
+	}
 }
 
 // AllocateClientIP allocates the next available client IP.
