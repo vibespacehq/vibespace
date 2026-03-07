@@ -99,8 +99,8 @@ func (s *Server) handleQuery(w dns.ResponseWriter, r *dns.Msg) {
 		s.mu.RUnlock()
 
 		if !ok {
-			// Default: resolve anything under vibespace.internal to 127.0.0.1
-			ip = "127.0.0.1"
+			m.Rcode = dns.RcodeNameError
+			continue
 		}
 
 		parsed := net.ParseIP(ip)
