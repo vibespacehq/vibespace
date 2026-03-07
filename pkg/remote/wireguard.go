@@ -30,6 +30,21 @@ const (
 	WGInterfaceName = "wg-vibespace"
 )
 
+// vibespaceTemp returns a private temp directory under ~/.vibespace/tmp/ (0700).
+// Using a user-owned directory instead of /tmp avoids symlink attacks in the
+// world-writable system temp dir when files are passed to root processes.
+func vibespaceTemp() (string, error) {
+	vsHome, err := getVibespaceHome()
+	if err != nil {
+		return "", err
+	}
+	tmpDir := filepath.Join(vsHome, "tmp")
+	if err := os.MkdirAll(tmpDir, 0700); err != nil {
+		return "", fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	return tmpDir, nil
+}
+
 // KeyPair represents a WireGuard key pair.
 type KeyPair struct {
 	PrivateKey string
@@ -418,13 +433,14 @@ func quickUpMacOS(addr string) error {
 
 	// On macOS, interface name must be utun[0-9]+
 	// Use "utun" to let the kernel pick an available number
-	tunNameTmp, err := os.CreateTemp("", "wg-tun-name-*")
+	// Use private temp dir (0700) instead of /tmp to prevent symlink attacks
+	tmpDir, err := vibespaceTemp()
 	if err != nil {
-		return fmt.Errorf("failed to create temp file for tun name: %w", err)
+		return fmt.Errorf("failed to create temp dir: %w", err)
 	}
-	tunNameFile := tunNameTmp.Name()
-	tunNameTmp.Close()
-	os.Remove(tunNameFile)
+	tunNameFile := filepath.Join(tmpDir, fmt.Sprintf("wg-tun-name-%d", os.Getpid()))
+	os.Remove(tunNameFile) // wireguard-go requires the file not to exist
+	defer os.Remove(tunNameFile)
 
 	// 1. Start wireguard-go with utun interface
 	// Use "sudo env VAR=val cmd" to pass env through sudo
@@ -467,16 +483,18 @@ func quickUpMacOS(addr string) error {
 		wgConfig = append(wgConfig, line)
 	}
 
-	// Write filtered config to temp file
-	tmpConfigFile, err := os.CreateTemp("", "wg-config-filtered-*.conf")
+	// Write filtered config to temp file in private dir, writing to the open
+	// fd to avoid TOCTOU between close and reopen
+	tmpConfigFile, err := os.CreateTemp(tmpDir, "wg-config-filtered-*.conf")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file for filtered config: %w", err)
 	}
 	tmpConfig := tmpConfigFile.Name()
-	tmpConfigFile.Close()
-	if err := os.WriteFile(tmpConfig, []byte(strings.Join(wgConfig, "\n")), 0600); err != nil {
+	if _, err := tmpConfigFile.Write([]byte(strings.Join(wgConfig, "\n"))); err != nil {
+		tmpConfigFile.Close()
 		return fmt.Errorf("failed to write filtered config: %w", err)
 	}
+	tmpConfigFile.Close()
 	defer os.Remove(tmpConfig)
 
 	cmd = exec.Command("sudo", wg, "setconf", tunName, tmpConfig)
@@ -773,15 +791,20 @@ func SyncWireGuardConfig() error {
 	}
 
 	filteredConfig := stripWGQuickConfig(rawConfig)
-	tmpFile, err := os.CreateTemp("", "wg-syncconf-*.conf")
+	tmpDir, err := vibespaceTemp()
+	if err != nil {
+		return fmt.Errorf("failed to create temp dir: %w", err)
+	}
+	tmpFile, err := os.CreateTemp(tmpDir, "wg-syncconf-*.conf")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file for syncconf: %w", err)
 	}
 	tmpConfig := tmpFile.Name()
-	tmpFile.Close()
-	if err := os.WriteFile(tmpConfig, filteredConfig, 0600); err != nil {
+	if _, err := tmpFile.Write(filteredConfig); err != nil {
+		tmpFile.Close()
 		return fmt.Errorf("failed to write filtered config: %w", err)
 	}
+	tmpFile.Close()
 	defer os.Remove(tmpConfig)
 
 	ifName := wireguardInterfaceName()
