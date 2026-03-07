@@ -116,7 +116,7 @@ func TestDefaultFallback(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 
-	// Query an unregistered name
+	// Query an unregistered name — should return NXDOMAIN
 	c := new(mdns.Client)
 	m := new(mdns.Msg)
 	m.SetQuestion("unknown-service."+Domain()+".", mdns.TypeA)
@@ -126,16 +126,11 @@ func TestDefaultFallback(t *testing.T) {
 		t.Fatalf("DNS query error: %v", err)
 	}
 
-	if len(r.Answer) == 0 {
-		t.Fatal("DNS query returned no answers (expected fallback to 127.0.0.1)")
+	if r.Rcode != mdns.RcodeNameError {
+		t.Errorf("expected NXDOMAIN (rcode %d), got rcode %d", mdns.RcodeNameError, r.Rcode)
 	}
 
-	a, ok := r.Answer[0].(*mdns.A)
-	if !ok {
-		t.Fatalf("answer is not A record: %T", r.Answer[0])
-	}
-
-	if a.A.String() != "127.0.0.1" {
-		t.Errorf("default fallback = %q, want %q", a.A.String(), "127.0.0.1")
+	if len(r.Answer) != 0 {
+		t.Errorf("expected no answers for unregistered name, got %d", len(r.Answer))
 	}
 }

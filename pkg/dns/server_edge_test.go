@@ -30,17 +30,12 @@ func TestDefaultFallbackForUnknownSubdomain(t *testing.T) {
 		t.Fatalf("Exchange error: %v", err)
 	}
 
-	// Server falls back to 127.0.0.1 for unknown subdomains
-	if len(r.Answer) == 0 {
-		t.Fatal("expected fallback answer for unknown subdomain")
+	// Unknown subdomains should return NXDOMAIN
+	if r.Rcode != mdns.RcodeNameError {
+		t.Errorf("expected NXDOMAIN (rcode %d), got rcode %d", mdns.RcodeNameError, r.Rcode)
 	}
-
-	a, ok := r.Answer[0].(*mdns.A)
-	if !ok {
-		t.Fatalf("answer is not A record: %T", r.Answer[0])
-	}
-	if a.A.String() != "127.0.0.1" {
-		t.Errorf("fallback IP = %q, want %q", a.A.String(), "127.0.0.1")
+	if len(r.Answer) != 0 {
+		t.Errorf("expected no answers for unknown subdomain, got %d", len(r.Answer))
 	}
 }
 
@@ -106,7 +101,7 @@ func TestRemoveRecordThenFallback(t *testing.T) {
 		t.Errorf("before remove: IP = %q, want %q", a.A.String(), "10.0.0.99")
 	}
 
-	// Remove and verify fallback to 127.0.0.1
+	// Remove and verify NXDOMAIN
 	s.RemoveRecord("temp-app")
 
 	m2 := new(mdns.Msg)
@@ -115,12 +110,11 @@ func TestRemoveRecordThenFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Exchange error after remove: %v", err)
 	}
-	if len(r2.Answer) == 0 {
-		t.Fatal("expected fallback answer after remove")
+	if r2.Rcode != mdns.RcodeNameError {
+		t.Errorf("after remove: expected NXDOMAIN (rcode %d), got rcode %d", mdns.RcodeNameError, r2.Rcode)
 	}
-	a2 := r2.Answer[0].(*mdns.A)
-	if a2.A.String() != "127.0.0.1" {
-		t.Errorf("after remove: IP = %q, want %q (fallback)", a2.A.String(), "127.0.0.1")
+	if len(r2.Answer) != 0 {
+		t.Errorf("after remove: expected no answers, got %d", len(r2.Answer))
 	}
 }
 
