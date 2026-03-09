@@ -4,7 +4,6 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
 	vsconfig "github.com/vibespacehq/vibespace/pkg/config"
@@ -97,7 +96,8 @@ func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) 
 func (a *Agent) applyConfig(args []string, config *agent.Config) []string {
 	if config == nil {
 		// Fallback: no config available, use restrictive defaults
-		args = append(args, "--allowedTools", "Bash(read_only:true),Read,Write,Edit,Glob,Grep")
+		args = append(args, "--allowedTools")
+		args = append(args, agent.DefaultAllowedTools()...)
 		return args
 	}
 
@@ -107,15 +107,18 @@ func (a *Agent) applyConfig(args []string, config *agent.Config) []string {
 
 	if len(config.AllowedTools) > 0 {
 		// Explicit allowed tools always take precedence
-		args = append(args, "--allowedTools", config.AllowedToolsString())
+		args = append(args, "--allowedTools")
+		args = append(args, config.AllowedTools...)
 	} else if !config.SkipPermissions {
 		// Only use restrictive defaults if NOT skipping permissions
 		// With skip_permissions, omit --allowedTools for full access
-		args = append(args, "--allowedTools", strings.Join(agent.DefaultAllowedTools(), ","))
+		args = append(args, "--allowedTools")
+		args = append(args, agent.DefaultAllowedTools()...)
 	}
 
 	if len(config.DisallowedTools) > 0 {
-		args = append(args, "--disallowedTools", config.DisallowedToolsString())
+		args = append(args, "--disallowedTools")
+		args = append(args, config.DisallowedTools...)
 	}
 
 	if config.Model != "" {
