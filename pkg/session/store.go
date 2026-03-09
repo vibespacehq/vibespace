@@ -14,7 +14,6 @@ import (
 // validSessionName matches alphanumeric, dash, and underscore (1-64 chars)
 var validSessionName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
-// ValidateSessionName checks if a session name is valid
 func ValidateSessionName(name string) error {
 	if name == "" {
 		return fmt.Errorf("session name cannot be empty")
@@ -30,7 +29,6 @@ type Store struct {
 	dir string // ~/.vibespace/sessions/
 }
 
-// NewStore creates a new session store
 func NewStore() (*Store, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -45,12 +43,10 @@ func NewStore() (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
-// sessionPath returns the path to a session file
 func (s *Store) sessionPath(name string) string {
 	return filepath.Join(s.dir, name+".json")
 }
 
-// List returns all stored sessions
 func (s *Store) List() ([]Session, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -123,7 +119,6 @@ func (s *Store) Save(session *Session) error {
 	return nil
 }
 
-// SaveNew stores a new session, returning an error if it already exists
 func (s *Store) SaveNew(session *Session) error {
 	if err := ValidateSessionName(session.Name); err != nil {
 		return err
@@ -148,7 +143,6 @@ func (s *Store) Delete(name string) error {
 	return nil
 }
 
-// Exists checks if a session exists
 func (s *Store) Exists(name string) bool {
 	path := s.sessionPath(name)
 	_, err := os.Stat(path)

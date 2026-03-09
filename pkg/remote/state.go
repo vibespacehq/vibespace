@@ -110,7 +110,6 @@ func getVibespaceHome() (string, error) {
 	return filepath.Join(home, ".vibespace"), nil
 }
 
-// LoadRemoteState loads the remote state from disk.
 func LoadRemoteState() (*RemoteState, error) {
 	stateMu.Lock()
 	defer stateMu.Unlock()
@@ -137,7 +136,6 @@ func LoadRemoteState() (*RemoteState, error) {
 	return &state, nil
 }
 
-// Save writes the remote state to disk.
 func (s *RemoteState) Save() error {
 	stateMu.Lock()
 	defer stateMu.Unlock()
