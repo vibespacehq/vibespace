@@ -81,4 +81,3 @@ func getHighlighter() *Highlighter {
 	}
 	return globalHighlighter
 }
-
