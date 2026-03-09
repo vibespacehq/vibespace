@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -66,9 +67,11 @@ func setupLogging(cfg LogConfig) func() {
 		writer = w
 		cleanup = func() { w.Close() }
 
-		handler := slog.NewJSONHandler(writer, &slog.HandlerOptions{
-			Level: level,
-		})
+		handler := &redactingHandler{
+			inner: slog.NewJSONHandler(writer, &slog.HandlerOptions{
+				Level: level,
+			}),
+		}
 		// Add default attributes for daemon
 		logger := slog.New(handler).With(
 			"vibespace", cfg.Name,
@@ -99,9 +102,11 @@ func setupLogging(cfg LogConfig) func() {
 	}
 
 	// CLI/TUI use text format for readability
-	handler := slog.NewTextHandler(writer, &slog.HandlerOptions{
-		Level: level,
-	})
+	handler := &redactingHandler{
+		inner: slog.NewTextHandler(writer, &slog.HandlerOptions{
+			Level: level,
+		}),
+	}
 	// Add request ID to all log entries
 	logger := slog.New(handler).With(
 		"request_id", cfg.RequestID,
@@ -110,6 +115,91 @@ func setupLogging(cfg LogConfig) func() {
 	slog.SetDefault(logger)
 
 	return cleanup
+}
+
+// sensitiveKeys lists slog attribute key substrings whose values are redacted.
+// Matching is case-insensitive on the lowercased key.
+var sensitiveKeys = []string{
+	"key",         // publicKey, privateKey, ServerPublicKey, …
+	"token",       // access_token, refresh_token, invite token, …
+	"secret",      // client_secret, …
+	"password",    // any password field
+	"credential",  // git-credentials, …
+	"fingerprint", // cert fingerprint
+	"nonce",       // invite token nonce
+	"sha256",      // file checksums (not secret, but unnecessary in logs)
+}
+
+// redactValue returns a redacted version of s: first 4 chars + "…[REDACTED]".
+// Very short values are fully redacted.
+func redactValue(s string) string {
+	if len(s) <= 4 {
+		return "[REDACTED]"
+	}
+	return s[:4] + "…[REDACTED]"
+}
+
+// isSensitiveKey returns true if the lowercased key contains any sensitive substring.
+func isSensitiveKey(key string) bool {
+	lower := strings.ToLower(key)
+	for _, s := range sensitiveKeys {
+		if strings.Contains(lower, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// redactingHandler wraps an slog.Handler and redacts attributes whose keys
+// match known sensitive patterns before forwarding to the inner handler.
+// This prevents accidental exposure of keys, tokens, fingerprints, and
+// other secrets in debug/daemon log files.
+type redactingHandler struct {
+	inner slog.Handler
+}
+
+func (h *redactingHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.inner.Enabled(ctx, level)
+}
+
+func (h *redactingHandler) Handle(ctx context.Context, r slog.Record) error {
+	redacted := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		redacted.AddAttrs(redactAttr(a))
+		return true
+	})
+	return h.inner.Handle(ctx, redacted)
+}
+
+func (h *redactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	out := make([]slog.Attr, len(attrs))
+	for i, a := range attrs {
+		out[i] = redactAttr(a)
+	}
+	return &redactingHandler{inner: h.inner.WithAttrs(out)}
+}
+
+func (h *redactingHandler) WithGroup(name string) slog.Handler {
+	return &redactingHandler{inner: h.inner.WithGroup(name)}
+}
+
+// redactAttr redacts a single attribute if its key is sensitive.
+func redactAttr(a slog.Attr) slog.Attr {
+	if a.Value.Kind() == slog.KindGroup {
+		attrs := a.Value.Group()
+		out := make([]slog.Attr, len(attrs))
+		for i, ga := range attrs {
+			out[i] = redactAttr(ga)
+		}
+		return slog.Attr{Key: a.Key, Value: slog.GroupValue(out...)}
+	}
+
+	if isSensitiveKey(a.Key) {
+		if s := a.Value.String(); s != "" {
+			return slog.String(a.Key, redactValue(s))
+		}
+	}
+	return a
 }
 
 // newRotatingWriter creates a lumberjack rotating writer
