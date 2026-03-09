@@ -148,7 +148,7 @@ func (s *RemoteState) Save() error {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(vsHome, 0755); err != nil {
+	if err := os.MkdirAll(vsHome, 0700); err != nil {
 		return fmt.Errorf("failed to create vibespace directory: %w", err)
 	}
 
@@ -226,7 +226,7 @@ func (s *ServerState) Save() error {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(vsHome, 0755); err != nil {
+	if err := os.MkdirAll(vsHome, 0700); err != nil {
 		return fmt.Errorf("failed to create vibespace directory: %w", err)
 	}
 
