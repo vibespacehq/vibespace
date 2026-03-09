@@ -957,6 +957,9 @@ func containerSecurityContext() *corev1.SecurityContext {
 			Drop: []corev1.Capability{"ALL"},
 			Add:  addCaps,
 		},
+		SeccompProfile: &corev1.SeccompProfile{
+			Type: corev1.SeccompProfileTypeRuntimeDefault,
+		},
 	}
 }
 
