@@ -128,3 +128,33 @@ var ErrInviteTokenExpired = errors.New("invite token expired")
 
 // ErrInviteTokenSignatureInvalid indicates the invite token signature is invalid.
 var ErrInviteTokenSignatureInvalid = errors.New("invite token signature invalid")
+
+// GetErrorHint returns a helpful hint for common errors.
+func GetErrorHint(err error) string {
+	switch {
+	case errors.Is(err, ErrVibespaceNotFound):
+		return "Use 'vibespace list' to see available vibespaces"
+	case errors.Is(err, ErrAgentNotFound):
+		return "Use 'vibespace <name> agent list' to see available agents"
+	case errors.Is(err, ErrClusterNotInitialized):
+		return "Run 'vibespace init' to initialize the cluster, or 'vibespace remote connect' to use a remote cluster"
+	case errors.Is(err, ErrClusterNotRunning):
+		return "Run 'vibespace init' to start the cluster"
+	case errors.Is(err, ErrDaemonNotRunning):
+		return "The daemon will auto-start on next command"
+	case errors.Is(err, ErrForwardNotFound):
+		return "Use 'vibespace <name> forward list' to see active forwards"
+	case errors.Is(err, ErrNoAgents):
+		return "Use 'vibespace <name> agent create' to add an agent"
+	case errors.Is(err, ErrRemoteNotConnected):
+		return "Use 'vibespace remote connect <token>' to connect to a remote server"
+	case errors.Is(err, ErrWireGuardNotAvailable):
+		return "WireGuard installation failed. On Linux, install wireguard-tools first: apt install wireguard-tools"
+	case errors.Is(err, ErrRemoteAlreadyConnected):
+		return "Use 'vibespace remote disconnect' first, then connect to a new server"
+	case errors.Is(err, ErrInvalidToken):
+		return "Request a new token from the server admin with: vibespace serve --generate-token"
+	default:
+		return ""
+	}
+}
