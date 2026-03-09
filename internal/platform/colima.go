@@ -536,31 +536,13 @@ func (m *ColimaManager) Recover(ctx context.Context) error {
 	}
 
 	// Clean up Lima instance directory
-	limaDir := m.limaInstanceDir()
-	if _, err := os.Stat(limaDir); err == nil {
-		slog.Debug("removing Lima instance directory", "path", limaDir)
-		if err := os.RemoveAll(limaDir); err != nil {
-			slog.Warn("failed to remove Lima instance directory", "path", limaDir, "error", err)
-		}
-	}
+	cleanupDirectory("Lima instance directory", m.limaInstanceDir())
 
 	// Clean up Lima disks directory (persistent disk)
-	disksDir := m.limaDisksDir()
-	if _, err := os.Stat(disksDir); err == nil {
-		slog.Debug("removing Lima disks directory", "path", disksDir)
-		if err := os.RemoveAll(disksDir); err != nil {
-			slog.Warn("failed to remove Lima disks directory", "path", disksDir, "error", err)
-		}
-	}
+	cleanupDirectory("Lima disks directory", m.limaDisksDir())
 
 	// Clean up profile config directory
-	profileDir := m.colimaProfileDir()
-	if _, err := os.Stat(profileDir); err == nil {
-		slog.Debug("removing Colima profile directory", "path", profileDir)
-		if err := os.RemoveAll(profileDir); err != nil {
-			slog.Warn("failed to remove profile directory", "path", profileDir, "error", err)
-		}
-	}
+	cleanupDirectory("Colima profile directory", m.colimaProfileDir())
 
 	// Remove stale kubeconfig (will be regenerated on start)
 	kubeconfig := m.KubeconfigPath()
@@ -686,32 +668,14 @@ func (m *ColimaManager) Uninstall(ctx context.Context) error {
 
 	// Always do manual cleanup to ensure no leftovers
 	// Clean up Lima instance directory (~/.colima/_lima/colima-vibespace/)
-	limaDir := m.limaInstanceDir()
-	if _, err := os.Stat(limaDir); err == nil {
-		slog.Debug("removing Lima instance directory", "path", limaDir)
-		if err := os.RemoveAll(limaDir); err != nil {
-			slog.Warn("failed to remove Lima instance directory", "path", limaDir, "error", err)
-		}
-	}
+	cleanupDirectory("Lima instance directory", m.limaInstanceDir())
 
 	// Clean up Lima disks directory (~/.colima/_lima/_disks/colima-vibespace/)
 	// This is critical - colima delete doesn't remove the persistent disk!
-	disksDir := m.limaDisksDir()
-	if _, err := os.Stat(disksDir); err == nil {
-		slog.Debug("removing Lima disks directory", "path", disksDir)
-		if err := os.RemoveAll(disksDir); err != nil {
-			slog.Warn("failed to remove Lima disks directory", "path", disksDir, "error", err)
-		}
-	}
+	cleanupDirectory("Lima disks directory", m.limaDisksDir())
 
 	// Clean up profile config directory (~/.colima/vibespace/)
-	profileDir := m.colimaProfileDir()
-	if _, err := os.Stat(profileDir); err == nil {
-		slog.Debug("removing Colima profile directory", "path", profileDir)
-		if err := os.RemoveAll(profileDir); err != nil {
-			slog.Warn("failed to remove profile directory", "path", profileDir, "error", err)
-		}
-	}
+	cleanupDirectory("Colima profile directory", m.colimaProfileDir())
 
 	// Verify deletion - check if VM still appears in colima list
 	checkExec := exec.CommandContext(ctx, m.colimaBin(), "--profile", colimaProfile, "list", "--json")
@@ -730,6 +694,17 @@ func (m *ColimaManager) Uninstall(ctx context.Context) error {
 // Using ~/.vibespace/kubeconfig to avoid touching user's ~/.kube/config
 func (m *ColimaManager) KubeconfigPath() string {
 	return filepath.Join(m.vibespaceHome, "kubeconfig")
+}
+
+// cleanupDirectory removes a directory if it exists, logging the action.
+// Used during Recover and Uninstall to clean up Lima/Colima state directories.
+func cleanupDirectory(name, path string) {
+	if _, err := os.Stat(path); err == nil {
+		slog.Debug("removing "+name, "path", path)
+		if err := os.RemoveAll(path); err != nil {
+			slog.Warn("failed to remove "+name, "path", path, "error", err)
+		}
+	}
 }
 
 // subprocessWriters returns writers for subprocess stdout/stderr
