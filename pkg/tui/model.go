@@ -603,7 +603,7 @@ func (m *Model) renderMessageForViewport(msg *Message) string {
 	switch msg.Type {
 	case MessageTypeUser:
 		label = UserLabelWithTarget(msg.Target)
-		content = msg.Content
+		content = "   " + msg.Content
 
 	case MessageTypeAssistant:
 		color := m.GetAgentColor(msg.Sender)
