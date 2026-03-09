@@ -164,7 +164,7 @@ while true; do
         echo "https://x-access-token:${NEW_AT}@${REPO_HOST}" > "$HOME/.git-credentials-vibespace"
         echo "[github-refresh] $(date +%H:%M) Token refreshed"
     else
-        echo "[github-refresh] $(date +%H:%M) Refresh failed: $RESP" >&2
+        echo "[github-refresh] $(date +%H:%M) Refresh failed" >&2
     fi
     sleep "$INTERVAL"
 done
