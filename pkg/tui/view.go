@@ -47,10 +47,10 @@ func (m *Model) View() string {
 	// If permission prompt is showing, render it inline above the status bar
 	if m.permissionPrompt != nil {
 		permBar := m.renderPermissionBar()
-		return fmt.Sprintf("%s\n%s\n%s\n%s", header, m.viewport.View(), input, permBar)
+		return fmt.Sprintf("%s\n%s\n\n%s\n%s", header, m.viewport.View(), input, permBar)
 	}
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s", header, m.viewport.View(), input, status)
+	return fmt.Sprintf("%s\n%s\n\n%s\n%s", header, m.viewport.View(), input, status)
 }
 
 // renderLoading renders the loading state
