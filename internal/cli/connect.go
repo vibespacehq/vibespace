@@ -173,8 +173,8 @@ func connectViaSSH(localPort int, remoteCmd string) error {
 	sshArgs := []string{
 		"-i", privateKeyPath,
 		"-p", strconv.Itoa(localPort),
-		"-o", "StrictHostKeyChecking=no",
-		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "UserKnownHostsFile=~/.vibespace/known_hosts",
 		"-o", "LogLevel=ERROR",
 		"-t", // Force pseudo-terminal allocation for interactive commands
 		"user@localhost",
