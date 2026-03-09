@@ -240,7 +240,7 @@ func (a *Agent) ParseStreamLine(line string) (*agent.StreamMessage, bool) {
 func (a *Agent) SupportedTools() []string {
 	return []string{
 		"Read", "Write", "Edit",
-		"Bash", "Bash(read_only:true)",
+		"Bash",
 		"Glob", "Grep",
 		"Task", "WebFetch", "WebSearch", "NotebookEdit",
 	}

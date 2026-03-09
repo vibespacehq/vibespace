@@ -593,7 +593,7 @@ func agentSupportedTools(agentType agent.Type) []string {
 }
 
 // excludedTools returns tools from SupportedTools that are not in the allowed list.
-// Handles parameterized tools like "Bash(read_only:true)" by comparing base names.
+// Handles parameterized tools like "Bash(npm run *)" by comparing base names.
 func excludedTools(agentType agent.Type, allowed []string) []string {
 	supported := agentSupportedTools(agentType)
 	allowedBase := make(map[string]bool, len(allowed))
