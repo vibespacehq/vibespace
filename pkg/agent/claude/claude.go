@@ -97,7 +97,7 @@ func (a *Agent) BuildInteractiveCommand(sessionID string, config *agent.Config) 
 func (a *Agent) applyConfig(args []string, config *agent.Config) []string {
 	if config == nil {
 		// Fallback: no config available, use restrictive defaults
-		args = append(args, "--allowedTools", `"Bash(read_only:true),Read,Write,Edit,Glob,Grep"`)
+		args = append(args, "--allowedTools", "Bash(read_only:true),Read,Write,Edit,Glob,Grep")
 		return args
 	}
 
@@ -107,15 +107,15 @@ func (a *Agent) applyConfig(args []string, config *agent.Config) []string {
 
 	if len(config.AllowedTools) > 0 {
 		// Explicit allowed tools always take precedence
-		args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, config.AllowedToolsString()))
+		args = append(args, "--allowedTools", config.AllowedToolsString())
 	} else if !config.SkipPermissions {
 		// Only use restrictive defaults if NOT skipping permissions
 		// With skip_permissions, omit --allowedTools for full access
-		args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(agent.DefaultAllowedTools(), ",")))
+		args = append(args, "--allowedTools", strings.Join(agent.DefaultAllowedTools(), ","))
 	}
 
 	if len(config.DisallowedTools) > 0 {
-		args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, config.DisallowedToolsString()))
+		args = append(args, "--disallowedTools", config.DisallowedToolsString())
 	}
 
 	if config.Model != "" {
