@@ -470,113 +470,44 @@ func (t *VibespacesTab) Init() tea.Cmd {
 func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case TabActivateMsg:
-		switch t.mode {
-		case vibespacesModeSessionList:
-			if t.selectedVS != nil && t.sessionAgent != "" {
-				return t, t.loadSessions(t.selectedVS.Name, t.sessionAgent, t.sessionAgentType)
-			}
-		case vibespacesModeAgentView:
-			if t.selectedVS != nil {
-				return t, tea.Batch(
-					t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
-					t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
-					t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
-				)
-			}
-		}
-		return t, t.loadVibespaces()
-
+		return t.handleTabActivate()
 	case PaletteNewVibespaceMsg:
-		t.mode = vibespacesModeCreateForm
-		t.createField = createFieldName
-		t.createName = ""
-		t.createAgentType = agent.TypeClaudeCode
-		t.createRepo = ""
-		t.createWorktree = false
-		t.createBranch = ""
-		t.createCPU = config.Global().Resources.CPU
-		t.createMemory = config.Global().Resources.Memory
-		t.createStorage = config.Global().Resources.Storage
-		t.err = ""
-		return t, nil
-
+		return t.handlePaletteNewVibespace()
 	case vibespacesLoadedMsg:
-		if msg.err != nil {
-			t.err = msg.err.Error()
-			return t, nil
-		}
-		t.vibespaces = msg.vibespaces
-		t.clampSelected()
-		t.err = ""
-		return t, tea.Batch(t.loadAgentInfo(), t.loadLogsForSelected(), t.scheduleRefreshIfNeeded())
-
+		return t.handleVibespacesLoaded(msg)
 	case vsRefreshTickMsg:
 		return t, t.loadVibespaces()
-
 	case agentInfoLoadedMsg:
 		t.agentCounts = msg.counts
 		t.agentNames = msg.names
 		return t, nil
-
 	case vsLogsLoadedMsg:
 		if msg.err == nil && t.selectedID() == msg.vibespaceID {
 			t.logsID = msg.vibespaceID
 			t.logsLines = msg.lines
 		}
 		return t, nil
-
 	case vsAgentsLoadedMsg:
 		if msg.err == nil && t.selectedVS != nil && t.selectedVS.ID == msg.vibespaceID {
 			t.viewAgents = msg.agents
 			t.clampAgentCursor()
 		}
 		return t, nil
-
 	case vsAgentConfigsLoadedMsg:
 		if t.selectedVS != nil && t.selectedVS.ID == msg.vibespaceID {
 			t.agentConfigs = msg.configs
 		}
 		return t, nil
-
 	case vsForwardsLoadedMsg:
 		if t.selectedVS != nil && t.selectedVS.ID == msg.vibespaceID {
 			t.forwards = msg.agents
 		}
 		return t, nil
-
 	case vsSessionsLoadedMsg:
-		if msg.err != nil {
-			t.err = msg.err.Error()
-			return t, nil
-		}
-		if t.sessionAgent == msg.agentName {
-			t.sessions = msg.sessions
-			t.sessionCursor = 0
-			t.err = ""
-		}
-		return t, nil
-
+		return t.handleSessionsLoaded(msg)
 	case vsConnectReadyMsg:
-		if msg.err != nil {
-			t.err = msg.err.Error()
-			return t, nil
-		}
-		switch msg.mode {
-		case vsConnectModeSessionResume:
-			var cfg *agent.Config
-			if c, ok := t.agentConfigs[msg.agentName]; ok {
-				cfg = c
-			}
-			return t, execSessionResumeCmd(msg.sshPort, msg.agentName, msg.agentType, msg.sessionID, cfg)
-		case vsConnectModeShell:
-			return t, t.execShellConnect(msg.sshPort)
-		case vsConnectModeAgentCLI:
-			return t, t.execAgentConnect(msg.sshPort, msg.agentName, msg.agentType)
-		}
-		return t, nil
-
+		return t.handleConnectReady(msg)
 	case vsSessionResumeMsg:
-		// Returned from tea.ExecProcess — refresh data
 		if msg.err != nil {
 			t.err = msg.err.Error()
 		}
@@ -584,92 +515,31 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t, t.loadSessions(t.selectedVS.Name, t.sessionAgent, t.sessionAgentType)
 		}
 		return t, nil
-
 	case vsBrowserReadyMsg:
-		if msg.err != nil {
-			t.err = msg.err.Error()
-			return t, nil
-		}
-		url := fmt.Sprintf("http://localhost:%d", msg.ttydPort)
-		if err := openBrowserURL(url); err != nil {
-			t.err = fmt.Sprintf("open browser: %s", err)
-		}
-		return t, nil
-
+		return t.handleBrowserReady(msg)
 	case vsExecReturnMsg:
-		if msg.err != nil {
-			t.err = msg.err.Error()
-		}
-		switch t.mode {
-		case vibespacesModeAgentView:
-			if t.selectedVS != nil {
-				return t, tea.Batch(
-					t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
-					t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
-				)
-			}
-		case vibespacesModeList:
-			return t, t.loadVibespaces()
-		}
-		return t, nil
-
+		return t.handleExecReturn(msg)
 	case vsGithubDeviceCodeMsg:
-		if msg.err != nil {
-			t.mode = vibespacesModeCreateForm
-			t.err = fmt.Sprintf("GitHub auth failed: %s", msg.err)
-			return t, nil
-		}
-		t.mode = vibespacesModeGithubAuth
-		t.githubUserCode = msg.resp.UserCode
-		t.githubVerifyURI = msg.resp.VerificationURI
-		t.githubDevCode = msg.resp.DeviceCode
-		t.githubInterval = msg.resp.Interval
-		// Best-effort browser open
-		_ = openBrowserURL(msg.resp.VerificationURI)
-		// Start polling for token
-		clientID := config.Global().GitHub.ClientID
-		devCode := msg.resp.DeviceCode
-		interval := msg.resp.Interval
-		expiresIn := msg.resp.ExpiresIn
-		return t, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(expiresIn)*time.Second)
-			defer cancel()
-			token, err := github.PollForToken(ctx, clientID, devCode, interval)
-			return vsGithubTokenMsg{token: token, err: err}
-		}
-
+		return t.handleGithubDeviceCode(msg)
 	case vsGithubTokenMsg:
-		if msg.err != nil {
-			t.mode = vibespacesModeCreateForm
-			t.err = fmt.Sprintf("GitHub auth failed: %s", msg.err)
-			return t, nil
-		}
-		// Store tokens and proceed with vibespace creation
-		t.githubAccessToken = msg.token.AccessToken
-		t.githubRefreshToken = msg.token.RefreshToken
-		t.mode = vibespacesModeCreateForm
-		return t, t.submitCreateForm()
-
+		return t.handleGithubToken(msg)
 	case vsCreateDoneMsg:
 		t.mode = vibespacesModeList
 		if msg.err != nil {
 			t.err = msg.err.Error()
 		}
 		return t, t.loadVibespaces()
-
 	case vsDeleteDoneMsg:
 		t.mode = vibespacesModeList
 		if msg.err != nil {
 			t.err = msg.err.Error()
 		}
 		return t, t.loadVibespaces()
-
 	case vsStartStopDoneMsg:
 		if msg.err != nil {
 			t.err = msg.err.Error()
 		}
 		return t, t.loadVibespaces()
-
 	case welcomeClusterStatusMsg:
 		t.welcomeClusterStatus = msg.status
 		if msg.clusterMode != "" {
@@ -677,86 +547,22 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		t.welcomeLoaded = true
 		return t, nil
-
 	case vsInitDoneMsg:
 		if msg.err != nil {
 			t.err = msg.err.Error()
 		}
 		return t, tea.Batch(t.loadVibespaces(), detectClusterStatus(), refreshSharedState(t.shared))
-
 	case vsDeleteAgentDoneMsg:
-		if msg.err != nil {
-			t.err = msg.err.Error()
-		}
-		if t.selectedVS != nil {
-			return t, tea.Batch(
-				t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
-				t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
-				t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
-			)
-		}
-		return t, nil
-
+		return t.handleDeleteAgentDone(msg)
 	case vsAgentStartStopDoneMsg:
-		if msg.err != nil {
-			t.agentStatusMsg = ""
-			t.agentRefreshPending = 0
-			t.err = msg.err.Error()
-		} else if msg.action == "stop" {
-			t.agentStatusMsg = "Agent stopped"
-		} else {
-			t.agentStatusMsg = "Agent started"
-		}
-		t.agentRefreshPending = 5
-		refreshTick := tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-			return vsAgentRefreshTickMsg{}
-		})
-		clearTick := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
-			return vsAgentStatusClearMsg{}
-		})
-		if t.selectedVS != nil {
-			return t, tea.Batch(t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name), refreshTick, clearTick)
-		}
-		return t, tea.Batch(refreshTick, clearTick)
-
+		return t.handleAgentStartStopDone(msg)
 	case vsAgentStatusClearMsg:
 		t.agentStatusMsg = ""
 		return t, nil
-
 	case vsAgentRefreshTickMsg:
-		t.agentRefreshPending--
-		if t.agentRefreshPending <= 0 || t.mode != vibespacesModeAgentView {
-			t.agentRefreshPending = 0
-			return t, nil
-		}
-		var cmds []tea.Cmd
-		if t.selectedVS != nil {
-			cmds = append(cmds, t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name))
-		}
-		cmds = append(cmds, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-			return vsAgentRefreshTickMsg{}
-		}))
-		return t, tea.Batch(cmds...)
-
+		return t.handleAgentRefreshTick()
 	case vsAddAgentDoneMsg:
-		t.mode = vibespacesModeAgentView
-		if msg.err != nil {
-			t.err = msg.err.Error()
-		}
-		t.agentRefreshPending = 5
-		refreshTick := tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-			return vsAgentRefreshTickMsg{}
-		})
-		if t.selectedVS != nil {
-			return t, tea.Batch(
-				t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
-				t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
-				t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
-				refreshTick,
-			)
-		}
-		return t, refreshTick
-
+		return t.handleAddAgentDone(msg)
 	case vsEditConfigDoneMsg:
 		t.mode = vibespacesModeAgentView
 		if msg.err != nil {
@@ -766,68 +572,20 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t, t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name)
 		}
 		return t, nil
-
 	case vsAddForwardDoneMsg:
-		t.fwdManagerAdding = false
-		if msg.err != nil {
-			t.err = msg.err.Error()
-		} else if msg.dnsName != "" {
-			// sudo needed for /etc/hosts entry
-			t.sudoPromptActive = true
-			t.sudoInput = ""
-			t.sudoPendingDNS = msg.dnsName
-			t.sudoPendingOp = "add"
-		}
-		if t.selectedVS != nil {
-			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
-		}
-		return t, nil
-
+		return t.handleAddForwardDone(msg)
 	case vsRemoveForwardDoneMsg:
-		if msg.err != nil {
-			t.err = msg.err.Error()
-		} else if msg.dnsName != "" {
-			t.sudoPromptActive = true
-			t.sudoInput = ""
-			t.sudoPendingDNS = msg.dnsName
-			t.sudoPendingOp = "remove"
-		}
-		if t.selectedVS != nil {
-			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
-		}
-		return t, nil
-
+		return t.handleRemoveForwardDone(msg)
 	case vsToggleDNSDoneMsg:
-		if msg.err != nil {
-			t.err = msg.err.Error()
-		} else if msg.dnsName != "" {
-			// DNS was added — need to add /etc/hosts entry
-			t.sudoPromptActive = true
-			t.sudoInput = ""
-			t.sudoPendingDNS = msg.dnsName
-			t.sudoPendingOp = "add"
-		} else if msg.oldDNS != "" {
-			// DNS was removed — need to remove /etc/hosts entry
-			t.sudoPromptActive = true
-			t.sudoInput = ""
-			t.sudoPendingDNS = msg.oldDNS
-			t.sudoPendingOp = "remove"
-		}
-		if t.selectedVS != nil {
-			return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
-		}
-		return t, nil
-
+		return t.handleToggleDNSDone(msg)
 	case vsSudoDoneMsg:
 		t.sudoPromptActive = false
 		if msg.ok {
 			t.sudoPassword = msg.password
-			// Retry the pending DNS operation with the password
 			return t, t.retryDNSHostEntry()
 		}
 		t.err = "sudo authentication failed"
 		return t, nil
-
 	case tea.KeyMsg:
 		return t.handleKey(msg)
 	}
@@ -836,306 +594,576 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (t *VibespacesTab) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle sudo password prompt input
 	if t.sudoPromptActive {
-		switch msg.String() {
-		case "esc":
-			t.sudoPromptActive = false
-			t.sudoInput = ""
-			t.sudoPendingDNS = ""
-			t.sudoPendingOp = ""
-			return t, nil
-		case "enter":
-			pw := t.sudoInput
-			t.sudoInput = ""
-			if pw == "" {
-				t.sudoPromptActive = false
-				return t, nil
-			}
-			return t, t.validateSudo(pw)
-		case "backspace":
-			if len(t.sudoInput) > 0 {
-				t.sudoInput = t.sudoInput[:len(t.sudoInput)-1]
-			}
-			return t, nil
-		default:
-			if len(msg.String()) == 1 {
-				t.sudoInput += msg.String()
-			}
-			return t, nil
-		}
+		return t.handleSudoPromptKey(msg)
 	}
-
 	switch t.mode {
 	case vibespacesModeSessionList:
-		switch msg.String() {
-		case "esc", "backspace":
-			t.mode = vibespacesModeAgentView
-			t.sessions = nil
-			t.sessionCursor = 0
-			t.sessionAgent = ""
-			return t, nil
-		case "j", "down":
-			if len(t.sessions) > 0 {
-				t.sessionCursor = min(t.sessionCursor+1, len(t.sessions)-1)
-			}
-		case "k", "up":
-			if len(t.sessions) > 0 {
-				t.sessionCursor = max(t.sessionCursor-1, 0)
-			}
-		case "g":
-			t.sessionCursor = 0
-		case "G":
-			if len(t.sessions) > 0 {
-				t.sessionCursor = len(t.sessions) - 1
-			}
-		case "enter":
-			if t.sessionCursor < len(t.sessions) && t.selectedVS != nil {
-				sess := t.sessions[t.sessionCursor]
-				return t, t.prepareSessionResume(t.selectedVS.Name, t.sessionAgent, t.sessionAgentType, sess.ID)
-			}
-		}
-		return t, nil
-
+		return t.handleSessionListKey(msg)
 	case vibespacesModeAgentView:
-		switch msg.String() {
-		case "esc", "backspace":
-			t.mode = vibespacesModeList
-			t.selectedVS = nil
-			t.viewAgents = nil
-			t.agentConfigs = nil
-			t.forwards = nil
-			t.agentCursor = 0
-			return t, t.loadLogsForSelected()
-		case "j", "down":
-			if len(t.viewAgents) > 0 {
-				t.agentCursor = min(t.agentCursor+1, len(t.viewAgents)-1)
-			}
-		case "k", "up":
-			if len(t.viewAgents) > 0 {
-				t.agentCursor = max(t.agentCursor-1, 0)
-			}
-		case "g":
-			t.agentCursor = 0
-		case "G":
-			if len(t.viewAgents) > 0 {
-				t.agentCursor = len(t.viewAgents) - 1
-			}
-		case "enter":
-			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
-				ag := t.viewAgents[t.agentCursor]
-				if ag.AgentType == agent.TypeClaudeCode || ag.AgentType == agent.TypeCodex {
-					t.mode = vibespacesModeSessionList
-					t.sessionAgent = ag.AgentName
-					t.sessionAgentType = ag.AgentType
-					t.sessions = nil
-					t.sessionCursor = 0
-					return t, t.loadSessions(t.selectedVS.Name, ag.AgentName, ag.AgentType)
-				}
-			}
-		case "a":
-			if t.selectedVS != nil {
-				t.mode = vibespacesModeAddAgent
-				t.addAgentField = addAgentFieldType
-				t.addAgentType = agent.TypeClaudeCode
-				t.addAgentName = ""
-				t.addAgentBranch = ""
-				agentCfg := config.Global().Agent
-				t.addAgentModel = agentCfg.Model
-				if agentCfg.MaxTurns > 0 {
-					t.addAgentMaxTurns = strconv.Itoa(agentCfg.MaxTurns)
-				} else {
-					t.addAgentMaxTurns = ""
-				}
-				t.addAgentShareCreds = agentCfg.ShareCredentials
-				t.addAgentSkipPerms = agentCfg.SkipPermissions
-				t.addAgentToolsList = agentSupportedTools(agent.TypeClaudeCode)
-				t.addAgentAllowedSet = make(map[string]bool)
-				t.addAgentDisallowedSet = make(map[string]bool)
-				t.addAgentToolsCursor = 0
-				t.err = ""
-				return t, nil
-			}
-		case "x":
-			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
-				ag := t.viewAgents[t.agentCursor]
-				return t, t.prepareAgentConnect(t.selectedVS.Name, ag.AgentName, ag.AgentType)
-			}
-		case "b":
-			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
-				ag := t.viewAgents[t.agentCursor]
-				return t, t.prepareBrowserConnect(t.selectedVS.Name, ag.AgentName)
-			}
-		case "e":
-			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
-				ag := t.viewAgents[t.agentCursor]
-				t.mode = vibespacesModeEditConfig
-				t.editConfigAgentName = ag.AgentName
-				t.editConfigField = editConfigFieldModel
-				t.editConfigToolsList = agentSupportedTools(ag.AgentType)
-				t.editConfigToolsCursor = 0
-				t.err = ""
-				// Pre-populate from existing config
-				if cfg, ok := t.agentConfigs[ag.AgentName]; ok && cfg != nil {
-					t.editConfigModel = cfg.Model
-					t.editConfigMaxTurns = ""
-					if cfg.MaxTurns > 0 {
-						t.editConfigMaxTurns = strconv.Itoa(cfg.MaxTurns)
-					}
-					t.editConfigSkipPerms = cfg.SkipPermissions
-					t.editConfigAllowedSet = make(map[string]bool)
-					for _, tool := range cfg.AllowedTools {
-						t.editConfigAllowedSet[tool] = true
-					}
-					t.editConfigDisallowedSet = make(map[string]bool)
-					for _, tool := range cfg.DisallowedTools {
-						t.editConfigDisallowedSet[tool] = true
-					}
-				} else {
-					t.editConfigModel = ""
-					t.editConfigMaxTurns = ""
-					t.editConfigSkipPerms = false
-					t.editConfigAllowedSet = make(map[string]bool)
-					t.editConfigDisallowedSet = make(map[string]bool)
-				}
-				return t, nil
-			}
-		case "f":
-			if t.selectedVS != nil {
-				t.mode = vibespacesModeForwardManager
-				t.fwdManagerCursor = 0
-				t.fwdManagerAdding = false
-				t.err = ""
-				return t, nil
-			}
-		case "d":
-			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
-				ag := t.viewAgents[t.agentCursor]
-				if !ag.IsPrimary {
-					t.mode = vibespacesModeDeleteAgentConfirm
-					t.deleteAgentName = ag.AgentName
-					t.deleteAgentInput = ""
-					t.err = ""
-					return t, nil
-				}
-			}
-		case "S":
-			if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
-				ag := t.viewAgents[t.agentCursor]
-				if ag.Status == "running" {
-					t.agentStatusMsg = fmt.Sprintf("Stopping %s…", ag.AgentName)
-				} else {
-					t.agentStatusMsg = fmt.Sprintf("Starting %s…", ag.AgentName)
-				}
-				return t, t.toggleAgentStartStop(t.selectedVS.Name, ag.AgentName, ag.Status)
-			}
-		}
-		return t, nil
-
+		return t.handleAgentViewKey(msg)
 	case vibespacesModeCreateForm:
 		return t.handleCreateFormKey(msg)
-
 	case vibespacesModeGithubAuth:
-		// Only Esc to cancel during GitHub auth
 		if msg.String() == "esc" {
 			t.mode = vibespacesModeCreateForm
 			t.err = ""
 			return t, nil
 		}
 		return t, nil
-
 	case vibespacesModeDeleteConfirm:
 		return t.handleDeleteConfirmKey(msg)
-
 	case vibespacesModeDeleteAgentConfirm:
 		return t.handleDeleteAgentConfirmKey(msg)
-
 	case vibespacesModeAddAgent:
 		return t.handleAddAgentKey(msg)
-
 	case vibespacesModeEditConfig:
 		return t.handleEditConfigKey(msg)
-
 	case vibespacesModeForwardManager:
 		return t.handleForwardManagerKey(msg)
+	default:
+		return t.handleListKey(msg)
+	}
+}
 
-	default: // list mode
-		prev := t.selected
-		switch msg.String() {
-		case "j", "down":
-			if len(t.vibespaces) > 0 {
-				t.selected = min(t.selected+1, len(t.vibespaces)-1)
-			}
-		case "k", "up":
-			if len(t.vibespaces) > 0 {
-				t.selected = max(t.selected-1, 0)
-			}
-		case "g":
-			t.selected = 0
-		case "G":
-			if len(t.vibespaces) > 0 {
-				t.selected = len(t.vibespaces) - 1
-			}
-		case "enter":
-			if t.selected < len(t.vibespaces) {
-				vs := t.vibespaces[t.selected]
-				t.mode = vibespacesModeAgentView
-				t.selectedVS = vs
-				t.viewAgents = nil
-				t.agentConfigs = nil
-				t.forwards = nil
-				t.agentCursor = 0
-				return t, tea.Batch(
-					t.loadAgentsForView(vs.ID, vs.Name),
-					t.loadAgentConfigs(vs.ID, vs.Name),
-					t.loadForwards(vs.ID, vs.Name),
-				)
-			}
-		case "x":
-			if t.selected < len(t.vibespaces) {
-				vs := t.vibespaces[t.selected]
-				return t, t.prepareShellConnectPrimary(vs.Name)
-			}
-		case "b":
-			if t.selected < len(t.vibespaces) {
-				vs := t.vibespaces[t.selected]
-				return t, t.prepareBrowserConnectPrimary(vs.Name)
-			}
-		case "n":
-			t.mode = vibespacesModeCreateForm
-			t.createField = createFieldName
-			t.createName = ""
-			t.createAgentType = agent.TypeClaudeCode
-			t.createCPU = config.Global().Resources.CPU
-			t.createMemory = config.Global().Resources.Memory
-			t.createStorage = config.Global().Resources.Storage
-			t.err = ""
-			return t, nil
-		case "d":
-			if t.selected < len(t.vibespaces) {
-				t.mode = vibespacesModeDeleteConfirm
-				t.deleteName = t.vibespaces[t.selected].Name
-				t.deleteInput = ""
-				t.err = ""
-				return t, nil
-			}
-		case "S":
-			if t.selected < len(t.vibespaces) {
-				vs := t.vibespaces[t.selected]
-				return t, t.toggleStartStop(vs.Name, vs.Status)
-			}
-		case "i":
-			if len(t.vibespaces) == 0 {
-				return t, execInit()
-			}
-		case "r":
-			return t, tea.Batch(t.loadVibespaces(), detectClusterStatus(), refreshSharedState(t.shared))
+func (t *VibespacesTab) handleTabActivate() (tea.Model, tea.Cmd) {
+	switch t.mode {
+	case vibespacesModeSessionList:
+		if t.selectedVS != nil && t.sessionAgent != "" {
+			return t, t.loadSessions(t.selectedVS.Name, t.sessionAgent, t.sessionAgentType)
 		}
-		if t.selected != prev {
-			return t, t.loadLogsForSelected()
+	case vibespacesModeAgentView:
+		if t.selectedVS != nil {
+			return t, tea.Batch(
+				t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+			)
+		}
+	}
+	return t, t.loadVibespaces()
+}
+
+func (t *VibespacesTab) handlePaletteNewVibespace() (tea.Model, tea.Cmd) {
+	t.mode = vibespacesModeCreateForm
+	t.createField = createFieldName
+	t.createName = ""
+	t.createAgentType = agent.TypeClaudeCode
+	t.createRepo = ""
+	t.createWorktree = false
+	t.createBranch = ""
+	t.createCPU = config.Global().Resources.CPU
+	t.createMemory = config.Global().Resources.Memory
+	t.createStorage = config.Global().Resources.Storage
+	t.err = ""
+	return t, nil
+}
+
+func (t *VibespacesTab) handleVibespacesLoaded(msg vibespacesLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.err = msg.err.Error()
+		return t, nil
+	}
+	t.vibespaces = msg.vibespaces
+	t.clampSelected()
+	t.err = ""
+	return t, tea.Batch(t.loadAgentInfo(), t.loadLogsForSelected(), t.scheduleRefreshIfNeeded())
+}
+
+func (t *VibespacesTab) handleSessionsLoaded(msg vsSessionsLoadedMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.err = msg.err.Error()
+		return t, nil
+	}
+	if t.sessionAgent == msg.agentName {
+		t.sessions = msg.sessions
+		t.sessionCursor = 0
+		t.err = ""
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleConnectReady(msg vsConnectReadyMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.err = msg.err.Error()
+		return t, nil
+	}
+	switch msg.mode {
+	case vsConnectModeSessionResume:
+		var cfg *agent.Config
+		if c, ok := t.agentConfigs[msg.agentName]; ok {
+			cfg = c
+		}
+		return t, execSessionResumeCmd(msg.sshPort, msg.agentName, msg.agentType, msg.sessionID, cfg)
+	case vsConnectModeShell:
+		return t, t.execShellConnect(msg.sshPort)
+	case vsConnectModeAgentCLI:
+		return t, t.execAgentConnect(msg.sshPort, msg.agentName, msg.agentType)
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleBrowserReady(msg vsBrowserReadyMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.err = msg.err.Error()
+		return t, nil
+	}
+	url := fmt.Sprintf("http://localhost:%d", msg.ttydPort)
+	if err := openBrowserURL(url); err != nil {
+		t.err = fmt.Sprintf("open browser: %s", err)
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleExecReturn(msg vsExecReturnMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.err = msg.err.Error()
+	}
+	switch t.mode {
+	case vibespacesModeAgentView:
+		if t.selectedVS != nil {
+			return t, tea.Batch(
+				t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+				t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+			)
+		}
+	case vibespacesModeList:
+		return t, t.loadVibespaces()
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleGithubDeviceCode(msg vsGithubDeviceCodeMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.mode = vibespacesModeCreateForm
+		t.err = fmt.Sprintf("GitHub auth failed: %s", msg.err)
+		return t, nil
+	}
+	t.mode = vibespacesModeGithubAuth
+	t.githubUserCode = msg.resp.UserCode
+	t.githubVerifyURI = msg.resp.VerificationURI
+	t.githubDevCode = msg.resp.DeviceCode
+	t.githubInterval = msg.resp.Interval
+	_ = openBrowserURL(msg.resp.VerificationURI)
+	clientID := config.Global().GitHub.ClientID
+	devCode := msg.resp.DeviceCode
+	interval := msg.resp.Interval
+	expiresIn := msg.resp.ExpiresIn
+	return t, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(expiresIn)*time.Second)
+		defer cancel()
+		token, err := github.PollForToken(ctx, clientID, devCode, interval)
+		return vsGithubTokenMsg{token: token, err: err}
+	}
+}
+
+func (t *VibespacesTab) handleGithubToken(msg vsGithubTokenMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.mode = vibespacesModeCreateForm
+		t.err = fmt.Sprintf("GitHub auth failed: %s", msg.err)
+		return t, nil
+	}
+	t.githubAccessToken = msg.token.AccessToken
+	t.githubRefreshToken = msg.token.RefreshToken
+	t.mode = vibespacesModeCreateForm
+	return t, t.submitCreateForm()
+}
+
+func (t *VibespacesTab) handleDeleteAgentDone(msg vsDeleteAgentDoneMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.err = msg.err.Error()
+	}
+	if t.selectedVS != nil {
+		return t, tea.Batch(
+			t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+			t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
+			t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+		)
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleAgentStartStopDone(msg vsAgentStartStopDoneMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.agentStatusMsg = ""
+		t.agentRefreshPending = 0
+		t.err = msg.err.Error()
+	} else if msg.action == "stop" {
+		t.agentStatusMsg = "Agent stopped"
+	} else {
+		t.agentStatusMsg = "Agent started"
+	}
+	t.agentRefreshPending = 5
+	refreshTick := tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return vsAgentRefreshTickMsg{}
+	})
+	clearTick := tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+		return vsAgentStatusClearMsg{}
+	})
+	if t.selectedVS != nil {
+		return t, tea.Batch(t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name), refreshTick, clearTick)
+	}
+	return t, tea.Batch(refreshTick, clearTick)
+}
+
+func (t *VibespacesTab) handleAgentRefreshTick() (tea.Model, tea.Cmd) {
+	t.agentRefreshPending--
+	if t.agentRefreshPending <= 0 || t.mode != vibespacesModeAgentView {
+		t.agentRefreshPending = 0
+		return t, nil
+	}
+	var cmds []tea.Cmd
+	if t.selectedVS != nil {
+		cmds = append(cmds, t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name))
+	}
+	cmds = append(cmds, tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return vsAgentRefreshTickMsg{}
+	}))
+	return t, tea.Batch(cmds...)
+}
+
+func (t *VibespacesTab) handleAddAgentDone(msg vsAddAgentDoneMsg) (tea.Model, tea.Cmd) {
+	t.mode = vibespacesModeAgentView
+	if msg.err != nil {
+		t.err = msg.err.Error()
+	}
+	t.agentRefreshPending = 5
+	refreshTick := tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return vsAgentRefreshTickMsg{}
+	})
+	if t.selectedVS != nil {
+		return t, tea.Batch(
+			t.loadAgentsForView(t.selectedVS.ID, t.selectedVS.Name),
+			t.loadAgentConfigs(t.selectedVS.ID, t.selectedVS.Name),
+			t.loadForwards(t.selectedVS.ID, t.selectedVS.Name),
+			refreshTick,
+		)
+	}
+	return t, refreshTick
+}
+
+func (t *VibespacesTab) handleAddForwardDone(msg vsAddForwardDoneMsg) (tea.Model, tea.Cmd) {
+	t.fwdManagerAdding = false
+	if msg.err != nil {
+		t.err = msg.err.Error()
+	} else if msg.dnsName != "" {
+		t.sudoPromptActive = true
+		t.sudoInput = ""
+		t.sudoPendingDNS = msg.dnsName
+		t.sudoPendingOp = "add"
+	}
+	if t.selectedVS != nil {
+		return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleRemoveForwardDone(msg vsRemoveForwardDoneMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.err = msg.err.Error()
+	} else if msg.dnsName != "" {
+		t.sudoPromptActive = true
+		t.sudoInput = ""
+		t.sudoPendingDNS = msg.dnsName
+		t.sudoPendingOp = "remove"
+	}
+	if t.selectedVS != nil {
+		return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleToggleDNSDone(msg vsToggleDNSDoneMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		t.err = msg.err.Error()
+	} else if msg.dnsName != "" {
+		t.sudoPromptActive = true
+		t.sudoInput = ""
+		t.sudoPendingDNS = msg.dnsName
+		t.sudoPendingOp = "add"
+	} else if msg.oldDNS != "" {
+		t.sudoPromptActive = true
+		t.sudoInput = ""
+		t.sudoPendingDNS = msg.oldDNS
+		t.sudoPendingOp = "remove"
+	}
+	if t.selectedVS != nil {
+		return t, t.loadForwards(t.selectedVS.ID, t.selectedVS.Name)
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleSudoPromptKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		t.sudoPromptActive = false
+		t.sudoInput = ""
+		t.sudoPendingDNS = ""
+		t.sudoPendingOp = ""
+		return t, nil
+	case "enter":
+		pw := t.sudoInput
+		t.sudoInput = ""
+		if pw == "" {
+			t.sudoPromptActive = false
+			return t, nil
+		}
+		return t, t.validateSudo(pw)
+	case "backspace":
+		if len(t.sudoInput) > 0 {
+			t.sudoInput = t.sudoInput[:len(t.sudoInput)-1]
+		}
+		return t, nil
+	default:
+		if len(msg.String()) == 1 {
+			t.sudoInput += msg.String()
 		}
 		return t, nil
 	}
+}
+
+func (t *VibespacesTab) handleSessionListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "backspace":
+		t.mode = vibespacesModeAgentView
+		t.sessions = nil
+		t.sessionCursor = 0
+		t.sessionAgent = ""
+		return t, nil
+	case "j", "down":
+		if len(t.sessions) > 0 {
+			t.sessionCursor = min(t.sessionCursor+1, len(t.sessions)-1)
+		}
+	case "k", "up":
+		if len(t.sessions) > 0 {
+			t.sessionCursor = max(t.sessionCursor-1, 0)
+		}
+	case "g":
+		t.sessionCursor = 0
+	case "G":
+		if len(t.sessions) > 0 {
+			t.sessionCursor = len(t.sessions) - 1
+		}
+	case "enter":
+		if t.sessionCursor < len(t.sessions) && t.selectedVS != nil {
+			sess := t.sessions[t.sessionCursor]
+			return t, t.prepareSessionResume(t.selectedVS.Name, t.sessionAgent, t.sessionAgentType, sess.ID)
+		}
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleAgentViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "backspace":
+		t.mode = vibespacesModeList
+		t.selectedVS = nil
+		t.viewAgents = nil
+		t.agentConfigs = nil
+		t.forwards = nil
+		t.agentCursor = 0
+		return t, t.loadLogsForSelected()
+	case "j", "down":
+		if len(t.viewAgents) > 0 {
+			t.agentCursor = min(t.agentCursor+1, len(t.viewAgents)-1)
+		}
+	case "k", "up":
+		if len(t.viewAgents) > 0 {
+			t.agentCursor = max(t.agentCursor-1, 0)
+		}
+	case "g":
+		t.agentCursor = 0
+	case "G":
+		if len(t.viewAgents) > 0 {
+			t.agentCursor = len(t.viewAgents) - 1
+		}
+	case "enter":
+		if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+			ag := t.viewAgents[t.agentCursor]
+			if ag.AgentType == agent.TypeClaudeCode || ag.AgentType == agent.TypeCodex {
+				t.mode = vibespacesModeSessionList
+				t.sessionAgent = ag.AgentName
+				t.sessionAgentType = ag.AgentType
+				t.sessions = nil
+				t.sessionCursor = 0
+				return t, t.loadSessions(t.selectedVS.Name, ag.AgentName, ag.AgentType)
+			}
+		}
+	case "a":
+		if t.selectedVS != nil {
+			t.mode = vibespacesModeAddAgent
+			t.addAgentField = addAgentFieldType
+			t.addAgentType = agent.TypeClaudeCode
+			t.addAgentName = ""
+			t.addAgentBranch = ""
+			agentCfg := config.Global().Agent
+			t.addAgentModel = agentCfg.Model
+			if agentCfg.MaxTurns > 0 {
+				t.addAgentMaxTurns = strconv.Itoa(agentCfg.MaxTurns)
+			} else {
+				t.addAgentMaxTurns = ""
+			}
+			t.addAgentShareCreds = agentCfg.ShareCredentials
+			t.addAgentSkipPerms = agentCfg.SkipPermissions
+			t.addAgentToolsList = agentSupportedTools(agent.TypeClaudeCode)
+			t.addAgentAllowedSet = make(map[string]bool)
+			t.addAgentDisallowedSet = make(map[string]bool)
+			t.addAgentToolsCursor = 0
+			t.err = ""
+			return t, nil
+		}
+	case "x":
+		if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+			ag := t.viewAgents[t.agentCursor]
+			return t, t.prepareAgentConnect(t.selectedVS.Name, ag.AgentName, ag.AgentType)
+		}
+	case "b":
+		if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+			ag := t.viewAgents[t.agentCursor]
+			return t, t.prepareBrowserConnect(t.selectedVS.Name, ag.AgentName)
+		}
+	case "e":
+		if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+			ag := t.viewAgents[t.agentCursor]
+			t.mode = vibespacesModeEditConfig
+			t.editConfigAgentName = ag.AgentName
+			t.editConfigField = editConfigFieldModel
+			t.editConfigToolsList = agentSupportedTools(ag.AgentType)
+			t.editConfigToolsCursor = 0
+			t.err = ""
+			if cfg, ok := t.agentConfigs[ag.AgentName]; ok && cfg != nil {
+				t.editConfigModel = cfg.Model
+				t.editConfigMaxTurns = ""
+				if cfg.MaxTurns > 0 {
+					t.editConfigMaxTurns = strconv.Itoa(cfg.MaxTurns)
+				}
+				t.editConfigSkipPerms = cfg.SkipPermissions
+				t.editConfigAllowedSet = make(map[string]bool)
+				for _, tool := range cfg.AllowedTools {
+					t.editConfigAllowedSet[tool] = true
+				}
+				t.editConfigDisallowedSet = make(map[string]bool)
+				for _, tool := range cfg.DisallowedTools {
+					t.editConfigDisallowedSet[tool] = true
+				}
+			} else {
+				t.editConfigModel = ""
+				t.editConfigMaxTurns = ""
+				t.editConfigSkipPerms = false
+				t.editConfigAllowedSet = make(map[string]bool)
+				t.editConfigDisallowedSet = make(map[string]bool)
+			}
+			return t, nil
+		}
+	case "f":
+		if t.selectedVS != nil {
+			t.mode = vibespacesModeForwardManager
+			t.fwdManagerCursor = 0
+			t.fwdManagerAdding = false
+			t.err = ""
+			return t, nil
+		}
+	case "d":
+		if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+			ag := t.viewAgents[t.agentCursor]
+			if !ag.IsPrimary {
+				t.mode = vibespacesModeDeleteAgentConfirm
+				t.deleteAgentName = ag.AgentName
+				t.deleteAgentInput = ""
+				t.err = ""
+				return t, nil
+			}
+		}
+	case "S":
+		if t.agentCursor < len(t.viewAgents) && t.selectedVS != nil {
+			ag := t.viewAgents[t.agentCursor]
+			if ag.Status == "running" {
+				t.agentStatusMsg = fmt.Sprintf("Stopping %s…", ag.AgentName)
+			} else {
+				t.agentStatusMsg = fmt.Sprintf("Starting %s…", ag.AgentName)
+			}
+			return t, t.toggleAgentStartStop(t.selectedVS.Name, ag.AgentName, ag.Status)
+		}
+	}
+	return t, nil
+}
+
+func (t *VibespacesTab) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	prev := t.selected
+	switch msg.String() {
+	case "j", "down":
+		if len(t.vibespaces) > 0 {
+			t.selected = min(t.selected+1, len(t.vibespaces)-1)
+		}
+	case "k", "up":
+		if len(t.vibespaces) > 0 {
+			t.selected = max(t.selected-1, 0)
+		}
+	case "g":
+		t.selected = 0
+	case "G":
+		if len(t.vibespaces) > 0 {
+			t.selected = len(t.vibespaces) - 1
+		}
+	case "enter":
+		if t.selected < len(t.vibespaces) {
+			vs := t.vibespaces[t.selected]
+			t.mode = vibespacesModeAgentView
+			t.selectedVS = vs
+			t.viewAgents = nil
+			t.agentConfigs = nil
+			t.forwards = nil
+			t.agentCursor = 0
+			return t, tea.Batch(
+				t.loadAgentsForView(vs.ID, vs.Name),
+				t.loadAgentConfigs(vs.ID, vs.Name),
+				t.loadForwards(vs.ID, vs.Name),
+			)
+		}
+	case "x":
+		if t.selected < len(t.vibespaces) {
+			vs := t.vibespaces[t.selected]
+			return t, t.prepareShellConnectPrimary(vs.Name)
+		}
+	case "b":
+		if t.selected < len(t.vibespaces) {
+			vs := t.vibespaces[t.selected]
+			return t, t.prepareBrowserConnectPrimary(vs.Name)
+		}
+	case "n":
+		t.mode = vibespacesModeCreateForm
+		t.createField = createFieldName
+		t.createName = ""
+		t.createAgentType = agent.TypeClaudeCode
+		t.createCPU = config.Global().Resources.CPU
+		t.createMemory = config.Global().Resources.Memory
+		t.createStorage = config.Global().Resources.Storage
+		t.err = ""
+		return t, nil
+	case "d":
+		if t.selected < len(t.vibespaces) {
+			t.mode = vibespacesModeDeleteConfirm
+			t.deleteName = t.vibespaces[t.selected].Name
+			t.deleteInput = ""
+			t.err = ""
+			return t, nil
+		}
+	case "S":
+		if t.selected < len(t.vibespaces) {
+			vs := t.vibespaces[t.selected]
+			return t, t.toggleStartStop(vs.Name, vs.Status)
+		}
+	case "i":
+		if len(t.vibespaces) == 0 {
+			return t, execInit()
+		}
+	case "r":
+		return t, tea.Batch(t.loadVibespaces(), detectClusterStatus(), refreshSharedState(t.shared))
+	}
+	if t.selected != prev {
+		return t, t.loadLogsForSelected()
+	}
+	return t, nil
 }
 
 func (t *VibespacesTab) View() string {
