@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/vibespacehq/vibespace/pkg/agent"
@@ -615,12 +614,15 @@ func (c *AgentConn) buildClaudeCommandFallback(sessionID string, useResume bool)
 			args = append(args, "--dangerously-skip-permissions")
 		}
 		if len(c.agentConfig.AllowedTools) > 0 {
-			args = append(args, "--allowedTools", c.agentConfig.AllowedToolsString())
+			args = append(args, "--allowedTools")
+			args = append(args, c.agentConfig.AllowedTools...)
 		} else if !c.agentConfig.SkipPermissions {
-			args = append(args, "--allowedTools", strings.Join(agent.DefaultAllowedTools(), ","))
+			args = append(args, "--allowedTools")
+			args = append(args, agent.DefaultAllowedTools()...)
 		}
 		if len(c.agentConfig.DisallowedTools) > 0 {
-			args = append(args, "--disallowedTools", c.agentConfig.DisallowedToolsString())
+			args = append(args, "--disallowedTools")
+			args = append(args, c.agentConfig.DisallowedTools...)
 		}
 		if c.agentConfig.Model != "" {
 			args = append(args, "--model", c.agentConfig.Model)
@@ -629,7 +631,8 @@ func (c *AgentConn) buildClaudeCommandFallback(sessionID string, useResume bool)
 			args = append(args, "--max-turns", fmt.Sprintf("%d", c.agentConfig.MaxTurns))
 		}
 	} else {
-		args = append(args, "--allowedTools", "Bash(read_only:true),Read,Write,Edit,Glob,Grep")
+		args = append(args, "--allowedTools")
+		args = append(args, agent.DefaultAllowedTools()...)
 	}
 
 	return fmt.Sprintf(`bash -l -c '%s'`, agent.JoinArgsForBash(args))
