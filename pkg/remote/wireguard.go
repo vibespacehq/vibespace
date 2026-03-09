@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"golang.org/x/crypto/curve25519"
 )
@@ -962,6 +963,9 @@ func getBottleNameForMacOS(goArch string) (string, error) {
 	return oldest.name, nil
 }
 
+// httpClient is a shared HTTP client with a timeout to prevent indefinite hangs.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 // downloadHomebrewBottle downloads a Homebrew bottle and extracts specific binaries.
 // goArch should be "arm64" or "amd64"
 func downloadHomebrewBottle(ctx context.Context, formula, goArch, destDir string, binaries []string) error {
@@ -972,7 +976,7 @@ func downloadHomebrewBottle(ctx context.Context, formula, goArch, destDir string
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch formula info: %w", err)
 	}
@@ -1023,7 +1027,7 @@ func downloadHomebrewBottle(ctx context.Context, formula, goArch, destDir string
 	// Homebrew bottles require this header
 	req.Header.Set("Authorization", "Bearer QQ==")
 
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download bottle: %w", err)
 	}

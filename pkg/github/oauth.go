@@ -41,6 +41,9 @@ type TokenResponse struct {
 // BaseURL is the GitHub base URL. Exported for testing.
 var BaseURL = "https://github.com"
 
+// httpClient returns an HTTP client with a default timeout to prevent indefinite hangs.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 // RequestDeviceCode starts the OAuth device flow by requesting a device code.
 // For OAuth Apps, scope should be "repo" to get repository access.
 // For GitHub Apps, scope is ignored (permissions come from app settings).
@@ -61,7 +64,7 @@ func RequestDeviceCode(ctx context.Context, clientID, scope string) (*DeviceCode
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("requesting device code: %w", err)
 	}
@@ -147,7 +150,7 @@ func RefreshAccessToken(ctx context.Context, clientID, refreshToken string) (*To
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("refreshing token: %w", err)
 	}
@@ -195,7 +198,7 @@ func exchangeDeviceCode(ctx context.Context, clientID, deviceCode string) (*Toke
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("exchanging device code: %w", err)
 	}

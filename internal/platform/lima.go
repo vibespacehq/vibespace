@@ -190,7 +190,7 @@ func (m *LimaManager) downloadLima(ctx context.Context) error {
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch Lima release info: %w", err)
 	}

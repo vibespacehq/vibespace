@@ -37,6 +37,9 @@ func verifySHA256(filePath, expectedHex string) error {
 	return nil
 }
 
+// httpClient is a shared HTTP client with a timeout to prevent indefinite hangs.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 // maxFetchSize is the maximum body size for fetchURL (1 MB).
 const maxFetchSize = 1 << 20
 
@@ -114,7 +117,7 @@ func downloadBinary(ctx context.Context, url, destPath, expectedSHA256 string) e
 	}
 
 	// Make the request
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
@@ -209,7 +212,7 @@ func getGitHubReleaseAssetURL(ctx context.Context, owner, repo, tag, assetName s
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch release info: %w", err)
 	}
@@ -249,7 +252,7 @@ func getLatestKubectlVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch kubectl version: %w", err)
 	}
@@ -275,7 +278,7 @@ func downloadAndExtractTarGz(ctx context.Context, url, destDir, expectedSHA256 s
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download: %w", err)
 	}
