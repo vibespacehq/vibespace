@@ -166,7 +166,6 @@ func WaitForDaemonReady(timeout time.Duration) error {
 	return vserrors.ErrDaemonStartTimeout
 }
 
-// GetDaemonStatus gets the status of the daemon
 func GetDaemonStatus() (*DaemonStatusResponse, error) {
 	if !IsDaemonRunning() {
 		return nil, fmt.Errorf("%w", vserrors.ErrDaemonNotRunning)
@@ -238,7 +237,6 @@ func cleanupDaemonFiles() {
 	os.Remove(paths.SockFile)
 }
 
-// WritePidFile writes the daemon PID file
 func WritePidFile(pid int) error {
 	paths, err := GetDaemonPaths()
 	if err != nil {
