@@ -1,47 +1,58 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 )
 
-func TestStyleContentWithCodeBlocks(t *testing.T) {
-	styles := NewStyles()
-
-	// No code blocks
+func TestRenderMarkdownPlainText(t *testing.T) {
 	content := "just plain text"
-	result := styleContentWithCodeBlocks(content, styles)
-	if result != content {
-		t.Fatalf("expected unchanged text, got %q", result)
-	}
-
-	// With code block
-	content = "before\n```go\nfmt.Println(\"hello\")\n```\nafter"
-	result = styleContentWithCodeBlocks(content, styles)
+	result := renderMarkdown(content)
 	plain := stripAnsi(result)
-	if plain == content {
-		// Should have been transformed (code block styled)
-		t.Log("code block was not styled (may be expected in some environments)")
-	}
-
-	// Unclosed code block
-	content = "before\n```go\nunclosed"
-	result = styleContentWithCodeBlocks(content, styles)
-	plain = stripAnsi(result)
-	if plain == "" {
-		t.Fatal("expected non-empty for unclosed code block")
+	if !strings.Contains(plain, "just plain text") {
+		t.Fatalf("expected plain text preserved, got %q", plain)
 	}
 }
 
-func TestStyleContentWithMultipleCodeBlocks(t *testing.T) {
-	styles := NewStyles()
-
-	content := "text\n```\nblock1\n```\nmid\n```\nblock2\n```\nend"
-	result := styleContentWithCodeBlocks(content, styles)
+func TestRenderMarkdownCodeBlock(t *testing.T) {
+	content := "before\n```go\nfmt.Println(\"hello\")\n```\nafter"
+	result := renderMarkdown(content)
 	plain := stripAnsi(result)
+	if !strings.Contains(plain, "before") {
+		t.Error("expected 'before' in output")
+	}
+	if !strings.Contains(plain, "Println") {
+		t.Error("expected code content in output")
+	}
+	if !strings.Contains(plain, "after") {
+		t.Error("expected 'after' in output")
+	}
+}
 
-	// Should contain both blocks content
-	if plain == "" {
-		t.Fatal("expected non-empty result")
+func TestRenderMarkdownMultipleCodeBlocks(t *testing.T) {
+	content := "text\n```\nblock1\n```\nmid\n```\nblock2\n```\nend"
+	result := renderMarkdown(content)
+	plain := stripAnsi(result)
+	if !strings.Contains(plain, "block1") {
+		t.Error("expected 'block1' in output")
+	}
+	if !strings.Contains(plain, "block2") {
+		t.Error("expected 'block2' in output")
+	}
+}
+
+func TestRenderMarkdownFormatting(t *testing.T) {
+	content := "**bold** and *italic* and `code`"
+	result := renderMarkdown(content)
+	plain := stripAnsi(result)
+	if !strings.Contains(plain, "bold") {
+		t.Error("expected 'bold' in output")
+	}
+	if !strings.Contains(plain, "italic") {
+		t.Error("expected 'italic' in output")
+	}
+	if !strings.Contains(plain, "code") {
+		t.Error("expected 'code' in output")
 	}
 }
 

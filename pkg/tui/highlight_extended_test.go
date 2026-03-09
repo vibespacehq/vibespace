@@ -64,43 +64,6 @@ func TestHighlightEmptyLanguageExtended(t *testing.T) {
 	}
 }
 
-func TestHighlightCodeBlockWithLang(t *testing.T) {
-	styles := NewStyles()
-	code := "package main\n\nfunc main() {}"
-	result := highlightCodeBlock(code, "go", styles)
-	stripped := ui.StripAnsi(result)
-
-	// Should contain the language label
-	if !strings.Contains(stripped, "go") {
-		t.Error("expected language label 'go' in output")
-	}
-	// Should contain the code
-	if !strings.Contains(stripped, "package") {
-		t.Error("expected code content 'package' in output")
-	}
-}
-
-func TestHighlightCodeBlockWithoutLang(t *testing.T) {
-	styles := NewStyles()
-	code := "hello world"
-	result := highlightCodeBlock(code, "", styles)
-	if result == "" {
-		t.Error("expected non-empty result without language")
-	}
-	stripped := ui.StripAnsi(result)
-	if !strings.Contains(stripped, "hello world") {
-		t.Errorf("expected code content in output, got %q", stripped)
-	}
-}
-
-func TestHighlightCodeBlockEmptyCode(t *testing.T) {
-	styles := NewStyles()
-	result := highlightCodeBlock("", "go", styles)
-	if result != "" {
-		t.Errorf("expected empty result for empty code, got %q", result)
-	}
-}
-
 func TestHighlighterSingleton(t *testing.T) {
 	// Reset global to test lazy init
 	globalHighlighter = nil
