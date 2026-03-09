@@ -139,7 +139,7 @@ func doExec(vsName string, args []string) error {
 func execViaSSH(localPort int, remoteCmd string) (string, string, int, error) {
 	privateKeyPath := vibespace.GetSSHPrivateKeyPath()
 	if privateKeyPath == "" {
-		return "", "", 1, fmt.Errorf("no SSH key found")
+		return "", "", 1, fmt.Errorf("no SSH key found in ~/.vibespace/ — run 'vibespace create' to generate one")
 	}
 
 	sshArgs := []string{

@@ -198,7 +198,7 @@ func runMultiCmd(cmd *cobra.Command, args []string) error {
 	// Non-interactive mode needs at least one vibespace
 	if nonInteractive {
 		if len(sess.Vibespaces) == 0 {
-			err := fmt.Errorf("non-interactive mode requires at least one vibespace (-v flag)")
+			err := fmt.Errorf("non-interactive mode requires at least one vibespace (--vibespaces flag)")
 			if jsonFlag {
 				outputJSONError(err)
 				return nil

@@ -119,6 +119,9 @@ func Execute() error {
 			}))
 		} else {
 			printError("%v", err)
+			if hint := getErrorHint(err); hint != "" {
+				printStep("%s", hint)
+			}
 		}
 
 		os.Exit(exitCode)

@@ -205,7 +205,7 @@ func openBrowser(url string) error {
 	case "windows":
 		cmd = exec.Command("cmd", "/c", "start", url)
 	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+		return fmt.Errorf("unsupported platform: %s (supported: darwin, linux, windows)", runtime.GOOS)
 	}
 
 	cmd.Stdout = os.Stdout

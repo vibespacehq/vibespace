@@ -244,7 +244,7 @@ func (s *Server) handleRequest(req Request) Response {
 	case RequestShutdown:
 		return s.handleShutdown()
 	default:
-		return NewErrorResponse(fmt.Errorf("unknown request type: %s", req.Type))
+		return NewErrorResponse(fmt.Errorf("unsupported daemon request type '%s' — you may need to restart the daemon", req.Type))
 	}
 }
 

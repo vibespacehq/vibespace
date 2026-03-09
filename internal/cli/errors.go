@@ -44,7 +44,7 @@ func resolveKubeconfig() (string, error) {
 	// Fall back to local kubeconfig
 	kubeconfig := filepath.Join(home, ".vibespace", "kubeconfig")
 	if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {
-		return "", fmt.Errorf("run 'vibespace init' or 'vibespace remote connect' first: %w", vserrors.ErrClusterNotInitialized)
+		return "", fmt.Errorf("cluster not initialized — run 'vibespace init' or 'vibespace remote connect' first: %w", vserrors.ErrClusterNotInitialized)
 	}
 	return kubeconfig, nil
 }
@@ -71,12 +71,12 @@ func checkClusterRunning() error {
 	p := platform.Detect()
 	manager, err := platform.NewClusterManager(p, vibespaceHome, platform.ClusterManagerOptions{})
 	if err != nil {
-		return fmt.Errorf("run 'vibespace init' to start it: %w", vserrors.ErrClusterNotRunning)
+		return fmt.Errorf("cluster not running — run 'vibespace init' to start it: %w", vserrors.ErrClusterNotRunning)
 	}
 
 	running, err := manager.IsRunning()
 	if err != nil || !running {
-		return fmt.Errorf("run 'vibespace init' to start it: %w", vserrors.ErrClusterNotRunning)
+		return fmt.Errorf("cluster not running — run 'vibespace init' to start it: %w", vserrors.ErrClusterNotRunning)
 	}
 
 	return nil
@@ -100,7 +100,7 @@ func getVibespaceServiceWithCheck() (*vibespace.Service, error) {
 	// Create k8s client
 	k8sClient, err := k8s.NewClient()
 	if err != nil {
-		return nil, fmt.Errorf("check if cluster is running with 'vibespace status': %w", vserrors.ErrClusterUnreachable)
+		return nil, fmt.Errorf("cluster unreachable — check if it is running with 'vibespace status': %w", vserrors.ErrClusterUnreachable)
 	}
 
 	// Create vibespace service
@@ -112,7 +112,7 @@ func getVibespaceServiceWithCheck() (*vibespace.Service, error) {
 func checkVibespaceExists(ctx context.Context, svc *vibespace.Service, name string) (*model.Vibespace, error) {
 	vs, err := svc.Get(ctx, name)
 	if err != nil {
-		return nil, fmt.Errorf("vibespace '%s' not found. List available: vibespace list: %w", name, vserrors.ErrVibespaceNotFound)
+		return nil, fmt.Errorf("vibespace '%s' not found — run 'vibespace list' to see available vibespaces: %w", name, vserrors.ErrVibespaceNotFound)
 	}
 	return vs, nil
 }
@@ -128,7 +128,7 @@ func checkVibespaceRunning(ctx context.Context, svc *vibespace.Service, name str
 	case "running":
 		return vs, nil
 	case "creating":
-		return nil, fmt.Errorf("vibespace '%s' is still creating. Wait for it to be ready or check: vibespace list", name)
+		return nil, fmt.Errorf("vibespace '%s' is still creating — wait for it to be ready or check with 'vibespace list'", name)
 	case "stopped":
 		return nil, fmt.Errorf("vibespace '%s' is stopped. Start it with: vibespace %s start", name, name)
 	case "error":

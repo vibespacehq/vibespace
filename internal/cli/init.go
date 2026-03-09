@@ -350,7 +350,7 @@ func waitForCluster(ctx context.Context, manager platform.ClusterManager) error 
 		}
 	}
 
-	return fmt.Errorf("timeout waiting for cluster")
+	return fmt.Errorf("timeout waiting for cluster to start — try 'vibespace status' to check or run 'vibespace init' again")
 }
 
 func installClusterComponents(ctx context.Context, vibespaceHome, kubeconfig string) error {

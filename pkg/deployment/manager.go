@@ -649,7 +649,7 @@ func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, 
 
 		// Update environment variables
 		if len(deploy.Spec.Template.Spec.Containers) == 0 {
-			return fmt.Errorf("deployment has no containers")
+			return fmt.Errorf("agent has no running containers — it may still be starting")
 		}
 
 		container := &deploy.Spec.Template.Spec.Containers[0]

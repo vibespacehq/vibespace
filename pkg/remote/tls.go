@@ -75,12 +75,12 @@ func PinningTLSConfig(expectedFingerprint string) *tls.Config {
 		InsecureSkipVerify: true,
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
-				return fmt.Errorf("no certificate presented")
+				return fmt.Errorf("no certificate presented by server")
 			}
 			hash := sha256.Sum256(rawCerts[0])
 			actual := "sha256:" + hex.EncodeToString(hash[:])
 			if actual != expectedFingerprint {
-				return fmt.Errorf("certificate fingerprint mismatch (got %s)", actual)
+				return fmt.Errorf("server certificate does not match expected fingerprint — the server may have been reconfigured (got %s)", actual)
 			}
 			return nil
 		},

@@ -76,7 +76,7 @@ var ErrVibespaceExists = errors.New("vibespace already exists")
 var ErrInvalidName = errors.New("invalid name")
 
 // ErrDeploymentManagerNotInitialized indicates the deployment manager is nil.
-var ErrDeploymentManagerNotInitialized = errors.New("deployment manager not initialized")
+var ErrDeploymentManagerNotInitialized = errors.New("vibespace service is not ready — run 'vibespace init' first")
 
 // ErrKubernetesNotAvailable indicates Kubernetes is not installed or accessible.
 var ErrKubernetesNotAvailable = errors.New("kubernetes not available")
@@ -97,7 +97,7 @@ var ErrForwardNotFound = errors.New("forward not found")
 var ErrAgentNotFound = errors.New("agent not found")
 
 // ErrUnknownAgent indicates an operation was attempted on an unregistered agent.
-var ErrUnknownAgent = errors.New("unknown agent")
+var ErrUnknownAgent = errors.New("unrecognized agent type")
 
 // ErrNotConnected indicates the agent connection is not established.
 var ErrNotConnected = errors.New("not connected")

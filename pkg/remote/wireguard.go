@@ -459,7 +459,7 @@ func quickUpMacOS(addr string) error {
 	}
 	tunName := strings.TrimSpace(string(out))
 	if tunName == "" {
-		return fmt.Errorf("empty tunnel name")
+		return fmt.Errorf("empty WireGuard tunnel name")
 	}
 
 	// 2. Configure with wg setconf
@@ -777,7 +777,7 @@ func IsWireGuardInstalled() bool {
 // SyncWireGuardConfig applies the current /etc/wireguard config without downing the interface.
 func SyncWireGuardConfig() error {
 	if !IsInterfaceUp() {
-		return fmt.Errorf("wireguard interface is not up")
+		return fmt.Errorf("WireGuard interface is not up — run 'vibespace remote connect' to establish the tunnel")
 	}
 
 	wg, err := wgBin()
@@ -864,7 +864,7 @@ func InstallWireGuard(ctx context.Context) error {
 	case "linux":
 		return installWireGuardLinux(ctx, binDir)
 	default:
-		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+		return fmt.Errorf("unsupported platform for WireGuard: %s (supported: darwin, linux)", runtime.GOOS)
 	}
 }
 
