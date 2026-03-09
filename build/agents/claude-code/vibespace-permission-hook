@@ -104,6 +104,7 @@ REQUEST=$(echo "$REQUEST" | jq --arg agent "$AGENT_KEY" '. + {agent_key: $agent}
 # POST to permission server (blocks until TUI responds or timeout)
 RESPONSE=$(echo "$REQUEST" | curl -s -X POST \
     -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${VIBESPACE_PERMISSION_TOKEN}" \
     --data @- \
     --max-time "$TIMEOUT" \
     --connect-timeout 5 \
