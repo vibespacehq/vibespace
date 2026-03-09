@@ -200,10 +200,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// to send the decision to the server
 	}
 
-	// Update text input (for all non-scroll key events)
-	var inputCmd tea.Cmd
-	m.input, inputCmd = m.input.Update(msg)
-	cmds = append(cmds, inputCmd)
+	// Update text input only for key events (not mouse/window/custom messages)
+	if _, ok := msg.(tea.KeyMsg); ok {
+		var inputCmd tea.Cmd
+		m.input, inputCmd = m.input.Update(msg)
+		cmds = append(cmds, inputCmd)
+	}
 
 	// Update autocomplete suggestions based on current input
 	m.UpdateSuggestions()
