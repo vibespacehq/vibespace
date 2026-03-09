@@ -63,20 +63,25 @@ func ShellQuoteArgs(args []string) string {
 // WrapForSSHRemote builds a shell command suitable for SSH remote execution.
 // Wraps the given args in `bash -l -c 'cd "$VIBESPACE_WORKDIR" && <quoted_args>'`
 // with proper escaping to prevent command injection.
+// Uses double-quoting inside the outer single-quote context since single quotes
+// cannot nest in bash.
 func WrapForSSHRemote(args []string) string {
-	innerCmd := ShellQuoteArgs(args)
-	// The inner command is already shell-safe; wrap in bash -l -c
+	innerCmd := JoinArgsForBash(args)
 	return fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, innerCmd)
 }
 
 // WrapForTmuxSSH builds a shell command for launching via tmux over SSH.
 // Uses tmux new-session -A to attach or create, with proper escaping.
 func WrapForTmuxSSH(tmuxSession string, args []string) string {
-	innerCmd := ShellQuoteArgs(args)
-	// tmux session name must be safe (alphanumeric + hyphen)
-	return fmt.Sprintf(`TERM=xterm-256color tmux new-session -A -s %s 'bash -l -c %s'`,
+	innerCmd := JoinArgsForBash(args)
+	// Build the bash command that tmux will run.
+	// Uses single quotes around bash -c arg (protects $ and " from premature expansion).
+	// ShellQuote wraps the whole thing so tmux receives it as a single argument,
+	// escaping the inner single quotes via the '\'' idiom.
+	bashCmd := fmt.Sprintf(`bash -l -c 'cd "$VIBESPACE_WORKDIR" && %s'`, innerCmd)
+	return fmt.Sprintf(`TERM=xterm-256color tmux new-session -A -s %s %s`,
 		ShellQuote(tmuxSession),
-		ShellQuote(fmt.Sprintf(`cd "$VIBESPACE_WORKDIR" && %s`, innerCmd)))
+		ShellQuote(bashCmd))
 }
 
 // Type represents the type of coding agent.
