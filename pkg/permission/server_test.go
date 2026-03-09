@@ -177,3 +177,53 @@ func TestStartStop(t *testing.T) {
 
 	s.Stop()
 }
+
+func TestAuthToken(t *testing.T) {
+	s := NewServer(0)
+	token := s.AuthToken()
+	if token == "" {
+		t.Fatal("AuthToken() returned empty string")
+	}
+	if len(token) != 64 { // 32 bytes = 64 hex chars
+		t.Errorf("AuthToken() length = %d, want 64", len(token))
+	}
+
+	// Each server gets a unique token
+	s2 := NewServer(0)
+	if s2.AuthToken() == token {
+		t.Error("two servers got the same token")
+	}
+}
+
+func TestRequireAuth(t *testing.T) {
+	s := NewServer(0)
+	handler := s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// No token → 401
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("no token: status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+
+	// Wrong token → 401
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("wrong token: status = %d, want %d", w.Code, http.StatusUnauthorized)
+	}
+
+	// Correct token → 200
+	req = httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+s.AuthToken())
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("correct token: status = %d, want %d", w.Code, http.StatusOK)
+	}
+}
