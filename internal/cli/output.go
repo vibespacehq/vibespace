@@ -350,7 +350,7 @@ func getErrorHint(err error) string {
 	case errors.Is(err, vserrors.ErrNoAgents):
 		return "Use 'vibespace <name> agent create' to add an agent"
 	case errors.Is(err, vserrors.ErrRemoteNotConnected):
-		return "Use 'vibespace remote connect <host> --token <token>' to connect to a remote server"
+		return "Use 'vibespace remote connect <token>' to connect to a remote server"
 	case errors.Is(err, vserrors.ErrWireGuardNotAvailable):
 		return "WireGuard installation failed. On Linux, install wireguard-tools first: apt install wireguard-tools"
 	case errors.Is(err, vserrors.ErrRemoteAlreadyConnected):

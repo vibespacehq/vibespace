@@ -122,11 +122,11 @@ func (w *PodWatcher) processEvents(ctx context.Context, watcher watch.Interface)
 			return nil
 		case event, ok := <-watcher.ResultChan():
 			if !ok {
-				return fmt.Errorf("watch channel closed")
+				return fmt.Errorf("pod watcher channel closed unexpectedly")
 			}
 
 			if event.Type == watch.Error {
-				return fmt.Errorf("watch error")
+				return fmt.Errorf("error watching pod status")
 			}
 
 			pod, ok := event.Object.(*corev1.Pod)

@@ -98,7 +98,7 @@ func findAvailablePort(preferred int) (int, error) {
 	// Fall back to letting the OS assign a port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return 0, fmt.Errorf("no available ports: %w", err)
+		return 0, fmt.Errorf("no available ports — all local ports are in use: %w", err)
 	}
 	defer listener.Close()
 

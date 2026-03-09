@@ -138,6 +138,6 @@ func NewClusterManager(p Platform, vibespaceHome string, opts ClusterManagerOpti
 		}
 		return NewLimaManager(p, vibespaceHome), nil
 	default:
-		return nil, fmt.Errorf("unsupported platform: %s", p.OS)
+		return nil, fmt.Errorf("unsupported platform: %s (supported: darwin, linux)", p.OS)
 	}
 }

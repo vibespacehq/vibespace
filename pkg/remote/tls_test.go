@@ -94,8 +94,8 @@ func TestPinningTLSConfig(t *testing.T) {
 	if err == nil {
 		t.Error("wrong fingerprint should fail")
 	}
-	if !strings.Contains(err.Error(), "mismatch") {
-		t.Errorf("error should mention mismatch, got: %v", err)
+	if !strings.Contains(err.Error(), "does not match") {
+		t.Errorf("error should mention fingerprint mismatch, got: %v", err)
 	}
 
 	// No certs should fail

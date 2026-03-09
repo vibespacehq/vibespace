@@ -41,7 +41,7 @@ func chownToRealUser(paths ...string) {
 // Requires a non-empty cert fingerprint — never falls back to InsecureSkipVerify.
 func mgmtHTTPClient(timeout time.Duration, certFingerprint string) (*http.Client, error) {
 	if certFingerprint == "" {
-		return nil, fmt.Errorf("cert fingerprint required for management API (no InsecureSkipVerify fallback)")
+		return nil, fmt.Errorf("certificate fingerprint is required to connect to the management API")
 	}
 	return &http.Client{
 		Timeout:   timeout,
@@ -539,7 +539,7 @@ func (w *ConnectionWatcher) reconnect() error {
 
 	// Bring it back up
 	if err := QuickUp(); err != nil {
-		return fmt.Errorf("QuickUp failed: %w", err)
+		return fmt.Errorf("failed to bring up WireGuard tunnel: %w", err)
 	}
 
 	// Wait for connectivity

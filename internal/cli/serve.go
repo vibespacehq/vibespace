@@ -153,7 +153,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		// Add default port if not specified
 		endpoint = ensureEndpointPort(endpoint, remote.DefaultWireGuardPort())
 		if endpoint == "" {
-			return fmt.Errorf("invalid endpoint")
+			return fmt.Errorf("invalid endpoint — expected host:port or IP address (e.g., example.com:51820)")
 		}
 
 		token, err := server.GenerateInviteToken(endpoint, serveTokenTTL)

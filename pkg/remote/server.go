@@ -868,7 +868,7 @@ func SpawnServe() error {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	return fmt.Errorf("timeout waiting for serve to start")
+	return fmt.Errorf("timeout waiting for serve to start — check 'vibespace serve' logs for errors")
 }
 
 // IsServeRunning checks if the serve process is running by verifying PID file + process liveness.
