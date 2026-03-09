@@ -27,7 +27,6 @@ func init() {
 	// The var provides backwards compat for any code using it before config loads.
 }
 
-
 // Client wraps the Kubernetes client
 type Client struct {
 	clientset   kubernetes.Interface
