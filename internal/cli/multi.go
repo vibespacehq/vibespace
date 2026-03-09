@@ -469,7 +469,7 @@ func runSessionPicker(ctx context.Context) error {
 	fmt.Printf("  %s %s %s %s\n",
 		out.Dim(fmt.Sprintf("%-5s", "#")),
 		out.Dim(fmt.Sprintf("%-18s", "SESSION")),
-		out.Dim(fmt.Sprintf("%-22s", "VIBESPACE(S)")),
+		out.Dim(fmt.Sprintf("%-22s", "VIBESPACES")),
 		out.Dim("LAST USED"))
 
 	// Print numbered list

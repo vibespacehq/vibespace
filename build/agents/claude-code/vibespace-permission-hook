@@ -14,7 +14,7 @@
 #   VIBESPACE_DISALLOWED_TOOLS - Comma-separated list of disallowed tools (auto-deny these)
 #   VIBESPACE_PERMISSION_PORT  - Port for permission server (default: 18080)
 #   VIBESPACE_AGENT            - Agent name (e.g., "claude-1")
-#   VIBESPACE_NAME             - Vibespace name
+#   VIBESPACE_NAME             - vibespace name
 
 set -e
 

@@ -382,7 +382,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		slog.Info("preserved config.yaml")
 	}
 
-	spinner.Success("Vibespace data removed")
+	spinner.Success("vibespace data removed")
 
 	slog.Info("uninstall completed successfully")
 	printSuccess("vibespace has been completely removed")
