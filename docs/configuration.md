@@ -78,7 +78,7 @@ resources:
 ```yaml
 agent:
   allowed_tools:
-    - "Bash(read_only:true)"
+    - "Bash"
     - "Read"
     - "Write"
     - "Edit"

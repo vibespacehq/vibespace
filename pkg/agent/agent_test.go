@@ -149,7 +149,7 @@ func TestDefaultAllowedTools(t *testing.T) {
 		t.Errorf("DefaultAllowedTools() returned %d items, want 6", len(tools))
 	}
 
-	expected := []string{"Bash(read_only:true)", "Read", "Write", "Edit", "Glob", "Grep"}
+	expected := []string{"Bash", "Read", "Write", "Edit", "Glob", "Grep"}
 	for i, want := range expected {
 		if tools[i] != want {
 			t.Errorf("DefaultAllowedTools()[%d] = %q, want %q", i, tools[i], want)
@@ -247,11 +247,11 @@ func TestWrapForSSHRemote(t *testing.T) {
 }
 
 func TestWrapForSSHRemoteParentheses(t *testing.T) {
-	// Ensure Bash(read_only:true) doesn't cause syntax errors
-	args := []string{"claude", "--allowedTools", "Bash(read_only:true),Read,Write"}
+	// Ensure Bash(npm run *) doesn't cause syntax errors when passed as separate arg
+	args := []string{"claude", "--allowedTools", "Bash(npm run *)", "Read", "Write"}
 	got := WrapForSSHRemote(args)
 	// The value should be double-quoted inside the single-quoted bash -c context
-	if !strings.Contains(got, `"Bash(read_only:true),Read,Write"`) {
+	if !strings.Contains(got, `"Bash(npm run *)"`) {
 		t.Errorf("parenthesized arg should be double-quoted, got: %s", got)
 	}
 }

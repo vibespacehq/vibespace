@@ -33,7 +33,7 @@ func TestExcludedToolsFromAllowed(t *testing.T) {
 		{
 			"with params",
 			[]string{"Bash", "Read", "Write"},
-			[]string{"Bash(read_only:true)", "Read"},
+			[]string{"Bash(npm run *)", "Read"},
 			[]string{"Write"},
 		},
 		{

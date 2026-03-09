@@ -197,7 +197,7 @@ func Default() *Config {
 		},
 		Agent: AgentConfig{
 			AllowedTools: []string{
-				"Bash(read_only:true)",
+				"Bash",
 				"Read",
 				"Write",
 				"Edit",
