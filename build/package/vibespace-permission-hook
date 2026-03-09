@@ -9,12 +9,13 @@
 # Output (stdout): JSON with the permission decision (PreToolUse format)
 #
 # Environment variables:
-#   VIBESPACE_SKIP_PERMISSIONS - If "true", auto-allow all tools
-#   VIBESPACE_ALLOWED_TOOLS    - Comma-separated list of allowed tools (auto-allow these)
-#   VIBESPACE_DISALLOWED_TOOLS - Comma-separated list of disallowed tools (auto-deny these)
-#   VIBESPACE_PERMISSION_PORT  - Port for permission server (default: 18080)
-#   VIBESPACE_AGENT            - Agent name (e.g., "claude-1")
-#   VIBESPACE_NAME             - vibespace name
+#   VIBESPACE_SKIP_PERMISSIONS  - If "true", auto-allow all tools
+#   VIBESPACE_DISALLOWED_TOOLS  - Comma-separated list of disallowed tools (auto-deny these)
+#   VIBESPACE_ALLOWED_TOOLS     - Comma-separated list of allowed tools (auto-allow for direct SSH)
+#   VIBESPACE_PERMISSION_TOKEN  - Auth token for TUI permission server (set by TUI only)
+#   VIBESPACE_PERMISSION_PORT   - Port for permission server (default: 18080)
+#   VIBESPACE_AGENT             - Agent name (e.g., "claude-1")
+#   VIBESPACE_NAME              - Vibespace name
 
 set -e
 
@@ -56,7 +57,7 @@ REQUEST=$(cat)
 TOOL_NAME=$(echo "$REQUEST" | jq -r '.tool_name // empty')
 
 # Debug logging (uncomment for troubleshooting)
-# echo "[vibespace-hook] Tool: $TOOL_NAME, Skip: $VIBESPACE_SKIP_PERMISSIONS, Allowed: $VIBESPACE_ALLOWED_TOOLS" >&2
+# echo "[vibespace-hook] $(date +%H:%M:%S) Tool: $TOOL_NAME, Skip: $VIBESPACE_SKIP_PERMISSIONS, Token: ${VIBESPACE_PERMISSION_TOKEN:+set}, Allowed: $VIBESPACE_ALLOWED_TOOLS" >> /tmp/hook.log
 
 # Check 1: If skip_permissions is enabled, auto-allow everything
 if [ "$VIBESPACE_SKIP_PERMISSIONS" = "true" ]; then
@@ -65,60 +66,42 @@ fi
 
 # Check 2: If tool is in disallowed list, deny
 if [ -n "$VIBESPACE_DISALLOWED_TOOLS" ] && [ -n "$TOOL_NAME" ]; then
-    # Check if tool name is in the comma-separated disallowed list
     if echo ",$VIBESPACE_DISALLOWED_TOOLS," | grep -qi ",$TOOL_NAME,"; then
         deny "Tool '$TOOL_NAME' is disallowed"
     fi
 fi
 
-# Check 3: If allowed_tools is set and tool is in the list, auto-allow
-if [ -n "$VIBESPACE_ALLOWED_TOOLS" ] && [ -n "$TOOL_NAME" ]; then
-    # Handle tool names with parameters like "Bash(read_only:true)"
-    # Extract base tool name for comparison
-    BASE_TOOL=$(echo "$TOOL_NAME" | sed 's/(.*//')
+# Check 3: If permission token is set, this is a TUI session.
+# POST to the permission server for user approval.
+if [ -n "$VIBESPACE_PERMISSION_TOKEN" ]; then
+    PERMISSION_PORT="${VIBESPACE_PERMISSION_PORT:-18080}"
+    PERMISSION_HOST="${VIBESPACE_PERMISSION_HOST:-localhost}"
+    TIMEOUT="${VIBESPACE_PERMISSION_TIMEOUT:-300}"
 
-    # Check if tool name or base name is in the comma-separated allowed list
-    if echo ",$VIBESPACE_ALLOWED_TOOLS," | grep -qi ",$TOOL_NAME," || \
-       echo ",$VIBESPACE_ALLOWED_TOOLS," | grep -qi ",$BASE_TOOL,"; then
-        allow "Tool '$TOOL_NAME' is in allowed_tools"
-    fi
+    # Build agent key from environment
+    AGENT_KEY="${VIBESPACE_AGENT:-unknown}@${VIBESPACE_NAME:-unknown}"
 
-    # Also check if allowed list contains parameterized version
-    # e.g., allowed="Bash(read_only:true)" should match tool="Bash"
-    if echo ",$VIBESPACE_ALLOWED_TOOLS," | grep -qi ",$BASE_TOOL("; then
-        allow "Tool '$TOOL_NAME' matches allowed_tools pattern"
-    fi
-fi
+    # Add agent identifier to request
+    REQUEST=$(echo "$REQUEST" | jq --arg agent "$AGENT_KEY" '. + {agent_key: $agent}')
 
-# Not auto-allowed/denied - contact permission server for user decision
-PERMISSION_PORT="${VIBESPACE_PERMISSION_PORT:-18080}"
-PERMISSION_HOST="${VIBESPACE_PERMISSION_HOST:-localhost}"
-TIMEOUT="${VIBESPACE_PERMISSION_TIMEOUT:-300}"
+    # POST to permission server (blocks until TUI responds or timeout)
+    RESPONSE=$(echo "$REQUEST" | curl -s -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${VIBESPACE_PERMISSION_TOKEN}" \
+        --data @- \
+        --max-time "$TIMEOUT" \
+        --connect-timeout 5 \
+        "http://${PERMISSION_HOST}:${PERMISSION_PORT}/permission" 2>/dev/null) || {
+        # Connection failed - default to deny for safety
+        deny "Permission server unavailable"
+    }
 
-# Build agent key from environment
-AGENT_KEY="${VIBESPACE_AGENT:-unknown}@${VIBESPACE_NAME:-unknown}"
+    # Parse decision from response
+    DECISION=$(echo "$RESPONSE" | jq -r '.decision // "deny"')
+    REASON=$(echo "$RESPONSE" | jq -r '.reason // "Controlled by vibespace"')
 
-# Add agent identifier to request
-REQUEST=$(echo "$REQUEST" | jq --arg agent "$AGENT_KEY" '. + {agent_key: $agent}')
-
-# POST to permission server (blocks until TUI responds or timeout)
-RESPONSE=$(echo "$REQUEST" | curl -s -X POST \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${VIBESPACE_PERMISSION_TOKEN}" \
-    --data @- \
-    --max-time "$TIMEOUT" \
-    --connect-timeout 5 \
-    "http://${PERMISSION_HOST}:${PERMISSION_PORT}/permission" 2>/dev/null) || {
-    # Connection failed - default to deny for safety
-    deny "Permission server unavailable"
-}
-
-# Parse decision from response
-DECISION=$(echo "$RESPONSE" | jq -r '.decision // "deny"')
-REASON=$(echo "$RESPONSE" | jq -r '.reason // "Controlled by vibespace"')
-
-# Return PreToolUse hook output format expected by Claude
-cat <<EOF
+    # Return PreToolUse hook output format expected by Claude
+    cat <<EOF
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
@@ -127,3 +110,15 @@ cat <<EOF
   }
 }
 EOF
+    exit 0
+fi
+
+# Check 4: No TUI session (direct SSH). Use allowed_tools for auto-approve.
+if [ -n "$VIBESPACE_ALLOWED_TOOLS" ] && [ -n "$TOOL_NAME" ]; then
+    if echo ",$VIBESPACE_ALLOWED_TOOLS," | grep -qi ",$TOOL_NAME,"; then
+        allow "Tool '$TOOL_NAME' is in allowed_tools"
+    fi
+fi
+
+# Default: deny (no permission server, tool not in allowed list)
+deny "No permission server and tool not in allowed_tools"
