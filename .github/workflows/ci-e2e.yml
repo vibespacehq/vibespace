@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.8"
 
       - name: Build binary with coverage
         run: go build -cover -o vibespace ./cmd/vibespace
@@ -60,7 +60,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.8"
           cache: false
 
       - name: Build binary with coverage
@@ -105,7 +105,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.8"
           cache: false
 
       - name: Build binary with coverage
