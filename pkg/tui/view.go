@@ -5,8 +5,18 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
 	"github.com/vibespacehq/vibespace/pkg/ui"
 )
+
+// errorWithHint appends a hint to an error message if one is available.
+func errorWithHint(err error) string {
+	msg := err.Error()
+	if hint := vserrors.GetErrorHint(err); hint != "" {
+		msg += "\n  Hint: " + hint
+	}
+	return msg
+}
 
 // View implements tea.Model
 func (m *Model) View() string {
@@ -15,7 +25,7 @@ func (m *Model) View() string {
 	}
 
 	if m.err != nil {
-		return m.styles.Error.Render(fmt.Sprintf("Error: %v", m.err))
+		return m.styles.Error.Render(fmt.Sprintf("Error: %s", errorWithHint(m.err)))
 	}
 
 	if !m.ready {

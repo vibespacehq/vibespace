@@ -155,7 +155,7 @@ func (t *RemoteTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.sudoPassword = msg.password
 		} else {
 			t.sudoPassword = ""
-			t.err = "sudo authentication failed"
+			t.err = "sudo authentication failed — password is required for WireGuard tunnel setup"
 		}
 		t.mode = t.detectMode()
 		return t, t.loadRemoteState(true)

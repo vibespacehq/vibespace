@@ -512,7 +512,7 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case vibespacesLoadedMsg:
 		if msg.err != nil {
-			t.err = msg.err.Error()
+			t.err = errorWithHint(msg.err)
 			return t, nil
 		}
 		t.vibespaces = msg.vibespaces
@@ -835,7 +835,7 @@ func (t *VibespacesTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Retry the pending DNS operation with the password
 			return t, t.retryDNSHostEntry()
 		}
-		t.err = "sudo authentication failed"
+		t.err = "sudo authentication failed — password is required for DNS configuration"
 		return t, nil
 
 	case tea.KeyMsg:
