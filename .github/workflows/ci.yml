@@ -31,7 +31,13 @@ jobs:
         run: staticcheck ./...
 
       - name: deadcode
-        run: deadcode -test -tags e2e ./...
+        run: |
+          output=$(deadcode -test -tags e2e ./... 2>&1)
+          if [ -n "$output" ]; then
+            echo "$output"
+            echo "::error::deadcode found unreachable functions"
+            exit 1
+          fi
 
       - name: govulncheck
         run: govulncheck ./...
