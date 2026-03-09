@@ -66,11 +66,11 @@ func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *age
 	// so the hook only runs when the TUI permission server is reachable via reverse tunnel.
 	// Clean up on exit so direct SSH sessions aren't affected.
 	hookTimeout := int(vsconfig.Global().Timeouts.PermissionHook.Duration.Milliseconds())
-	setupHook := fmt.Sprintf(`mkdir -p "$VIBESPACE_WORKDIR/.claude" && cat > "$VIBESPACE_WORKDIR/.claude/settings.json" << 'HOOKEOF'
+	setupHook := fmt.Sprintf(`mkdir -p "$VIBESPACE_WORKDIR/.claude" && { [ -f "$VIBESPACE_WORKDIR/.claude/settings.json" ] && cp "$VIBESPACE_WORKDIR/.claude/settings.json" "$VIBESPACE_WORKDIR/.claude/settings.json.bak" || true; } && cat > "$VIBESPACE_WORKDIR/.claude/settings.json" << 'HOOKEOF'
 {"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"/home/user/.local/bin/vibespace-permission-hook","timeout":%d}]}]}}
 HOOKEOF
 `, hookTimeout)
-	cleanupHook := `rm -f "$VIBESPACE_WORKDIR/.claude/settings.json"`
+	cleanupHook := `if [ -f "$VIBESPACE_WORKDIR/.claude/settings.json.bak" ]; then mv "$VIBESPACE_WORKDIR/.claude/settings.json.bak" "$VIBESPACE_WORKDIR/.claude/settings.json"; else rm -f "$VIBESPACE_WORKDIR/.claude/settings.json"; fi`
 	claudeCmd := agent.JoinArgsForBash(args)
 	return fmt.Sprintf(`bash -l -c '%s trap "%s" EXIT; cd "$VIBESPACE_WORKDIR" && %s'`, setupHook, cleanupHook, claudeCmd)
 }
