@@ -71,8 +71,6 @@ func DefaultSSHPort() int { return config.Global().Ports.SSH }
 // DefaultTTYDPort returns the default port for ttyd (browser fallback).
 func DefaultTTYDPort() int { return config.Global().Ports.TTYD }
 
-// DefaultPermissionPort returns the default port for the permission server.
-func DefaultPermissionPort() int { return config.Global().Ports.Permission }
 
 // CalculateLocalPort calculates the local port based on agent number and remote port.
 // Formula: (agentNum - 1) * multiplier + remotePort

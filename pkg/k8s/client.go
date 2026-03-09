@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/vibespacehq/vibespace/pkg/config"
 	"github.com/vibespacehq/vibespace/pkg/remote"
 
 	corev1 "k8s.io/api/core/v1"
@@ -28,8 +27,6 @@ func init() {
 	// The var provides backwards compat for any code using it before config loads.
 }
 
-// Namespace returns the configured Kubernetes namespace.
-func Namespace() string { return config.Global().Kubernetes.Namespace }
 
 // Client wraps the Kubernetes client
 type Client struct {
