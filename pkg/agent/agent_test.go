@@ -241,8 +241,18 @@ func TestWrapForSSHRemote(t *testing.T) {
 	if !strings.Contains(got, `cd "$VIBESPACE_WORKDIR"`) {
 		t.Error("should contain cd to VIBESPACE_WORKDIR")
 	}
-	if !strings.Contains(got, "'claude'") {
-		t.Error("should contain quoted claude command")
+	if !strings.Contains(got, "claude") {
+		t.Error("should contain claude command")
+	}
+}
+
+func TestWrapForSSHRemoteParentheses(t *testing.T) {
+	// Ensure Bash(read_only:true) doesn't cause syntax errors
+	args := []string{"claude", "--allowedTools", "Bash(read_only:true),Read,Write"}
+	got := WrapForSSHRemote(args)
+	// The value should be double-quoted inside the single-quoted bash -c context
+	if !strings.Contains(got, `"Bash(read_only:true),Read,Write"`) {
+		t.Errorf("parenthesized arg should be double-quoted, got: %s", got)
 	}
 }
 
