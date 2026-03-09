@@ -615,12 +615,12 @@ func (c *AgentConn) buildClaudeCommandFallback(sessionID string, useResume bool)
 			args = append(args, "--dangerously-skip-permissions")
 		}
 		if len(c.agentConfig.AllowedTools) > 0 {
-			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, c.agentConfig.AllowedToolsString()))
+			args = append(args, "--allowedTools", c.agentConfig.AllowedToolsString())
 		} else if !c.agentConfig.SkipPermissions {
-			args = append(args, "--allowedTools", fmt.Sprintf(`"%s"`, strings.Join(agent.DefaultAllowedTools(), ",")))
+			args = append(args, "--allowedTools", strings.Join(agent.DefaultAllowedTools(), ","))
 		}
 		if len(c.agentConfig.DisallowedTools) > 0 {
-			args = append(args, "--disallowedTools", fmt.Sprintf(`"%s"`, c.agentConfig.DisallowedToolsString()))
+			args = append(args, "--disallowedTools", c.agentConfig.DisallowedToolsString())
 		}
 		if c.agentConfig.Model != "" {
 			args = append(args, "--model", c.agentConfig.Model)
@@ -629,7 +629,7 @@ func (c *AgentConn) buildClaudeCommandFallback(sessionID string, useResume bool)
 			args = append(args, "--max-turns", fmt.Sprintf("%d", c.agentConfig.MaxTurns))
 		}
 	} else {
-		args = append(args, "--allowedTools", `"Bash(read_only:true),Read,Write,Edit,Glob,Grep"`)
+		args = append(args, "--allowedTools", "Bash(read_only:true),Read,Write,Edit,Glob,Grep")
 	}
 
 	return fmt.Sprintf(`bash -l -c '%s'`, agent.JoinArgsForBash(args))
