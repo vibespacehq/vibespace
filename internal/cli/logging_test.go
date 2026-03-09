@@ -14,10 +14,10 @@ func TestRedactingHandler(t *testing.T) {
 	logger := slog.New(handler)
 
 	tests := []struct {
-		name      string
-		key       string
-		value     string
-		redacted  bool
+		name     string
+		key      string
+		value    string
+		redacted bool
 	}{
 		{"public key", "publicKey", "abc123456789", true},
 		{"private key", "PrivateKeyPath", "/path/to/key", true},
