@@ -60,6 +60,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Fall through to update text input below
 
+	case tea.MouseMsg:
+		// Forward mouse events (scroll wheel) to viewport
+		if m.viewportReady {
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			cmds = append(cmds, cmd)
+			m.history.SetScrollPosition(!m.viewport.AtBottom())
+		}
+		return m, tea.Batch(cmds...)
+
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -79,7 +89,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		headerH := lipgloss.Height(headerRendered)
 		inputH := lipgloss.Height(inputRendered)
 		statusH := lipgloss.Height(statusRendered)
-		gaps := 4 // newlines between sections (extra blank line before input)
+		gaps := 3 // newlines between sections
 
 		viewportHeight := msg.Height - headerH - inputH - statusH - gaps
 		if viewportHeight < 3 {
