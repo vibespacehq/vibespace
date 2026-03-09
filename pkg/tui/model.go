@@ -347,7 +347,16 @@ func (m *Model) connectAgent(addr session.AgentAddress) error {
 	}
 
 	// Create agent connection with shared session manager
-	conn := NewAgentConn(addr, sshPort, m.sessionManager, m.sessionName, m.resume, agentType, agentConfig, m.permissionServer.AuthToken())
+	conn := NewAgentConn(AgentConnOptions{
+		Addr:            addr,
+		LocalPort:       sshPort,
+		SessionMgr:      m.sessionManager,
+		MultiSessionID:  m.sessionName,
+		Resume:          m.resume,
+		AgentType:       agentType,
+		Config:          agentConfig,
+		PermissionToken: m.permissionServer.AuthToken(),
+	})
 	if err := conn.Connect(); err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
 	}

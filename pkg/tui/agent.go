@@ -94,14 +94,23 @@ type AgentConn struct {
 	cancel       context.CancelFunc
 }
 
-// NewAgentConn creates a new agent connection
-// multiSessionID is the multi-session ID for session isolation
-// resume indicates whether to resume an existing session (--resume) or start fresh (--session-id)
-// agentType specifies the type of agent (defaults to claude-code)
-// config optionally provides agent-specific configuration
-func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *AgentSessionManager, multiSessionID string, resume bool, agentType agent.Type, config *agent.Config, permissionToken string) *AgentConn {
+// AgentConnOptions contains all parameters for creating an agent connection.
+type AgentConnOptions struct {
+	Addr            session.AgentAddress
+	LocalPort       int
+	SessionMgr      *AgentSessionManager
+	MultiSessionID  string
+	Resume          bool
+	AgentType       agent.Type
+	Config          *agent.Config
+	PermissionToken string
+}
+
+// NewAgentConn creates a new agent connection.
+func NewAgentConn(opts AgentConnOptions) *AgentConn {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	agentType := opts.AgentType
 	// Default to Claude Code if not specified
 	if agentType == "" {
 		agentType = agent.TypeClaudeCode
@@ -117,15 +126,15 @@ func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *AgentSes
 	}
 
 	return &AgentConn{
-		address:         addr,
-		localPort:       localPort,
-		sessionManager:  sessionMgr,
-		multiSessionID:  multiSessionID,
-		resume:          resume,
+		address:         opts.Addr,
+		localPort:       opts.LocalPort,
+		sessionManager:  opts.SessionMgr,
+		multiSessionID:  opts.MultiSessionID,
+		resume:          opts.Resume,
 		agentType:       agentType,
 		agentImpl:       agentImpl,
-		agentConfig:     config,
-		permissionToken: permissionToken,
+		agentConfig:     opts.Config,
+		permissionToken: opts.PermissionToken,
 		outputCh:        make(chan *Message, 100),
 		responseDone:    make(chan struct{}),
 		ctx:             ctx,

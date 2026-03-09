@@ -140,7 +140,15 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 			}
 
 			// Pass sessionName as multi-session ID, resume flag, agent type, and config
-			conn := NewAgentConn(addr, port, r.sessionManager, r.sessionName, r.resume, agentType, agentConfig, "")
+			conn := NewAgentConn(AgentConnOptions{
+				Addr:           addr,
+				LocalPort:      port,
+				SessionMgr:     r.sessionManager,
+				MultiSessionID: r.sessionName,
+				Resume:         r.resume,
+				AgentType:      agentType,
+				Config:         agentConfig,
+			})
 			if err := conn.Connect(); err != nil {
 				return fmt.Errorf("failed to connect to %s: %w", addr.String(), err)
 			}
