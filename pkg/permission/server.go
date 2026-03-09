@@ -2,11 +2,15 @@ package permission
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,6 +33,7 @@ type pendingRequest struct {
 // Server is an HTTP server that receives permission requests from Claude hooks.
 type Server struct {
 	port        int
+	authToken   string
 	pending     map[string]*pendingRequest
 	requestChan chan *Request
 	mu          sync.Mutex
@@ -37,16 +42,28 @@ type Server struct {
 	cancel      context.CancelFunc
 }
 
-// NewServer creates a new permission server.
+// NewServer creates a new permission server with a random auth token.
 func NewServer(port int) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
+	token := generateAuthToken()
 	return &Server{
 		port:        port,
+		authToken:   token,
 		pending:     make(map[string]*pendingRequest),
 		requestChan: make(chan *Request, 100),
 		ctx:         ctx,
 		cancel:      cancel,
 	}
+}
+
+// generateAuthToken returns a random 32-byte hex token.
+func generateAuthToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to uuid if crypto/rand fails (shouldn't happen)
+		return uuid.New().String()
+	}
+	return hex.EncodeToString(b)
 }
 
 // Start starts the permission server.
@@ -56,8 +73,8 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/health", s.handleHealth)
 
 	s.server = &http.Server{
-		Addr:              fmt.Sprintf(":%d", s.port),
-		Handler:           mux,
+		Addr:              fmt.Sprintf("127.0.0.1:%d", s.port),
+		Handler:           s.requireAuth(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -241,6 +258,24 @@ func (s *Server) writeResponse(w http.ResponseWriter, decision Decision) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))
+}
+
+// requireAuth wraps an http.Handler to validate the Bearer token.
+func (s *Server) requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		token := strings.TrimPrefix(auth, "Bearer ")
+		if token == auth || subtle.ConstantTimeCompare([]byte(token), []byte(s.authToken)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// AuthToken returns the server's auth token for passing to hooks.
+func (s *Server) AuthToken() string {
+	return s.authToken
 }
 
 // Port returns the server's port.

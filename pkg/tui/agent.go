@@ -70,9 +70,10 @@ type AgentConn struct {
 	forceNewSession bool                 // If true, use --session-id even if session exists (for /session @agent new)
 
 	// Agent type and configuration
-	agentType   agent.Type        // Type of agent (claude-code, codex)
-	agentImpl   agent.CodingAgent // Agent implementation for building commands
-	agentConfig *agent.Config     // Agent configuration
+	agentType       agent.Type        // Type of agent (claude-code, codex)
+	agentImpl       agent.CodingAgent // Agent implementation for building commands
+	agentConfig     *agent.Config     // Agent configuration
+	permissionToken string            // Auth token for permission server
 
 	// SSH process running agent in print mode
 	cmd    *exec.Cmd
@@ -98,7 +99,7 @@ type AgentConn struct {
 // resume indicates whether to resume an existing session (--resume) or start fresh (--session-id)
 // agentType specifies the type of agent (defaults to claude-code)
 // config optionally provides agent-specific configuration
-func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *AgentSessionManager, multiSessionID string, resume bool, agentType agent.Type, config *agent.Config) *AgentConn {
+func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *AgentSessionManager, multiSessionID string, resume bool, agentType agent.Type, config *agent.Config, permissionToken string) *AgentConn {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Default to Claude Code if not specified
@@ -116,18 +117,19 @@ func NewAgentConn(addr session.AgentAddress, localPort int, sessionMgr *AgentSes
 	}
 
 	return &AgentConn{
-		address:        addr,
-		localPort:      localPort,
-		sessionManager: sessionMgr,
-		multiSessionID: multiSessionID,
-		resume:         resume,
-		agentType:      agentType,
-		agentImpl:      agentImpl,
-		agentConfig:    config,
-		outputCh:       make(chan *Message, 100),
-		responseDone:   make(chan struct{}),
-		ctx:            ctx,
-		cancel:         cancel,
+		address:         addr,
+		localPort:       localPort,
+		sessionManager:  sessionMgr,
+		multiSessionID:  multiSessionID,
+		resume:          resume,
+		agentType:       agentType,
+		agentImpl:       agentImpl,
+		agentConfig:     config,
+		permissionToken: permissionToken,
+		outputCh:        make(chan *Message, 100),
+		responseDone:    make(chan struct{}),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -179,6 +181,11 @@ func (c *AgentConn) Connect() error {
 	slog.Debug("connect: using mode", "agent", agentAddr, "mode", sessionMode)
 
 	agentCmd := c.buildAgentCommand(sessionID, useResume)
+
+	// Prepend permission token as env var so the hook can authenticate
+	if c.permissionToken != "" {
+		agentCmd = fmt.Sprintf("VIBESPACE_PERMISSION_TOKEN=%s %s", c.permissionToken, agentCmd)
+	}
 
 	sshArgs := []string{
 		"-i", keyPath,
