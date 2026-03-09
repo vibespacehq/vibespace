@@ -54,11 +54,6 @@ func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
 		return []*model.Vibespace{}, nil
 	}
 
-	if s.deploymentManager == nil {
-		slog.Warn("deployment manager is nil, returning empty list")
-		return []*model.Vibespace{}, nil
-	}
-
 	deployments, err := s.deploymentManager.ListDeployments(ctx)
 	if err != nil {
 		slog.Error("failed to list Deployments", "error", err)
@@ -84,10 +79,6 @@ func (s *Service) List(ctx context.Context) ([]*model.Vibespace, error) {
 func (s *Service) Get(ctx context.Context, nameOrID string) (*model.Vibespace, error) {
 	if err := s.ensureClients(); err != nil {
 		return nil, fmt.Errorf("please install and start Kubernetes first: %w", vserrors.ErrKubernetesNotAvailable)
-	}
-
-	if s.deploymentManager == nil {
-		return nil, vserrors.ErrDeploymentManagerNotInitialized
 	}
 
 	slog.Info("getting vibespace", "vibespace_id", nameOrID)
