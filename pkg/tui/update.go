@@ -200,11 +200,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// to send the decision to the server
 	}
 
-	// Update text input only for key events (not mouse/window/custom messages)
-	if _, ok := msg.(tea.KeyMsg); ok {
-		var inputCmd tea.Cmd
-		m.input, inputCmd = m.input.Update(msg)
-		cmds = append(cmds, inputCmd)
+	// Update text input only for printable key events
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		// Filter out raw escape sequences (e.g. unparsed mouse events)
+		s := keyMsg.String()
+		if len(s) == 0 || s[0] != '[' {
+			var inputCmd tea.Cmd
+			m.input, inputCmd = m.input.Update(msg)
+			cmds = append(cmds, inputCmd)
+		}
 	}
 
 	// Update autocomplete suggestions based on current input
