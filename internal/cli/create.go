@@ -80,62 +80,90 @@ func init() {
 	createCmd.Flags().IntVar(&createMaxTurns, "max-turns", 0, "Maximum conversation turns")
 }
 
+// flagDefault sets *dest to cfgVal when the named flag was not explicitly set
+// by the user AND cfgVal is not the zero value for its type. This lets config
+// file / env-var defaults override cobra flag defaults without clobbering
+// values the user typed on the command line.
+func flagDefault[T comparable](cmd *cobra.Command, name string, dest *T, cfgVal T) {
+	var zero T
+	if !cmd.Flags().Changed(name) && cfgVal != zero {
+		*dest = cfgVal
+	}
+}
+
 func runCreate(cmd *cobra.Command, args []string) error {
 	// Apply config.Global() for flags not explicitly set by user
 	cfg := config.Global()
-	if !cmd.Flags().Changed("cpu") {
-		createCPU = cfg.Resources.CPU
-	}
-	if !cmd.Flags().Changed("cpu-limit") {
-		createCPULimit = cfg.Resources.CPULimit
-	}
-	if !cmd.Flags().Changed("memory") {
-		createMemory = cfg.Resources.Memory
-	}
-	if !cmd.Flags().Changed("memory-limit") {
-		createMemoryLimit = cfg.Resources.MemoryLimit
-	}
-	if !cmd.Flags().Changed("storage") {
-		createStorage = cfg.Resources.Storage
-	}
-	if !cmd.Flags().Changed("share-credentials") {
-		createShareCredentials = cfg.Agent.ShareCredentials
-	}
-	if !cmd.Flags().Changed("skip-permissions") {
-		createSkipPermissions = cfg.Agent.SkipPermissions
-	}
-	if !cmd.Flags().Changed("model") && cfg.Agent.Model != "" {
-		createModel = cfg.Agent.Model
-	}
-	if !cmd.Flags().Changed("max-turns") && cfg.Agent.MaxTurns > 0 {
-		createMaxTurns = cfg.Agent.MaxTurns
-	}
-	return doCreate(nil, args[0], createAgentType, createRepo, createAgentName, createCPU, createCPULimit,
-		createMemory, createMemoryLimit, createStorage, createShareCredentials, createMounts,
-		createSkipPermissions, createAllowedTools, createDisallowedTools, createModel, createMaxTurns,
-		createWorktree, createBranch)
+	flagDefault(cmd, "cpu", &createCPU, cfg.Resources.CPU)
+	flagDefault(cmd, "cpu-limit", &createCPULimit, cfg.Resources.CPULimit)
+	flagDefault(cmd, "memory", &createMemory, cfg.Resources.Memory)
+	flagDefault(cmd, "memory-limit", &createMemoryLimit, cfg.Resources.MemoryLimit)
+	flagDefault(cmd, "storage", &createStorage, cfg.Resources.Storage)
+	flagDefault(cmd, "share-credentials", &createShareCredentials, cfg.Agent.ShareCredentials)
+	flagDefault(cmd, "skip-permissions", &createSkipPermissions, cfg.Agent.SkipPermissions)
+	flagDefault(cmd, "model", &createModel, cfg.Agent.Model)
+	flagDefault(cmd, "max-turns", &createMaxTurns, cfg.Agent.MaxTurns)
+	return doCreate(nil, CreateOptions{
+		Name:             args[0],
+		AgentType:        createAgentType,
+		Repo:             createRepo,
+		AgentName:        createAgentName,
+		CPU:              createCPU,
+		CPULimit:         createCPULimit,
+		Memory:           createMemory,
+		MemoryLimit:      createMemoryLimit,
+		Storage:          createStorage,
+		ShareCredentials: createShareCredentials,
+		Mounts:           createMounts,
+		SkipPermissions:  createSkipPermissions,
+		AllowedTools:     createAllowedTools,
+		DisallowedTools:  createDisallowedTools,
+		Model:            createModel,
+		MaxTurns:         createMaxTurns,
+		Worktree:         createWorktree,
+		Branch:           createBranch,
+	})
 }
 
-func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, cpuLimit,
-	memory, memoryLimit, storage string, shareCredentials bool, mounts []string,
-	skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int,
-	worktree bool, branch string) error {
+// CreateOptions contains all parameters for creating a vibespace.
+type CreateOptions struct {
+	Name             string
+	AgentType        string
+	Repo             string
+	AgentName        string
+	CPU              string
+	CPULimit         string
+	Memory           string
+	MemoryLimit      string
+	Storage          string
+	ShareCredentials bool
+	Mounts           []string
+	SkipPermissions  bool
+	AllowedTools     string
+	DisallowedTools  string
+	Model            string
+	MaxTurns         int
+	Worktree         bool
+	Branch           string
+}
+
+func doCreate(svc *vibespace.Service, opts CreateOptions) error {
 	ctx := context.Background()
 
-	slog.Info("create command started", "name", name, "repo", repo, "agent_type", agentTypeStr)
+	slog.Info("create command started", "name", opts.Name, "repo", opts.Repo, "agent_type", opts.AgentType)
 
 	// Validate worktree flags
-	if worktree && repo == "" {
+	if opts.Worktree && opts.Repo == "" {
 		return fmt.Errorf("--worktree requires --repo")
 	}
-	if branch != "" && !worktree {
+	if opts.Branch != "" && !opts.Worktree {
 		return fmt.Errorf("--branch requires --worktree")
 	}
 
 	// Parse and validate agent type
-	agentType := agent.ParseType(agentTypeStr)
+	agentType := agent.ParseType(opts.AgentType)
 	if !agentType.IsValid() {
-		return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", agentTypeStr)
+		return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", opts.AgentType)
 	}
 
 	// Get vibespace service
@@ -150,23 +178,23 @@ func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, 
 
 	// Build AgentConfig if any config flags are set
 	var agentConfig *agent.Config
-	if skipPermissions || allowedTools != "" || disallowedTools != "" || model != "" || maxTurns > 0 {
+	if opts.SkipPermissions || opts.AllowedTools != "" || opts.DisallowedTools != "" || opts.Model != "" || opts.MaxTurns > 0 {
 		agentConfig = &agent.Config{
-			SkipPermissions: skipPermissions,
-			Model:           model,
-			MaxTurns:        maxTurns,
+			SkipPermissions: opts.SkipPermissions,
+			Model:           opts.Model,
+			MaxTurns:        opts.MaxTurns,
 		}
-		if allowedTools != "" {
-			agentConfig.AllowedTools = strings.Split(allowedTools, ",")
+		if opts.AllowedTools != "" {
+			agentConfig.AllowedTools = strings.Split(opts.AllowedTools, ",")
 		}
-		if disallowedTools != "" {
-			agentConfig.DisallowedTools = strings.Split(disallowedTools, ",")
+		if opts.DisallowedTools != "" {
+			agentConfig.DisallowedTools = strings.Split(opts.DisallowedTools, ",")
 		}
 	}
 
 	// Parse and validate mounts
 	var parsedMounts []modelPkg.Mount
-	for _, mountStr := range mounts {
+	for _, mountStr := range opts.Mounts {
 		mount, err := parseMount(mountStr)
 		if err != nil {
 			return fmt.Errorf("invalid mount '%s': %w", mountStr, err)
@@ -176,29 +204,29 @@ func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, 
 
 	// Build create request
 	req := &modelPkg.CreateVibespaceRequest{
-		Name:             name,
+		Name:             opts.Name,
 		Persistent:       true, // Always use persistent storage for shared filesystem between agents
-		ShareCredentials: shareCredentials,
+		ShareCredentials: opts.ShareCredentials,
 		AgentType:        agentType,
-		AgentName:        agentName,
+		AgentName:        opts.AgentName,
 		AgentConfig:      agentConfig,
 		Mounts:           parsedMounts,
 		Resources: &modelPkg.Resources{
-			CPU:         cpu,
-			CPULimit:    cpuLimit,
-			Memory:      memory,
-			MemoryLimit: memoryLimit,
-			Storage:     storage,
+			CPU:         opts.CPU,
+			CPULimit:    opts.CPULimit,
+			Memory:      opts.Memory,
+			MemoryLimit: opts.MemoryLimit,
+			Storage:     opts.Storage,
 		},
 	}
-	if repo != "" {
-		req.GithubRepo = repo
+	if opts.Repo != "" {
+		req.GithubRepo = opts.Repo
 	}
-	req.Worktree = worktree
-	req.WorktreeBranch = branch
+	req.Worktree = opts.Worktree
+	req.WorktreeBranch = opts.Branch
 
 	// GitHub OAuth device flow for HTTPS repos
-	if repo != "" && strings.HasPrefix(repo, "https://") {
+	if opts.Repo != "" && strings.HasPrefix(opts.Repo, "https://") {
 		clientID := config.Global().GitHub.ClientID
 
 		devResp, err := github.RequestDeviceCode(ctx, clientID, "repo")

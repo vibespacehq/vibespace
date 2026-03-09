@@ -69,7 +69,17 @@ var agentCreateCmd = &cobra.Command{
 		maxTurns, _ := cmd.Flags().GetInt("max-turns")
 		branch, _ := cmd.Flags().GetString("branch")
 
-		return doAgentCreate(nil, vsName, name, agentTypeStr, shareCredentials, skipPermissions, allowedTools, disallowedTools, model, maxTurns, branch)
+		return doAgentCreate(nil, vsName, AgentCreateOptions{
+			Name:             name,
+			AgentType:        agentTypeStr,
+			ShareCredentials: shareCredentials,
+			SkipPermissions:  skipPermissions,
+			AllowedTools:     allowedTools,
+			DisallowedTools:  disallowedTools,
+			Model:            model,
+			MaxTurns:         maxTurns,
+			Branch:           branch,
+		})
 	},
 }
 
@@ -221,19 +231,32 @@ func doAgentList(svc *vspkg.Service, vibespace string) error {
 	return nil
 }
 
-func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr string, shareCredentials, skipPermissions bool, allowedTools, disallowedTools, model string, maxTurns int, branch string) error {
+// AgentCreateOptions contains all parameters for creating an agent.
+type AgentCreateOptions struct {
+	Name             string
+	AgentType        string
+	ShareCredentials bool
+	SkipPermissions  bool
+	AllowedTools     string
+	DisallowedTools  string
+	Model            string
+	MaxTurns         int
+	Branch           string
+}
+
+func doAgentCreate(svc *vspkg.Service, vibespace string, o AgentCreateOptions) error {
 	ctx := context.Background()
 	out := getOutput()
 
 	var agentType agent.Type
-	if agentTypeStr != "" {
-		agentType = agent.ParseType(agentTypeStr)
+	if o.AgentType != "" {
+		agentType = agent.ParseType(o.AgentType)
 		if !agentType.IsValid() {
-			return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", agentTypeStr)
+			return fmt.Errorf("invalid agent type '%s': valid types are claude-code, codex", o.AgentType)
 		}
 	}
 
-	if agentType != "" && (allowedTools != "" || disallowedTools != "") {
+	if agentType != "" && (o.AllowedTools != "" || o.DisallowedTools != "") {
 		impl, implErr := agent.Get(agentType)
 		if implErr == nil {
 			supported := impl.SupportedTools()
@@ -241,16 +264,16 @@ func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr strin
 			for _, t := range supported {
 				supportedSet[t] = true
 			}
-			if allowedTools != "" {
-				for _, tool := range strings.Split(allowedTools, ",") {
+			if o.AllowedTools != "" {
+				for _, tool := range strings.Split(o.AllowedTools, ",") {
 					tool = strings.TrimSpace(tool)
 					if !supportedSet[tool] {
 						return fmt.Errorf("invalid allowed tool '%s' for %s (valid: %s)", tool, agentType, strings.Join(supported, ", "))
 					}
 				}
 			}
-			if disallowedTools != "" {
-				for _, tool := range strings.Split(disallowedTools, ",") {
+			if o.DisallowedTools != "" {
+				for _, tool := range strings.Split(o.DisallowedTools, ",") {
 					tool = strings.TrimSpace(tool)
 					if !supportedSet[tool] {
 						return fmt.Errorf("invalid disallowed tool '%s' for %s (valid: %s)", tool, agentType, strings.Join(supported, ", "))
@@ -260,7 +283,7 @@ func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr strin
 		}
 	}
 
-	slog.Info("agent create command started", "vibespace", vibespace, "name", customName, "agent_type", agentType, "share_credentials", shareCredentials)
+	slog.Info("agent create command started", "vibespace", vibespace, "name", o.Name, "agent_type", agentType, "share_credentials", o.ShareCredentials)
 
 	if svc == nil {
 		var err error
@@ -277,8 +300,8 @@ func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr strin
 		return err
 	}
 
-	if customName != "" {
-		printStep("Creating agent '%s' in '%s'...", customName, vibespace)
+	if o.Name != "" {
+		printStep("Creating agent '%s' in '%s'...", o.Name, vibespace)
 	} else if agentType != "" {
 		printStep("Creating new %s agent in '%s'...", agentType, vibespace)
 	} else {
@@ -286,28 +309,28 @@ func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr strin
 	}
 
 	var agentConfig *agent.Config
-	if skipPermissions || allowedTools != "" || disallowedTools != "" || model != "" || maxTurns > 0 {
+	if o.SkipPermissions || o.AllowedTools != "" || o.DisallowedTools != "" || o.Model != "" || o.MaxTurns > 0 {
 		agentConfig = &agent.Config{
-			SkipPermissions: skipPermissions,
-			Model:           model,
-			MaxTurns:        maxTurns,
+			SkipPermissions: o.SkipPermissions,
+			Model:           o.Model,
+			MaxTurns:        o.MaxTurns,
 		}
-		if allowedTools != "" {
-			agentConfig.AllowedTools = strings.Split(allowedTools, ",")
+		if o.AllowedTools != "" {
+			agentConfig.AllowedTools = strings.Split(o.AllowedTools, ",")
 		}
-		if disallowedTools != "" {
-			agentConfig.DisallowedTools = strings.Split(disallowedTools, ",")
+		if o.DisallowedTools != "" {
+			agentConfig.DisallowedTools = strings.Split(o.DisallowedTools, ",")
 		}
 	}
 
-	opts := &vspkg.SpawnAgentOptions{
-		Name:             customName,
+	spawnOpts := &vspkg.SpawnAgentOptions{
+		Name:             o.Name,
 		AgentType:        agentType,
-		ShareCredentials: shareCredentials,
+		ShareCredentials: o.ShareCredentials,
 		Config:           agentConfig,
-		Branch:           branch,
+		Branch:           o.Branch,
 	}
-	agentName, err := svc.SpawnAgent(ctx, vs.ID, opts)
+	agentName, err := svc.SpawnAgent(ctx, vs.ID, spawnOpts)
 	if err != nil {
 		slog.Error("failed to create agent", "vibespace", vibespace, "error", err)
 		return fmt.Errorf("failed to create agent: %w", err)
@@ -327,7 +350,7 @@ func doAgentCreate(svc *vspkg.Service, vibespace, customName, agentTypeStr strin
 
 	slog.Info("agent create command completed", "vibespace", vibespace, "agent", agentName)
 	printSuccess("Agent '%s' scheduled (starting...)", agentName)
-	if shareCredentials {
+	if o.ShareCredentials {
 		fmt.Println("  Credential sharing enabled via /vibespace/.vibespace")
 	}
 	if agentConfig != nil {
