@@ -6,7 +6,6 @@ on:
   push:
     branches:
       - main
-      - chore/code-quality
     paths:
       - 'build/**'
       - '.github/workflows/release-agent-images.yml'
