@@ -501,6 +501,9 @@ func (s *Server) handleDisconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit request body to prevent memory exhaustion (body is ignored but may be sent)
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<10) // 1 KB
+
 	peer := s.peerFromRequest(r)
 	if peer == nil {
 		http.Error(w, "unauthorized: unknown peer", http.StatusUnauthorized)
@@ -596,6 +599,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 		next.ServeHTTP(w, r)
 	})
 }
