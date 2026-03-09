@@ -79,7 +79,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		headerH := lipgloss.Height(headerRendered)
 		inputH := lipgloss.Height(inputRendered)
 		statusH := lipgloss.Height(statusRendered)
-		gaps := 3 // newlines between sections
+		gaps := 4 // newlines between sections (extra blank line before input)
 
 		viewportHeight := msg.Height - headerH - inputH - statusH - gaps
 		if viewportHeight < 3 {
