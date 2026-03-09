@@ -749,7 +749,7 @@ func renderMarkdown(content string) string {
 	if err != nil {
 		return content
 	}
-	return strings.Trim(rendered, "\n")
+	return strings.TrimSpace(rendered)
 }
 
 // SetAgentThinking sets the thinking state for an agent
