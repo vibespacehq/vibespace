@@ -14,8 +14,10 @@ func TestDoCreate_ServiceError(t *testing.T) {
 	// Also make get namespace fail so it tries to create
 	addReactor(cs, "get", "namespaces", fmt.Errorf("connection refused"))
 
-	err := doCreate(svc, "test-vs", "claude-code", "", "", "250m", "1000m",
-		"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0, false, "")
+	err := doCreate(svc, CreateOptions{
+		Name: "test-vs", AgentType: "claude-code",
+		CPU: "250m", CPULimit: "1000m", Memory: "512Mi", MemoryLimit: "1Gi", Storage: "10Gi",
+	})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -29,8 +31,10 @@ func TestDoCreate_DuplicateConflict(t *testing.T) {
 	deploy := fakeVibespaceDeployment("test-vs", "abc123")
 	svc, _ := newFakeService(t, deploy)
 
-	err := doCreate(svc, "test-vs", "claude-code", "", "", "250m", "1000m",
-		"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0, false, "")
+	err := doCreate(svc, CreateOptions{
+		Name: "test-vs", AgentType: "claude-code",
+		CPU: "250m", CPULimit: "1000m", Memory: "512Mi", MemoryLimit: "1Gi", Storage: "10Gi",
+	})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -43,8 +47,11 @@ func TestDoCreate_InvalidMount(t *testing.T) {
 	initOutput(OutputConfig{NoColor: true, JSONMode: true})
 	svc, _ := newFakeService(t)
 
-	err := doCreate(svc, "test-vs", "claude-code", "", "", "250m", "1000m",
-		"512Mi", "1Gi", "10Gi", false, []string{"badformat"}, false, "", "", "", 0, false, "")
+	err := doCreate(svc, CreateOptions{
+		Name: "test-vs", AgentType: "claude-code",
+		CPU: "250m", CPULimit: "1000m", Memory: "512Mi", MemoryLimit: "1Gi", Storage: "10Gi",
+		Mounts: []string{"badformat"},
+	})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -58,8 +65,10 @@ func TestDoCreate_Success(t *testing.T) {
 	svc, _ := newFakeService(t)
 
 	got := captureStdout(t, func() {
-		err := doCreate(svc, "test-vs", "claude-code", "", "", "250m", "1000m",
-			"512Mi", "1Gi", "10Gi", false, nil, false, "", "", "", 0, false, "")
+		err := doCreate(svc, CreateOptions{
+			Name: "test-vs", AgentType: "claude-code",
+			CPU: "250m", CPULimit: "1000m", Memory: "512Mi", MemoryLimit: "1Gi", Storage: "10Gi",
+		})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

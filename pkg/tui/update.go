@@ -935,7 +935,16 @@ func (m *Model) handleReconnect(msg AgentReconnectMsg) tea.Cmd {
 								"agent", key, "old_port", conn.LocalPort(), "new_port", fwd.LocalPort)
 							// Always close old connection and create new one with fresh port
 							conn.Close()
-							newConn := NewAgentConn(msg.Address, fwd.LocalPort, m.sessionManager, m.sessionName, true, conn.AgentType(), conn.Config(), m.permissionServer.AuthToken())
+							newConn := NewAgentConn(AgentConnOptions{
+								Addr:            msg.Address,
+								LocalPort:       fwd.LocalPort,
+								SessionMgr:      m.sessionManager,
+								MultiSessionID:  m.sessionName,
+								Resume:          true,
+								AgentType:       conn.AgentType(),
+								Config:          conn.Config(),
+								PermissionToken: m.permissionServer.AuthToken(),
+							})
 							if err := newConn.Connect(); err == nil {
 								m.agentMu.Lock()
 								m.agents[key] = newConn
