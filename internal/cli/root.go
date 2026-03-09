@@ -50,8 +50,8 @@ Tip: set VIBESPACE_NAME to avoid typing --vibespace every time:
   export VIBESPACE_NAME=myproject
   vibespace agent list
 
-Documentation: https://github.com/vibespace/vibespace
-Report issues: https://github.com/vibespace/vibespace/issues
+Documentation: https://github.com/vibespacehq/vibespace
+Report issues: https://github.com/vibespacehq/vibespace/issues
 
 Environment Variables:
   VIBESPACE_NAME              Default vibespace for --vibespace flag

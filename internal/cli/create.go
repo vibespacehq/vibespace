@@ -241,7 +241,7 @@ func doCreate(svc *vibespace.Service, name, agentTypeStr, repo, agentName, cpu, 
 	}
 
 	slog.Info("create command completed", "name", vs.Name, "id", vs.ID)
-	spinner.Success(fmt.Sprintf("Vibespace created: %s (starting...)", vs.Name))
+	spinner.Success(fmt.Sprintf("vibespace created: %s (starting...)", vs.Name))
 
 	// JSON output
 	out := getOutput()

@@ -9,8 +9,8 @@
 # - Passwordless sudo for installing packages
 #
 # Environment variables (set by Kubernetes):
-# - VIBESPACE_ID: Vibespace identifier
-# - VIBESPACE_NAME: Vibespace name
+# - VIBESPACE_ID: vibespace identifier
+# - VIBESPACE_NAME: vibespace name
 # - VIBESPACE_AGENT: Agent name (e.g., claude-1 or custom name)
 # - VIBESPACE_CLAUDE_ID: Claude instance ID (1, 2, 3, ...)
 # - AUTHORIZED_KEYS: SSH public key for authentication (from secret)

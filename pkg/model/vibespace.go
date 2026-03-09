@@ -2,10 +2,10 @@ package model
 
 import "github.com/vibespacehq/vibespace/pkg/agent"
 
-// Vibespace represents an isolated development environment with Claude Code.
+// Vibespace represents an isolated development environment with AI coding agents.
 //
 // Each vibespace runs as a Kubernetes Deployment with:
-// - A minimal Linux container with Claude Code CLI pre-installed
+// - A minimal Linux container with an AI coding agent pre-installed
 // - Persistent storage for project files
 // - Dynamic port detection and exposure
 type Vibespace struct {

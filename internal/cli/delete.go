@@ -158,7 +158,7 @@ func doDelete(svc *vibespace.Service, name string, force, keepData, dryRun bool)
 	}
 
 	slog.Info("delete command completed", "name", name)
-	printSuccess("Vibespace '%s' deleted", name)
+	printSuccess("vibespace '%s' deleted", name)
 	if keepData {
 		printStep("Storage data preserved. Clean up manually if needed.")
 	}
