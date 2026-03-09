@@ -2,13 +2,11 @@ package tui
 
 import (
 	"bytes"
-	"strings"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
 	"github.com/alecthomas/chroma/v2/lexers"
 	"github.com/alecthomas/chroma/v2/styles"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/vibespacehq/vibespace/pkg/config"
 )
 
@@ -84,52 +82,3 @@ func getHighlighter() *Highlighter {
 	return globalHighlighter
 }
 
-// highlightCodeBlock applies syntax highlighting to a code block
-func highlightCodeBlock(code, lang string, styles Styles) string {
-	// Trim trailing whitespace but preserve leading for indentation
-	code = strings.TrimRight(code, " \t\n")
-
-	if code == "" {
-		return ""
-	}
-
-	var result strings.Builder
-
-	// Add language label if present
-	if lang != "" {
-		langLabel := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#888888")).
-			Italic(true).
-			Render(lang)
-		result.WriteString("\n" + langLabel + "\n")
-	} else {
-		result.WriteString("\n")
-	}
-
-	// Apply syntax highlighting
-	highlighter := getHighlighter()
-	highlighted := highlighter.Highlight(code, lang)
-
-	// Style each line with background for code block appearance
-	bgStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("#1E1E2E")).
-		Padding(0, 1)
-
-	lines := strings.Split(highlighted, "\n")
-	for i, line := range lines {
-		// Apply background to each line (preserves ANSI colors from highlighter)
-		if line == "" {
-			result.WriteString(bgStyle.Render(" "))
-		} else {
-			// We need to apply background without overriding foreground colors
-			// Just add the line as-is since chroma already styled it
-			result.WriteString(" " + line + " ")
-		}
-		if i < len(lines)-1 {
-			result.WriteString("\n")
-		}
-	}
-	result.WriteString("\n")
-
-	return result.String()
-}

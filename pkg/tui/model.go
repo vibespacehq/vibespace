@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/wordwrap"
 )
@@ -598,7 +599,7 @@ func (m *Model) renderMessageForViewport(msg *Message) string {
 	case MessageTypeAssistant:
 		color := m.GetAgentColor(msg.Sender)
 		label = AgentLabelStyle(color).Render(fmt.Sprintf("[%s]", msg.Sender))
-		content = m.renderContentWithHighlighting(msg.Content)
+		content = renderMarkdown(msg.Content)
 
 	case MessageTypeToolUse:
 		content = m.renderToolUse(msg)
@@ -635,14 +636,6 @@ func (m *Model) renderThinkingForViewport(state *AgentState) string {
 	indicator := lipgloss.NewStyle().Foreground(color).Render(spinner)
 
 	return fmt.Sprintf("%s %s %s", ts, label, indicator)
-}
-
-// renderContentWithHighlighting renders message content with code block styling
-// For now uses basic styling; syntax highlighting can be added later
-func (m *Model) renderContentWithHighlighting(content string) string {
-	// For now, delegate to the existing styleContent method
-	// This can be enhanced with proper syntax highlighting later
-	return styleContentWithCodeBlocks(content, m.styles)
 }
 
 // renderToolUse renders a tool use message with improved formatting
@@ -734,60 +727,20 @@ func getToolIconAndColor(toolName string) (string, lipgloss.Color) {
 	}
 }
 
-// styleContentWithCodeBlocks applies styling to content including code blocks
-func styleContentWithCodeBlocks(content string, styles Styles) string {
-	// Check if content has code blocks
-	if !strings.Contains(content, "```") {
+// renderMarkdown renders content as terminal-styled markdown using glamour.
+func renderMarkdown(content string) string {
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithStandardStyle("dark"),
+		glamour.WithWordWrap(0), // outer wordwrap handles line length
+	)
+	if err != nil {
 		return content
 	}
-
-	// Split by code blocks and style them
-	var result strings.Builder
-	remaining := content
-
-	for {
-		// Find start of code block
-		startIdx := strings.Index(remaining, "```")
-		if startIdx == -1 {
-			result.WriteString(remaining)
-			break
-		}
-
-		// Write content before code block
-		result.WriteString(remaining[:startIdx])
-
-		// Find end of code block
-		afterStart := remaining[startIdx+3:]
-		endIdx := strings.Index(afterStart, "```")
-		if endIdx == -1 {
-			// Unclosed code block, write as-is
-			result.WriteString(remaining[startIdx:])
-			break
-		}
-
-		// Extract code block content
-		codeContent := afterStart[:endIdx]
-
-		// Check for language hint (first line before newline)
-		lang := ""
-		codeLines := codeContent
-		if nlIdx := strings.Index(codeContent, "\n"); nlIdx != -1 {
-			firstLine := strings.TrimSpace(codeContent[:nlIdx])
-			if len(firstLine) > 0 && !strings.Contains(firstLine, " ") {
-				lang = firstLine
-				codeLines = codeContent[nlIdx+1:]
-			}
-		}
-
-		// Style the code block with syntax highlighting
-		styledCode := highlightCodeBlock(codeLines, lang, styles)
-		result.WriteString(styledCode)
-
-		// Move past this code block
-		remaining = afterStart[endIdx+3:]
+	rendered, err := renderer.Render(content)
+	if err != nil {
+		return content
 	}
-
-	return result.String()
+	return strings.TrimRight(rendered, "\n")
 }
 
 // SetAgentThinking sets the thinking state for an agent
