@@ -32,7 +32,6 @@ func NewDaemonState() *DaemonState {
 	}
 }
 
-// GetOrCreateVibespace gets or creates a vibespace state
 func (s *DaemonState) GetOrCreateVibespace(name string) *VibespaceState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -48,7 +47,6 @@ func (s *DaemonState) GetOrCreateVibespace(name string) *VibespaceState {
 	return vs
 }
 
-// GetVibespace gets a vibespace state or nil if not exists
 func (s *DaemonState) GetVibespace(name string) *VibespaceState {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -89,7 +87,6 @@ func (vs *VibespaceState) SetAgentPod(agentName, podName string) {
 	}
 }
 
-// GetAgentPod gets the pod name for an agent
 func (vs *VibespaceState) GetAgentPod(agentName string) (string, bool) {
 	vs.mu.RLock()
 	defer vs.mu.RUnlock()

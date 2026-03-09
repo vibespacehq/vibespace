@@ -27,14 +27,12 @@ type DeploymentManager struct {
 	k8sClient *k8s.Client
 }
 
-// NewDeploymentManager creates a new Deployment manager
 func NewDeploymentManager(k8sClient *k8s.Client) *DeploymentManager {
 	return &DeploymentManager{
 		k8sClient: k8sClient,
 	}
 }
 
-// cpuLimitOrDefault returns the CPU limit if set, otherwise falls back to the CPU request value
 func cpuLimitOrDefault(cpuLimit, cpuRequest string) string {
 	if cpuLimit != "" {
 		return cpuLimit
@@ -42,7 +40,6 @@ func cpuLimitOrDefault(cpuLimit, cpuRequest string) string {
 	return cpuRequest
 }
 
-// memoryLimitOrDefault returns the memory limit if set, otherwise falls back to the memory request value
 func memoryLimitOrDefault(memoryLimit, memoryRequest string) string {
 	if memoryLimit != "" {
 		return memoryLimit
@@ -50,7 +47,6 @@ func memoryLimitOrDefault(memoryLimit, memoryRequest string) string {
 	return memoryRequest
 }
 
-// CreateDeployment creates a Deployment and Service for a vibespace
 func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDeploymentRequest) error {
 	deploymentName := fmt.Sprintf("vibespace-%s", req.VibespaceID)
 
@@ -192,7 +188,6 @@ func (m *DeploymentManager) CreateDeployment(ctx context.Context, req *CreateDep
 	return nil
 }
 
-// createService creates a ClusterIP Service for a deployment
 func (m *DeploymentManager) createService(ctx context.Context, name, vibespaceID, agentName string, labels map[string]string) error {
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -230,7 +225,6 @@ func (m *DeploymentManager) createService(ctx context.Context, name, vibespaceID
 	return nil
 }
 
-// CreateAgentDeployment creates a Deployment for an additional agent in a vibespace
 func (m *DeploymentManager) CreateAgentDeployment(ctx context.Context, req *CreateAgentRequest) error {
 	// Determine agent type
 	agentType := req.AgentType
@@ -403,7 +397,6 @@ func (m *DeploymentManager) ListDeployments(ctx context.Context) ([]appsv1.Deplo
 	return deployments.Items, nil
 }
 
-// DeleteDeployment deletes a Deployment and its Service
 func (m *DeploymentManager) DeleteDeployment(ctx context.Context, vibespaceID string) error {
 	deploymentName := fmt.Sprintf("vibespace-%s", vibespaceID)
 
@@ -422,7 +415,6 @@ func (m *DeploymentManager) DeleteDeployment(ctx context.Context, vibespaceID st
 	return nil
 }
 
-// DeleteAgentDeployment deletes an agent's Deployment and Service
 func (m *DeploymentManager) DeleteAgentDeployment(ctx context.Context, vibespaceID string, agentName string) error {
 	deploymentName := fmt.Sprintf("vibespace-%s-%s", vibespaceID, agentName)
 
@@ -623,7 +615,6 @@ func (m *DeploymentManager) extractConfigFromDeployment(deploy *appsv1.Deploymen
 	return config
 }
 
-// UpdateAgentConfig updates the agent config (triggers pod restart)
 func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, agentName string, config *agent.Config) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Find the deployment for this agent (re-read on each retry)
@@ -665,7 +656,6 @@ func (m *DeploymentManager) UpdateAgentConfig(ctx context.Context, vibespaceID, 
 	})
 }
 
-// updateEnvVars updates or adds agent config env vars
 func (m *DeploymentManager) updateEnvVars(env []corev1.EnvVar, config *agent.Config) []corev1.EnvVar {
 	// Map of env vars to update
 	configVars := map[string]string{
@@ -722,7 +712,6 @@ func (m *DeploymentManager) updateEnvVars(env []corev1.EnvVar, config *agent.Con
 
 // Helper functions
 
-// buildEnvironment creates environment variables for the vibespace
 func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentName string, agentType agent.Type, userEnv map[string]string, shareCredentials bool, config *agent.Config) []corev1.EnvVar {
 	env := []corev1.EnvVar{}
 
@@ -856,7 +845,6 @@ func (m *DeploymentManager) buildEnvironment(vibespaceID, vibspaceName, agentNam
 	return env
 }
 
-// buildVolumesAndMounts creates volumes and volume mounts for the vibespace
 func (m *DeploymentManager) buildVolumesAndMounts(persistent bool, pvcName string, mounts []model.Mount) ([]corev1.Volume, []corev1.VolumeMount) {
 	var volumes []corev1.Volume
 	var volumeMounts []corev1.VolumeMount
@@ -898,7 +886,6 @@ func (m *DeploymentManager) buildVolumesAndMounts(persistent bool, pvcName strin
 	return volumes, volumeMounts
 }
 
-// buildInitContainers creates init containers for the vibespace
 func (m *DeploymentManager) buildInitContainers(persistent bool) []corev1.Container {
 	if !persistent {
 		return nil

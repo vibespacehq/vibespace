@@ -240,7 +240,6 @@ func (s *Server) InitializeWireGuard() error {
 	return nil
 }
 
-// WriteWireGuardConfig writes the WireGuard server configuration.
 func (s *Server) WriteWireGuardConfig() error {
 	// Read private key
 	privateKey, err := os.ReadFile(s.state.PrivateKeyPath)
@@ -904,7 +903,6 @@ func IsServeRunning() bool {
 	return true
 }
 
-// KillServeProcess sends SIGTERM to the running serve daemon and waits for it to exit.
 func KillServeProcess() error {
 	vsHome, err := getVibespaceHome()
 	if err != nil {
@@ -984,8 +982,7 @@ func CleanupStaleServe() {
 	os.Remove(pidFile)
 }
 
-// FetchKubeconfigFromServer fetches the kubeconfig from the server's management API.
-// Requires a cert fingerprint for TLS pinning — never falls back to InsecureSkipVerify.
+// Requires a cert fingerprint for TLS pinning -- never falls back to InsecureSkipVerify.
 func FetchKubeconfigFromServer(serverIP, certFingerprint string) ([]byte, error) {
 	url := fmt.Sprintf("https://%s:%d/kubeconfig", serverIP, DefaultManagementPort())
 

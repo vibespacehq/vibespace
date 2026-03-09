@@ -287,7 +287,6 @@ func wireguardGoBin() (string, error) {
 	return filepath.Join(binDir, "wireguard-go"), nil
 }
 
-// WriteClientConfig writes a WireGuard client configuration file.
 // Returns the path to the temp config file that should be installed with InstallConfig.
 func WriteClientConfig(config *ClientConfig) (string, error) {
 	tmpl, err := template.New("client").Parse(clientConfigTemplate)
@@ -314,7 +313,6 @@ func WriteClientConfig(config *ClientConfig) (string, error) {
 	return tempPath, nil
 }
 
-// WriteServerConfig writes a WireGuard server configuration file.
 func WriteServerConfig(config *ServerConfig) (string, error) {
 	tmpl, err := template.New("server").Parse(serverConfigTemplate)
 	if err != nil {
