@@ -79,18 +79,14 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.tag }}"
           VER="${VERSION#v}"
-          ARCH="${{ matrix.goarch }}"
-          DEB_ARCH="$ARCH"
-          if [ "$ARCH" = "amd64" ]; then DEB_ARCH="amd64"; fi
-          if [ "$ARCH" = "arm64" ]; then DEB_ARCH="arm64"; fi
 
           # Install nfpm
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
-          # Create nfpm config
-          cat > nfpm.yaml << NFPM
+          # Create nfpm config (no leading whitespace)
+          cat > nfpm.yaml << EOF
           name: vibespace
-          arch: "${DEB_ARCH}"
+          arch: "${{ matrix.goarch }}"
           version: "${VER}"
           maintainer: "Yagiz Dagabak <yagizdagabak@gmail.com>"
           description: "Multi-agent AI stateful runtime environments"
@@ -101,10 +97,12 @@ jobs:
               dst: /usr/local/bin/vibespace
               file_info:
                 mode: 0755
-          NFPM
+          EOF
 
           nfpm package -p deb -f nfpm.yaml
-          echo "deb=vibespace_${VER}_${DEB_ARCH}.deb" >> "$GITHUB_ENV"
+          # nfpm uses ~ for pre-release (Debian convention), capture actual filename
+          DEB_FILE=$(ls vibespace_*.deb)
+          echo "deb=${DEB_FILE}" >> "$GITHUB_ENV"
 
       - name: Upload tarball
         uses: actions/upload-artifact@v7
@@ -147,7 +145,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum vibespace-*.tar.gz vibespace_*.deb > "vibespace-${{ steps.version.outputs.tag }}-checksums.txt"
+          sha256sum vibespace-*.tar.gz vibespace_*.deb 2>/dev/null > "vibespace-${{ steps.version.outputs.tag }}-checksums.txt" || sha256sum vibespace-*.tar.gz > "vibespace-${{ steps.version.outputs.tag }}-checksums.txt"
 
       - name: Generate changelog
         id: changelog
