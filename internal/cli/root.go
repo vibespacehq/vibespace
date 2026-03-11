@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/vibespacehq/vibespace/pkg/config"
 	vserrors "github.com/vibespacehq/vibespace/pkg/errors"
@@ -19,6 +20,24 @@ var (
 	Commit    = "unknown"
 	BuildDate = "unknown"
 )
+
+func init() {
+	if Version != "dev" {
+		return
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	if info.Main.Version != "" && info.Main.Version != "(devel)" {
+		Version = info.Main.Version
+	}
+	for _, s := range info.Settings {
+		if s.Key == "vcs.revision" && len(s.Value) >= 7 {
+			Commit = s.Value[:7]
+		}
+	}
+}
 
 // Global flags
 var (

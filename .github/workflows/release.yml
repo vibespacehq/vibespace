@@ -74,11 +74,50 @@ jobs:
           tar czf "${TARBALL}" vibespace
           echo "tarball=${TARBALL}" >> "$GITHUB_ENV"
 
-      - name: Upload artifact
+      - name: Build deb package
+        if: matrix.goos == 'linux'
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          VER="${VERSION#v}"
+          ARCH="${{ matrix.goarch }}"
+          DEB_ARCH="$ARCH"
+          if [ "$ARCH" = "amd64" ]; then DEB_ARCH="amd64"; fi
+          if [ "$ARCH" = "arm64" ]; then DEB_ARCH="arm64"; fi
+
+          # Install nfpm
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+          # Create nfpm config
+          cat > nfpm.yaml << NFPM
+          name: vibespace
+          arch: "${DEB_ARCH}"
+          version: "${VER}"
+          maintainer: "Yagiz Dagabak <yagizdagabak@gmail.com>"
+          description: "Multi-agent AI stateful runtime environments"
+          homepage: "https://github.com/vibespacehq/vibespace"
+          license: "Apache-2.0"
+          contents:
+            - src: vibespace
+              dst: /usr/local/bin/vibespace
+              file_info:
+                mode: 0755
+          NFPM
+
+          nfpm package -p deb -f nfpm.yaml
+          echo "deb=vibespace_${VER}_${DEB_ARCH}.deb" >> "$GITHUB_ENV"
+
+      - name: Upload tarball
         uses: actions/upload-artifact@v7
         with:
           name: vibespace-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.tarball }}
+
+      - name: Upload deb
+        if: matrix.goos == 'linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: vibespace-deb-${{ matrix.goarch }}
+          path: ${{ env.deb }}
 
   release:
     needs: build
@@ -108,7 +147,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          sha256sum vibespace-*.tar.gz > "vibespace-${{ steps.version.outputs.tag }}-checksums.txt"
+          sha256sum vibespace-*.tar.gz vibespace_*.deb > "vibespace-${{ steps.version.outputs.tag }}-checksums.txt"
 
       - name: Generate changelog
         id: changelog
@@ -124,6 +163,7 @@ jobs:
           body_path: RELEASE_NOTES.md
           files: |
             artifacts/vibespace-*.tar.gz
+            artifacts/vibespace_*.deb
             artifacts/vibespace-*-checksums.txt
           draft: false
           prerelease: false
@@ -220,4 +260,64 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/vibespace.rb
           git commit -m "vibespace ${TAG}"
+          git push
+
+  apt:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Download deb artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: vibespace-deb-*
+          path: debs
+          merge-multiple: true
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.APT_GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - name: Clone APT repo
+        run: |
+          git clone https://x-access-token:${{ secrets.APT_REPO_TOKEN }}@github.com/vibespacehq/apt.git apt-repo
+
+      - name: Update APT repo
+        run: |
+          sudo apt-get update && sudo apt-get install -y reprepro
+
+          cd apt-repo
+
+          # Initialize reprepro structure if needed
+          mkdir -p conf
+          if [ ! -f conf/distributions ]; then
+            cat > conf/distributions << 'DIST'
+          Codename: stable
+          Components: main
+          Architectures: amd64 arm64
+          SignWith: ${{ secrets.APT_GPG_KEY_ID }}
+          DIST
+          fi
+
+          # Add deb packages
+          for deb in ../debs/*.deb; do
+            reprepro includedeb stable "$deb"
+          done
+
+      - name: Push APT repo
+        run: |
+          cd apt-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "vibespace ${{ steps.version.outputs.tag }}"
           git push
