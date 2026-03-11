@@ -1,0 +1,223 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.0)"
+        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.25.8"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          COMMIT="$(git rev-parse --short HEAD)"
+          BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          PKG="github.com/vibespacehq/vibespace/internal/cli"
+
+          go build \
+            -ldflags "-X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.BuildDate=${BUILD_DATE}" \
+            -o vibespace \
+            ./cmd/vibespace
+
+      - name: Package
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          TARBALL="vibespace-${VERSION}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+          tar czf "${TARBALL}" vibespace
+          echo "tarball=${TARBALL}" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vibespace-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.tarball }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum vibespace-*.tar.gz > "vibespace-${{ steps.version.outputs.tag }}-checksums.txt"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          pip install git-cliff
+          git-cliff --latest --strip header > RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            artifacts/vibespace-*.tar.gz
+            artifacts/vibespace-*-checksums.txt
+          draft: false
+          prerelease: false
+
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${{ github.ref_name }}"
+          fi
+          # Strip leading 'v' for Homebrew version
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute checksums
+        id: sha
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          echo "darwin_arm64=$(sha256sum artifacts/vibespace-${TAG}-darwin-arm64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "darwin_amd64=$(sha256sum artifacts/vibespace-${TAG}-darwin-amd64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(sha256sum artifacts/vibespace-${TAG}-linux-arm64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux_amd64=$(sha256sum artifacts/vibespace-${TAG}-linux-amd64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Generate formula
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VER="${{ steps.version.outputs.ver }}"
+          cat > vibespace.rb << 'FORMULA'
+          class Vibespace < Formula
+            desc "Multi-agent AI stateful runtime environments"
+            homepage "https://github.com/vibespacehq/vibespace"
+            version "VERSION_PLACEHOLDER"
+            license "Apache-2.0"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/vibespacehq/vibespace/releases/download/TAG_PLACEHOLDER/vibespace-TAG_PLACEHOLDER-darwin-arm64.tar.gz"
+                sha256 "SHA_DARWIN_ARM64"
+              else
+                url "https://github.com/vibespacehq/vibespace/releases/download/TAG_PLACEHOLDER/vibespace-TAG_PLACEHOLDER-darwin-amd64.tar.gz"
+                sha256 "SHA_DARWIN_AMD64"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/vibespacehq/vibespace/releases/download/TAG_PLACEHOLDER/vibespace-TAG_PLACEHOLDER-linux-arm64.tar.gz"
+                sha256 "SHA_LINUX_ARM64"
+              else
+                url "https://github.com/vibespacehq/vibespace/releases/download/TAG_PLACEHOLDER/vibespace-TAG_PLACEHOLDER-linux-amd64.tar.gz"
+                sha256 "SHA_LINUX_AMD64"
+              end
+            end
+
+            def install
+              bin.install "vibespace"
+            end
+
+            test do
+              system "#{bin}/vibespace", "version"
+            end
+          end
+          FORMULA
+
+          sed -i "s/VERSION_PLACEHOLDER/${VER}/g" vibespace.rb
+          sed -i "s/TAG_PLACEHOLDER/${TAG}/g" vibespace.rb
+          sed -i "s/SHA_DARWIN_ARM64/${{ steps.sha.outputs.darwin_arm64 }}/g" vibespace.rb
+          sed -i "s/SHA_DARWIN_AMD64/${{ steps.sha.outputs.darwin_amd64 }}/g" vibespace.rb
+          sed -i "s/SHA_LINUX_ARM64/${{ steps.sha.outputs.linux_arm64 }}/g" vibespace.rb
+          sed -i "s/SHA_LINUX_AMD64/${{ steps.sha.outputs.linux_amd64 }}/g" vibespace.rb
+
+      - name: Update Homebrew tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/vibespacehq/homebrew-tap.git tap
+          mkdir -p tap/Formula
+          cp vibespace.rb tap/Formula/vibespace.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/vibespace.rb
+          git commit -m "vibespace ${TAG}"
+          git push

@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - "dependabot/**"
   pull_request:
     branches: [main]
 
@@ -54,6 +53,7 @@ jobs:
 
   colima:
     runs-on: macos-m2
+    environment: self-hosted-e2e
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -94,6 +94,7 @@ jobs:
 
   lima:
     runs-on: linux-hub
+    environment: self-hosted-e2e
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
