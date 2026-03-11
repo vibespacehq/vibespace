@@ -43,7 +43,7 @@ jobs:
 
       - name: Build and push base image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: build/base
           push: true
@@ -80,7 +80,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push ${{ matrix.agent }} image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: build/agents/${{ matrix.agent }}
           push: true
