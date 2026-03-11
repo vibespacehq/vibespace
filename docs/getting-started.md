@@ -11,14 +11,21 @@ Install vibespace, spin up your first environment, and connect to an AI coding a
 
 ## Install
 
-Build from source (requires Go 1.22+):
-
 ```bash
-git clone https://github.com/vibespacehq/vibespace.git
-cd vibespace
-./scripts/build.sh
-./scripts/install.sh  # installs to /usr/local/bin (needs sudo)
+# macOS (Homebrew)
+brew install vibespacehq/tap/vibespace
+
+# Linux (APT)
+curl -fsSL https://vibespacehq.github.io/apt/setup.sh | sudo bash && sudo apt install vibespace
+
+# Any platform (curl)
+curl -fsSL https://raw.githubusercontent.com/vibespacehq/vibespace/main/install.sh | bash
+
+# Go (requires 1.25+)
+go install github.com/vibespacehq/vibespace/cmd/vibespace@latest
 ```
+
+See [Installation](installation.md) for all options including building from source.
 
 Verify:
 

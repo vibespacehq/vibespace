@@ -12,9 +12,40 @@
 
 Linux support is tested on Debian-based distros. Other distributions may work but aren't officially supported yet.
 
-## Install from source
+## Install
 
-Requires Go 1.22 or later.
+### Homebrew (macOS / Linux)
+
+```bash
+brew install vibespacehq/tap/vibespace
+```
+
+### APT (Debian / Ubuntu)
+
+```bash
+curl -fsSL https://vibespacehq.github.io/apt/setup.sh | sudo bash
+sudo apt install vibespace
+```
+
+### Shell script (any platform)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vibespacehq/vibespace/main/install.sh | bash
+```
+
+Detects your OS and architecture, downloads the binary, verifies the checksum, and installs to `/usr/local/bin`.
+
+### Go
+
+Requires Go 1.25 or later.
+
+```bash
+go install github.com/vibespacehq/vibespace/cmd/vibespace@latest
+```
+
+### From source
+
+Requires Go 1.25 or later.
 
 ```bash
 git clone https://github.com/vibespacehq/vibespace.git

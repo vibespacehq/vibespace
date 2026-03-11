@@ -17,13 +17,25 @@ https://github.com/user-attachments/assets/991dd850-d879-4259-a87e-c005bdd55115
 - Port forwarding from agent containers to your host with optional DNS names
 - Everything managed through a single CLI — fully scriptable with JSON output
 
+## Install
+
+```bash
+# macOS (Homebrew)
+brew install vibespacehq/tap/vibespace
+
+# Linux (APT)
+curl -fsSL https://vibespacehq.github.io/apt/setup.sh | sudo bash && sudo apt install vibespace
+
+# Any platform (curl)
+curl -fsSL https://raw.githubusercontent.com/vibespacehq/vibespace/main/install.sh | bash
+
+# Go
+go install github.com/vibespacehq/vibespace/cmd/vibespace@latest
+```
+
 ## Quick start
 
 ```bash
-# Build and install
-git clone https://github.com/vibespacehq/vibespace.git
-cd vibespace && ./scripts/build.sh && sudo ./scripts/install.sh
-
 # Initialize the cluster
 vibespace init
 
@@ -95,4 +107,4 @@ All commands work the same over the tunnel.
 
 ## License
 
-See [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](LICENSE).

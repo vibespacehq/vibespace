@@ -2,7 +2,7 @@
 
 ## Development setup
 
-**Requirements:** Go 1.22+, macOS or Linux
+**Requirements:** Go 1.25+, macOS or Linux
 
 ```bash
 git clone https://github.com/vibespacehq/vibespace.git
