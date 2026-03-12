@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/vibespacehq/vibespace/pkg/update"
 
@@ -27,6 +30,30 @@ var upgradeCmd = &cobra.Command{
 func init() {
 	upgradeCmd.Flags().BoolVar(&upgradeCheck, "check", false, "Only check for updates, don't install")
 	upgradeCmd.Flags().BoolVar(&upgradeForce, "force", false, "Re-download even if already on latest")
+}
+
+// packageManagerHint returns a hint if the binary was installed via a package
+// manager, or empty string if it's a direct install.
+func packageManagerHint() string {
+	execPath, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	execPath, _ = filepath.EvalSymlinks(execPath)
+
+	// Homebrew: /opt/homebrew/Cellar/... or /usr/local/Cellar/...
+	if strings.Contains(execPath, "/Cellar/") {
+		return "This binary was installed via Homebrew. Consider using: brew upgrade vibespace"
+	}
+
+	// APT/dpkg: /usr/bin/vibespace owned by dpkg
+	if execPath == "/usr/bin/vibespace" || execPath == "/usr/local/bin/vibespace" {
+		if _, err := os.Stat("/var/lib/dpkg/info/vibespace.list"); err == nil {
+			return "This binary was installed via APT. Consider using: sudo apt upgrade vibespace"
+		}
+	}
+
+	return ""
 }
 
 func runUpgrade(cmd *cobra.Command, args []string) error {
@@ -80,6 +107,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 		printSuccess("Already up to date: %s", Version)
 		return nil
+	}
+
+	// Warn if installed via package manager
+	if hint := packageManagerHint(); hint != "" {
+		printWarning("%s", hint)
 	}
 
 	// Download and replace
