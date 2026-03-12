@@ -54,7 +54,7 @@ Show cluster, daemon, and remote connection status.
 
 ### `vibespace stop`
 
-Stop the cluster. In remote mode, this disconnects instead.
+Stop the cluster. In remote mode, prompts you to use `vibespace remote disconnect` instead.
 
 ### `vibespace uninstall`
 

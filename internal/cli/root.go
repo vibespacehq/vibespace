@@ -54,11 +54,11 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "vibespace",
-	Short: "Multi-Claude development environments",
+	Short: "Multi-agent AI development environments",
 	Long: `vibespace - AI-powered development environments
 
-Create isolated development environments with multiple Claude Code instances
-that can collaborate on your codebase.
+Create isolated development environments with multiple AI coding agents
+(Claude Code, Codex) that can collaborate on your codebase.
 
 Get started:
   vibespace init                                    Initialize the cluster

@@ -68,19 +68,19 @@ vibespace multi --agents claude-1@frontend,codex-1@backend
 Send a single message and get a response:
 
 ```bash
-vibespace multi "run the test suite" --vibespace my-project --agent claude-1
+vibespace multi "run the test suite" --vibespaces my-project --agent claude-1
 ```
 
 Stream the response as plain text:
 
 ```bash
-vibespace multi "explain this codebase" --vibespace my-project --stream
+vibespace multi "explain this codebase" --vibespaces my-project --stream
 ```
 
 Batch mode reads JSONL from stdin:
 
 ```bash
-echo '{"agent":"claude-1","message":"run tests"}' | vibespace multi --vibespace my-project --batch
+echo '{"agent":"claude-1","message":"run tests"}' | vibespace multi --vibespaces my-project --batch
 ```
 
 ## Session commands

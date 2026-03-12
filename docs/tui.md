@@ -26,11 +26,11 @@ Actions: `n` new vibespace, `d` delete, `a` add agent (in agent view), `e` edit 
 
 Multi-agent chat interface. Start a session from the Sessions tab or Vibespaces tab.
 
-Slash commands: `/help`, `/list`, `/add`, `/remove`, `/focus`, `/clear`, `/session`, `/ports`, `/quit`.
+Slash commands: `/help`, `/list`, `/add`, `/remove`, `/focus`, `/clear`, `/session`, `/scroll`, `/quit`.
 
 ### 3. Monitor
 
-Live resource dashboard with 1-second auto-refresh.
+Live resource dashboard with 5-second auto-refresh.
 
 Shows per-agent CPU and memory usage with bar charts. When the terminal is tall enough, it also displays CPU and memory history as streaming line charts.
 
