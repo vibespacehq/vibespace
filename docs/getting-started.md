@@ -99,7 +99,7 @@ Once logged in, the agent is ready to use. If you created the vibespace with `--
 To run a one-off command without an interactive session:
 
 ```bash
-vibespace exec --vibespace my-project -- ls /workspace
+vibespace exec --vibespace my-project -- ls /vibespace
 ```
 
 ## Check status
