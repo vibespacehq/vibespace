@@ -15,6 +15,11 @@ import (
 var (
 	upgradeCheck bool
 	upgradeForce bool
+
+	// upgradePerformed is set to true after a successful upgrade so that
+	// Execute() skips the stale update notification (the in-memory Version
+	// still reflects the old binary).
+	upgradePerformed bool
 )
 
 var upgradeCmd = &cobra.Command{
@@ -32,28 +37,28 @@ func init() {
 	upgradeCmd.Flags().BoolVar(&upgradeForce, "force", false, "Re-download even if already on latest")
 }
 
-// packageManagerHint returns a hint if the binary was installed via a package
-// manager, or empty string if it's a direct install.
-func packageManagerHint() string {
+// packageManagerInstall returns the package manager name and upgrade command
+// if the binary was installed via one, or empty strings if it's a direct install.
+func packageManagerInstall() (manager, command string) {
 	execPath, err := os.Executable()
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	execPath, _ = filepath.EvalSymlinks(execPath)
 
 	// Homebrew: /opt/homebrew/Cellar/... or /usr/local/Cellar/...
 	if strings.Contains(execPath, "/Cellar/") {
-		return "This binary was installed via Homebrew. Consider using: brew upgrade vibespace"
+		return "Homebrew", "brew upgrade vibespace"
 	}
 
-	// APT/dpkg: /usr/bin/vibespace owned by dpkg
+	// APT/dpkg: check if dpkg owns this binary
 	if execPath == "/usr/bin/vibespace" || execPath == "/usr/local/bin/vibespace" {
 		if _, err := os.Stat("/var/lib/dpkg/info/vibespace.list"); err == nil {
-			return "This binary was installed via APT. Consider using: sudo apt upgrade vibespace"
+			return "APT", "sudo apt upgrade vibespace"
 		}
 	}
 
-	return ""
+	return "", ""
 }
 
 func runUpgrade(cmd *cobra.Command, args []string) error {
@@ -109,9 +114,14 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Warn if installed via package manager
-	if hint := packageManagerHint(); hint != "" {
-		printWarning("%s", hint)
+	// Block if installed via package manager (unless --force)
+	if manager, command := packageManagerInstall(); manager != "" && !upgradeForce {
+		if out.IsJSONMode() {
+			return out.JSON(NewJSONOutput(false, nil, &JSONError{
+				Message: fmt.Sprintf("installed via %s — use '%s' instead, or run with --force to override", manager, command),
+			}))
+		}
+		return fmt.Errorf("installed via %s — use '%s' instead\nTo override, run: vibespace upgrade --force", manager, command)
 	}
 
 	// Download and replace
@@ -125,6 +135,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	spinner.Success(fmt.Sprintf("Upgraded %s → %s", Version, latest))
+	upgradePerformed = true
 
 	if out.IsJSONMode() {
 		return out.JSON(NewJSONOutput(true, UpgradeOutput{

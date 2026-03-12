@@ -129,7 +129,7 @@ func Execute() error {
 
 	// Background update check — runs after every successful command.
 	// Non-fatal: any error is silently ignored.
-	if err == nil && !globalJSON && !globalQuiet && os.Getenv("VIBESPACE_NO_UPDATE_CHECK") == "" {
+	if err == nil && !globalJSON && !globalQuiet && !upgradePerformed && os.Getenv("VIBESPACE_NO_UPDATE_CHECK") == "" {
 		if info := update.CheckForUpdate(Version); info != nil {
 			fmt.Fprintf(os.Stderr, "\nA new version of vibespace is available: %s (current: %s)\nRun 'vibespace upgrade' to update.\n", info.LatestVersion, info.CurrentVersion)
 		}
