@@ -42,8 +42,8 @@ func TestIsNewer(t *testing.T) {
 		{"v0.4.0", "v0.4.0", false},
 		{"v0.3.0", "v0.4.0", false},
 		{"v1.0.0", "v0.9.9", true},
-		{"0.5.0", "0.4.0", true},       // without v prefix
-		{"v0.5.0", "0.4.0", true},       // mixed prefix
+		{"0.5.0", "0.4.0", true},  // without v prefix
+		{"v0.5.0", "0.4.0", true}, // mixed prefix
 		{"v0.5.0-alpha.1", "v0.4.0", true},
 		{"invalid", "v0.4.0", false},
 		{"v0.4.0", "invalid", false},
