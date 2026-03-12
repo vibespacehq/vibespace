@@ -155,8 +155,15 @@ func renderWelcome(width, height int, cluster clusterStatus,
 	offDot := mutedStyle.Render("○")
 
 	// Status line helper: fixed-width columns so lines form a uniform block.
+	// Uses lipgloss.Width for ANSI-aware padding since colored dots have
+	// variable byte lengths but fixed visual width.
 	statusLine := func(label string, dot string, status string) string {
-		return fmt.Sprintf("%-10s %s %-15s", label, dot, status)
+		const labelW = 10
+		labelPad := labelW - lipgloss.Width(label)
+		if labelPad < 0 {
+			labelPad = 0
+		}
+		return label + strings.Repeat(" ", labelPad) + " " + dot + " " + status
 	}
 
 	var clusterText string
@@ -190,6 +197,18 @@ func renderWelcome(width, height int, cluster clusterStatus,
 	if updateAvailable && latestVersion != "" {
 		updateText := statusLine("Update", activeDot(ui.Orange), latestVersion+" available")
 		statusLines = append(statusLines, updateText)
+	}
+	// Pad all lines to the same visual width so PlaceHorizontal centers them uniformly.
+	maxW := 0
+	for _, line := range statusLines {
+		if w := lipgloss.Width(line); w > maxW {
+			maxW = w
+		}
+	}
+	for i, line := range statusLines {
+		if pad := maxW - lipgloss.Width(line); pad > 0 {
+			statusLines[i] = line + strings.Repeat(" ", pad)
+		}
 	}
 	systemLines := strings.Join(statusLines, "\n")
 
