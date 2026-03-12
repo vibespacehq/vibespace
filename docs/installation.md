@@ -112,6 +112,18 @@ Use an existing Kubernetes cluster instead of creating one:
 vibespace init --external --kubeconfig /path/to/kubeconfig
 ```
 
+## Upgrade
+
+```bash
+vibespace upgrade
+```
+
+Downloads the latest release from GitHub, verifies the checksum, and replaces the current binary. Use `vibespace upgrade --check` to see if an update is available without installing it.
+
+If the binary is in a system directory (e.g. `/usr/local/bin`), you may need `sudo vibespace upgrade`.
+
+For Homebrew installations, use `brew upgrade vibespace` instead.
+
 ## Uninstall
 
 ```bash
