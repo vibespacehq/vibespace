@@ -55,6 +55,8 @@ type (
 	DiagnosticOutput        = jsonapi.DiagnosticOutput
 	ClientListOutput        = jsonapi.ClientListOutput
 	ClientOutput            = jsonapi.ClientOutput
+	UpgradeOutput           = jsonapi.UpgradeOutput
+	UpgradeCheckOutput      = jsonapi.UpgradeCheckOutput
 )
 
 // NewJSONOutput creates a new JSONOutput with metadata populated.

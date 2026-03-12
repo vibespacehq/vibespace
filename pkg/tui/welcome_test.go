@@ -6,7 +6,7 @@ import (
 )
 
 func TestRenderWelcomeNotInstalled(t *testing.T) {
-	out := renderWelcome(120, 40, clusterStatusNotInstalled, false, true)
+	out := renderWelcome(120, 40, clusterStatusNotInstalled, false, true, false, "")
 	plain := stripAnsi(out)
 
 	if !strings.Contains(plain, "Not installed") {
@@ -18,7 +18,7 @@ func TestRenderWelcomeNotInstalled(t *testing.T) {
 }
 
 func TestRenderWelcomeRunning(t *testing.T) {
-	out := renderWelcome(120, 40, clusterStatusRunning, true, true)
+	out := renderWelcome(120, 40, clusterStatusRunning, true, true, false, "")
 	plain := stripAnsi(out)
 
 	if !strings.Contains(plain, "Running") {
@@ -27,7 +27,7 @@ func TestRenderWelcomeRunning(t *testing.T) {
 }
 
 func TestRenderWelcomeCompactNoPanic(t *testing.T) {
-	out := renderWelcome(80, 15, clusterStatusStopped, false, true)
+	out := renderWelcome(80, 15, clusterStatusStopped, false, true, false, "")
 	plain := stripAnsi(out)
 
 	if !strings.Contains(plain, "Stopped") {
@@ -39,7 +39,7 @@ func TestRenderWelcomeCompactNoPanic(t *testing.T) {
 }
 
 func TestRenderWelcomeQuickStartClusterDone(t *testing.T) {
-	out := renderWelcome(120, 40, clusterStatusRunning, false, true)
+	out := renderWelcome(120, 40, clusterStatusRunning, false, true, false, "")
 	plain := stripAnsi(out)
 
 	if !strings.Contains(plain, "Quick Start") {
@@ -51,14 +51,14 @@ func TestRenderWelcomeQuickStartClusterDone(t *testing.T) {
 }
 
 func TestRenderWelcomeTinyTerminal(t *testing.T) {
-	out := renderWelcome(20, 5, clusterStatusUnknown, false, true)
+	out := renderWelcome(20, 5, clusterStatusUnknown, false, true, false, "")
 	if out == "" {
 		t.Error("expected non-empty output even for tiny terminal")
 	}
 }
 
 func TestRenderWelcomeBlinkOff(t *testing.T) {
-	out := renderWelcome(120, 40, clusterStatusRunning, true, false)
+	out := renderWelcome(120, 40, clusterStatusRunning, true, false, false, "")
 	plain := stripAnsi(out)
 
 	if strings.Contains(plain, "●") {
@@ -66,5 +66,26 @@ func TestRenderWelcomeBlinkOff(t *testing.T) {
 	}
 	if !strings.Contains(plain, "Running") {
 		t.Error("expected 'Running' in output")
+	}
+}
+
+func TestRenderWelcomeUpdateAvailable(t *testing.T) {
+	out := renderWelcome(120, 40, clusterStatusRunning, true, true, true, "v0.5.0")
+	plain := stripAnsi(out)
+
+	if !strings.Contains(plain, "Update") {
+		t.Error("expected 'Update' label in output")
+	}
+	if !strings.Contains(plain, "v0.5.0 available") {
+		t.Error("expected version available text in output")
+	}
+}
+
+func TestRenderWelcomeNoUpdateWhenNotAvailable(t *testing.T) {
+	out := renderWelcome(120, 40, clusterStatusRunning, true, true, false, "")
+	plain := stripAnsi(out)
+
+	if strings.Contains(plain, "Update") {
+		t.Error("should not show Update line when no update available")
 	}
 }

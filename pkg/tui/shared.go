@@ -9,6 +9,7 @@ import (
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/metrics"
 	"github.com/vibespacehq/vibespace/pkg/session"
+	"github.com/vibespacehq/vibespace/pkg/update"
 	"github.com/vibespacehq/vibespace/pkg/vibespace"
 )
 
@@ -26,10 +27,12 @@ type SharedState struct {
 	BuildDate string
 
 	// Cached status (refreshed async via Refresh)
-	mu            sync.RWMutex
-	DaemonRunning bool
-	DaemonPid     int
-	DaemonUptime  string
+	mu              sync.RWMutex
+	DaemonRunning   bool
+	DaemonPid       int
+	DaemonUptime    string
+	UpdateAvailable bool
+	LatestVersion   string
 }
 
 // NewSharedState creates clients for shared services.
@@ -116,6 +119,14 @@ func (s *SharedState) Refresh() tea.Msg {
 			s.mu.Unlock()
 		}
 	}
+	// Check for updates (uses 24h cache, non-blocking)
+	if info := update.CheckForUpdate(s.Version); info != nil {
+		s.mu.Lock()
+		s.UpdateAvailable = true
+		s.LatestVersion = info.LatestVersion
+		s.mu.Unlock()
+	}
+
 	return SharedStateRefreshedMsg{}
 }
 
@@ -124,6 +135,13 @@ func (s *SharedState) IsDaemonRunning() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.DaemonRunning
+}
+
+// GetUpdateInfo returns the latest version if an update is available (thread-safe).
+func (s *SharedState) GetUpdateInfo() (available bool, version string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.UpdateAvailable, s.LatestVersion
 }
 
 // refreshSharedState returns a Cmd that refreshes the shared state.

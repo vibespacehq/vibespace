@@ -314,11 +314,13 @@ func (a *App) renderWelcomeCover() string {
 	}
 	versionLine := lipgloss.PlaceHorizontal(innerW-1, lipgloss.Right, dimStyle.Render(versionStr))
 
+	updateAvail, latestVer := a.shared.GetUpdateInfo()
 	welcome := renderWelcome(
 		innerW, contentH,
 		vt.welcomeClusterStatus,
 		a.shared.IsDaemonRunning(),
 		a.blinkOn,
+		updateAvail, latestVer,
 	)
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, versionLine, welcome, shortcutBar)
@@ -654,6 +656,18 @@ func (a *App) renderStatusBar() string {
 	}
 
 	text := " " + strings.Join(parts, dimStyle.Render("  |  "))
+
+	// Append update notice right-aligned if available
+	if avail, ver := a.shared.GetUpdateInfo(); avail && ver != "" {
+		updateStyle := lipgloss.NewStyle().Foreground(ui.Orange)
+		notice := updateStyle.Render(ver+" available") + dimStyle.Render(" · vibespace upgrade")
+		textWidth := lipgloss.Width(text)
+		noticeWidth := lipgloss.Width(notice)
+		gap := iw - textWidth - noticeWidth - 1
+		if gap > 0 {
+			text += strings.Repeat(" ", gap) + notice
+		}
+	}
 
 	return border + "\n" + text
 }
