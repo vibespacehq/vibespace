@@ -28,6 +28,7 @@ These work on every command:
 | `VIBESPACE_DEFAULT_MEMORY` | Default agent memory request (default: 512Mi) |
 | `VIBESPACE_DEFAULT_MEMORY_LIMIT` | Default agent memory limit (default: 1Gi) |
 | `VIBESPACE_DEFAULT_STORAGE` | Default agent storage (default: 10Gi) |
+| `VIBESPACE_NO_UPDATE_CHECK` | Disable automatic update check on startup |
 | `NO_COLOR` | Disable colors (standard convention) |
 
 ---
@@ -285,6 +286,17 @@ Start or interact with multi-agent sessions.
 ---
 
 ## Utility
+
+### `vibespace upgrade`
+
+Download and install the latest version from GitHub Releases. Verifies SHA256 checksums before replacing the binary.
+
+| Flag | Default | Description |
+|---|---|---|
+| `--check` | `false` | Only check for updates, don't install |
+| `--force` | `false` | Re-download even if already on latest |
+
+The CLI also checks for updates automatically after each command (cached for 24 hours, stderr-only). Disable with `VIBESPACE_NO_UPDATE_CHECK=1`.
 
 ### `vibespace version`
 
