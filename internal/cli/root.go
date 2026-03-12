@@ -10,6 +10,7 @@ import (
 	"github.com/vibespacehq/vibespace/pkg/k8s"
 	"github.com/vibespacehq/vibespace/pkg/tui"
 	"github.com/vibespacehq/vibespace/pkg/ui"
+	"github.com/vibespacehq/vibespace/pkg/update"
 
 	"github.com/spf13/cobra"
 )
@@ -83,6 +84,7 @@ Environment Variables:
   VIBESPACE_DEFAULT_MEMORY    Default vibespace memory (default: 1Gi)
   VIBESPACE_DEFAULT_STORAGE   Default vibespace storage (default: 10Gi)
   VIBESPACE_CONFIG            Path to config file (default: ~/.vibespace/config.yaml)
+  VIBESPACE_NO_UPDATE_CHECK   Disable automatic update check on startup
   NO_COLOR                    Disable colored output`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
@@ -124,6 +126,15 @@ func Execute() error {
 	defer cleanup()
 
 	err := rootCmd.Execute()
+
+	// Background update check — runs after every successful command.
+	// Non-fatal: any error is silently ignored.
+	if err == nil && !globalJSON && !globalQuiet && os.Getenv("VIBESPACE_NO_UPDATE_CHECK") == "" {
+		if info := update.CheckForUpdate(Version); info != nil {
+			fmt.Fprintf(os.Stderr, "\nA new version of vibespace is available: %s (current: %s)\nRun 'vibespace upgrade' to update.\n", info.LatestVersion, info.CurrentVersion)
+		}
+	}
+
 	if err != nil {
 		exitCode, code := vserrors.ErrorCode(err)
 
@@ -168,6 +179,7 @@ func init() {
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(forwardCmd)
+	rootCmd.AddCommand(upgradeCmd)
 
 	// Global flags
 	rootCmd.PersistentFlags().BoolVar(&globalJSON, "json", false, "Output in JSON format")

@@ -130,7 +130,7 @@ func renderLogoArt() string {
 //
 // Width < 60 = narrow: hero vertical, cards stacked, no pills.
 func renderWelcome(width, height int, cluster clusterStatus,
-	daemonRunning bool, blinkOn bool) string {
+	daemonRunning bool, blinkOn bool, updateAvailable bool, latestVersion string) string {
 
 	narrow := width < 60
 	minimal := height < 18
@@ -186,7 +186,12 @@ func renderWelcome(width, height int, cluster clusterStatus,
 		remoteText = statusLine("Remote", offDot, "Not connected")
 	}
 
-	systemLines := strings.Join([]string{clusterText, daemonText, remoteText}, "\n")
+	statusLines := []string{clusterText, daemonText, remoteText}
+	if updateAvailable && latestVersion != "" {
+		updateText := statusLine("Update", activeDot(ui.Orange), latestVersion+" available")
+		statusLines = append(statusLines, updateText)
+	}
+	systemLines := strings.Join(statusLines, "\n")
 
 	// --- Minimal mode: hero + system status only ---
 	if minimal {
@@ -258,7 +263,7 @@ func renderWelcome(width, height int, cluster clusterStatus,
 	// Card inner width: cardW minus border (2) minus padding (2*2)
 	cardInnerW := cardW - 6
 
-	systemBody := strings.Join([]string{clusterText, daemonText, remoteText}, "\n")
+	systemBody := systemLines
 	systemCardContent := lipgloss.JoinVertical(lipgloss.Left,
 		lipgloss.PlaceHorizontal(cardInnerW, lipgloss.Center, systemTitle.Render("System")),
 		lipgloss.PlaceHorizontal(cardInnerW, lipgloss.Center, systemBody),

@@ -424,6 +424,21 @@ type ClientOutput struct {
 	RegisteredAt string `json:"registered_at"`
 }
 
+// UpgradeOutput is the JSON output for the upgrade command.
+type UpgradeOutput struct {
+	Upgraded        bool   `json:"upgraded"`
+	PreviousVersion string `json:"previous_version"`
+	NewVersion      string `json:"new_version"`
+	BinaryPath      string `json:"binary_path,omitempty"`
+}
+
+// UpgradeCheckOutput is the JSON output for upgrade --check.
+type UpgradeCheckOutput struct {
+	UpdateAvailable bool   `json:"update_available"`
+	CurrentVersion  string `json:"current_version"`
+	LatestVersion   string `json:"latest_version"`
+}
+
 // ParseJSONOutput unmarshals raw JSON bytes into a two-step parsing envelope.
 // The Data field is kept as json.RawMessage so callers can unmarshal into
 // specific types with ParseData.
