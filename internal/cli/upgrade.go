@@ -48,13 +48,13 @@ func packageManagerInstall() (manager, command string) {
 
 	// Homebrew: /opt/homebrew/Cellar/... or /usr/local/Cellar/...
 	if strings.Contains(execPath, "/Cellar/") {
-		return "Homebrew", "brew upgrade vibespace"
+		return "Homebrew", "brew update && brew upgrade vibespace"
 	}
 
 	// APT/dpkg: check if dpkg owns this binary
 	if execPath == "/usr/bin/vibespace" || execPath == "/usr/local/bin/vibespace" {
 		if _, err := os.Stat("/var/lib/dpkg/info/vibespace.list"); err == nil {
-			return "APT", "sudo apt upgrade vibespace"
+			return "APT", "sudo apt update && sudo apt upgrade vibespace"
 		}
 	}
 
