@@ -570,10 +570,10 @@ func (t *VibespacesTab) viewSessionList() string {
 	mutedLine := lipgloss.NewStyle().Foreground(ui.ColorMuted).
 		Render(strings.Repeat("─", t.width-4))
 
-	// Header: ← agent-name sessions
+	// Header: ← agent-name interactive sessions
 	backArrow := renderGradientText("← ", getBrandGradient())
 	nameText := lipgloss.NewStyle().Bold(true).Foreground(ui.ColorText).
-		Render(t.sessionAgent + " sessions")
+		Render(t.sessionAgent + " interactive sessions")
 	header := backArrow + nameText
 
 	var topParts []string

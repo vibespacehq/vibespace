@@ -109,6 +109,11 @@ type HistoryLoadedMsg struct {
 // HistoryClearedMsg signals that history has been cleared
 type HistoryClearedMsg struct{}
 
+// historyPollMsg delivers new messages found by polling the history file
+type historyPollMsg struct {
+	newMessages []*Message
+}
+
 // PermissionRequestMsg is sent when the permission server receives a request.
 type PermissionRequestMsg struct {
 	Request *permission.Request

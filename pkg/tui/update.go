@@ -169,8 +169,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.contentDirty || len(m.GetThinkingAgents()) > 0 {
 			m.updateViewportContent()
 		}
+		// Poll history file every ~2s for external changes (headless mode)
+		if m.tickCount%20 == 0 {
+			cmds = append(cmds, m.pollHistoryUpdates())
+		}
 		// Periodic tick for animations
 		cmds = append(cmds, m.tick())
+
+	case historyPollMsg:
+		// New messages from external source (e.g. headless mode)
+		for _, newMsg := range msg.newMessages {
+			m.history.Add(newMsg)
+			m.lastHistoryLen++
+		}
+		m.contentDirty = true
 
 	case FocusReturnMsg:
 		// Returned from interactive focus mode

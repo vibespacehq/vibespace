@@ -24,8 +24,9 @@ type HeadlessRunner struct {
 	mu             sync.RWMutex
 
 	// Configuration
-	timeout time.Duration
-	resume  bool // If true, resume existing Claude sessions; if false, start fresh
+	timeout   time.Duration
+	resume    bool // If true, resume existing Claude sessions; if false, start fresh
+	streaming bool // If true, enable token-by-token streaming output
 
 	// History persistence
 	historyStore *HistoryStore
@@ -59,6 +60,11 @@ func (r *HeadlessRunner) SetTimeout(d time.Duration) {
 // SetResumeSession sets whether to resume existing agent sessions
 func (r *HeadlessRunner) SetResumeSession(resume bool) {
 	r.resume = resume
+}
+
+// SetStreaming enables token-by-token streaming output
+func (r *HeadlessRunner) SetStreaming(streaming bool) {
+	r.streaming = streaming
 }
 
 // Connect connects to agents in the specified vibespaces
@@ -146,6 +152,7 @@ func (r *HeadlessRunner) Connect(ctx context.Context, vibespaces []session.Vibes
 				SessionMgr:     r.sessionManager,
 				MultiSessionID: r.sessionName,
 				Resume:         r.resume,
+				Streaming:      r.streaming,
 				AgentType:      agentType,
 				Config:         agentConfig,
 			})
@@ -408,10 +415,12 @@ func (r *HeadlessRunner) SendAndWait(ctx context.Context, target, message string
 	return response, nil
 }
 
-// persistMessage saves a message to history if configured
+// persistMessage saves a message to history if configured.
+// TextDelta messages are not persisted — they are ephemeral streaming tokens;
+// the final Assistant message contains the complete text.
 func (r *HeadlessRunner) persistMessage(msg *Message) {
-	if r.historyStore != nil && r.sessionName != "" {
-		go r.historyStore.Append(r.sessionName, msg)
+	if r.historyStore != nil && r.sessionName != "" && msg.Type != MessageTypeTextDelta {
+		r.historyStore.Append(r.sessionName, msg)
 	}
 }
 

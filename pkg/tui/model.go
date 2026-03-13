@@ -57,8 +57,9 @@ type Model struct {
 	styles   Styles
 
 	// Persistence
-	historyStore *HistoryStore
-	sessionStore *session.Store // For saving session changes
+	historyStore   *HistoryStore
+	sessionStore   *session.Store // For saving session changes
+	lastHistoryLen int            // Track message count for live-reload from disk
 
 	// Layout
 	layout        LayoutMode
@@ -196,9 +197,37 @@ func (m *Model) loadHistory() tea.Cmd {
 
 		if len(messages) > 0 {
 			m.history.SetMessages(messages)
+			m.lastHistoryLen = len(messages)
 		}
 
 		return nil
+	}
+}
+
+// pollHistoryUpdates checks the history file for messages added externally (e.g. headless mode)
+func (m *Model) pollHistoryUpdates() tea.Cmd {
+	if m.historyStore == nil || m.sessionName == "" {
+		return nil
+	}
+	store := m.historyStore
+	name := m.sessionName
+	knownLen := m.lastHistoryLen
+	return func() tea.Msg {
+		allMsgs, err := store.Load(name)
+		if err != nil || len(allMsgs) <= knownLen {
+			return nil
+		}
+		// Filter out text deltas from new messages
+		var newMsgs []*Message
+		for _, msg := range allMsgs[knownLen:] {
+			if msg.Type != MessageTypeTextDelta {
+				newMsgs = append(newMsgs, msg)
+			}
+		}
+		if len(newMsgs) == 0 {
+			return nil
+		}
+		return historyPollMsg{newMessages: newMsgs}
 	}
 }
 
@@ -517,6 +546,7 @@ func (m *Model) updateCommandSuggestions(input string) {
 // AddMessage adds a message to history and persists it
 func (m *Model) AddMessage(msg *Message) {
 	m.history.Add(msg)
+	m.lastHistoryLen++
 	m.contentDirty = true // Mark for viewport refresh
 
 	// Persist to history store
@@ -623,6 +653,10 @@ func (m *Model) renderMessageForViewport(msg *Message) string {
 	case MessageTypeSystem:
 		label = m.styles.Dim.Render("[system]")
 		content = m.styles.Dim.Render(msg.Content)
+
+	case MessageTypeTextDelta:
+		// Skip rendering — ephemeral streaming tokens are not shown individually
+		return ""
 
 	default:
 		label = m.styles.Dim.Render("[unknown]")
