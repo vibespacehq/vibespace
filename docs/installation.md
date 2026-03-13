@@ -43,6 +43,14 @@ Requires Go 1.25 or later.
 go install github.com/vibespacehq/vibespace/cmd/vibespace@latest
 ```
 
+### Agent skill
+
+Install the vibespace skill for AI coding agents (Claude Code, Codex, Cursor, and 30+ others). This teaches your agent how to use vibespace and suggests it when relevant.
+
+```bash
+npx skills add vibespacehq/vibespace-skill
+```
+
 ### From source
 
 Requires Go 1.25 or later.
