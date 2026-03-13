@@ -290,7 +290,7 @@ func (c *Config) Merge(other *Config) *Config {
 
 // StreamMessage represents a parsed message from an agent's streaming output.
 type StreamMessage struct {
-	// Type of message: "text", "tool_use", "tool_result", "error", "system", "done", "session_started"
+	// Type of message: "text", "text_delta", "tool_use", "tool_result", "error", "system", "done", "session_started"
 	Type string
 
 	// Text content (for text and error types)
@@ -331,7 +331,8 @@ type CodingAgent interface {
 	// sessionID is the session identifier for continuity.
 	// resume indicates whether to resume an existing session.
 	// config contains agent configuration.
-	BuildPrintModeCommand(sessionID string, resume bool, config *Config) string
+	// streaming enables token-by-token output (e.g. --include-partial-messages for Claude).
+	BuildPrintModeCommand(sessionID string, resume bool, config *Config, streaming bool) string
 
 	// BuildInteractiveCommand builds a command for interactive terminal mode.
 	// Returns the argument list (not a shell string) to prevent command injection.

@@ -47,8 +47,13 @@ func (a *Agent) ConfigDirectory() string {
 }
 
 // BuildPrintModeCommand builds the Claude print-mode command for streaming output.
-func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *agent.Config) string {
+func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *agent.Config, streaming bool) string {
 	args := []string{"claude", "-p", "--verbose", "--output-format", "stream-json"}
+
+	// Enable token-by-token streaming via partial messages
+	if streaming {
+		args = append(args, "--include-partial-messages")
+	}
 
 	// Session handling
 	if resume {
@@ -162,6 +167,21 @@ func (a *Agent) ParseStreamLine(line string) (*agent.StreamMessage, bool) {
 	}
 
 	switch msg.Type {
+	case "stream_event":
+		// Unwrap the inner event from --include-partial-messages output
+		if len(msg.Event) > 0 {
+			var inner claudeStreamMessage
+			if err := json.Unmarshal(msg.Event, &inner); err == nil {
+				// Handle text deltas from the inner event
+				if inner.Type == "content_block_delta" && inner.Delta.Text != "" {
+					result.Type = "text_delta"
+					result.Text = inner.Delta.Text
+					return result, true
+				}
+			}
+		}
+		return nil, true
+
 	case "assistant":
 		// Extract text and tool_use from content blocks
 		for _, block := range msg.Message.Content {
@@ -207,9 +227,9 @@ func (a *Agent) ParseStreamLine(line string) (*agent.StreamMessage, bool) {
 		}
 
 	case "content_block_delta":
-		if msg.ContentBlock.Text != "" {
-			result.Type = "text"
-			result.Text = msg.ContentBlock.Text
+		if msg.Delta.Text != "" {
+			result.Type = "text_delta"
+			result.Text = msg.Delta.Text
 			return result, true
 		}
 
@@ -274,8 +294,17 @@ type claudeStreamMessage struct {
 		Content []contentBlock `json:"content"`
 	} `json:"message,omitempty"`
 
-	// For content_block_delta events
+	// For content_block_start events
 	ContentBlock contentBlock `json:"content_block,omitempty"`
+
+	// For content_block_delta events (incremental text tokens)
+	Delta struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"delta,omitempty"`
+
+	// For stream_event wrapper (--include-partial-messages)
+	Event json.RawMessage `json:"event,omitempty"`
 
 	// For tool_use events
 	Tool struct {

@@ -48,7 +48,7 @@ func (a *Agent) ConfigDirectory() string {
 
 // BuildPrintModeCommand builds the Codex exec command for non-interactive mode.
 // Codex uses "codex exec" for non-interactive execution with JSON output.
-func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *agent.Config) string {
+func (a *Agent) BuildPrintModeCommand(sessionID string, resume bool, config *agent.Config, streaming bool) string {
 	// Start with codex exec
 	args := []string{"codex", "exec"}
 

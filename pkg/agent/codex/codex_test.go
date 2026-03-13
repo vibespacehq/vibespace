@@ -232,7 +232,7 @@ func TestBuildPrintModeCommand(t *testing.T) {
 
 	t.Run("new session", func(t *testing.T) {
 		config := &agent.Config{Model: "gpt-4o"}
-		cmd := a.BuildPrintModeCommand("sess-123", false, config)
+		cmd := a.BuildPrintModeCommand("sess-123", false, config, false)
 		if !strings.Contains(cmd, "codex exec") {
 			t.Error("command should contain 'codex exec'")
 		}
@@ -258,7 +258,7 @@ func TestBuildPrintModeCommand(t *testing.T) {
 	})
 
 	t.Run("resume session", func(t *testing.T) {
-		cmd := a.BuildPrintModeCommand("sess-456", true, &agent.Config{})
+		cmd := a.BuildPrintModeCommand("sess-456", true, &agent.Config{}, false)
 		if !strings.Contains(cmd, "resume") {
 			t.Error("resume command should contain 'resume'")
 		}
@@ -268,14 +268,14 @@ func TestBuildPrintModeCommand(t *testing.T) {
 	})
 
 	t.Run("resume without session ID", func(t *testing.T) {
-		cmd := a.BuildPrintModeCommand("", true, &agent.Config{})
+		cmd := a.BuildPrintModeCommand("", true, &agent.Config{}, false)
 		if strings.Contains(cmd, "resume") {
 			t.Error("resume with empty session ID should not contain 'resume'")
 		}
 	})
 
 	t.Run("nil config", func(t *testing.T) {
-		cmd := a.BuildPrintModeCommand("sess-123", false, nil)
+		cmd := a.BuildPrintModeCommand("sess-123", false, nil, false)
 		if !strings.Contains(cmd, "--yolo") {
 			t.Error("nil config should still include --yolo")
 		}
@@ -286,7 +286,7 @@ func TestBuildPrintModeCommand(t *testing.T) {
 
 	t.Run("reasoning effort", func(t *testing.T) {
 		config := &agent.Config{ReasoningEffort: "high"}
-		cmd := a.BuildPrintModeCommand("sess-123", false, config)
+		cmd := a.BuildPrintModeCommand("sess-123", false, config, false)
 		if !strings.Contains(cmd, "-c") {
 			t.Error("command should contain -c flag for reasoning effort")
 		}
@@ -296,7 +296,7 @@ func TestBuildPrintModeCommand(t *testing.T) {
 	})
 
 	t.Run("wraps in bash", func(t *testing.T) {
-		cmd := a.BuildPrintModeCommand("sess-123", false, &agent.Config{})
+		cmd := a.BuildPrintModeCommand("sess-123", false, &agent.Config{}, false)
 		if !strings.HasPrefix(cmd, "bash -l -c") {
 			t.Errorf("command should start with 'bash -l -c', got: %s", cmd)
 		}

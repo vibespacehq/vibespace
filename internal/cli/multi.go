@@ -98,6 +98,11 @@ func runMultiCmd(cmd *cobra.Command, args []string) error {
 	streamFlag, _ := cmd.Flags().GetBool("stream")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
 
+	// --stream implies --plain (streaming is always plain text)
+	if streamFlag {
+		plainFlag = true
+	}
+
 	// Detect TTY
 	stdinTTY := term.IsTerminal(int(os.Stdin.Fd()))
 	stdoutTTY := term.IsTerminal(int(os.Stdout.Fd()))
@@ -730,6 +735,7 @@ func runStreamingPlain(ctx context.Context, vibespaces []session.VibespaceEntry,
 	runner := tui.NewHeadlessRunner()
 	runner.SetTimeout(timeout)
 	runner.SetSessionName(sessionName)
+	runner.SetStreaming(true)
 	defer runner.Close()
 
 	if err := runner.Connect(ctx, vibespaces); err != nil {
@@ -740,18 +746,56 @@ func runStreamingPlain(ctx context.Context, vibespaces []session.VibespaceEntry,
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	return runner.StreamResponses(ctx, target, message, func(agent string, msg *tui.Message) {
+	headerPrinted := make(map[string]bool)
+	deltaReceived := make(map[string]bool)
+
+	err := runner.StreamResponses(ctx, target, message, func(agent string, msg *tui.Message) {
 		switch msg.Type {
+		case tui.MessageTypeTextDelta:
+			// Print agent header once before first delta
+			if !headerPrinted[agent] {
+				fmt.Printf("[%s] ", agent)
+				headerPrinted[agent] = true
+			}
+			deltaReceived[agent] = true
+			fmt.Print(msg.Content)
 		case tui.MessageTypeAssistant:
-			fmt.Printf("[%s] %s\n", agent, msg.Content)
+			// Only print if no deltas were received (fallback for non-streaming agents)
+			if !deltaReceived[agent] {
+				if !headerPrinted[agent] {
+					fmt.Printf("[%s] ", agent)
+					headerPrinted[agent] = true
+				}
+				fmt.Print(msg.Content)
+			}
 		case tui.MessageTypeToolUse:
+			// Ensure newline after any streamed text
+			if headerPrinted[agent] {
+				fmt.Println()
+				headerPrinted[agent] = false
+			}
 			if msg.ToolInput != "" {
 				fmt.Printf("[%s] [%s] %s\n", agent, msg.ToolName, msg.ToolInput)
 			} else {
 				fmt.Printf("[%s] [%s]\n", agent, msg.ToolName)
 			}
 		case tui.MessageTypeError:
+			if headerPrinted[agent] {
+				fmt.Println()
+				headerPrinted[agent] = false
+			}
 			fmt.Fprintf(os.Stderr, "[%s] Error: %s\n", agent, msg.Content)
 		}
 	})
+
+	// Final newline after streaming completes
+	for _, printed := range headerPrinted {
+		if printed {
+			fmt.Println()
+			break
+		}
+	}
+
+	return err
+
 }

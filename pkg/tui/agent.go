@@ -66,6 +66,7 @@ type AgentConn struct {
 	sessionManager  *AgentSessionManager // Shared session manager for --session-id vs --resume
 	multiSessionID  string               // Multi-session ID for session isolation
 	resume          bool                 // If true, use --resume with existing session; if false, use --session-id
+	streaming       bool                 // If true, enable token-by-token streaming output
 	forceNewSession bool                 // If true, use --session-id even if session exists (for /session @agent new)
 
 	// Agent type and configuration
@@ -100,6 +101,7 @@ type AgentConnOptions struct {
 	SessionMgr      *AgentSessionManager
 	MultiSessionID  string
 	Resume          bool
+	Streaming       bool // Enable token-by-token streaming output
 	AgentType       agent.Type
 	Config          *agent.Config
 	PermissionToken string
@@ -130,6 +132,7 @@ func NewAgentConn(opts AgentConnOptions) *AgentConn {
 		sessionManager:  opts.SessionMgr,
 		multiSessionID:  opts.MultiSessionID,
 		resume:          opts.Resume,
+		streaming:       opts.Streaming,
 		agentType:       agentType,
 		agentImpl:       agentImpl,
 		agentConfig:     opts.Config,
@@ -336,6 +339,11 @@ func (c *AgentConn) convertStreamMessage(msg *agent.StreamMessage) []*Message {
 	case "text":
 		if msg.Text != "" {
 			messages = append(messages, NewAssistantMessage(sender, msg.Text))
+		}
+
+	case "text_delta":
+		if msg.Text != "" {
+			messages = append(messages, NewTextDeltaMessage(sender, msg.Text))
 		}
 
 	case "tool_use":
@@ -589,7 +597,7 @@ func BuildInteractiveAgentCommand(agentType agent.Type, config *agent.Config, se
 func (c *AgentConn) buildAgentCommand(sessionID string, useResume bool) string {
 	// Use the agent implementation to build the command
 	if c.agentImpl != nil {
-		return c.agentImpl.BuildPrintModeCommand(sessionID, useResume, c.agentConfig)
+		return c.agentImpl.BuildPrintModeCommand(sessionID, useResume, c.agentConfig, c.streaming)
 	}
 
 	// Fallback to default Claude Code behavior (should rarely happen)

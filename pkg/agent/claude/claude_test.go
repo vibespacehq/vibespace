@@ -150,6 +150,43 @@ func TestParseStreamLineEmpty(t *testing.T) {
 	}
 }
 
+func TestParseStreamLineContentBlockDelta(t *testing.T) {
+	line := `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`
+	a := &Agent{}
+	msg, ok := a.ParseStreamLine(line)
+	if !ok {
+		t.Fatal("ParseStreamLine returned ok=false")
+	}
+	if msg == nil {
+		t.Fatal("ParseStreamLine returned nil message")
+	}
+	if msg.Type != "text_delta" {
+		t.Errorf("msg.Type = %q, want %q", msg.Type, "text_delta")
+	}
+	if msg.Text != "Hello" {
+		t.Errorf("msg.Text = %q, want %q", msg.Text, "Hello")
+	}
+}
+
+func TestParseStreamLineStreamEvent(t *testing.T) {
+	// stream_event wraps inner events when --include-partial-messages is used
+	line := `{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"world"}}}`
+	a := &Agent{}
+	msg, ok := a.ParseStreamLine(line)
+	if !ok {
+		t.Fatal("ParseStreamLine returned ok=false")
+	}
+	if msg == nil {
+		t.Fatal("ParseStreamLine returned nil message")
+	}
+	if msg.Type != "text_delta" {
+		t.Errorf("msg.Type = %q, want %q", msg.Type, "text_delta")
+	}
+	if msg.Text != "world" {
+		t.Errorf("msg.Text = %q, want %q", msg.Text, "world")
+	}
+}
+
 func TestBuildPrintModeCommand(t *testing.T) {
 	a := &Agent{}
 
@@ -158,7 +195,7 @@ func TestBuildPrintModeCommand(t *testing.T) {
 			Model:    "test-model",
 			MaxTurns: 10,
 		}
-		cmd := a.BuildPrintModeCommand("sess-123", false, config)
+		cmd := a.BuildPrintModeCommand("sess-123", false, config, false)
 		if !strings.Contains(cmd, "--session-id") {
 			t.Error("new session command should contain --session-id")
 		}
@@ -177,7 +214,7 @@ func TestBuildPrintModeCommand(t *testing.T) {
 	})
 
 	t.Run("resume session", func(t *testing.T) {
-		cmd := a.BuildPrintModeCommand("sess-123", true, &agent.Config{})
+		cmd := a.BuildPrintModeCommand("sess-123", true, &agent.Config{}, false)
 		if !strings.Contains(cmd, "--resume") {
 			t.Error("resume command should contain --resume")
 		}
@@ -188,16 +225,30 @@ func TestBuildPrintModeCommand(t *testing.T) {
 
 	t.Run("skip permissions", func(t *testing.T) {
 		config := &agent.Config{SkipPermissions: true}
-		cmd := a.BuildPrintModeCommand("sess-123", false, config)
+		cmd := a.BuildPrintModeCommand("sess-123", false, config, false)
 		if !strings.Contains(cmd, "--dangerously-skip-permissions") {
 			t.Error("command should contain --dangerously-skip-permissions")
 		}
 	})
 
 	t.Run("nil config", func(t *testing.T) {
-		cmd := a.BuildPrintModeCommand("sess-123", false, nil)
+		cmd := a.BuildPrintModeCommand("sess-123", false, nil, false)
 		if !strings.Contains(cmd, "--allowedTools") {
 			t.Error("nil config should produce command with default --allowedTools")
+		}
+	})
+
+	t.Run("streaming mode", func(t *testing.T) {
+		cmd := a.BuildPrintModeCommand("sess-123", false, &agent.Config{}, true)
+		if !strings.Contains(cmd, "--include-partial-messages") {
+			t.Error("streaming mode should contain --include-partial-messages")
+		}
+	})
+
+	t.Run("non-streaming mode", func(t *testing.T) {
+		cmd := a.BuildPrintModeCommand("sess-123", false, &agent.Config{}, false)
+		if strings.Contains(cmd, "--include-partial-messages") {
+			t.Error("non-streaming mode should not contain --include-partial-messages")
 		}
 	})
 }
