@@ -344,6 +344,7 @@ func (s *Server) Start(ctx context.Context, foreground bool) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/kubeconfig", s.handleKubeconfig)
+	mux.HandleFunc("/ssh-key", s.handleSSHKey)
 	mux.HandleFunc("/disconnect", s.handleDisconnect)
 
 	mgmtAddr := fmt.Sprintf("%s:%d", serverWGIP(s.state.ServerIP), DefaultManagementPort())
@@ -489,6 +490,37 @@ func (s *Server) handleKubeconfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Write([]byte(content))
+}
+
+// handleSSHKey handles GET /ssh-key requests.
+// Returns the vibespace SSH private key so remote clients can SSH into containers
+// whose public key was injected at vibespace creation time on the server.
+func (s *Server) handleSSHKey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if peer := s.peerFromRequest(r); peer == nil {
+		http.Error(w, "unauthorized: unknown peer", http.StatusUnauthorized)
+		return
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		http.Error(w, "failed to get home directory", http.StatusInternalServerError)
+		return
+	}
+
+	keyPath := filepath.Join(home, ".vibespace", "ssh", "vibespace_ed25519")
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		http.Error(w, "SSH key not found — no vibespaces have been created on this server", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(data)
 }
 
 // handleDisconnect handles POST /disconnect - removes the calling peer.
@@ -1001,6 +1033,37 @@ func FetchKubeconfigFromServer(serverIP, certFingerprint string) ([]byte, error)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to fetch kubeconfig: status %d", resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+// FetchSSHKeyFromServer fetches the vibespace SSH private key from the remote server's
+// management API. This allows remote clients to SSH into containers whose public key
+// was injected at vibespace creation time on the server.
+func FetchSSHKeyFromServer(serverIP, certFingerprint string) ([]byte, error) {
+	url := fmt.Sprintf("https://%s:%d/ssh-key", serverIP, DefaultManagementPort())
+
+	if certFingerprint == "" {
+		return nil, fmt.Errorf("cert fingerprint required to fetch SSH key")
+	}
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: PinningTLSConfig(certFingerprint)},
+	}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch SSH key: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		// No SSH key on server yet — not fatal, key will be created when first vibespace is created
+		return nil, nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch SSH key: status %d", resp.StatusCode)
 	}
 
 	return io.ReadAll(resp.Body)

@@ -226,6 +226,26 @@ func Connect(opts ConnectOptions) error {
 		return fmt.Errorf("failed to write kubeconfig: %w", err)
 	}
 
+	// Fetch SSH private key from server so we can SSH into containers
+	slog.Info("fetching SSH key from server")
+	sshKey, err := FetchSSHKeyFromServer(regResp.ServerIP, invite.CertFingerprint)
+	if err != nil {
+		slog.Warn("failed to fetch SSH key from server - SSH access may not work", "error", err)
+	} else if sshKey != nil {
+		sshDir := filepath.Join(vsHome, "ssh")
+		if err := os.MkdirAll(sshDir, 0700); err != nil {
+			slog.Warn("failed to create SSH directory", "error", err)
+		} else {
+			sshKeyPath := filepath.Join(sshDir, "vibespace_ed25519")
+			if err := os.WriteFile(sshKeyPath, sshKey, 0600); err != nil {
+				slog.Warn("failed to write SSH key", "error", err)
+			} else {
+				chownToRealUser(sshDir, sshKeyPath)
+				slog.Info("SSH key synced from server")
+			}
+		}
+	}
+
 	// Mark as connected and save final state
 	state.Connected = true
 	state.ConnectedAt = time.Now()
