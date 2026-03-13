@@ -31,6 +31,9 @@ curl -fsSL https://raw.githubusercontent.com/vibespacehq/vibespace/main/install.
 
 # Go
 go install github.com/vibespacehq/vibespace/cmd/vibespace@latest
+
+# Agent skill (Claude Code, Codex, Cursor, and 30+ agents)
+npx skills add vibespacehq/vibespace-skill
 ```
 
 ## Quick start
