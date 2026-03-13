@@ -14,6 +14,7 @@ func TestMessageTypeStringAll(t *testing.T) {
 	}{
 		{MessageTypeUser, "user"},
 		{MessageTypeAssistant, "assistant"},
+		{MessageTypeTextDelta, "text_delta"},
 		{MessageTypeToolUse, "tool_use"},
 		{MessageTypeError, "error"},
 		{MessageTypeThinking, "thinking"},

@@ -14,6 +14,7 @@ type MessageType int
 const (
 	MessageTypeUser MessageType = iota
 	MessageTypeAssistant
+	MessageTypeTextDelta // Incremental streaming text token
 	MessageTypeToolUse
 	MessageTypeError
 	MessageTypeThinking
@@ -27,6 +28,8 @@ func (t MessageType) String() string {
 		return "user"
 	case MessageTypeAssistant:
 		return "assistant"
+	case MessageTypeTextDelta:
+		return "text_delta"
 	case MessageTypeToolUse:
 		return "tool_use"
 	case MessageTypeError:
@@ -69,6 +72,17 @@ func NewAssistantMessage(sender, content string) *Message {
 	return &Message{
 		ID:        generateMessageID(),
 		Type:      MessageTypeAssistant,
+		Sender:    sender,
+		Content:   content,
+		Timestamp: time.Now(),
+	}
+}
+
+// NewTextDeltaMessage creates a new streaming text delta message
+func NewTextDeltaMessage(sender, content string) *Message {
+	return &Message{
+		ID:        generateMessageID(),
+		Type:      MessageTypeTextDelta,
 		Sender:    sender,
 		Content:   content,
 		Timestamp: time.Now(),
