@@ -89,6 +89,9 @@ type vibespacesForTreeMsg struct {
 	err        error
 }
 
+// sessionsRefreshTickMsg triggers a periodic refresh while the tab is active.
+type sessionsRefreshTickMsg struct{}
+
 // sessionDeletedMsg signals a session was deleted.
 type sessionDeletedMsg struct{ err error }
 
@@ -154,6 +157,7 @@ type SessionsTab struct {
 	height int
 	mode   sessionsMode
 	err    string
+	active bool // true while this tab is the active tab
 
 	// Tree state
 	vibespaces    []*model.Vibespace
@@ -244,6 +248,13 @@ func (t *SessionsTab) Init() tea.Cmd {
 	return t.loadAllData()
 }
 
+// scheduleRefreshTick returns a command that sends a refresh tick after 3 seconds.
+func (t *SessionsTab) scheduleRefreshTick() tea.Cmd {
+	return tea.Tick(3*time.Second, func(time.Time) tea.Msg {
+		return sessionsRefreshTickMsg{}
+	})
+}
+
 func (t *SessionsTab) loadAllData() tea.Cmd {
 	return tea.Batch(t.loadVibespacesForTree(), t.loadMultiSessions())
 }
@@ -252,7 +263,25 @@ func (t *SessionsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
 	case TabActivateMsg:
-		return t, t.loadAllData()
+		t.active = true
+		return t, tea.Batch(t.loadAllData(), t.scheduleRefreshTick())
+
+	case TabDeactivateMsg:
+		t.active = false
+		return t, nil
+
+	case sessionsRefreshTickMsg:
+		if !t.active {
+			return t, nil
+		}
+		// Refresh session list and preview for current selection
+		cmds := []tea.Cmd{t.loadMultiSessions(), t.scheduleRefreshTick()}
+		if t.cursor < len(t.flatTree) && t.flatTree[t.cursor].Type == sessionItemMulti {
+			// Clear cached preview name so loadPreviewForCurrent re-fetches
+			t.previewSessionName = ""
+			cmds = append(cmds, t.loadPreviewForCurrent())
+		}
+		return t, tea.Batch(cmds...)
 
 	case PaletteNewSessionMsg:
 		t.mode = sessionsModeNewName
