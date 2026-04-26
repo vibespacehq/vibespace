@@ -18,8 +18,7 @@
 ---
 
 <p align="center">
-  <em><!-- TODO: Replace with demo video/gif --></em><br />
-  <code>🎬 Demo video coming soon</code>
+  <video src="https://github.com/vibespacehq/vibespace/raw/main/assets/launch.mp4" controls muted playsinline width="720"></video>
 </p>
 
 ---
