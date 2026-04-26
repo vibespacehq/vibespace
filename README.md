@@ -18,7 +18,9 @@
 ---
 
 <p align="center">
-  <video src="https://github.com/vibespacehq/vibespace/raw/main/assets/launch.mp4" controls muted playsinline width="720"></video>
+  <a href="https://github.com/vibespacehq/vibespace/raw/main/assets/launch.mp4">
+    <img src="assets/cover.png" alt="Watch the launch video" width="720" />
+  </a>
 </p>
 
 ---
