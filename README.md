@@ -17,11 +17,9 @@
 
 ---
 
-<p align="center">
-  <a href="https://github.com/vibespacehq/vibespace/raw/main/assets/launch.mp4">
-    <img src="assets/cover.png" alt="Watch the launch video" width="720" />
-  </a>
-</p>
+
+https://github.com/user-attachments/assets/4a128cd9-94d5-4cc0-bbd0-0e617136585e
+
 
 ---
 
